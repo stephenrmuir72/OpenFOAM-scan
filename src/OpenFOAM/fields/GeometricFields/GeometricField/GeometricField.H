@@ -656,6 +656,17 @@ public:
         void operator*=(const dimensioned<scalar>&);
         void operator/=(const dimensioned<scalar>&);
 
+        // Prevent automatic comparison rewriting (c++20)
+        bool operator!=
+        (
+            const GeometricField<Type, PatchField, GeoMesh>&
+        ) = delete;
+        bool operator!=
+        (
+            const tmp<GeometricField<Type, PatchField, GeoMesh>>&
+        ) = delete;
+        bool operator!=(const dimensioned<Type>&) = delete;
+
 
     // Ostream operators
 
@@ -671,15 +682,6 @@ public:
             const tmp<GeometricField<Type, PatchField, GeoMesh>>&
         );
 };
-
-
-template<class Type, template<class> class PatchField, class GeoMesh>
-Ostream& operator<<
-(
-    Ostream&,
-    const typename GeometricField<Type, PatchField, GeoMesh>::
-    Boundary&
-);
 
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
