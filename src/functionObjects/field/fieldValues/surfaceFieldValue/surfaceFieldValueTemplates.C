@@ -139,6 +139,9 @@ processSameTypeValues
     switch (operation_)
     {
         case opNone:
+        case typeScalar:
+        case typeWeighted:
+        case typeAbsolute:
         {
             break;
         }

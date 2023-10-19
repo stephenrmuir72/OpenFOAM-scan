@@ -226,15 +226,6 @@ public:
         //- Region type names
         static const Enum<regionTypes> regionTypeNames_;
 
-        //- Bitmask values for operation variants
-        enum operationVariant
-        {
-            typeBase = 0,         //!< Base operation
-            typeScalar = 0x100,   //!< Operation returns a scalar
-            typeWeighted = 0x200, //!< Operation using weighting
-            typeAbsolute = 0x400, //!< Operation using mag (eg, for weighting)
-        };
-
         //- Operation type enumeration
         enum operationType
         {
@@ -255,10 +246,11 @@ public:
             opAreaIntegrate,        //!< Area integral
             opCoV,                  //!< Coefficient of variation
 
-            // Scalar return values
+            // Operations returning scalar - bitmask value
+            typeScalar = 0x100,
 
             //! Area average in normal direction (output is always scalar)
-            opAreaNormalAverage = typeScalar,
+            opAreaNormalAverage = (1 | typeScalar),
 
             //! Area integral in normal direction (output is always scalar)
             opAreaNormalIntegrate,
@@ -267,6 +259,8 @@ public:
             opUniformity,
 
             // Weighted variants
+            // Operations using weighting - bitmask value
+            typeWeighted = 0x200,
 
             //! Weighted sum
             opWeightedSum = (opSum | typeWeighted),
@@ -284,6 +278,8 @@ public:
             opWeightedUniformity = (opUniformity | typeWeighted),
 
             // Variants using absolute weighting
+            // Operation using mag (eg, for weighting) - bitmask value
+            typeAbsolute = 0x400,
 
             //! Sum using abs weighting
             opAbsWeightedSum = (opWeightedSum | typeAbsolute),

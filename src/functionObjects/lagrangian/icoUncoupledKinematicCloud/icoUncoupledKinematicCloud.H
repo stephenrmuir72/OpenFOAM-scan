@@ -130,7 +130,7 @@ class icoUncoupledKinematicCloud
         icoUncoupledKinematicCloud(const icoUncoupledKinematicCloud&) = delete;
 
         //- No copy assignment
-        void operator==(const icoUncoupledKinematicCloud&) = delete;
+        void operator=(const icoUncoupledKinematicCloud&) = delete;
 
 
 public:
