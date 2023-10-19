@@ -147,15 +147,6 @@ public:
 
     // Public Data Types
 
-        //- Bitmask values for operation variants
-        enum operationVariant
-        {
-            typeBase = 0,         //!< Base operation
-            typeScalar = 0x100,   //!< Operation returns a scalar
-            typeWeighted = 0x200, //!< Operation using weighting
-            typeAbsolute = 0x400, //!< Operation using mag (eg, for weighting)
-        };
-
         //- Operation type enumeration
         enum operationType
         {
@@ -171,7 +162,12 @@ public:
             opVolIntegrate,         //!< Volume integral
             opCoV,                  //!< Coefficient of variation
 
+            // Operations returning scalar - bitmask value
+            typeScalar = 0x100,
+
             // Weighted variants
+            // Operations using weighting - bitmask value
+            typeWeighted = 0x200,
 
             //! Weighted sum
             opWeightedSum = (opSum | typeWeighted),
@@ -186,6 +182,8 @@ public:
             opWeightedVolIntegrate = (opVolIntegrate | typeWeighted),
 
             // Variants using absolute weighting
+            // Operation using mag (eg, for weighting) - bitmask value
+            typeAbsolute = 0x400,
         };
 
         //- Operation type names
