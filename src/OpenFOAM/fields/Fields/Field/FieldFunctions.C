@@ -51,19 +51,32 @@ void component
     const direction d
 )
 {
-    typedef typename Field<Type>::cmptType resultType;
-
-    TFOR_ALL_F_OP_F_FUNC_S
-    (
-        resultType, result, =, Type, f1, .component, const direction, d
-    )
+    if (result.cdata_bytes() == f1.cdata_bytes())
+    {
+        // std::for_each
+        TSEQ_FORALL_F_OP_F_FUNC_S_inplace(result, =, f1, .component, d)
+    }
+    else
+    {
+        // std::transform
+        TSEQ_FORALL_F_OP_F_FUNC_S(result, =, f1, .component, d)
+    }
 }
 
 
 template<class Type>
 void T(Field<Type>& result, const UList<Type>& f1)
 {
-    TFOR_ALL_F_OP_F_FUNC(Type, result, =, Type, f1, T)
+    if (result.cdata() == f1.cdata())
+    {
+        // std::for_each
+        TSEQ_FORALL_F_OP_F_FUNC_inplace(result, =, f1, T)
+    }
+    else
+    {
+        // std::transform
+        TSEQ_FORALL_F_OP_F_FUNC(result, =, f1, T)
+    }
 }
 
 
@@ -76,11 +89,19 @@ void pow
 {
     typedef typename powProduct<Type, r>::type resultType;
 
-    TFOR_ALL_F_OP_FUNC_F_S
-    (
-        resultType, result, =, pow, Type, f1, resultType,
-        Foam::deviceZero<resultType>()
-    )
+    if (result.cdata_bytes() == f1.cdata_bytes())
+    {
+        TSEQ_FORALL_F_OP_FUNC_F_S_inplace
+        (result, =, pow, f1, Foam::deviceZero<resultType>())
+    }
+    else
+    {
+        TFOR_ALL_F_OP_FUNC_F_S
+        (
+            resultType, result, =, pow, Type, f1, resultType,
+            Foam::deviceZero<resultType>()
+        )
+    }
 }
 
 template<class Type, direction r>
@@ -120,9 +141,16 @@ void sqr
     const UList<Type>& f1
 )
 {
-    typedef typename outerProduct<Type, Type>::type resultType;
-
-    TFOR_ALL_F_OP_FUNC_F(resultType, result, =, sqr, Type, f1)
+    if (result.cdata_bytes() == f1.cdata_bytes())
+    {
+        // std::for_each
+        TSEQ_FORALL_F_OP_FUNC_F_inplace(result, =, sqr, f1)
+    }
+    else
+    {
+        // std::transform
+        TSEQ_FORALL_F_OP_FUNC_F(result, =, sqr, f1)
+    }
 }
 
 template<class Type>
@@ -154,9 +182,16 @@ void magSqr
     const UList<Type>& f1
 )
 {
-    typedef typename typeOfMag<Type>::type resultType;
-
-    TFOR_ALL_F_OP_FUNC_F(resultType, result, =, magSqr, Type, f1)
+    if (result.cdata_bytes() == f1.cdata_bytes())
+    {
+        // std::for_each
+        TSEQ_FORALL_F_OP_FUNC_F_inplace(result, =, magSqr, f1)
+    }
+    else
+    {
+        // std::transform
+        TSEQ_FORALL_F_OP_FUNC_F(result, =, magSqr, f1)
+    }
 }
 
 template<class Type>
@@ -190,9 +225,16 @@ void mag
     const UList<Type>& f1
 )
 {
-    typedef typename typeOfMag<Type>::type resultType;
-
-    TFOR_ALL_F_OP_FUNC_F(resultType, result, =, mag, Type, f1)
+    if (result.cdata_bytes() == f1.cdata_bytes())
+    {
+        // std::for_each
+        TSEQ_FORALL_F_OP_FUNC_F_inplace(result, =, mag, f1)
+    }
+    else
+    {
+        // std::transform
+        TSEQ_FORALL_F_OP_FUNC_F(result, =, mag, f1)
+    }
 }
 
 template<class Type>
@@ -226,9 +268,16 @@ void cmptMax
     const UList<Type>& f1
 )
 {
-    typedef typename Field<Type>::cmptType resultType;
-
-    TFOR_ALL_F_OP_FUNC_F(resultType, result, =, cmptMax, Type, f1)
+    if (result.cdata_bytes() == f1.cdata_bytes())
+    {
+        // std::for_each
+        TSEQ_FORALL_F_OP_FUNC_F_inplace(result, =, cmptMax, f1)
+    }
+    else
+    {
+        // std::transform
+        TSEQ_FORALL_F_OP_FUNC_F(result, =, cmptMax, f1)
+    }
 }
 
 template<class Type>
@@ -258,9 +307,16 @@ void cmptMin
     const UList<Type>& f1
 )
 {
-    typedef typename Field<Type>::cmptType resultType;
-
-    TFOR_ALL_F_OP_FUNC_F(resultType, result, =, cmptMin, Type, f1)
+    if (result.cdata_bytes() == f1.cdata_bytes())
+    {
+        // std::for_each
+        TSEQ_FORALL_F_OP_FUNC_F_inplace(result, =, cmptMin, f1)
+    }
+    else
+    {
+        // std::transform
+        TSEQ_FORALL_F_OP_FUNC_F(result, =, cmptMin, f1)
+    }
 }
 
 template<class Type>
@@ -290,9 +346,16 @@ void cmptAv
     const UList<Type>& f1
 )
 {
-    typedef typename Field<Type>::cmptType resultType;
-
-    TFOR_ALL_F_OP_FUNC_F(resultType, result, =, cmptAv, Type, f1)
+    if (result.cdata_bytes() == f1.cdata_bytes())
+    {
+        // std::for_each
+        TSEQ_FORALL_F_OP_FUNC_F_inplace(result, =, cmptAv, f1)
+    }
+    else
+    {
+        // std::transform
+        TSEQ_FORALL_F_OP_FUNC_F(result, =, cmptAv, f1)
+    }
 }
 
 template<class Type>
@@ -318,7 +381,16 @@ tmp<Field<typename Field<Type>::cmptType>> cmptAv(const tmp<Field<Type>>& tf1)
 template<class Type>
 void cmptMag(Field<Type>& result, const UList<Type>& f1)
 {
-    TFOR_ALL_F_OP_FUNC_F(Type, result, =, cmptMag, Type, f1)
+    if (result.cdata_bytes() == f1.cdata_bytes())
+    {
+        // std::for_each
+        TSEQ_FORALL_F_OP_FUNC_F_inplace(result, =, cmptMag, f1)
+    }
+    else
+    {
+        // std::transform
+        TSEQ_FORALL_F_OP_FUNC_F(result, =, cmptMag, f1)
+    }
 }
 
 template<class Type>
@@ -342,7 +414,16 @@ tmp<Field<Type>> cmptMag(const tmp<Field<Type>>& tf1)
 template<class Type>
 void cmptMagSqr(Field<Type>& result, const UList<Type>& f1)
 {
-    TFOR_ALL_F_OP_FUNC_F(Type, result, =, cmptMagSqr, Type, f1)
+    if (result.cdata_bytes() == f1.cdata_bytes())
+    {
+        // std::for_each
+        TSEQ_FORALL_F_OP_FUNC_F_inplace(result, =, cmptMagSqr, f1)
+    }
+    else
+    {
+        // std::transform
+        TSEQ_FORALL_F_OP_FUNC_F(result, =, cmptMagSqr, f1)
+    }
 }
 
 template<class Type>
@@ -382,7 +463,7 @@ Type max(const UList<Type>& f1)
         #ifdef FOAM_OFFLOAD
         result = maxOffload(f1);
         #else
-        TFOR_ALL_S_OP_FUNC_F_S(Type, result, =, max, Type, f1, Type, result)
+        TSEQ_FORALL_S_OP_FUNC_F_S(result, =, max, f1, result)
         #endif
         return result;
     }
@@ -401,7 +482,7 @@ Type min(const UList<Type>& f1)
         #ifdef FOAM_OFFLOAD
         result = minOffload(f1);
         #else
-        TFOR_ALL_S_OP_FUNC_F_S(Type, result, =, min, Type, f1, Type, result)
+        TSEQ_FORALL_S_OP_FUNC_F_S(result, =, min, f1, result)
         #endif
         return result;
     }
@@ -424,7 +505,7 @@ Type sum(const UList<Type>& f1)
         #ifdef FOAM_OFFLOAD
         result = Foam::sumOffload(f1);
         #else
-        TFOR_ALL_S_OP_FUNC_F(resultType, result, +=, resultType, Type, f1)
+        TSEQ_FORALL_S_OP_FUNC_F(result, +=, resultType, f1)
         #endif
     }
 
@@ -451,15 +532,12 @@ Type maxMagSqr(const UList<Type>& f1)
         #ifdef FOAM_OFFLOAD
         result = maxMagSqrOffload(f1);
         #else
-        TFOR_ALL_S_OP_FUNC_F_S
+        TSEQ_FORALL_S_OP_FUNC_F_S
         (
-            Type,
             result,
             =,
             maxMagSqrOp<Type>(),
-            Type,
             f1,
-            Type,
             result
         )
         #endif
@@ -480,15 +558,12 @@ Type minMagSqr(const UList<Type>& f1)
         #ifdef FOAM_OFFLOAD
         result = minMagSqrOffload(f1);
         #else
-        TFOR_ALL_S_OP_FUNC_F_S
+        TSEQ_FORALL_S_OP_FUNC_F_S
         (
-            Type,
             result,
             =,
             minMagSqrOp<Type>(),
-            Type,
             f1,
-            Type,
             result
         )
         #endif
@@ -512,7 +587,8 @@ sumProd(const UList<Type>& f1, const UList<Type>& f2)
         #ifdef FOAM_OFFLOAD
         result = sumProdOffload(f1, f2);
         #else
-        TFOR_ALL_S_OP_F_OP_F(resultType, result, +=, Type, f1, &&, Type, f2)
+        // std::transform
+        TSEQ_FORALL_S_OP_F_OP_F(result, +=, f1, &&, f2)
         #endif
     }
     return result;
@@ -528,15 +604,12 @@ Type sumCmptProd(const UList<Type>& f1, const UList<Type>& f2)
         #ifdef FOAM_OFFLOAD
         result = sumCmptProdOffload(f1, f2);
         #else
-        TFOR_ALL_S_OP_FUNC_F_F
+        TSEQ_FORALL_S_OP_FUNC_F_F
         (
-            Type,
             result,
             +=,
             cmptMultiply,
-            Type,
             f1,
-            Type,
             f2
         )
         #endif
@@ -557,7 +630,7 @@ sumSqr(const UList<Type>& f1)
         #ifdef FOAM_OFFLOAD
         result = sumSqrOffload(f1);
         #else
-        TFOR_ALL_S_OP_FUNC_F(resultType, result, +=, sqr, Type, f1)
+        TSEQ_FORALL_S_OP_FUNC_F(result, +=, sqr, f1)
         #endif
     }
     return result;
@@ -586,7 +659,7 @@ sumMag(const UList<Type>& f1)
         #ifdef FOAM_OFFLOAD
         result = sumMagOffload(f1);
         #else
-        TFOR_ALL_S_OP_FUNC_F(resultType, result, +=, mag, Type, f1)
+        TSEQ_FORALL_S_OP_FUNC_F(result, +=, mag, f1)
         #endif
     }
     return result;
@@ -604,7 +677,7 @@ Type sumCmptMag(const UList<Type>& f1)
         #ifdef FOAM_OFFLOAD
         result = sumCmptMagOffload(f1);
         #else
-        TFOR_ALL_S_OP_FUNC_F(Type, result, +=, cmptMag, Type, f1)
+        TSEQ_FORALL_S_OP_FUNC_F(result, +=, cmptMag, f1)
         #endif
     }
     return result;
@@ -936,8 +1009,20 @@ void OpFunc                                                                    \
     const UList<Type2>& f2                                                     \
 )                                                                              \
 {                                                                              \
-    typedef typename product<Type1, Type2>::type resultType;                   \
-    TFOR_ALL_F_OP_F_OP_F(resultType, result, =, Type1, f1, Op, Type2, f2)      \
+    if                                                                         \
+    (                                                                          \
+        result.cdata_bytes() == f1.cdata_bytes()                               \
+     || result.cdata_bytes() == f2.cdata_bytes()                               \
+    )                                                                          \
+    {                                                                          \
+        /* std::for_each */                                                    \
+        TSEQ_FORALL_F_OP_F_OP_F_inplace(result, =, f1, Op, f2)                 \
+    }                                                                          \
+    else                                                                       \
+    {                                                                          \
+        /* std::transform */                                                   \
+        TSEQ_FORALL_F_OP_F_OP_F(result, =, f1, Op, f2)                         \
+    }                                                                          \
 }                                                                              \
                                                                                \
 template<class Type1, class Type2>                                             \
@@ -992,9 +1077,21 @@ void OpFunc                                                                    \
     const VectorSpace<Form,Cmpt,nCmpt>& vs                                     \
 )                                                                              \
 {                                                                              \
-    typedef typename product<Type, Form>::type resultType;                     \
-    TFOR_ALL_F_OP_F_OP_S                                                       \
-        (resultType, result, =,Type, f1, Op, Form, static_cast<const Form&>(vs))\
+    if                                                                         \
+    (                                                                          \
+        result.cdata_bytes() == f1.cdata_bytes()                               \
+    )                                                                          \
+    {                                                                          \
+        /* std::for_each */                                                    \
+        TSEQ_FORALL_F_OP_F_OP_S_inplace                                        \
+        (result, =, f1, Op, static_cast<const Form&>(vs))                      \
+    }                                                                          \
+    else                                                                       \
+    {                                                                          \
+        /* std::transform */                                                   \
+        TSEQ_FORALL_F_OP_F_OP_S                                                \
+        (result, =, f1, Op, static_cast<const Form&>(vs))                      \
+    }                                                                          \
 }                                                                              \
                                                                                \
 template<class Type, class Form, class Cmpt, direction nCmpt>                  \
@@ -1030,9 +1127,21 @@ void OpFunc                                                                    \
     const UList<Type>& f1                                                      \
 )                                                                              \
 {                                                                              \
-    typedef typename product<Form, Type>::type resultType;                     \
-    TFOR_ALL_F_OP_S_OP_F                                                       \
-        (resultType, result, =,Form,static_cast<const Form&>(vs), Op, Type, f1)\
+    if                                                                         \
+    (                                                                          \
+        result.cdata_bytes() == f1.cdata_bytes()                               \
+    )                                                                          \
+    {                                                                          \
+        /* std::for_each */                                                    \
+        TSEQ_FORALL_F_OP_S_OP_F_inplace                                        \
+        (result, =, static_cast<const Form&>(vs), Op, f1)                      \
+    }                                                                          \
+    else                                                                       \
+    {                                                                          \
+        /* std::transform */                                                   \
+        TSEQ_FORALL_F_OP_S_OP_F                                                \
+        (result, =, static_cast<const Form&>(vs), Op, f1)                      \
+    }                                                                          \
 }                                                                              \
                                                                                \
 template<class Form, class Cmpt, direction nCmpt, class Type>                  \
