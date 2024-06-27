@@ -598,7 +598,8 @@ void Foam::Field<Type>::rmap
 template<class Type>
 void Foam::Field<Type>::negate()
 {
-    TFOR_ALL_F_OP_OP_F(Type, *this, =, -, Type, *this)
+    // std::for_each
+    TFORALL_F_OP_OP_F_inplace(*this, =, -, *this)
 }
 
 
@@ -628,8 +629,16 @@ void Foam::Field<Type>::replace
     const UList<cmptType>& sf
 )
 {
-    TFOR_ALL_F_OP_FUNC_S_F(Type, *this, ., replace, const direction, d,
-        cmptType, sf)
+    if (this->cdata_bytes() == sf.cdata_bytes())
+    {
+        // std::for_each
+        TFORALL_F_OP_FUNC_S_F_inplace(*this, ., replace, d, sf)
+    }
+    else
+    {
+        // std::transform
+        TFORALL_F_OP_FUNC_S_F(*this, ., replace, d, sf)
+    }
 }
 
 
@@ -652,8 +661,7 @@ void Foam::Field<Type>::replace
     const cmptType& c
 )
 {
-    TFOR_ALL_F_OP_FUNC_S_S(Type, *this, ., replace, const direction, d,
-        cmptType, c)
+    TFORALL_F_OP_FUNC_S_S(*this, ., replace, d, c)
 }
 
 
@@ -881,9 +889,7 @@ template<class Type>
 template<class Form, class Cmpt, Foam::direction nCmpt>
 void Foam::Field<Type>::operator=(const VectorSpace<Form,Cmpt,nCmpt>& vs)
 {
-    typedef VectorSpace<Form,Cmpt,nCmpt> VSType;
-
-    TFOR_ALL_F_OP_S(Type, *this, =, VSType, vs)
+    TFORALL_F_OP_S(*this, =, vs)
 }
 
 
@@ -892,7 +898,16 @@ void Foam::Field<Type>::operator=(const VectorSpace<Form,Cmpt,nCmpt>& vs)
 template<class Type>                                                           \
 void Foam::Field<Type>::operator op(const UList<TYPE>& f)                      \
 {                                                                              \
-    TFOR_ALL_F_OP_F(Type, *this, op, TYPE, f)                                  \
+    if (this->cdata_bytes() == f.cdata_bytes())                                \
+    {                                                                          \
+        /* std::for_each */                                                    \
+        TFORALL_F_OP_F_inplace(*this, op, f)                                   \
+    }                                                                          \
+    else                                                                       \
+    {                                                                          \
+        /* std::transform */                                                   \
+        TFORALL_F_OP_F(*this, op, f)                                           \
+    }                                                                          \
 }                                                                              \
                                                                                \
 template<class Type>                                                           \
@@ -905,7 +920,7 @@ void Foam::Field<Type>::operator op(const tmp<Field<TYPE>>& tf)                \
 template<class Type>                                                           \
 void Foam::Field<Type>::operator op(const TYPE& t)                             \
 {                                                                              \
-    TFOR_ALL_F_OP_S(Type, *this, op, TYPE, t)                                  \
+    TFORALL_F_OP_S(*this, op, t)                                               \
 }
 
 COMPUTED_ASSIGNMENT(Type, +=)
