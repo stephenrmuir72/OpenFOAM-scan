@@ -111,6 +111,9 @@ class primitiveMesh
             //- Number of cells
             label nCells_;
 
+            //- Dimensionality of cells
+            mutable label nTopologicalD_;
+
 
         // Shapes
 
@@ -529,6 +532,10 @@ public:
 
 
             // Derived mesh data
+
+                //- Return the number of valid topological dimensions in the
+                //  mesh
+                label nTopologicalD() const;
 
                 //- Return cell shapes
                 const cellShapeList& cellShapes() const;

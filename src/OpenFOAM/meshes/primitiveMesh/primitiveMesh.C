@@ -48,7 +48,31 @@ Foam::primitiveMesh::primitiveMesh()
     nEdges_(-1),
     nInternalFaces_(0),
     nFaces_(0),
-    nCells_(0)
+    nCells_(0),
+    nTopologicalD_(-1),
+
+    cellShapesPtr_(nullptr),
+    edgesPtr_(nullptr),
+    ccPtr_(nullptr),
+    ecPtr_(nullptr),
+    pcPtr_(nullptr),
+
+    cfPtr_(nullptr),
+    efPtr_(nullptr),
+    pfPtr_(nullptr),
+
+    cePtr_(nullptr),
+    fePtr_(nullptr),
+    pePtr_(nullptr),
+    ppPtr_(nullptr),
+    cpPtr_(nullptr),
+
+    labels_(0),
+
+    cellCentresPtr_(nullptr),
+    faceCentresPtr_(nullptr),
+    cellVolumesPtr_(nullptr),
+    faceAreasPtr_(nullptr)
 {}
 
 
@@ -65,7 +89,31 @@ Foam::primitiveMesh::primitiveMesh
     nEdges_(-1),
     nInternalFaces_(nInternalFaces),
     nFaces_(nFaces),
-    nCells_(nCells)
+    nCells_(nCells),
+    nTopologicalD_(-1),
+
+    cellShapesPtr_(nullptr),
+    edgesPtr_(nullptr),
+    ccPtr_(nullptr),
+    ecPtr_(nullptr),
+    pcPtr_(nullptr),
+
+    cfPtr_(nullptr),
+    efPtr_(nullptr),
+    pfPtr_(nullptr),
+
+    cePtr_(nullptr),
+    fePtr_(nullptr),
+    pePtr_(nullptr),
+    ppPtr_(nullptr),
+    cpPtr_(nullptr),
+
+    labels_(0),
+
+    cellCentresPtr_(nullptr),
+    faceCentresPtr_(nullptr),
+    cellVolumesPtr_(nullptr),
+    faceAreasPtr_(nullptr)
 {}
 
 
@@ -163,6 +211,8 @@ void Foam::primitiveMesh::reset
 )
 {
     clearOut();
+
+    nTopologicalD_ = -1;
 
     nPoints_ = nPoints;
     nEdges_ = -1;
@@ -291,6 +341,46 @@ const Foam::cellShapeList& Foam::primitiveMesh::cellShapes() const
     }
 
     return *cellShapesPtr_;
+}
+
+
+Foam::label Foam::primitiveMesh::nTopologicalD() const
+{
+    if (nTopologicalD_ == -1)
+    {
+        const faceList& f = faces();
+
+        if (f.size())
+        {
+            nTopologicalD_ = 0;
+        }
+
+        forAll(f, facei)
+        {
+            label sz = f[facei].size();
+            if (sz > 2)
+            {
+                nTopologicalD_ = 3;
+                break;
+            }
+            else if (sz == 2)
+            {
+                nTopologicalD_ = max(nTopologicalD_, 2);
+            }
+            else if (sz == 1)
+            {
+                nTopologicalD_ = max(nTopologicalD_, 1);
+            }
+        }
+        reduce(nTopologicalD_, maxOp<label>());
+
+        if (nTopologicalD_ == -1)
+        {
+            // Zero faces. Assume 3D
+            nTopologicalD_ = 3;
+        }
+    }
+    return nTopologicalD_;
 }
 
 
