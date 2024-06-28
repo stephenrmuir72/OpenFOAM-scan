@@ -415,7 +415,14 @@ void Foam::polyTopoChange::checkFace
         }
     }
 
-    if (f.size() < 3 || f.found(-1))
+    if
+    (
+        (
+            (nTopologicalD_ == 3 && f.size() < 3)
+         || (nTopologicalD_ <= 2 && f.size() != nTopologicalD_)
+        )
+     || f.found(-1)
+    )
     {
         FatalErrorInFunction
             << "Illegal vertices in face"
@@ -1136,7 +1143,14 @@ void Foam::polyTopoChange::compact
             //labelList oldF(f);
             renumberCompact(localPointMap, f);
 
-            if (!faceRemoved(facei) && f.size() < 3)
+            if
+            (
+               !faceRemoved(facei)
+             && (
+                    (nTopologicalD_ == 3 && f.size() < 3)
+                 || (nTopologicalD_ <= 2 && f.size() != nTopologicalD_)
+                )
+            )
             {
                 FatalErrorInFunction
                     << "Created illegal face " << f
@@ -2270,9 +2284,15 @@ void Foam::polyTopoChange::compactAndReorder
 // * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * //
 
 // Construct from components
-Foam::polyTopoChange::polyTopoChange(const label nPatches, const bool strict)
+Foam::polyTopoChange::polyTopoChange
+(
+    const label nPatches,
+    const bool strict,
+    const label nTopologicalD
+)
 :
     strict_(strict),
+    nTopologicalD_(nTopologicalD),
     nPatches_(nPatches),
     points_(0),
     pointMap_(0),
@@ -2304,10 +2324,12 @@ Foam::polyTopoChange::polyTopoChange(const label nPatches, const bool strict)
 Foam::polyTopoChange::polyTopoChange
 (
     const polyMesh& mesh,
-    const bool strict
+    const bool strict,
+    const label nTopologicalD
 )
 :
     strict_(strict),
+    nTopologicalD_(nTopologicalD),
     nPatches_(0),
     points_(0),
     pointMap_(0),
