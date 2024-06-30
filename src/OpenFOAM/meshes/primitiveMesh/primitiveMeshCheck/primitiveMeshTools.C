@@ -81,10 +81,23 @@ void Foam::primitiveMeshTools::updateFaceCentresAndAreas
         const auto& f = fs[facei];
         const label nPoints = f.size();
 
-        // If the face is a triangle, do a direct calculation for efficiency
-        // and to avoid round-off error-related problems
-        if (nPoints == 3)
+        if (mesh.nTopologicalD() == 1)
         {
+            // Each face is a point.
+            fCtrs[facei] = p[f[0]];
+            // Direction?
+            fAreas[facei] = vector(1, 0, 0);
+        }
+        else if (mesh.nTopologicalD() == 2)
+        {
+            // Each face is two points
+            fCtrs[facei] = 0.5*(p[f[0]]+p[f[1]]);
+            fAreas[facei] = p[f[1]]-p[f[0]];
+        }
+        else if (nPoints == 3)
+        {
+            // If the face is a triangle, do a direct calculation for efficiency
+            // and to avoid round-off error-related problems
             const triPointRef tri(p, f[0], f[1], f[2]);
             fCtrs[facei] = tri.centre();
             fAreas[facei] = tri.areaNormal();
@@ -137,14 +150,17 @@ void Foam::primitiveMeshTools::updateCellCentresAndVols
     const List<label>& cellIDs,
     const List<cell>& cells,
     vectorField& cellCtrs_s,
-    scalarField& cellVols_s
+    scalarField& cellVols_s,
+    vectorField& cellAreas_s
 )
 {
     PrecisionAdaptor<solveVector, vector> tcellCtrs(cellCtrs_s, false);
     PrecisionAdaptor<solveScalar, scalar> tcellVols(cellVols_s, false);
+
+    PrecisionAdaptor<solveVector, vector> tcellAreas(cellAreas_s, false);
     auto& cellCtrs = tcellCtrs.ref();
     auto& cellVols = tcellVols.ref();
-
+    auto& cellAreas = tcellAreas.ref();
 
     // Use current cell centres as estimates for the new cell centres
     // Note - not currently used
@@ -184,6 +200,8 @@ void Foam::primitiveMeshTools::updateCellCentresAndVols
     }
 
     const auto& own = mesh.faceOwner();
+    const auto& points = mesh.points();
+    const auto& faces = mesh.faces();
 
     forAll(cellIDs, i)
     {
@@ -191,33 +209,88 @@ void Foam::primitiveMeshTools::updateCellCentresAndVols
         const auto& c = cells[celli];
         const solveVector cc(Cc0[i]);
 
-        for (const label facei : c)
+        if (mesh.nTopologicalD() == 1)
         {
-            const solveVector fc(fCtrs[facei]);
-            const solveVector fA(fAreas[facei]);
-
-            const solveScalar pyr3Vol = own[facei] == celli
-              ? fA & (fc - cc)
-              : fA & (cc - fc);
-
-            // Calculate face-pyramid centre
-            const solveVector pc = (3.0/4.0)*fc + (1.0/4.0)*cc;
-
-            // Accumulate volume-weighted face-pyramid centre
-            cellCtrs[celli] += pyr3Vol*pc;
-
-            // Accumulate face-pyramid volume
-            cellVols[celli] += pyr3Vol;
+            const auto& p0 = fCtrs[c[0]];
+            const auto& p1 = fCtrs[c[1]];
+            cellCtrs[celli] = 0.5*(p0+p1);
+            cellVols[celli] = mag(p1-p0);
         }
-
-        if (mag(cellVols[celli]) > VSMALL)
+        else if (mesh.nTopologicalD() == 2)
         {
-            cellCtrs[celli] /= cellVols[celli];
-            cellVols[celli] *= (1.0/3.0);
+            for (const label facei : c)
+            {
+                const face& f = faces[facei];
+                const auto& p0 = points[f[0]];
+                const auto& p1 = points[f[1]];
+                const bool isOwn = (own[facei] == celli);
+
+                const triPointRef tri
+                (
+                    (isOwn ? p0 : p1),
+                    (isOwn ? p1 : p0),
+                    cc
+                );
+
+                // Calculate triangle area
+                const scalar ta = tri.mag();
+
+                // Calculate triangle centre
+                const point ttc = tri.centre();
+
+                // Accumulate volume-weighted face-pyramid centre
+                cellCtrs[celli] += ta*ttc;
+
+                // Accumulate face-pyramid volume
+                cellVols[celli] += ta;
+
+                if (cellAreas.size())
+                {
+                    cellAreas[celli] = tri.areaNormal();
+                }
+            }
+            forAll(cellCtrs, celli)
+            {
+                if (mag(cellVols[celli]) > VSMALL)
+                {
+                    cellCtrs[celli] /= cellVols[celli];
+                }
+                else
+                {
+                    cellCtrs[celli] = Cc0[i];
+                }
+            }
         }
         else
         {
-            cellCtrs[celli] = Cc0[i];
+            for (const label facei : c)
+            {
+                const solveVector fc(fCtrs[facei]);
+                const solveVector fA(fAreas[facei]);
+
+                const solveScalar pyr3Vol = own[facei] == celli
+                  ? fA & (fc - cc)
+                  : fA & (cc - fc);
+
+                // Calculate face-pyramid centre
+                const solveVector pc = (3.0/4.0)*fc + (1.0/4.0)*cc;
+
+                // Accumulate volume-weighted face-pyramid centre
+                cellCtrs[celli] += pyr3Vol*pc;
+
+                // Accumulate face-pyramid volume
+                cellVols[celli] += pyr3Vol;
+            }
+
+            if (mag(cellVols[celli]) > VSMALL)
+            {
+                cellCtrs[celli] /= cellVols[celli];
+                cellVols[celli] *= (1.0/3.0);
+            }
+            else
+            {
+                cellCtrs[celli] = Cc0[i];
+            }
         }
     }
 }
@@ -225,6 +298,7 @@ void Foam::primitiveMeshTools::updateCellCentresAndVols
 
 void Foam::primitiveMeshTools::makeFaceCentresAndAreas
 (
+    const label nTopologicalD,
     const UList<face>& fcs,
     const pointField& p,
     vectorField& fCtrs,
@@ -240,10 +314,23 @@ void Foam::primitiveMeshTools::makeFaceCentresAndAreas
         const face& f = fcs[facei];
         const label nPoints = f.size();
 
-        // If the face is a triangle, do a direct calculation for efficiency
-        // and to avoid round-off error-related problems
-        if (nPoints == 3)
+        if (nTopologicalD == 1)
         {
+            // Each face is a point.
+            fCtrs[facei] = p[f[0]];
+            // Direction?
+            fAreas[facei] = vector(1, 0, 0);
+        }
+        else if (nTopologicalD == 2)
+        {
+            // Each face is two points
+            fCtrs[facei] = 0.5*(p[f[0]]+p[f[1]]);
+            fAreas[facei] = p[f[1]]-p[f[0]];
+        }
+        else if (nPoints == 3)
+        {
+            // If the face is a triangle, do a direct calculation for efficiency
+            // and to avoid round-off error-related problems
             const triPointRef tri(p, f[0], f[1], f[2]);
             fCtrs[facei] = tri.centre();
             fAreas[facei] = tri.areaNormal();
@@ -296,7 +383,14 @@ void Foam::primitiveMeshTools::makeFaceCentresAndAreas
     vectorField& fAreas
 )
 {
-    makeFaceCentresAndAreas(mesh.faces(), p, fCtrs, fAreas);
+    makeFaceCentresAndAreas
+    (
+        mesh.nTopologicalD(),
+        mesh.faces(),
+        p,
+        fCtrs,
+        fAreas
+    );
 }
 
 
@@ -306,26 +400,31 @@ void Foam::primitiveMeshTools::makeCellCentresAndVols
     const vectorField& fCtrs,
     const vectorField& fAreas,
     vectorField& cellCtrs_s,
-    scalarField& cellVols_s
+    scalarField& cellVols_s,
+    vectorField& cellAreas_s
 )
 {
     PrecisionAdaptor<solveVector, vector> tcellCtrs(cellCtrs_s, false);
     PrecisionAdaptor<solveScalar, scalar> tcellVols(cellVols_s, false);
+    PrecisionAdaptor<solveVector, vector> tcellAreas(cellAreas_s, false);
     auto& cellCtrs = tcellCtrs.ref();
     auto& cellVols = tcellVols.ref();
+    auto& cellAreas = tcellAreas.ref();
 
     // Clear the fields for accumulation
     cellCtrs = Zero;
     cellVols = Zero;
+    cellAreas = Zero;
 
     const labelList& own = mesh.faceOwner();
     const labelList& nei = mesh.faceNeighbour();
+    const auto& points = mesh.points();
+    const auto& faces = mesh.faces();
 
     // first estimate the approximate cell centre as the average of
     // face centres
-
-    Field<solveVector> cEst(mesh.nCells(), Zero);
-    labelField nCellFaces(mesh.nCells(), Zero);
+    vectorField cEst(mesh.nCells(), Zero);
+    labelField nCellFaces(mesh.nCells(), 0);
 
     forAll(own, facei)
     {
@@ -344,55 +443,129 @@ void Foam::primitiveMeshTools::makeCellCentresAndVols
         cEst[celli] /= nCellFaces[celli];
     }
 
-    forAll(own, facei)
+
+    if (mesh.nTopologicalD() == 1)
     {
-        const solveVector fc(fCtrs[facei]);
-        const solveVector fA(fAreas[facei]);
-
-        // Calculate 3*face-pyramid volume
-        solveScalar pyr3Vol = fA & (fc - cEst[own[facei]]);
-
-        // Calculate face-pyramid centre
-        solveVector pc = (3.0/4.0)*fc + (1.0/4.0)*cEst[own[facei]];
-
-        // Accumulate volume-weighted face-pyramid centre
-        cellCtrs[own[facei]] += pyr3Vol*pc;
-
-        // Accumulate face-pyramid volume
-        cellVols[own[facei]] += pyr3Vol;
-    }
-
-    forAll(nei, facei)
-    {
-        const solveVector fc(fCtrs[facei]);
-        const solveVector fA(fAreas[facei]);
-
-        // Calculate 3*face-pyramid volume
-        solveScalar pyr3Vol = fA & (cEst[nei[facei]] - fc);
-
-        // Calculate face-pyramid centre
-        solveVector pc = (3.0/4.0)*fc + (1.0/4.0)*cEst[nei[facei]];
-
-        // Accumulate volume-weighted face-pyramid centre
-        cellCtrs[nei[facei]] += pyr3Vol*pc;
-
-        // Accumulate face-pyramid volume
-        cellVols[nei[facei]] += pyr3Vol;
-    }
-
-    forAll(cellCtrs, celli)
-    {
-        if (mag(cellVols[celli]) > VSMALL)
+        const auto& cells = mesh.cells();
+        forAll(cells, celli)
         {
-            cellCtrs[celli] /= cellVols[celli];
-        }
-        else
-        {
-            cellCtrs[celli] = cEst[celli];
+            const auto& c = cells[celli];
+            cellCtrs[celli] = 0.5*(fCtrs[c[0]] + fCtrs[c[1]]);
+            cellVols[celli] = mag(fCtrs[c[1]]-fCtrs[c[0]]);
         }
     }
+    else if (mesh.nTopologicalD() == 2)
+    {
+        forAll(own, facei)
+        {
+            const face& f = faces[facei];
+            const triPointRef tri(points[f[0]], points[f[1]], cEst[own[facei]]);
 
-    cellVols *= (1.0/3.0);
+            // Calculate triangle area
+            const scalar ta = tri.mag();
+
+            // Calculate triangle centre
+            const point ttc = tri.centre();
+
+            // Accumulate volume-weighted face-pyramid centre
+            cellCtrs[own[facei]] += ta*ttc;
+
+            // Accumulate face-pyramid volume
+            cellVols[own[facei]] += ta;
+
+            if (cellAreas.size())
+            {
+                cellAreas[own[facei]] += tri.areaNormal();
+            }
+        }
+
+        forAll(nei, facei)
+        {
+            const face& f = faces[facei];
+            const triPointRef tri(points[f[1]], points[f[0]], cEst[nei[facei]]);
+
+            // Calculate triangle area
+            const scalar ta = tri.mag();
+
+            // Calculate triangle centre
+            const point ttc = tri.centre();
+
+            // Accumulate volume-weighted face-pyramid centre
+            cellCtrs[nei[facei]] += ta*ttc;
+
+            // Accumulate face-pyramid volume
+            cellVols[nei[facei]] += ta;
+
+            if (cellAreas.size())
+            {
+                cellAreas[nei[facei]] += tri.areaNormal();
+            }
+        }
+
+        forAll(cellCtrs, celli)
+        {
+            if (mag(cellVols[celli]) > VSMALL)
+            {
+                cellCtrs[celli] /= cellVols[celli];
+            }
+            else
+            {
+                cellCtrs[celli] = cEst[celli];
+            }
+        }
+    }
+    else
+    {
+        forAll(own, facei)
+        {
+            const solveVector fc(fCtrs[facei]);
+            const solveVector fA(fAreas[facei]);
+
+            // Calculate 3*face-pyramid volume
+            solveScalar pyr3Vol = fA & (fc - cEst[own[facei]]);
+
+            // Calculate face-pyramid centre
+            solveVector pc = (3.0/4.0)*fc + (1.0/4.0)*cEst[own[facei]];
+
+            // Accumulate volume-weighted face-pyramid centre
+            cellCtrs[own[facei]] += pyr3Vol*pc;
+
+            // Accumulate face-pyramid volume
+            cellVols[own[facei]] += pyr3Vol;
+        }
+
+        forAll(nei, facei)
+        {
+            const solveVector fc(fCtrs[facei]);
+            const solveVector fA(fAreas[facei]);
+
+            // Calculate 3*face-pyramid volume
+            solveScalar pyr3Vol = fA & (cEst[nei[facei]] - fc);
+
+            // Calculate face-pyramid centre
+            solveVector pc = (3.0/4.0)*fc + (1.0/4.0)*cEst[nei[facei]];
+
+            // Accumulate volume-weighted face-pyramid centre
+            cellCtrs[nei[facei]] += pyr3Vol*pc;
+
+            // Accumulate face-pyramid volume
+            cellVols[nei[facei]] += pyr3Vol;
+        }
+
+        forAll(cellCtrs, celli)
+        {
+            if (mag(cellVols[celli]) > VSMALL)
+            {
+                cellCtrs[celli] /= cellVols[celli];
+            }
+            else
+            {
+                cellCtrs[celli] = cEst[celli];
+            }
+        }
+
+        cellVols *= (1.0/3.0);
+    }
 }
 
 

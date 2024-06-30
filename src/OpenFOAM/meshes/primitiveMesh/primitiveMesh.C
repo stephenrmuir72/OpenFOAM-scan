@@ -72,7 +72,11 @@ Foam::primitiveMesh::primitiveMesh()
     cellCentresPtr_(nullptr),
     faceCentresPtr_(nullptr),
     cellVolumesPtr_(nullptr),
-    faceAreasPtr_(nullptr)
+    faceAreasPtr_(nullptr),
+    cellAreasPtr_(nullptr),
+    cellDir1Ptr_(nullptr),
+    faceDir1Ptr_(nullptr),
+    faceDir2Ptr_(nullptr)
 {}
 
 
@@ -113,7 +117,11 @@ Foam::primitiveMesh::primitiveMesh
     cellCentresPtr_(nullptr),
     faceCentresPtr_(nullptr),
     cellVolumesPtr_(nullptr),
-    faceAreasPtr_(nullptr)
+    faceAreasPtr_(nullptr),
+    cellAreasPtr_(nullptr),
+    cellDir1Ptr_(nullptr),
+    faceDir1Ptr_(nullptr),
+    faceDir2Ptr_(nullptr)
 {}
 
 
@@ -396,6 +404,33 @@ void Foam::primitiveMesh::updateGeom()
     {
         // These are always calculated in tandem, but only once
         calcCellCentresAndVols();
+    }
+}
+
+
+void Foam::primitiveMesh::resetPrimitives
+(
+    autoPtr<vectorField>&& cellAreas,
+    autoPtr<vectorField>&& cellDir1,
+    autoPtr<vectorField>&& faceDir1,
+    autoPtr<vectorField>&& faceDir2
+)
+{
+    if (cellAreas)
+    {
+        cellAreasPtr_ = cellAreas.ptr();
+    }
+    if (cellDir1)
+    {
+        cellDir1Ptr_ = cellDir1.ptr();
+    }
+    if (faceDir1)
+    {
+        faceDir1Ptr_ = faceDir1.ptr();
+    }
+    if (faceDir2)
+    {
+        faceDir2Ptr_ = faceDir2.ptr();
     }
 }
 

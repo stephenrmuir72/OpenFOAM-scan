@@ -293,7 +293,8 @@ void Foam::cyclicACMIPolyPatch::scalePatchFaceAreas
         uniqueSort(acmipp.faceCells()), // unique cells only
         mesh.cells(),
         const_cast<vectorField&>(mesh.cellCentres()),
-        const_cast<scalarField&>(mesh.cellVolumes())
+        const_cast<scalarField&>(mesh.cellVolumes()),
+        const_cast<vectorField&>(mesh.cellAreas())
     );
 }
 

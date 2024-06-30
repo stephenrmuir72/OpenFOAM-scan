@@ -811,6 +811,11 @@ bool Foam::polyMesh::checkMeshMotion
     // Check cell volumes and calculate new cell centres
     vectorField cellCtrs(nCells());
     scalarField cellVols(nCells());
+    vectorField cellNormals;
+    if (nTopologicalD() == 2)
+    {
+        cellNormals.resize_nocopy(nCells());
+    }
 
     primitiveMeshTools::makeCellCentresAndVols
     (
@@ -818,7 +823,8 @@ bool Foam::polyMesh::checkMeshMotion
         fCtrs,
         fAreas,
         cellCtrs,
-        cellVols
+        cellVols,
+        cellNormals
     );
 
     // Check cell volumes

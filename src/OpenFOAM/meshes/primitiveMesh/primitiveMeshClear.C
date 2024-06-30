@@ -120,6 +120,26 @@ void Foam::primitiveMesh::printAllocated() const
     {
         Pout<< "    Face-areas" << endl;
     }
+
+    if (cellAreasPtr_)
+    {
+        Pout<< "    Cell-areas" << endl;
+    }
+
+    if (cellDir1Ptr_)
+    {
+        Pout<< "    Cell-direction 1" << endl;
+    }
+
+    if (faceDir1Ptr_)
+    {
+        Pout<< "    Face-direction 1" << endl;
+    }
+
+    if (faceDir2Ptr_)
+    {
+        Pout<< "    Face-direction 2" << endl;
+    }
 }
 
 
@@ -136,6 +156,12 @@ void Foam::primitiveMesh::clearGeom()
     cellVolumesPtr_.reset(nullptr);
     faceCentresPtr_.reset(nullptr);
     faceAreasPtr_.reset(nullptr);
+
+    // 2D
+    cellAreasPtr_.reset(nullptr);
+    cellDir1Ptr_.reset(nullptr);
+    faceDir1Ptr_.reset(nullptr);
+    faceDir2Ptr_.reset(nullptr);
 }
 
 
@@ -150,6 +176,10 @@ void Foam::primitiveMesh::clearCellGeom()
 
     cellCentresPtr_.reset(nullptr);
     cellVolumesPtr_.reset(nullptr);
+
+    // 2D
+    cellAreasPtr_.reset(nullptr);
+    cellDir1Ptr_.reset(nullptr);
 }
 
 
