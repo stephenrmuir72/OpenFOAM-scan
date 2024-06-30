@@ -77,7 +77,14 @@ void Foam::basicFvGeometryScheme::movePoints()
         tmp<vectorField> tcDir0(mesh_.cellDir0());
         const auto& cDir0 = tcDir0();
 
-        autoPtr<vectorField> tfDir1(autoPtr<vectorField>::New(mesh_.nFaces(), Zero));
+        autoPtr<vectorField> tfDir1
+        (
+            autoPtr<vectorField>::New
+            (
+                mesh_.nFaces(),
+                Zero
+            )
+        );
         auto& fDir1 = tfDir1.ref();
 
         const labelUList& owner = mesh_.faceOwner();
@@ -100,14 +107,23 @@ void Foam::basicFvGeometryScheme::movePoints()
         // Finish coupled faces
         for (auto& fpp : mesh_.boundary())
         {
-            if (fpp.coupled())
+            const auto* ppPtr = isA<coupledPolyPatch>(fpp.patch());
+            if (ppPtr)
             {
-                vectorField fDir1
+                vectorField s
                 (
-                    fpp.patchSlice(cDir0)
+                    fpp.boundarySlice(nbrCellDir0)
                   + fpp.patchInternalField(cDir0)
                 );
-                SubList<vector>(fDir1, fpp.size(), fpp.start()) = fDir1;
+
+                if (!ppPtr->owner())
+                {
+                    // Orientation of face is not reversed since only two
+                    // vertices and 0th one should be matched
+                    s = -s;
+                }
+
+                SubList<vector>(fDir1, fpp.size(), fpp.start()) = s;
             }
         }
 
