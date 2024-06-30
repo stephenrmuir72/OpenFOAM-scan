@@ -111,7 +111,7 @@ void Foam::fvMesh::makeC() const
 
     // It is an error to attempt to recalculate
     // if the pointer is already set
-    if (CPtr_)
+    if (CPtr_ || cellAreasPtr_)
     {
         FatalErrorInFunction
             << "cell centres already exist"
@@ -139,6 +139,30 @@ void Foam::fvMesh::makeC() const
         true,               //preserveCouples
         true                //preserveProcOnly
     );
+
+    if (nTopologicalD() == 2)
+    {
+        // What on boundary?
+        cellAreasPtr_ = new slicedVolVectorField
+        (
+            IOobject
+            (
+                "cellAreas",
+                pointsInstance(),
+                meshSubDir,
+                *this,
+                IOobject::NO_READ,
+                IOobject::NO_WRITE,
+                IOobject::NO_REGISTER
+            ),
+            *this,
+            dimLength,
+            cellAreas(),
+            faceAreas(),
+            true,               //preserveCouples
+            true                //preserveProcOnly
+        );
+    }
 }
 
 
@@ -358,6 +382,17 @@ const Foam::volVectorField& Foam::fvMesh::C() const
     }
 
     return *CPtr_;
+}
+
+
+const Foam::volVectorField& Foam::fvMesh::cellAreas() const
+{
+    if (!cellAreasPtr_)
+    {
+        makeC();
+    }
+
+    return *cellAreasPtr_;
 }
 
 

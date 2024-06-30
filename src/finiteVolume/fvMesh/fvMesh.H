@@ -130,6 +130,11 @@ protected:
         //- Face motion fluxes
         mutable std::unique_ptr<surfaceScalarField> phiPtr_;
 
+        // 2D
+
+            //- Cell normals
+            mutable slicedVolVectorField* cellAreasPtr_;
+
 
     // Private Member Functions
 
@@ -490,6 +495,13 @@ public:
             // -1 : invalid (not solved)
             template<class Type>
             typename pTraits<Type>::labelType validComponents() const;
+
+
+            // 2D
+
+                //- Return cell area normals as volVectorField
+                //- (faMesh::faceAreaNormals())
+                const volVectorField& cellAreas() const;
 
 
         // Edit
