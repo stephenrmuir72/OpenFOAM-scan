@@ -147,6 +147,11 @@ void Foam::printMeshStats(const polyMesh& mesh, const bool allTopology)
     label nPyr = 0;
     label nTet = 0;
     label nTetWedge = 0;
+
+    label nTris = 0;
+    label nQuads = 0;
+    label nLines = 0;
+
     label nUnknown = 0;
 
     Map<label> polyhedralFaces;
@@ -177,6 +182,21 @@ void Foam::printMeshStats(const polyMesh& mesh, const bool allTopology)
         {
             nTetWedge++;
         }
+        else if (mesh.nTopologicalD() == 2)
+        {
+            if (mesh.cells()[celli].size() == 3)
+            {
+                nTris++;
+            }
+            else if (mesh.cells()[celli].size() == 4)
+            {
+                nQuads++;
+            }
+        }
+        else if (mesh.nTopologicalD() == 1)
+        {
+            nLines++;
+        }
         else
         {
             nUnknown++;
@@ -190,6 +210,11 @@ void Foam::printMeshStats(const polyMesh& mesh, const bool allTopology)
     reduce(nPyr,sumOp<label>());
     reduce(nTetWedge,sumOp<label>());
     reduce(nTet,sumOp<label>());
+
+    reduce(nTris,sumOp<label>());
+    reduce(nQuads,sumOp<label>());
+    reduce(nLines,sumOp<label>());
+
     reduce(nUnknown,sumOp<label>());
 
     Info<< "Overall number of cells of each type:" << nl
@@ -218,6 +243,14 @@ void Foam::printMeshStats(const polyMesh& mesh, const bool allTopology)
             Info<< setf(std::ios::right) << setw(13)
                 << nFaces << "   " << polyhedralFaces[nFaces] << nl;
         }
+    }
+
+    if (mesh.nTopologicalD() <= 2)
+    {
+        Info<< "    quads:         " << nQuads << nl
+            << "    triangles:     " << nTris << nl
+            << "    lines:         " << nWedge << nl
+            << endl;
     }
 
     Info<< endl;

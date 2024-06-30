@@ -70,7 +70,8 @@ public:
         vectorField& fAreas
     );
 
-    //- Update cell centres and volumes for the cells in the set cellIDs
+    //- Update cell centres and volumes (and optional cell areas for 2D) for
+    //- the cells in the set cellIDs
     static void updateCellCentresAndVols
     (
         const primitiveMesh& mesh,
@@ -79,13 +80,16 @@ public:
         const List<label>& cellIDs,
         const List<cell>& cells,
         vectorField& cellCtrs_s,
-        scalarField& cellVols_s
+        scalarField& cellVols_s,
+        vectorField& cellAreas_s
     );
 
     //- Calculate face centres and areas for specified faces.
-    //  Adjusts the lengths of centres and area normals if required.
+    //- Adjusts the lengths of centres and area normals if required.
+    //- For 2D: returns edge centre and edge vector
     static void makeFaceCentresAndAreas
     (
+        const label nTopologicalD,
         const UList<face>& faces,   //!< The faces to consider
         const pointField& p,        //!< Support points for faces
         vectorField& fCtrs,         //!< [out] The face centres
@@ -93,7 +97,9 @@ public:
     );
 
     //- Calculate face centres and areas for all mesh faces.
-    //  Adjusts the lengths of centres and area normals if required.
+    //- Adjusts the lengths of centres and area normals if required.
+    //- For 2D: assume 2D geometry.
+    //- Fixed later in fvGeometryScheme for curvature / parallel running
     static void makeFaceCentresAndAreas
     (
         const primitiveMesh& mesh,  //!< The mesh faces
@@ -102,14 +108,16 @@ public:
         vectorField& fAreas         //!< [out] The face area normals
     );
 
-    //- Calculate cell centres and volumes from face properties
+    //- Calculate cell centres and volumes (& optional cell normals - 2D) from
+    //- face properties
     static void makeCellCentresAndVols
     (
         const primitiveMesh& mesh,
         const vectorField& fCtrs,
         const vectorField& fAreas,
         vectorField& cellCtrs,
-        scalarField& cellVols
+        scalarField& cellVols,
+        vectorField& cellAreas
     );
 
     //- Generate non-orthogonality field (internal faces only)

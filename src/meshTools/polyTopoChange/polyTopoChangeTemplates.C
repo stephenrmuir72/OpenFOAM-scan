@@ -134,7 +134,7 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::polyTopoChange::makeMesh
         patchMap,      // from new to old patch
         syncParallel,
         orderCells,
-        orderPoints,
+        (nTopologicalD_ == 2 ? true : orderPoints),
 
         nInternalPoints,
         newPoints,

@@ -182,6 +182,20 @@ class primitiveMesh
             //- Face areas
             mutable vectorField* faceAreasPtr_;
 
+            // 2D/1D
+
+                //- Cell areas
+                mutable vectorField* cellAreasPtr_;
+
+                //- Cell tangential direction
+                mutable vectorField* cellDir1Ptr_;
+
+                //- Face tangential direction
+                mutable vectorField* faceDir1Ptr_;
+
+                //- Face tangential direction
+                mutable vectorField* faceDir2Ptr_;
+
 
     // Private Member Functions
 
@@ -550,7 +564,8 @@ public:
                     cellList&,
                     const labelUList& own,
                     const labelUList& nei,
-                    const label nCells = -1
+                    const label nCells = -1,
+                    const faceList& faces = faceList::null()
                 );
 
                 //- Helper function to calculate point ordering. Returns true
@@ -592,6 +607,14 @@ public:
                 const vectorField& faceCentres() const;
                 const scalarField& cellVolumes() const;
                 const vectorField& faceAreas() const;
+                const vectorField& cellAreas() const;
+
+                tmp<vectorField> cellDir0() const;
+                const vectorField& cellDir1() const;
+
+                tmp<vectorField> faceDir0() const;
+                const vectorField& faceDir1() const;
+                const vectorField& faceDir2() const;
 
 
             // Mesh motion
@@ -909,6 +932,15 @@ public:
 
             //- Clear all geometry and addressing unnecessary for CFD
             void clearOut();
+
+            //- Reset additional mesh primitive data
+            void resetPrimitives
+            (
+                autoPtr<vectorField>&& cellAreas,
+                autoPtr<vectorField>&& cellDir1,
+                autoPtr<vectorField>&& faceDir1,
+                autoPtr<vectorField>&& faceDir2
+            );
 };
 
 

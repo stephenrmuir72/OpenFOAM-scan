@@ -34,7 +34,8 @@ void Foam::primitiveMesh::calcCells
     cellList& cellFaceAddr,
     const labelUList& own,
     const labelUList& nei,
-    const label inNCells
+    const label inNCells,
+    const faceList& faces
 )
 {
     label nCells = inNCells;
@@ -49,6 +50,24 @@ void Foam::primitiveMesh::calcCells
         }
         nCells++;
     }
+
+
+    // Determine nTopological from faces
+    label nTopologicalD = 3;
+    for (const face& f : faces)
+    {
+        if (f.size() == 1)
+        {
+            nTopologicalD = 1;
+            break;
+        }
+        else if (f.size() == 2)
+        {
+            nTopologicalD = 2;
+            break;
+        }
+    }
+
 
     // 1. Count number of faces per cell
 
@@ -95,6 +114,64 @@ void Foam::primitiveMesh::calcCells
             cellFaceAddr[celli][ncf[celli]++] = facei;
         }
     }
+
+
+    if (nTopologicalD == 2)
+    {
+        // Make sure to sort faces in order so we can circulate the outside
+        DynamicList<label> oldToNew;
+        forAll(cellFaceAddr, celli)
+        {
+            auto& c = cellFaceAddr[celli];
+
+            oldToNew.clear();
+            oldToNew.append(0);
+            label pointi = faces[c[oldToNew.last()]][1];
+
+            // Find next face. TBD: could just bubble sort to avoid allocations
+            for (label i = 1; i < c.size(); i++)
+            {
+                label index = -1;
+                label nextPointi = -1;
+
+                for (label j = 1; j < c.size(); j++)
+                {
+                    if (j != oldToNew.last())
+                    {
+                        const label facei = c[j];
+                        const face& f = faces[facei];
+
+                        if (f[0] == pointi)
+                        {
+                            index = j;
+                            nextPointi = f[1];
+                        }
+                        else if (f[1] == pointi)
+                        {
+                            index = j;
+                            nextPointi = f[0];
+                        }
+                    }
+                }
+
+                if (index == -1)
+                {
+                    FatalErrorInFunction << "On cell " << celli
+                        << " the faces " << flatOutput(c)
+                        << " with vertices "
+                        << flatOutput(UIndirectList<face>(faces, c))
+                        << " do not form a loop" << exit(FatalError);
+                }
+
+                // Step to next face and point on face
+                oldToNew.append(index);
+                pointi = nextPointi;
+            }
+
+            // Re-order
+            inplaceReorder(oldToNew, c);
+        }
+    }
 }
 
 
@@ -127,7 +204,8 @@ void Foam::primitiveMesh::calcCells() const
             cellFaceAddr,
             faceOwner(),
             faceNeighbour(),
-            nCells()
+            nCells(),
+            faces()
         );
     }
 }

@@ -60,6 +60,13 @@ void Foam::primitiveMesh::calcCellCentresAndVols() const
     cellVolumesPtr_ = new scalarField(nCells(), Zero);
     scalarField& cellVols = *cellVolumesPtr_;
 
+    cellAreasPtr_ = new vectorField();
+    vectorField& cellAreas = *cellAreasPtr_;
+    if (nTopologicalD() == 2)
+    {
+        cellAreas.setSize(nCells(), Zero);
+    }
+
     // Make centres and volumes
     primitiveMeshTools::makeCellCentresAndVols
     (
@@ -67,7 +74,8 @@ void Foam::primitiveMesh::calcCellCentresAndVols() const
         faceCentres(),
         faceAreas(),
         cellCtrs,
-        cellVols
+        cellVols,
+        cellAreas
     );
 
     if (debug)
@@ -102,6 +110,38 @@ const Foam::scalarField& Foam::primitiveMesh::cellVolumes() const
     }
 
     return *cellVolumesPtr_;
+}
+
+
+const Foam::vectorField& Foam::primitiveMesh::cellAreas() const
+{
+    if (!cellAreasPtr_)
+    {
+        //calcCellCentresAndVols();
+        const_cast<primitiveMesh&>(*this).updateGeom();
+    }
+
+    return *cellAreasPtr_;
+}
+
+
+Foam::tmp<Foam::vectorField> Foam::primitiveMesh::cellDir0() const
+{
+    const auto& areas = cellAreas();
+    return areas/mag(areas);
+}
+
+
+const Foam::vectorField& Foam::primitiveMesh::cellDir1() const
+{
+    if (!cellDir1Ptr_)
+    {
+        // Externally calculated
+        FatalErrorInFunction<< "No calculated tangential vector"
+            << exit(FatalError);
+    }
+
+    return *cellDir1Ptr_;
 }
 
 

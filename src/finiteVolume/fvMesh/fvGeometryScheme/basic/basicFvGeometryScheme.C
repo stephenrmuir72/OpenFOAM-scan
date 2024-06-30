@@ -29,6 +29,7 @@ License
 #include "addToRunTimeSelectionTable.H"
 #include "surfaceFields.H"
 #include "volFields.H"
+#include "syncTools.H"
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -65,6 +66,69 @@ void Foam::basicFvGeometryScheme::movePoints()
 
     // Use lower level to calculate the geometry
     const_cast<fvMesh&>(mesh_).primitiveMesh::updateGeom();
+
+    if (mesh_.nTopologicalD() == 2)
+    {
+        // Now we are parallel aware:
+        // - calculate cell direction1 (= normal, since is now a face)
+        // - average cell direction1 onto face
+        // - re-orient face area to be perpendicular to direction1
+
+        tmp<vectorField> tcDir0(mesh_.cellDir0());
+        const auto& cDir0 = tcDir0();
+
+        autoPtr<vectorField> tfDir1(autoPtr<vectorField>::New(mesh_.nFaces(), Zero));
+        auto& fDir1 = tfDir1.ref();
+
+        const labelUList& owner = mesh_.faceOwner();
+        const labelUList& neighbour = mesh_.neighbour();
+
+        forAll(owner, facei)
+        {
+            fDir1[facei] = cDir0[owner[facei]];
+        }
+
+        vectorField nbrCellDir0;
+        syncTools::swapBoundaryCellList(mesh_, cDir0, nbrCellDir0);
+
+        // Finish internal faces
+        forAll(neighbour, facei)
+        {
+            fDir1[facei] += cDir0[neighbour[facei]];
+        }
+
+        // Finish coupled faces
+        for (auto& fpp : mesh_.boundary())
+        {
+            if (fpp.coupled())
+            {
+                vectorField fDir1
+                (
+                    fpp.patchSlice(cDir0)
+                  + fpp.patchInternalField(cDir0)
+                );
+                SubList<vector>(fDir1, fpp.size(), fpp.start()) = fDir1;
+            }
+        }
+
+        fDir1.normalise();
+
+        // Re-do face-area to be perpendicular to the tangential face-direction
+        vectorField& faceAreas = const_cast<vectorField&>(mesh_.faceAreas());
+        const scalarField magS(mag(faceAreas));
+
+        faceAreas = (faceAreas ^ fDir1);
+        faceAreas.normalise();
+        faceAreas *= magS;
+
+        const_cast<fvMesh&>(mesh_).primitiveMesh::resetPrimitives
+        (
+            autoPtr<vectorField>(),
+            autoPtr<vectorField>(),
+            std::move(tfDir1),
+            autoPtr<vectorField>()
+        );
+    }
 }
 
 
