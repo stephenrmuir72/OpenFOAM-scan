@@ -269,7 +269,15 @@ bool Foam::domainDecomposition::writeDecomposition(const bool decomposeSets)
             }
             else
             {
-                origFaceLabels = meshFaces[curF].reverseFace();
+                if (nTopologicalD() == 2)
+                {
+                    origFaceLabels = meshFaces[curF];
+                    std::swap(origFaceLabels[0], origFaceLabels[1]);
+                }
+                else
+                {
+                    origFaceLabels = meshFaces[curF].reverseFace();
+                }
             }
 
             // translate face labels into local point list
