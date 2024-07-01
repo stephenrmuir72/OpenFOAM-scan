@@ -115,19 +115,9 @@ void Foam::basicFvGeometryScheme::movePoints()
                     fpp.boundarySlice(nbrCellDir0)
                   + fpp.patchInternalField(cDir0)
                 );
-
-                if (!ppPtr->owner())
-                {
-                    // Orientation of face is not reversed since only two
-                    // vertices and 0th one should be matched
-                    s = -s;
-                }
-
                 SubList<vector>(fDir1, fpp.size(), fpp.start()) = s;
             }
         }
-
-        fDir1.normalise();
 
         // Re-do face-area to be perpendicular to the tangential face-direction
         vectorField& faceAreas = const_cast<vectorField&>(mesh_.faceAreas());

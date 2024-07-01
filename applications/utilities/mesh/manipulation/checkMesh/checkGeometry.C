@@ -414,7 +414,8 @@ bool Foam::checkCoupledPoints
                             << abort(FatalError);
                     }
 
-                    label fp = 0;
+                    label fp(mesh.nTopologicalD() == 2 ? 1 : 0);
+
                     forAll(f, j)
                     {
                         const point& p0 = p[f[fp]];
