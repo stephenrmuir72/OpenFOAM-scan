@@ -40,7 +40,7 @@ namespace fa
 template<class Type>
 tmp<divScheme<Type>> divScheme<Type>::New
 (
-    const fvMesh& mesh,
+    const faMesh& mesh,
     Istream& schemeData
 )
 {

@@ -27,7 +27,7 @@ License
 
 #include "areaFields.H"
 #include "edgeFields.H"
-#include "fvMatrix.H"
+#include "faMatrices.H"
 #include "faDdtScheme.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -43,10 +43,10 @@ namespace fam
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 template<class Type>
-tmp<fvMatrix<Type>>
+tmp<faMatrix<Type>>
 ddt
 (
-    const GeometricField<Type, fvPatchField, areaMesh>& vf
+    const GeometricField<Type, faPatchField, areaMesh>& vf
 )
 {
     return fa::faDdtScheme<Type>::New
@@ -58,11 +58,11 @@ ddt
 
 
 template<class Type>
-tmp<fvMatrix<Type>>
+tmp<faMatrix<Type>>
 ddt
 (
     const dimensionedScalar& rho,
-    const GeometricField<Type, fvPatchField, areaMesh>& vf
+    const GeometricField<Type, faPatchField, areaMesh>& vf
 )
 {
     return fa::faDdtScheme<Type>::New
@@ -77,11 +77,11 @@ ddt
 
 
 template<class Type>
-tmp<fvMatrix<Type>>
+tmp<faMatrix<Type>>
 ddt
 (
     const areaScalarField& rho,
-    const GeometricField<Type, fvPatchField, areaMesh>& vf
+    const GeometricField<Type, faPatchField, areaMesh>& vf
 )
 {
     return fa::faDdtScheme<Type>::New

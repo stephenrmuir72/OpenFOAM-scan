@@ -41,7 +41,7 @@ SourceFiles
 #include "areaFieldsFwd.H"
 #include "edgeFieldsFwd.H"
 #include "edgeInterpolationScheme.H"
-#include "fvMatrix.H"
+#include "faMatrices.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -55,7 +55,7 @@ namespace Foam
 namespace fam
 {
     template<class Type>
-    tmp<fvMatrix<Type>> div
+    tmp<faMatrix<Type>> div
     (
         const edgeScalarField&,
         const GeometricField<Type, fvPatchField, areaMesh>&,
@@ -63,7 +63,7 @@ namespace fam
     );
 
     template<class Type>
-    tmp<fvMatrix<Type>> div
+    tmp<faMatrix<Type>> div
     (
         const tmp<edgeScalarField>&,
         const GeometricField<Type, fvPatchField, areaMesh>&,
@@ -71,14 +71,14 @@ namespace fam
     );
 
     template<class Type>
-    tmp<fvMatrix<Type>> div
+    tmp<faMatrix<Type>> div
     (
         const edgeScalarField&,
         const GeometricField<Type, fvPatchField, areaMesh>&
     );
 
     template<class Type>
-    tmp<fvMatrix<Type>> div
+    tmp<faMatrix<Type>> div
     (
         const tmp<edgeScalarField>&,
         const GeometricField<Type, fvPatchField, areaMesh>&

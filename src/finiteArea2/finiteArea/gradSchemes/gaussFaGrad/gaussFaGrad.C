@@ -47,23 +47,23 @@ tmp
     GeometricField
     <
         typename outerProduct<vector, Type>::type,
-        fvPatchField,
+        faPatchField,
         areaMesh
     >
 >
 gaussGrad<Type>::gradf
 (
-    const GeometricField<Type, fvsPatchField, edgeMesh>& ssf,
+    const GeometricField<Type, faePatchField, edgeMesh>& ssf,
     const word& name
 )
 {
     const areaVectorField &n = ssf.mesh().faceAreaNormals();
     typedef typename outerProduct<vector,Type>::type GradType;
 
-    tmp<GeometricField<GradType, fvPatchField, areaMesh>> tgGrad =
+    tmp<GeometricField<GradType, faPatchField, areaMesh>> tgGrad =
         fac::edgeIntegrate(ssf.mesh().Sf()*ssf);
 
-    GeometricField<GradType, fvPatchField, areaMesh>& gGrad = tgGrad.ref();
+    GeometricField<GradType, faPatchField, areaMesh>& gGrad = tgGrad.ref();
 
     gGrad -= n*(n & gGrad);
     gGrad.correctBoundaryConditions();
@@ -78,18 +78,18 @@ tmp
     GeometricField
     <
         typename outerProduct<vector, Type>::type,
-        fvPatchField,
+        faPatchField,
         areaMesh
     >
 >
 gaussGrad<Type>::calcGrad
 (
-    const GeometricField<Type, fvPatchField, areaMesh>& vsf,
+    const GeometricField<Type, faPatchField, areaMesh>& vsf,
     const word& name
 ) const
 {
     typedef typename outerProduct<vector, Type>::type GradType;
-    typedef GeometricField<GradType, fvPatchField, areaMesh> GradFieldType;
+    typedef GeometricField<GradType, faPatchField, areaMesh> GradFieldType;
 
     tmp<GradFieldType> tgGrad
     (
@@ -113,10 +113,10 @@ gaussGrad<Type>::calcGrad
 template<class Type>
 void gaussGrad<Type>::correctBoundaryConditions
 (
-    const GeometricField<Type, fvPatchField, areaMesh>& vsf,
+    const GeometricField<Type, faPatchField, areaMesh>& vsf,
     GeometricField
     <
-        typename outerProduct<vector, Type>::type, fvPatchField, areaMesh
+        typename outerProduct<vector, Type>::type, faPatchField, areaMesh
     >& gGrad
 )
 {

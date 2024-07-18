@@ -41,9 +41,9 @@ Description
 #include "topoSet.H"
 #include "processorMeshes.H"
 #include "emptyPolyPatch.H"
-//#include "removePoints.H"
 #include "bitSet.H"
 #include "fvMeshTools.H"
+#include "IOmapPolyMesh.H"
 
 using namespace Foam;
 
@@ -53,7 +53,7 @@ int main(int argc, char *argv[])
 {
     argList::addNote
     (
-        "Converts 2D polyMesh into polyMesh2D"
+        "Converts patch of polyMesh into polyMesh2D"
     );
 
     argList::addArgument("patch", "The patch or faceZone giving the geometry");
@@ -123,11 +123,11 @@ int main(int argc, char *argv[])
                     {
                         if (fnd() == -1)
                         {
-                            Pout<< "For mesh edge:" << meshE
-                                << " points:" << meshE.line(mesh.points())
-                                << " found patch " << patchi
-                                << " name:" << pbm[patchi].name()
-                                << endl;
+                            //Pout<< "For mesh edge:" << meshE
+                            //    << " points:" << meshE.line(mesh.points())
+                            //    << " found patch " << patchi
+                            //    << " name:" << pbm[patchi].name()
+                            //    << endl;
                             fnd() = patchi;
                         }
                     }
@@ -140,7 +140,8 @@ int main(int argc, char *argv[])
 
     // Constructing a 2D mesh
     polyTopoChange meshMod(pbm.size(), true, 2);
-    //meshMod.setCapacity(mp.size(), edges.size(), pp.size());
+    // Pre-size with expected number of cells, faces, points
+    meshMod.setCapacity(mp.size(), edges.size(), pp.size());
 
     labelList faceToCell(pp.size());
     forAll(pp, facei)
@@ -149,7 +150,7 @@ int main(int argc, char *argv[])
         (
             -1,
             -1,
-            -1, //pp.start()+facei,   // original mesh face label
+            pp.start()+facei,   // original mesh face label
             -1,
             -1
         );
@@ -161,14 +162,10 @@ int main(int argc, char *argv[])
         pointToPoint[pointi] = meshMod.addPoint
         (
             pp.localPoints()[pointi],
-            -1, //mp[pointi],     // original mesh point label
+            mp[pointi],     // original mesh point label
             -1,
             true
         );
-        Pout<< "For local point:" << pointi
-            << " at:" << pp.localPoints()[pointi]
-            << " added new point:" << pointToPoint[pointi]
-            << endl;
     }
 
     labelList edgeToFace(edges.size(), -1);
@@ -190,12 +187,6 @@ int main(int argc, char *argv[])
 
             // Get neighbour
             const auto& eFaces = edgeFaces[edgei];
-
-            Pout<< "Face:" << facei
-                << " at:" << pp.faceCentres()[facei]
-                << " patch edge:" << edges[edgei]
-                << " points:" << edges[edgei].line(pp.localPoints())
-                << " eFaces:" << eFaces << endl;
 
             // Get edge in same order as face
             newFace[0] = pointToPoint[f[fp]];
@@ -220,11 +211,6 @@ int main(int argc, char *argv[])
                     std::swap(ownCell, nbrCell);
                 }
 
-                Pout<< "Adding internal face:" << newFace
-                    << " between " << ownCell
-                    << " and " << nbrCell
-                    << endl;
-
                 edgeToFace[edgei] = meshMod.addFace
                 (
                     newFace,
@@ -244,11 +230,6 @@ int main(int argc, char *argv[])
                 const label ownCell = faceToCell[facei];
                 const edge meshE(mp, edges[edgei]);
                 const label patchi = edgeToPatch[meshE];
-
-                Pout<< "Adding boundary face:" << newFace
-                    << " on " << ownCell
-                    << " patch " << patchi
-                    << endl;
 
                 edgeToFace[edgei] = meshMod.addFace
                 (
@@ -295,13 +276,16 @@ int main(int argc, char *argv[])
     );
 
     // TBD:
-    // - only use supplied patch/faceZone. Work out connectivity from 2D,
-    //   not 3D.
-    // - combine pointRemover map with makeMesh map (automatic if only doing
-    //   patch)
     // - remove excess processor patches
     // - write as IOmapPolyMesh
-    // - check where to write.
+    // - check where to write. Check e.g. subsetMesh? decomposePar? Is map
+    //   back to original mesh.
+    //      - pointMap back to patch-point
+    //      - faceMap back to original mesh faces (only if structured since
+    //        face actually created from original mesh edge)
+    //      - cellMap back to original mesh boundary faces
+    // - subset fields? Is a bit like subsetMesh.
+    // - extract from faceZone. Have defaultFaces patch if zone is fully inside?
 
     subMeshPtr().setInstance(oldInstance);
 
@@ -309,6 +293,21 @@ int main(int argc, char *argv[])
         << nl << endl;
 
     subMeshPtr().write();
+
+    //- Does not work yet. TBD.
+    //IOmapPolyMesh ioMorphMap
+    //(
+    //    IOobject
+    //    (
+    //        "map",
+    //        subMeshPtr().facesInstance(),
+    //        fvMesh::meshSubDir,
+    //        subMeshPtr().thisDb(),
+    //        IOobjectOption::NO_READ
+    //    ),
+    //    morphMap()
+    //);
+    //ioMorphMap.write();
     topoSet::removeFiles(subMeshPtr());
     processorMeshes::removeFiles(subMeshPtr());
 

@@ -38,7 +38,7 @@ SourceFiles
 #define famDdt_H
 
 #include "areaFieldsFwd.H"
-#include "fvMatrix.H"
+#include "faMatrices.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -52,23 +52,23 @@ namespace Foam
 namespace fam
 {
     template<class Type>
-    tmp<fvMatrix<Type>> ddt
+    tmp<faMatrix<Type>> ddt
     (
-        const GeometricField<Type, fvPatchField, areaMesh>&
+        const GeometricField<Type, faPatchField, areaMesh>&
     );
 
     template<class Type>
-    tmp<fvMatrix<Type>> ddt
+    tmp<faMatrix<Type>> ddt
     (
         const dimensionedScalar&,
-        const GeometricField<Type, fvPatchField, areaMesh>&
+        const GeometricField<Type, faPatchField, areaMesh>&
     );
 
     template<class Type>
-    tmp<fvMatrix<Type>> ddt
+    tmp<faMatrix<Type>> ddt
     (
         const areaScalarField&,
-        const GeometricField<Type, fvPatchField, areaMesh>&
+        const GeometricField<Type, faPatchField, areaMesh>&
     );
 }
 

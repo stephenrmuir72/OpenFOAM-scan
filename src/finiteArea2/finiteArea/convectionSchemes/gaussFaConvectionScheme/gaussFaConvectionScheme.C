@@ -27,7 +27,7 @@ License
 
 #include "gaussFaConvectionScheme.H"
 #include "facEdgeIntegrate.H"
-#include "fvMatrices.H"
+#include "faMatrices.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -42,11 +42,11 @@ namespace fa
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 template<class Type>
-tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
+tmp<GeometricField<Type, faePatchField, edgeMesh>>
 gaussConvectionScheme<Type>::flux
 (
     const edgeScalarField& faceFlux,
-    const GeometricField<Type, fvPatchField, areaMesh>& vf
+    const GeometricField<Type, faPatchField, areaMesh>& vf
 ) const
 {
     return faceFlux*tinterpScheme_().interpolate(vf);
@@ -54,25 +54,25 @@ gaussConvectionScheme<Type>::flux
 
 
 template<class Type>
-tmp<fvMatrix<Type>>
+tmp<faMatrix<Type>>
 gaussConvectionScheme<Type>::famDiv
 (
     const edgeScalarField& faceFlux,
-    const GeometricField<Type, fvPatchField, areaMesh>& vf
+    const GeometricField<Type, faPatchField, areaMesh>& vf
 ) const
 {
     tmp<edgeScalarField> tweights = tinterpScheme_().weights(vf);
     const edgeScalarField& weights = tweights();
 
-    tmp<fvMatrix<Type>> tfam
+    tmp<faMatrix<Type>> tfam
     (
-        new fvMatrix<Type>
+        new faMatrix<Type>
         (
             vf,
             faceFlux.dimensions()*vf.dimensions()
         )
     );
-    fvMatrix<Type>& fam = tfam.ref();
+    faMatrix<Type>& fam = tfam.ref();
 
     fam.lower() = -weights.internalField()*faceFlux.internalField();
     fam.upper() = fam.lower() + faceFlux.internalField();
@@ -80,9 +80,9 @@ gaussConvectionScheme<Type>::famDiv
 
     forAll(fam.psi().boundaryField(), patchI)
     {
-        const fvPatchField<Type>& psf = fam.psi().boundaryField()[patchI];
-        const fvsPatchScalarField& patchFlux = faceFlux.boundaryField()[patchI];
-        const fvsPatchScalarField& pw = weights.boundaryField()[patchI];
+        const faPatchField<Type>& psf = fam.psi().boundaryField()[patchI];
+        const faePatchScalarField& patchFlux = faceFlux.boundaryField()[patchI];
+        const faePatchScalarField& pw = weights.boundaryField()[patchI];
 
         fam.internalCoeffs()[patchI] = patchFlux*psf.valueInternalCoeffs(pw);
         fam.boundaryCoeffs()[patchI] = -patchFlux*psf.valueBoundaryCoeffs(pw);
@@ -94,7 +94,7 @@ gaussConvectionScheme<Type>::famDiv
 //     }
 
     // Non-euclidian and other corrections
-    GeometricField<Type, fvsPatchField, edgeMesh> convFluxCorr
+    GeometricField<Type, faePatchField, edgeMesh> convFluxCorr
     (
         flux(faceFlux, vf)
       - faceFlux*tinterpScheme_().euclidianInterpolate(vf)
@@ -107,14 +107,14 @@ gaussConvectionScheme<Type>::famDiv
 
 
 template<class Type>
-tmp<GeometricField<Type, fvPatchField, areaMesh>>
+tmp<GeometricField<Type, faPatchField, areaMesh>>
 gaussConvectionScheme<Type>::facDiv
 (
     const edgeScalarField& faceFlux,
-    const GeometricField<Type, fvPatchField, areaMesh>& vf
+    const GeometricField<Type, faPatchField, areaMesh>& vf
 ) const
 {
-    tmp<GeometricField<Type, fvPatchField, areaMesh>> tConvection
+    tmp<GeometricField<Type, faPatchField, areaMesh>> tConvection
     (
         fac::edgeIntegrate(flux(faceFlux, vf))
     );

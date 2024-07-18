@@ -48,9 +48,6 @@ SourceFiles
 namespace Foam
 {
 
-//// Forward Declarations
-//class faMesh;
-
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 namespace fa
@@ -128,10 +125,10 @@ public:
         virtual tmp
         <
             GeometricField
-            <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>
+            <typename outerProduct<vector, Type>::type, faPatchField, areaMesh>
         > calcGrad
         (
-            const GeometricField<Type, fvPatchField, areaMesh>&,
+            const GeometricField<Type, faPatchField, areaMesh>&,
             const word& name
         ) const = 0;
 
@@ -140,10 +137,10 @@ public:
         tmp
         <
             GeometricField
-            <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>
+            <typename outerProduct<vector, Type>::type, faPatchField, areaMesh>
         > grad
         (
-            const GeometricField<Type, fvPatchField, areaMesh>&,
+            const GeometricField<Type, faPatchField, areaMesh>&,
             const word& name
         ) const;
 
@@ -153,10 +150,10 @@ public:
         tmp
         <
             GeometricField
-            <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>
+            <typename outerProduct<vector, Type>::type, faPatchField, areaMesh>
         > grad
         (
-            const GeometricField<Type, fvPatchField, areaMesh>&
+            const GeometricField<Type, faPatchField, areaMesh>&
         ) const;
 
         //- Calculate and return the grad of the given field
@@ -165,10 +162,10 @@ public:
         tmp
         <
             GeometricField
-            <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>
+            <typename outerProduct<vector, Type>::type, faPatchField, areaMesh>
         > grad
         (
-            const tmp<GeometricField<Type, fvPatchField, areaMesh>>&
+            const tmp<GeometricField<Type, faPatchField, areaMesh>>&
         ) const;
 };
 

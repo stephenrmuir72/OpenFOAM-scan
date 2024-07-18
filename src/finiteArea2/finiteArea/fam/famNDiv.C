@@ -27,7 +27,7 @@ License
 
 #include "famNDiv.H"
 #include "faMesh.H"
-#include "fvMatrix.H"
+#include "faMatrices.H"
 #include "faConvectionScheme.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -43,7 +43,7 @@ namespace fam
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 template<class Type>
-tmp<fvMatrix<Type>>
+tmp<faMatrix<Type>>
 ndiv
 (
     const edgeScalarField& flux,
@@ -61,7 +61,7 @@ ndiv
 
 
 template<class Type>
-tmp<fvMatrix<Type>>
+tmp<faMatrix<Type>>
 ndiv
 (
     const tmp<edgeScalarField>& tflux,
@@ -69,7 +69,7 @@ ndiv
     const word& name
 )
 {
-    tmp<fvMatrix<Type>> Div(fam::ndiv(tflux(), vf, name));
+    tmp<faMatrix<Type>> Div(fam::ndiv(tflux(), vf, name));
     tflux.clear();
 
     return Div;
@@ -77,7 +77,7 @@ ndiv
 
 
 template<class Type>
-tmp<fvMatrix<Type>>
+tmp<faMatrix<Type>>
 ndiv
 (
     const edgeScalarField& flux,
@@ -89,14 +89,14 @@ ndiv
 
 
 template<class Type>
-tmp<fvMatrix<Type>>
+tmp<faMatrix<Type>>
 ndiv
 (
     const tmp<edgeScalarField>& tflux,
     GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
-    tmp<fvMatrix<Type>> Div(fam::ndiv(tflux(), vf));
+    tmp<faMatrix<Type>> Div(fam::ndiv(tflux(), vf));
     tflux.clear();
 
     return Div;

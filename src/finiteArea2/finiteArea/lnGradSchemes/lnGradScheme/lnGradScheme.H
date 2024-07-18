@@ -124,10 +124,10 @@ public:
 
         //- Return the lnGrad of the given cell field
         //  with the given weighting factors
-        static tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
+        static tmp<GeometricField<Type, faePatchField, edgeMesh>>
         lnGrad
         (
-            const GeometricField<Type, fvPatchField, areaMesh>&,
+            const GeometricField<Type, faPatchField, areaMesh>&,
             const tmp<edgeScalarField>&,
             const word& snGradName = "lnGrad"
         );
@@ -135,7 +135,7 @@ public:
         //- Return the interpolation weighting factors for the given field
         virtual tmp<edgeScalarField> deltaCoeffs
         (
-            const GeometricField<Type, fvPatchField, areaMesh>&
+            const GeometricField<Type, faPatchField, areaMesh>&
         ) const = 0;
 
         //- Return true if this scheme uses an explicit correction
@@ -143,23 +143,23 @@ public:
 
         //- Return the explicit correction to the lnGrad
         //  for the given field
-        virtual tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
-        correction(const GeometricField<Type, fvPatchField, areaMesh>&) const
+        virtual tmp<GeometricField<Type, faePatchField, edgeMesh>>
+        correction(const GeometricField<Type, faPatchField, areaMesh>&) const
         {
             return nullptr;
         }
 
         //- Return the lnGrad of the given cell field
         //  with explicit correction
-        virtual tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
-        lnGrad(const GeometricField<Type, fvPatchField, areaMesh>&) const;
+        virtual tmp<GeometricField<Type, faePatchField, edgeMesh>>
+        lnGrad(const GeometricField<Type, faPatchField, areaMesh>&) const;
 
         //- Return the lnGrad of the given tmp cell field
         //  with explicit correction
-        tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
+        tmp<GeometricField<Type, faePatchField, edgeMesh>>
         lnGrad
         (
-            const tmp<GeometricField<Type, fvPatchField, areaMesh>>&
+            const tmp<GeometricField<Type, faPatchField, areaMesh>>&
         ) const;
 };
 

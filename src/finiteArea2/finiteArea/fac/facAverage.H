@@ -55,14 +55,14 @@ namespace fac
     template<class Type>
     tmp<GeometricField<Type, fvPatchField, areaMesh>> average
     (
-        const GeometricField<Type,  fvsPatchField, edgeMesh>&
+        const GeometricField<Type,  faePatchField, edgeMesh>&
     );
 
     //- Area-weighted average a edgeField creating a areaField
     template<class Type>
     tmp<GeometricField<Type, fvPatchField, areaMesh>> average
     (
-        const tmp<GeometricField<Type,  fvsPatchField, edgeMesh>>&
+        const tmp<GeometricField<Type,  faePatchField, edgeMesh>>&
     );
 
 

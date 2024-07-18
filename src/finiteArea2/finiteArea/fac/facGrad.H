@@ -58,7 +58,7 @@ namespace fac
         <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>
     > grad
     (
-        const GeometricField<Type, fvsPatchField, edgeMesh>&
+        const GeometricField<Type, faePatchField, edgeMesh>&
     );
 
     template<class Type>
@@ -68,7 +68,7 @@ namespace fac
         <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>
     > grad
     (
-        const tmp<GeometricField<Type, fvsPatchField, edgeMesh>>&
+        const tmp<GeometricField<Type, faePatchField, edgeMesh>>&
     );
 
     template<class Type>

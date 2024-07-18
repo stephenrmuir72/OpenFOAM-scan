@@ -27,7 +27,7 @@ License
 
 #include "areaFields.H"
 #include "edgeFields.H"
-#include "fvMatrix.H"
+#include "faMatrices.H"
 #include "faD2dt2Scheme.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -43,7 +43,7 @@ namespace fam
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 template<class Type>
-tmp<fvMatrix<Type>> d2dt2
+tmp<faMatrix<Type>> d2dt2
 (
     const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
@@ -57,7 +57,7 @@ tmp<fvMatrix<Type>> d2dt2
 
 
 template<class Type>
-tmp<fvMatrix<Type>> d2dt2
+tmp<faMatrix<Type>> d2dt2
 (
     const dimensionedScalar& rho,
     const GeometricField<Type, fvPatchField, areaMesh>& vf
@@ -75,7 +75,7 @@ tmp<fvMatrix<Type>> d2dt2
 
 
 template<class Type>
-tmp<fvMatrix<Type>> d2dt2
+tmp<faMatrix<Type>> d2dt2
 (
     const areaScalarField& rho,
     const GeometricField<Type, fvPatchField, areaMesh>& vf

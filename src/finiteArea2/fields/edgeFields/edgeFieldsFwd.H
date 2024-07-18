@@ -46,11 +46,8 @@ namespace Foam
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 typedef surfaceMesh edgeMesh;
-//typedef fvsPatchField faePatchField;
 
 // Forward Declarations
-//class edgeMesh;
-//template<class Type> class faePatchField;
 
 //- An edge patch field for a given type
 template<class Type>
@@ -86,11 +83,11 @@ typedef
     GeometricField<tensor, faePatchField, edgeMesh>
     edgeTensorField;
 
-//typedef surfaceScalarField edgeScalarField;
-//typedef surfaceVectorField edgeVectorField;
-//typedef surfaceSphericalTensorField edgeSphericalTensorField;
-//typedef volSymmTensorField edgeSymmTensorField;
-//typedef surfaceTensorField edgeTensorField;
+typedef faePatchField<scalar> faePatchScalarField;
+typedef faePatchField<vector> faePatchVectorField;
+typedef faePatchField<sphericalTensor> faePatchSphericalTensorField;
+typedef faePatchField<symmTensor> faePatchSymmTensorField;
+typedef faePatchField<tensor> faePatchTensorField;
 
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //

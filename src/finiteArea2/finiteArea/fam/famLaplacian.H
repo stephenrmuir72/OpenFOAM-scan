@@ -39,7 +39,7 @@ SourceFiles
 
 #include "areaFieldsFwd.H"
 #include "edgeFieldsFwd.H"
-#include "fvMatrix.H"
+#include "faMatrices.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -53,14 +53,14 @@ namespace Foam
 namespace fam
 {
     template<class Type>
-    tmp<fvMatrix<Type>> laplacian
+    tmp<faMatrix<Type>> laplacian
     (
         const GeometricField<Type, fvPatchField, areaMesh>&
     );
 
 
     template<class Type>
-    tmp<fvMatrix<Type>> laplacian
+    tmp<faMatrix<Type>> laplacian
     (
         const GeometricField<Type, fvPatchField, areaMesh>&,
         const word&
@@ -68,7 +68,7 @@ namespace fam
 
 
     template<class Type>
-    tmp<fvMatrix<Type>> laplacian
+    tmp<faMatrix<Type>> laplacian
     (
         const dimensionedScalar&,
         const GeometricField<Type, fvPatchField, areaMesh>&
@@ -76,7 +76,7 @@ namespace fam
 
 
     template<class Type>
-    tmp<fvMatrix<Type>> laplacian
+    tmp<faMatrix<Type>> laplacian
     (
         const dimensionedScalar&,
         const GeometricField<Type, fvPatchField, areaMesh>&,
@@ -85,14 +85,14 @@ namespace fam
 
 
     template<class Type>
-    tmp<fvMatrix<Type>> laplacian
+    tmp<faMatrix<Type>> laplacian
     (
         const areaScalarField&,
         const GeometricField<Type, fvPatchField, areaMesh>&
     );
 
     template<class Type>
-    tmp<fvMatrix<Type>> laplacian
+    tmp<faMatrix<Type>> laplacian
     (
         const areaScalarField&,
         const GeometricField<Type, fvPatchField, areaMesh>&,
@@ -100,21 +100,21 @@ namespace fam
     );
 
     template<class Type>
-    tmp<fvMatrix<Type>> laplacian
+    tmp<faMatrix<Type>> laplacian
     (
         const areaScalarField&,
         const GeometricField<Type, fvPatchField, areaMesh>&
     );
 
     template<class Type>
-    tmp<fvMatrix<Type>> laplacian
+    tmp<faMatrix<Type>> laplacian
     (
         const tmp<areaScalarField>&,
         const GeometricField<Type, fvPatchField, areaMesh>&,
         const word&
     );
     template<class Type>
-    tmp<fvMatrix<Type>> laplacian
+    tmp<faMatrix<Type>> laplacian
     (
         const tmp<areaScalarField>&,
         const GeometricField<Type, fvPatchField, areaMesh>&,
@@ -123,7 +123,7 @@ namespace fam
 
 
     template<class Type>
-    tmp<fvMatrix<Type>> laplacian
+    tmp<faMatrix<Type>> laplacian
     (
         const edgeScalarField&,
         const GeometricField<Type, fvPatchField, areaMesh>&,
@@ -131,7 +131,7 @@ namespace fam
     );
 
     template<class Type>
-    tmp<fvMatrix<Type>> laplacian
+    tmp<faMatrix<Type>> laplacian
     (
         const tmp<edgeScalarField>&,
         const GeometricField<Type, fvPatchField, areaMesh>&,
@@ -140,14 +140,14 @@ namespace fam
 
 
     template<class Type>
-    tmp<fvMatrix<Type>> laplacian
+    tmp<faMatrix<Type>> laplacian
     (
         const edgeScalarField&,
         const GeometricField<Type, fvPatchField, areaMesh>&
     );
 
     template<class Type>
-    tmp<fvMatrix<Type>> laplacian
+    tmp<faMatrix<Type>> laplacian
     (
         const tmp<edgeScalarField>&,
         const GeometricField<Type, fvPatchField, areaMesh>&
@@ -155,14 +155,14 @@ namespace fam
 
 
     template<class Type>
-    tmp<fvMatrix<Type>> laplacian
+    tmp<faMatrix<Type>> laplacian
     (
         const areaTensorField&,
         const GeometricField<Type, fvPatchField, areaMesh>&
     );
 
     template<class Type>
-    tmp<fvMatrix<Type>> laplacian
+    tmp<faMatrix<Type>> laplacian
     (
         const tmp<areaTensorField>&,
         const GeometricField<Type, fvPatchField, areaMesh>&
@@ -170,14 +170,14 @@ namespace fam
 
 
     template<class Type>
-    tmp<fvMatrix<Type>> laplacian
+    tmp<faMatrix<Type>> laplacian
     (
         const edgeTensorField&,
         const GeometricField<Type, fvPatchField, areaMesh>&
     );
 
     template<class Type>
-    tmp<fvMatrix<Type>> laplacian
+    tmp<faMatrix<Type>> laplacian
     (
         const tmp<edgeTensorField>&,
         const GeometricField<Type, fvPatchField, areaMesh>&
@@ -185,7 +185,7 @@ namespace fam
 
 
     template<class Type>
-    tmp<fvMatrix<Type>> laplacian
+    tmp<faMatrix<Type>> laplacian
     (
         const edgeTensorField&,
         const GeometricField<Type, fvPatchField, areaMesh>&,
@@ -193,7 +193,7 @@ namespace fam
     );
 
     template<class Type>
-    tmp<fvMatrix<Type>> laplacian
+    tmp<faMatrix<Type>> laplacian
     (
         const tmp<edgeTensorField>&,
         const GeometricField<Type, fvPatchField, areaMesh>&,

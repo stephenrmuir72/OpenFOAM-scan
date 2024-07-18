@@ -123,10 +123,10 @@ public:
         tmp
         <
             GeometricField
-            <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>
+            <typename outerProduct<vector, Type>::type, faPatchField, areaMesh>
         > gradf
         (
-            const GeometricField<Type, fvsPatchField, edgeMesh>&,
+            const GeometricField<Type, faePatchField, edgeMesh>&,
             const word& name
         );
 
@@ -135,10 +135,10 @@ public:
         virtual tmp
         <
             GeometricField
-            <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>
+            <typename outerProduct<vector, Type>::type, faPatchField, areaMesh>
         > calcGrad
         (
-            const GeometricField<Type, fvPatchField, areaMesh>& vsf,
+            const GeometricField<Type, faPatchField, areaMesh>& vsf,
             const word& name
         ) const;
 
@@ -147,9 +147,9 @@ public:
         // snGrad functions
         static void correctBoundaryConditions
         (
-            const GeometricField<Type, fvPatchField, areaMesh>&,
+            const GeometricField<Type, faPatchField, areaMesh>&,
             GeometricField
-            <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>&
+            <typename outerProduct<vector, Type>::type, faPatchField, areaMesh>&
         );
 };
 

@@ -138,7 +138,7 @@ public:
 
         //- Return the explicit correction to the limitedLnGrad
         //  for the given field
-        virtual tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
+        virtual tmp<GeometricField<Type, faePatchField, edgeMesh>>
         correction(const GeometricField<Type, fvPatchField, areaMesh>&) const;
 };
 

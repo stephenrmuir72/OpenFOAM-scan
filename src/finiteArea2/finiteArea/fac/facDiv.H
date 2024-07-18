@@ -55,13 +55,13 @@ namespace fac
     template<class Type>
     tmp<GeometricField<Type, fvPatchField, areaMesh>> div
     (
-        const GeometricField<Type, fvsPatchField, edgeMesh>&
+        const GeometricField<Type, faePatchField, edgeMesh>&
     );
 
     template<class Type>
     tmp<GeometricField<Type, fvPatchField, areaMesh>> div
     (
-        const tmp<GeometricField<Type, fvsPatchField, edgeMesh>>&
+        const tmp<GeometricField<Type, faePatchField, edgeMesh>>&
     );
 
 

@@ -5,7 +5,7 @@
 #include "faMesh.H"
 #include "areaFields.H"
 #include "edgeFields.H"
-#include "fvMatrices.H"
+#include "faMatrices.H"
 #include "fam.H"
 #include "fac.H"
 #include "volSurfaceMapping.H"

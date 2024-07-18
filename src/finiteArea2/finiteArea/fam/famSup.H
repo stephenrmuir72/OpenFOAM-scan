@@ -39,7 +39,7 @@ SourceFiles
 #define Foam_famSup_H
 
 #include "areaFieldsFwd.H"
-#include "fvMatrix.H"
+#include "faMatrices.H"
 #include "zeroField.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -65,28 +65,28 @@ namespace fam
 
         //- A uniform source (no-op for small values)
         template<class Type>
-        tmp<fvMatrix<Type>> Su
+        tmp<faMatrix<Type>> Su
         (
             const dimensioned<Type>& su,
             const GeometricField<Type, fvPatchField, areaMesh>&
         );
 
         template<class Type>
-        tmp<fvMatrix<Type>> Su
+        tmp<faMatrix<Type>> Su
         (
             const DimensionedField<Type, areaMesh>& su,
             const GeometricField<Type, fvPatchField, areaMesh>&
         );
 
         template<class Type>
-        tmp<fvMatrix<Type>> Su
+        tmp<faMatrix<Type>> Su
         (
             const tmp<DimensionedField<Type, areaMesh>>&,
             const GeometricField<Type, fvPatchField, areaMesh>&
         );
 
         template<class Type>
-        tmp<fvMatrix<Type>> Su
+        tmp<faMatrix<Type>> Su
         (
             const tmp<GeometricField<Type, fvPatchField, areaMesh>>&,
             const GeometricField<Type, fvPatchField, areaMesh>&
@@ -105,28 +105,28 @@ namespace fam
 
         //- A uniform source (no-op for small values)
         template<class Type>
-        tmp<fvMatrix<Type>> Sp
+        tmp<faMatrix<Type>> Sp
         (
             const dimensionedScalar& sp,
             const GeometricField<Type, fvPatchField, areaMesh>&
         );
 
         template<class Type>
-        tmp<fvMatrix<Type>> Sp
+        tmp<faMatrix<Type>> Sp
         (
             const DimensionedField<scalar, areaMesh>& sp,
             const GeometricField<Type, fvPatchField, areaMesh>&
         );
 
         template<class Type>
-        tmp<fvMatrix<Type>> Sp
+        tmp<faMatrix<Type>> Sp
         (
             const tmp<DimensionedField<scalar, areaMesh>>&,
             const GeometricField<Type, fvPatchField, areaMesh>&
         );
 
         template<class Type>
-        tmp<fvMatrix<Type>> Sp
+        tmp<faMatrix<Type>> Sp
         (
             const tmp<GeometricField<scalar, fvPatchField, areaMesh>>&,
             const GeometricField<Type, fvPatchField, areaMesh>&
@@ -145,28 +145,28 @@ namespace fam
 
         //- A uniform source (no-op for small values)
         template<class Type>
-        tmp<fvMatrix<Type>> SuSp
+        tmp<faMatrix<Type>> SuSp
         (
             const dimensionedScalar& susp,
             const GeometricField<Type, fvPatchField, areaMesh>&
         );
 
         template<class Type>
-        tmp<fvMatrix<Type>> SuSp
+        tmp<faMatrix<Type>> SuSp
         (
             const DimensionedField<scalar, areaMesh>& susp,
             const GeometricField<Type, fvPatchField, areaMesh>&
         );
 
         template<class Type>
-        tmp<fvMatrix<Type>> SuSp
+        tmp<faMatrix<Type>> SuSp
         (
             const tmp<DimensionedField<scalar, areaMesh>>&,
             const GeometricField<Type, fvPatchField, areaMesh>&
         );
 
         template<class Type>
-        tmp<fvMatrix<Type>> SuSp
+        tmp<faMatrix<Type>> SuSp
         (
             const tmp<areaScalarField>&,
             const GeometricField<Type, fvPatchField, areaMesh>&

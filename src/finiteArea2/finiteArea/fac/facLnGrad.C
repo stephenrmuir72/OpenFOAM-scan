@@ -42,7 +42,7 @@ namespace fac
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 template<class Type>
-tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
+tmp<GeometricField<Type, faePatchField, edgeMesh>>
 lnGrad
 (
     const GeometricField<Type, fvPatchField, areaMesh>& vf,
@@ -58,14 +58,14 @@ lnGrad
 
 
 template<class Type>
-tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
+tmp<GeometricField<Type, faePatchField, edgeMesh>>
 lnGrad
 (
     const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf,
     const word& name
 )
 {
-    tmp<GeometricField<Type, fvsPatchField, edgeMesh>> LnGrad
+    tmp<GeometricField<Type, faePatchField, edgeMesh>> LnGrad
     (
         fac::lnGrad(tvf(), name)
     );
@@ -75,7 +75,7 @@ lnGrad
 
 
 template<class Type>
-tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
+tmp<GeometricField<Type, faePatchField, edgeMesh>>
 lnGrad
 (
     const GeometricField<Type, fvPatchField, areaMesh>& vf
@@ -86,13 +86,13 @@ lnGrad
 
 
 template<class Type>
-tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
+tmp<GeometricField<Type, faePatchField, edgeMesh>>
 lnGrad
 (
     const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf
 )
 {
-    tmp<GeometricField<Type, fvsPatchField, edgeMesh>> LnGrad
+    tmp<GeometricField<Type, faePatchField, edgeMesh>> LnGrad
     (
         fac::lnGrad(tvf())
     );

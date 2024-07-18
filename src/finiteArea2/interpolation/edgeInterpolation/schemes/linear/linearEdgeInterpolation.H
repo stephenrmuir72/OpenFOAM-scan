@@ -101,7 +101,7 @@ public:
         //- Return the interpolation weighting factors
         tmp<edgeScalarField> weights
         (
-            const GeometricField<Type, fvPatchField, areaMesh>&
+            const GeometricField<Type, faPatchField, areaMesh>&
         ) const
         {
             return this->mesh().surfaceInterpolation::weights();
@@ -110,8 +110,8 @@ public:
 
 
 template<class Type>
-tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
-linearEdgeInterpolate(const GeometricField<Type, fvPatchField, areaMesh>& vf)
+tmp<GeometricField<Type, faePatchField, edgeMesh>>
+linearEdgeInterpolate(const GeometricField<Type, faPatchField, areaMesh>& vf)
 {
     return edgeInterpolationScheme<Type>::interpolate
     (
@@ -122,13 +122,13 @@ linearEdgeInterpolate(const GeometricField<Type, fvPatchField, areaMesh>& vf)
 
 
 template<class Type>
-tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
+tmp<GeometricField<Type, faePatchField, edgeMesh>>
 linearEdgeInterpolate
 (
-    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf
+    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf
 )
 {
-    tmp<GeometricField<Type, fvsPatchField, edgeMesh>> tinterp =
+    tmp<GeometricField<Type, faePatchField, edgeMesh>> tinterp =
         linearEdgeInterpolate(tvf());
     tvf.clear();
     return tinterp;

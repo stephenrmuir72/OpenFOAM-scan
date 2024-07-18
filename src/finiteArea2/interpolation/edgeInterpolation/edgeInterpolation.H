@@ -42,6 +42,7 @@ SourceFiles
 #ifndef Foam_edgeInterpolation_H
 #define Foam_edgeInterpolation_H
 
+#include "faMesh.H"
 #include "volFieldsFwd.H"
 #include "surfaceFieldsFwd.H"
 #include "areaFieldsFwd.H"
@@ -51,9 +52,6 @@ SourceFiles
 namespace Foam
 {
 
-// Forward Declarations
-class fvMesh;
-
 /*---------------------------------------------------------------------------*\
                         Class edgeInterpolation Declaration
 \*---------------------------------------------------------------------------*/
@@ -62,8 +60,8 @@ class edgeInterpolation
 {
     // Private Data
 
-        // Reference to fvMesh
-        const fvMesh& fvMesh_;
+        // Reference to faMesh
+        const faMesh& faMesh_;
 
 
         // Demand-driven data
@@ -129,8 +127,8 @@ public:
 
     // Constructors
 
-        //- Construct given an fvMesh
-        explicit edgeInterpolation(const fvMesh&);
+        //- Construct given an faMesh
+        explicit edgeInterpolation(const faMesh&);
 
 
     //- Destructor
@@ -140,7 +138,7 @@ public:
     // Member Functions
 
         //- Return mesh reference
-        const fvMesh& mesh() const noexcept { return fvMesh_; }
+        const faMesh& mesh() const noexcept { return faMesh_; }
 
         //- Return reference to PN geodesic distance
         const surfaceScalarField& lPN() const;

@@ -135,7 +135,7 @@ public:
         //- Return the interpolation weighting factors
         virtual tmp<edgeScalarField> weights
         (
-            const GeometricField<Type, fvPatchField, areaMesh>& vf
+            const GeometricField<Type, faPatchField, areaMesh>& vf
         ) const
         {
             return
