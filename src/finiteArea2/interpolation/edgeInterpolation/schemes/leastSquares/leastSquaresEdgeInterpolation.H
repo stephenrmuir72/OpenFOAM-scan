@@ -112,16 +112,16 @@ public:
     // Member Functions
 
         //- Return the edge-interpolate of the given face field
-        tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
+        tmp<GeometricField<Type, faePatchField, edgeMesh>>
         interpolate
         (
-            const GeometricField<Type, fvPatchField, areaMesh>&
+            const GeometricField<Type, faPatchField, areaMesh>&
         ) const;
 
         //- Return the interpolation weighting factors
         tmp<edgeScalarField> weights
         (
-            const GeometricField<Type, fvPatchField, areaMesh>&
+            const GeometricField<Type, faPatchField, areaMesh>&
         ) const
         {
             return this->mesh().edgeInterpolation::weights();
@@ -130,15 +130,15 @@ public:
 
 
 template<class Type>
-tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
+tmp<GeometricField<Type, faePatchField, edgeMesh>>
 leastSquaresEdgeInterpolation<Type>::interpolate
 (
-    const GeometricField<Type, fvPatchField, areaMesh>& af
+    const GeometricField<Type, faPatchField, areaMesh>& af
 ) const
 {
     typedef typename outerProduct<vector, Type>::type GradType;
-    typedef GeometricField<GradType, fvPatchField, areaMesh> GradFieldType;
-    typedef GeometricField<Type, fvsPatchField, edgeMesh> EdgeFieldType;
+    typedef GeometricField<GradType, faPatchField, areaMesh> GradFieldType;
+    typedef GeometricField<Type, faePatchField, edgeMesh> EdgeFieldType;
     typedef Field<Type> FieldType;
 
     const faMesh& mesh = af.mesh();

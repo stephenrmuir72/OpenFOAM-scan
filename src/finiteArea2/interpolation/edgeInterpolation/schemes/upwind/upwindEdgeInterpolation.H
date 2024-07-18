@@ -126,7 +126,7 @@ public:
         //- Return the interpolation weighting factors
         virtual tmp<edgeScalarField> weights
         (
-            const GeometricField<Type, fvPatchField, areaMesh>&
+            const GeometricField<Type, faPatchField, areaMesh>&
         ) const
         {
             return pos(faceFlux_);

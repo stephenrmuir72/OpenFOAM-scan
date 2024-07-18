@@ -91,21 +91,21 @@ public:
 
     // Member Functions
 
-        tmp<fvMatrix<Type>> famLaplacian
+        tmp<faMatrix<Type>> famLaplacian
         (
             const edgeScalarField&,
-            const GeometricField<Type, fvPatchField, areaMesh>&
+            const GeometricField<Type, faPatchField, areaMesh>&
         );
 
-        tmp<GeometricField<Type, fvPatchField, areaMesh>> facLaplacian
+        tmp<GeometricField<Type, faPatchField, areaMesh>> facLaplacian
         (
-            const GeometricField<Type, fvPatchField, areaMesh>&
+            const GeometricField<Type, faPatchField, areaMesh>&
         );
 
-        tmp<GeometricField<Type, fvPatchField, areaMesh>> facLaplacian
+        tmp<GeometricField<Type, faPatchField, areaMesh>> facLaplacian
         (
             const edgeScalarField&,
-            const GeometricField<Type, fvPatchField, areaMesh>&
+            const GeometricField<Type, faPatchField, areaMesh>&
         );
 };
 

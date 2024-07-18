@@ -38,21 +38,18 @@ SourceFiles
 #ifndef Foam_faDivScheme_H
 #define Foam_faDivScheme_H
 
-//#include "areaFieldsFwd.H"
-//#include "edgeFieldsFwd.H"
-#include "volFieldsFwd.H"
-#include "surfaceFieldsFwd.H"
+#include "areaFieldsFwd.H"
+#include "edgeFieldsFwd.H"
 #include "linearEdgeInterpolation.H"
 #include "runTimeSelectionTables.H"
+#include "edgeFaMesh.H"
+#include "faMesh.H"
+#include "faMatrices.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 namespace Foam
 {
-
-// Forward Declarations
-template<class Type> class fvMatrix;
-class fvMesh;
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -73,7 +70,7 @@ protected:
     // Protected Data
 
         //- Reference to mesh
-        const fvMesh& mesh_;
+        const faMesh& mesh_;
 
         //- Edge interpolation scheme
         tmp<edgeInterpolationScheme<Type>> tinterpScheme_;
@@ -88,7 +85,7 @@ public:
             tmp,
             divScheme,
             Istream,
-            (const fvMesh& mesh, Istream& schemeData),
+            (const faMesh& mesh, Istream& schemeData),
             (mesh, schemeData)
         );
 
@@ -105,14 +102,14 @@ public:
     // Constructors
 
         //- Construct from mesh
-        divScheme(const fvMesh& mesh)
+        divScheme(const faMesh& mesh)
         :
             mesh_(mesh),
             tinterpScheme_(new linearEdgeInterpolation<Type>(mesh))
         {}
 
         //- Construct from mesh and Istream
-        divScheme(const fvMesh& mesh, Istream& is)
+        divScheme(const faMesh& mesh, Istream& is)
         :
             mesh_(mesh)
         {
@@ -138,7 +135,7 @@ public:
         //- Return a pointer to a new divScheme created on freestore
         static tmp<divScheme<Type>> New
         (
-            const fvMesh& mesh,
+            const faMesh& mesh,
             Istream& schemeData
         );
 
@@ -150,15 +147,15 @@ public:
     // Member Functions
 
         //- Return mesh reference
-        const fvMesh& mesh() const noexcept { return mesh_; }
+        const faMesh& mesh() const noexcept { return mesh_; }
 
         virtual tmp
         <
             GeometricField
-            <typename innerProduct<vector, Type>::type, fvPatchField, volMesh>
+            <typename innerProduct<vector, Type>::type, faPatchField, volMesh>
         > facDiv
         (
-            const GeometricField<Type, fvPatchField, volMesh>&
+            const GeometricField<Type, faPatchField, volMesh>&
         ) = 0;
 };
 

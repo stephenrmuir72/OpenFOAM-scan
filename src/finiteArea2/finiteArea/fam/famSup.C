@@ -43,14 +43,14 @@ Foam::fam::Su
 
 
 template<class Type>
-Foam::tmp<Foam::fvMatrix<Type>>
+Foam::tmp<Foam::faMatrix<Type>>
 Foam::fam::Su
 (
     const dimensioned<Type>& su,
     const GeometricField<Type, fvPatchField, areaMesh>& fld
 )
 {
-    auto tmat = tmp<fvMatrix<Type>>::New
+    auto tmat = tmp<faMatrix<Type>>::New
     (
         fld,
         dimArea*su.dimensions()
@@ -68,14 +68,14 @@ Foam::fam::Su
 
 
 template<class Type>
-Foam::tmp<Foam::fvMatrix<Type>>
+Foam::tmp<Foam::faMatrix<Type>>
 Foam::fam::Su
 (
     const DimensionedField<Type, areaMesh>& su,
     const GeometricField<Type, fvPatchField, areaMesh>& fld
 )
 {
-    auto tmat = tmp<fvMatrix<Type>>::New
+    auto tmat = tmp<faMatrix<Type>>::New
     (
         fld,
         dimArea*su.dimensions()
@@ -90,28 +90,28 @@ Foam::fam::Su
 
 
 template<class Type>
-Foam::tmp<Foam::fvMatrix<Type>>
+Foam::tmp<Foam::faMatrix<Type>>
 Foam::fam::Su
 (
     const tmp<DimensionedField<Type, areaMesh>>& tsu,
     const GeometricField<Type, fvPatchField, areaMesh>& fld
 )
 {
-    tmp<fvMatrix<Type>> tmat = fam::Su(tsu(), fld);
+    tmp<faMatrix<Type>> tmat = fam::Su(tsu(), fld);
     tsu.clear();
     return tmat;
 }
 
 
 template<class Type>
-Foam::tmp<Foam::fvMatrix<Type>>
+Foam::tmp<Foam::faMatrix<Type>>
 Foam::fam::Su
 (
     const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tsu,
     const GeometricField<Type, fvPatchField, areaMesh>& fld
 )
 {
-    tmp<fvMatrix<Type>> tmat = fam::Su(tsu(), fld);
+    tmp<faMatrix<Type>> tmat = fam::Su(tsu(), fld);
     tsu.clear();
     return tmat;
 }
@@ -132,14 +132,14 @@ Foam::fam::Sp
 
 
 template<class Type>
-Foam::tmp<Foam::fvMatrix<Type>>
+Foam::tmp<Foam::faMatrix<Type>>
 Foam::fam::Sp
 (
     const dimensionedScalar& sp,
     const GeometricField<Type, fvPatchField, areaMesh>& fld
 )
 {
-    auto tmat = tmp<fvMatrix<Type>>::New
+    auto tmat = tmp<faMatrix<Type>>::New
     (
         fld,
         dimArea*sp.dimensions()*fld.dimensions()
@@ -157,14 +157,14 @@ Foam::fam::Sp
 
 
 template<class Type>
-Foam::tmp<Foam::fvMatrix<Type>>
+Foam::tmp<Foam::faMatrix<Type>>
 Foam::fam::Sp
 (
     const DimensionedField<scalar, areaMesh>& sp,
     const GeometricField<Type, fvPatchField, areaMesh>& fld
 )
 {
-    auto tmat = tmp<fvMatrix<Type>>::New
+    auto tmat = tmp<faMatrix<Type>>::New
     (
         fld,
         dimArea*sp.dimensions()*fld.dimensions()
@@ -179,28 +179,28 @@ Foam::fam::Sp
 
 
 template<class Type>
-Foam::tmp<Foam::fvMatrix<Type>>
+Foam::tmp<Foam::faMatrix<Type>>
 Foam::fam::Sp
 (
     const tmp<DimensionedField<scalar, areaMesh>>& tsp,
     const GeometricField<Type, fvPatchField, areaMesh>& fld
 )
 {
-    tmp<fvMatrix<Type>> tmat = fam::Sp(tsp(), fld);
+    tmp<faMatrix<Type>> tmat = fam::Sp(tsp(), fld);
     tsp.clear();
     return tmat;
 }
 
 
 template<class Type>
-Foam::tmp<Foam::fvMatrix<Type>>
+Foam::tmp<Foam::faMatrix<Type>>
 Foam::fam::Sp
 (
     const tmp<areaScalarField>& tsp,
     const GeometricField<Type, fvPatchField, areaMesh>& fld
 )
 {
-    tmp<fvMatrix<Type>> tmat = fam::Sp(tsp(), fld);
+    tmp<faMatrix<Type>> tmat = fam::Sp(tsp(), fld);
     tsp.clear();
     return tmat;
 }
@@ -221,14 +221,14 @@ Foam::fam::SuSp
 
 
 template<class Type>
-Foam::tmp<Foam::fvMatrix<Type>>
+Foam::tmp<Foam::faMatrix<Type>>
 Foam::fam::SuSp
 (
     const dimensionedScalar& susp,
     const GeometricField<Type, fvPatchField, areaMesh>& fld
 )
 {
-    auto tmat = tmp<fvMatrix<Type>>::New
+    auto tmat = tmp<faMatrix<Type>>::New
     (
         fld,
         dimArea*susp.dimensions()*fld.dimensions()
@@ -250,14 +250,14 @@ Foam::fam::SuSp
 
 
 template<class Type>
-Foam::tmp<Foam::fvMatrix<Type>>
+Foam::tmp<Foam::faMatrix<Type>>
 Foam::fam::SuSp
 (
     const DimensionedField<scalar, areaMesh>& susp,
     const GeometricField<Type, fvPatchField, areaMesh>& fld
 )
 {
-    auto tmat = tmp<fvMatrix<Type>>::New
+    auto tmat = tmp<faMatrix<Type>>::New
     (
         fld,
         dimArea*susp.dimensions()*fld.dimensions()
@@ -274,28 +274,28 @@ Foam::fam::SuSp
 
 
 template<class Type>
-Foam::tmp<Foam::fvMatrix<Type>>
+Foam::tmp<Foam::faMatrix<Type>>
 Foam::fam::SuSp
 (
     const tmp<DimensionedField<scalar, areaMesh>>& tsusp,
     const GeometricField<Type, fvPatchField, areaMesh>& fld
 )
 {
-    tmp<fvMatrix<Type>> tmat = fam::SuSp(tsusp(), fld);
+    tmp<faMatrix<Type>> tmat = fam::SuSp(tsusp(), fld);
     tsusp.clear();
     return tmat;
 }
 
 
 template<class Type>
-Foam::tmp<Foam::fvMatrix<Type>>
+Foam::tmp<Foam::faMatrix<Type>>
 Foam::fam::SuSp
 (
     const tmp<areaScalarField>& tsusp,
     const GeometricField<Type, fvPatchField, areaMesh>& fld
 )
 {
-    tmp<fvMatrix<Type>> tmat = fam::SuSp(tsusp(), fld);
+    tmp<faMatrix<Type>> tmat = fam::SuSp(tsusp(), fld);
     tsusp.clear();
     return tmat;
 }

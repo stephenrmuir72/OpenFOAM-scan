@@ -87,45 +87,45 @@ namespace fac
 
     //- Interpolate field onto faces using scheme given by Istream
     template<class Type>
-    static tmp<GeometricField<Type, fvsPatchField, edgeMesh>> interpolate
+    static tmp<GeometricField<Type, faePatchField, edgeMesh>> interpolate
     (
-        const GeometricField<Type, fvPatchField, areaMesh>& tvf,
+        const GeometricField<Type, faPatchField, areaMesh>& tvf,
         const edgeScalarField& faceFlux,
         Istream& schemeData
     );
 
     //- Interpolate field onto faces using scheme given by name in faSchemes
     template<class Type>
-    static tmp<GeometricField<Type, fvsPatchField, edgeMesh>> interpolate
+    static tmp<GeometricField<Type, faePatchField, edgeMesh>> interpolate
     (
-        const GeometricField<Type, fvPatchField, areaMesh>& tvf,
+        const GeometricField<Type, faPatchField, areaMesh>& tvf,
         const edgeScalarField& faceFlux,
         const word& name
     );
 
     //- Interpolate field onto faces using scheme given by name in faSchemes
     template<class Type>
-    static tmp<GeometricField<Type, fvsPatchField, edgeMesh>> interpolate
+    static tmp<GeometricField<Type, faePatchField, edgeMesh>> interpolate
     (
-        const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf,
+        const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf,
         const edgeScalarField& faceFlux,
         const word& name
     );
 
     //- Interpolate field onto faces using scheme given by name in faSchemes
     template<class Type>
-    static tmp<GeometricField<Type, fvsPatchField, edgeMesh>> interpolate
+    static tmp<GeometricField<Type, faePatchField, edgeMesh>> interpolate
     (
-        const GeometricField<Type, fvPatchField, areaMesh>& tvf,
+        const GeometricField<Type, faPatchField, areaMesh>& tvf,
         const tmp<edgeScalarField>& faceFlux,
         const word& name
     );
 
     //- Interpolate field onto faces using scheme given by name in faSchemes
     template<class Type>
-    static tmp<GeometricField<Type, fvsPatchField, edgeMesh>> interpolate
+    static tmp<GeometricField<Type, faePatchField, edgeMesh>> interpolate
     (
-        const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf,
+        const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf,
         const tmp<edgeScalarField>& faceFlux,
         const word& name
     );
@@ -133,41 +133,41 @@ namespace fac
 
     //- Interpolate field onto faces using scheme given by Istream
     template<class Type>
-    static tmp<GeometricField<Type, fvsPatchField, edgeMesh>> interpolate
+    static tmp<GeometricField<Type, faePatchField, edgeMesh>> interpolate
     (
-        const GeometricField<Type, fvPatchField, areaMesh>& tvf,
+        const GeometricField<Type, faPatchField, areaMesh>& tvf,
         Istream& schemeData
     );
 
     //- Interpolate field onto faces using scheme given by name in faSchemes
     template<class Type>
-    static tmp<GeometricField<Type, fvsPatchField, edgeMesh>> interpolate
+    static tmp<GeometricField<Type, faePatchField, edgeMesh>> interpolate
     (
-        const GeometricField<Type, fvPatchField, areaMesh>& tvf,
+        const GeometricField<Type, faPatchField, areaMesh>& tvf,
         const word& name
     );
 
     //- Interpolate field onto faces using scheme given by name in faSchemes
     template<class Type>
-    static tmp<GeometricField<Type, fvsPatchField, edgeMesh>> interpolate
+    static tmp<GeometricField<Type, faePatchField, edgeMesh>> interpolate
     (
-        const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf,
+        const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf,
         const word& name
     );
 
 
     //- Interpolate tmp field onto faces using central differencing
     template<class Type>
-    static tmp<GeometricField<Type, fvsPatchField, edgeMesh>> interpolate
+    static tmp<GeometricField<Type, faePatchField, edgeMesh>> interpolate
     (
-        const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf
+        const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf
     );
 
     //- Interpolate field onto faces using central differencing
     template<class Type>
-    static tmp<GeometricField<Type, fvsPatchField, edgeMesh>> interpolate
+    static tmp<GeometricField<Type, faePatchField, edgeMesh>> interpolate
     (
-        const GeometricField<Type, fvPatchField, areaMesh>& tvf
+        const GeometricField<Type, faPatchField, areaMesh>& tvf
     );
 }
 

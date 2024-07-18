@@ -33,7 +33,7 @@ License
 template<class Type>
 void Foam::volSurfaceMapping::mapToSurface
 (
-    const GeometricBoundaryField<Type, fvPatchField, volMesh>& bfld,
+    const GeometricBoundaryField<Type, faPatchField, volMesh>& bfld,
     Field<Type>& result
 ) const
 {
@@ -54,7 +54,7 @@ void Foam::volSurfaceMapping::mapToSurface
     //}
 
     const faMesh& aMesh = mesh_;
-    const fvMesh& vMesh = aMesh.parentMesh()();
+    const faMesh& vMesh = aMesh.parentMesh()();
     const auto& pbm = vMesh.boundaryMesh();
 
     forAll(meshFaces_, i)
@@ -72,7 +72,7 @@ void Foam::volSurfaceMapping::mapToSurface
 template<class Type>
 Foam::tmp<Foam::Field<Type>> Foam::volSurfaceMapping::mapToSurface
 (
-    const GeometricBoundaryField<Type, fvPatchField, volMesh>& bfld
+    const GeometricBoundaryField<Type, faPatchField, volMesh>& bfld
 ) const
 {
     auto tresult = tmp<Field<Type>>::New(mesh_.nFaces(), Zero);
@@ -84,7 +84,7 @@ Foam::tmp<Foam::Field<Type>> Foam::volSurfaceMapping::mapToSurface
 template<class Type>
 void Foam::volSurfaceMapping::mapToSurface
 (
-    const GeometricField<Type, fvPatchField, volMesh>& vfld,
+    const GeometricField<Type, faPatchField, volMesh>& vfld,
     Field<Type>& result
 ) const
 {
@@ -95,7 +95,7 @@ void Foam::volSurfaceMapping::mapToSurface
 template<class Type>
 void Foam::volSurfaceMapping::mapToSurface
 (
-    const tmp<GeometricField<Type, fvPatchField, volMesh>>& tvf,
+    const tmp<GeometricField<Type, faPatchField, volMesh>>& tvf,
     Field<Type>& result
 ) const
 {
@@ -107,7 +107,7 @@ void Foam::volSurfaceMapping::mapToSurface
 template<class Type>
 Foam::tmp<Foam::Field<Type>> Foam::volSurfaceMapping::mapToSurface
 (
-    const GeometricField<Type, fvPatchField, volMesh>& vfld
+    const GeometricField<Type, faPatchField, volMesh>& vfld
 ) const
 {
     return mapToSurface(vfld.boundaryField());
@@ -117,7 +117,7 @@ Foam::tmp<Foam::Field<Type>> Foam::volSurfaceMapping::mapToSurface
 template<class Type>
 Foam::tmp<Foam::Field<Type>> Foam::volSurfaceMapping::mapToSurface
 (
-    const tmp<GeometricField<Type, fvPatchField, volMesh>>& tvf
+    const tmp<GeometricField<Type, faPatchField, volMesh>>& tvf
 ) const
 {
     tmp<Field<Type>> tresult(mapToSurface(tvf().boundaryField()));
@@ -129,7 +129,7 @@ Foam::tmp<Foam::Field<Type>> Foam::volSurfaceMapping::mapToSurface
 template<class Type>
 void Foam::volSurfaceMapping::mapToSurface
 (
-    const GeometricField<Type, fvsPatchField, surfaceMesh>& fld,
+    const GeometricField<Type, faePatchField, surfaceMesh>& fld,
     Field<Type>& result
 ) const
 {
@@ -158,7 +158,7 @@ void Foam::volSurfaceMapping::mapToSurface
     //}
 
     const faMesh& aMesh = mesh_;
-    const fvMesh& vMesh = aMesh.parentMesh()();
+    const faMesh& vMesh = aMesh.parentMesh()();
     const auto& pbm = vMesh.boundaryMesh();
 
     forAll(meshFaces_, i)
@@ -182,7 +182,7 @@ void Foam::volSurfaceMapping::mapToSurface
 template<class Type>
 Foam::tmp<Foam::Field<Type>> Foam::volSurfaceMapping::mapToSurface
 (
-    const GeometricField<Type, fvsPatchField, surfaceMesh>& fld
+    const GeometricField<Type, faePatchField, surfaceMesh>& fld
 ) const
 {
     auto tresult = tmp<Field<Type>>::New(mesh_.nFaces(), Zero);
@@ -194,7 +194,7 @@ Foam::tmp<Foam::Field<Type>> Foam::volSurfaceMapping::mapToSurface
 template<class Type>
 void Foam::volSurfaceMapping::mapToSurface
 (
-    const tmp<GeometricField<Type, fvsPatchField, surfaceMesh>>& tsf,
+    const tmp<GeometricField<Type, faePatchField, surfaceMesh>>& tsf,
     Field<Type>& result
 ) const
 {
@@ -206,7 +206,7 @@ void Foam::volSurfaceMapping::mapToSurface
 template<class Type>
 Foam::tmp<Foam::Field<Type>> Foam::volSurfaceMapping::mapToSurface
 (
-    const tmp<GeometricField<Type, fvsPatchField, surfaceMesh>>& tsf
+    const tmp<GeometricField<Type, faePatchField, surfaceMesh>>& tsf
 ) const
 {
     tmp<Field<Type>> tresult(mapToSurface(tsf()));
@@ -242,7 +242,7 @@ void Foam::volSurfaceMapping::mapToSurface
     //}
 
     const faMesh& aMesh = mesh_;
-    const fvMesh& vMesh = aMesh.parentMesh()();
+    const faMesh& vMesh = aMesh.parentMesh()();
     const auto& pbm = vMesh.boundaryMesh();
 
     forAll(meshFaces_, i)
@@ -289,7 +289,7 @@ void Foam::volSurfaceMapping::mapToSurface
     //}
 
     const faMesh& aMesh = mesh_;
-    const fvMesh& vMesh = aMesh.parentMesh()();
+    const faMesh& vMesh = aMesh.parentMesh()();
     const auto& pbm = vMesh.boundaryMesh();
 
     forAll(meshFaces_, i)
@@ -335,7 +335,7 @@ Foam::tmp<Foam::Field<Type>> Foam::volSurfaceMapping::mapToSurface
 template<class Type>
 void Foam::volSurfaceMapping::mapInternalToSurface
 (
-    const GeometricBoundaryField<Type, fvPatchField, volMesh>& bfld,
+    const GeometricBoundaryField<Type, faPatchField, volMesh>& bfld,
     Field<Type>& result
 ) const
 {
@@ -370,7 +370,7 @@ void Foam::volSurfaceMapping::mapInternalToSurface
 template<class Type>
 Foam::tmp<Foam::Field<Type>> Foam::volSurfaceMapping::mapInternalToSurface
 (
-    const GeometricBoundaryField<Type, fvPatchField, volMesh>& bfld
+    const GeometricBoundaryField<Type, faPatchField, volMesh>& bfld
 ) const
 {
     auto tresult = tmp<Field<Type>>::New(mesh_.nFaces(), Zero);
@@ -384,7 +384,7 @@ Foam::tmp<Foam::Field<Type>> Foam::volSurfaceMapping::mapInternalToSurface
 template<class Type>
 void Foam::volSurfaceMapping::mapInternalToSurface
 (
-    const GeometricField<Type, fvPatchField, volMesh>& vf,
+    const GeometricField<Type, faPatchField, volMesh>& vf,
     Field<Type>& result
 ) const
 {
@@ -395,7 +395,7 @@ void Foam::volSurfaceMapping::mapInternalToSurface
 template<class Type>
 void Foam::volSurfaceMapping::mapInternalToSurface
 (
-    const tmp<GeometricField<Type, fvPatchField, volMesh>>& tvf,
+    const tmp<GeometricField<Type, faPatchField, volMesh>>& tvf,
     Field<Type>& result
 ) const
 {
@@ -407,7 +407,7 @@ void Foam::volSurfaceMapping::mapInternalToSurface
 template<class Type>
 Foam::tmp<Foam::Field<Type>> Foam::volSurfaceMapping::mapInternalToSurface
 (
-    const GeometricField<Type, fvPatchField, volMesh>& vfld
+    const GeometricField<Type, faPatchField, volMesh>& vfld
 ) const
 {
     return mapInternalToSurface(vfld.boundaryField());
@@ -417,7 +417,7 @@ Foam::tmp<Foam::Field<Type>> Foam::volSurfaceMapping::mapInternalToSurface
 template<class Type>
 Foam::tmp<Foam::Field<Type>> Foam::volSurfaceMapping::mapInternalToSurface
 (
-    const tmp<GeometricField<Type, fvPatchField, volMesh>>& tvf
+    const tmp<GeometricField<Type, faPatchField, volMesh>>& tvf
 ) const
 {
     tmp<Field<Type>> tresult(mapInternalToSurface(tvf().boundaryField()));
@@ -430,7 +430,7 @@ template<class Type>
 void Foam::volSurfaceMapping::mapToVolume
 (
     const DimensionedField<Type, areaMesh>& af,
-    GeometricBoundaryField<Type, fvPatchField, volMesh>& dest,
+    GeometricBoundaryField<Type, faPatchField, volMesh>& dest,
     const label destPatchi
 ) const
 {
@@ -452,7 +452,7 @@ void Foam::volSurfaceMapping::mapToVolume
     //}
 
     const faMesh& aMesh = mesh_;
-    const fvMesh& vMesh = aMesh.parentMesh()();
+    const faMesh& vMesh = aMesh.parentMesh()();
     const auto& pbm = vMesh.boundaryMesh();
 
     forAll(meshFaces_, i)
@@ -474,7 +474,7 @@ template<class Type>
 void Foam::volSurfaceMapping::mapToVolume
 (
     const tmp<DimensionedField<Type, areaMesh>>& taf,
-    GeometricBoundaryField<Type, fvPatchField, volMesh>& dest,
+    GeometricBoundaryField<Type, faPatchField, volMesh>& dest,
     const label destPatchi
 ) const
 {
@@ -487,7 +487,7 @@ template<class Type>
 void Foam::volSurfaceMapping::mapToVolume
 (
     const DimensionedField<Type, areaMesh>& af,
-    GeometricField<Type, fvPatchField, volMesh>& dest,
+    GeometricField<Type, faPatchField, volMesh>& dest,
     const label destPatchi
 ) const
 {
@@ -499,7 +499,7 @@ template<class Type>
 void Foam::volSurfaceMapping::mapToVolume
 (
     const tmp<DimensionedField<Type, areaMesh>>& taf,
-    GeometricField<Type, fvPatchField, volMesh>& dest,
+    GeometricField<Type, faPatchField, volMesh>& dest,
     const label destPatchi
 ) const
 {
@@ -510,8 +510,8 @@ void Foam::volSurfaceMapping::mapToVolume
 template<class Type>
 void Foam::volSurfaceMapping::mapToVolume
 (
-    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& taf,
-    GeometricBoundaryField<Type, fvPatchField, volMesh>& dest,
+    const tmp<GeometricField<Type, faPatchField, areaMesh>>& taf,
+    GeometricBoundaryField<Type, faPatchField, volMesh>& dest,
     const label destPatchi
 ) const
 {
@@ -523,8 +523,8 @@ void Foam::volSurfaceMapping::mapToVolume
 template<class Type>
 void Foam::volSurfaceMapping::mapToVolume
 (
-    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& taf,
-    GeometricField<Type, fvPatchField, volMesh>& dest,
+    const tmp<GeometricField<Type, faPatchField, areaMesh>>& taf,
+    GeometricField<Type, faPatchField, volMesh>& dest,
     const label destPatchi
 ) const
 {
@@ -557,7 +557,7 @@ void Foam::volSurfaceMapping::mapToVolumePatch
 
 
     const faMesh& aMesh = mesh_;
-    const fvMesh& vMesh = aMesh.parentMesh()();
+    const faMesh& vMesh = aMesh.parentMesh()();
     const auto& pbm = vMesh.boundaryMesh();
 
     forAll(meshFaces_, i)
@@ -590,7 +590,7 @@ void Foam::volSurfaceMapping::mapToVolumePatch
 template<class Type>
 void Foam::volSurfaceMapping::mapToVolumePatch
 (
-    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& taf,
+    const tmp<GeometricField<Type, faPatchField, areaMesh>>& taf,
     Field<Type>& dest,
     const label destPatchi
 ) const

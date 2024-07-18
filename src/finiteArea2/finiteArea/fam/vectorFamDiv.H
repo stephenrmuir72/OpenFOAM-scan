@@ -52,7 +52,7 @@ namespace fam
 \*---------------------------------------------------------------------------*/
 
 template<>
-tmp<fvMatrix<scalar>>
+tmp<faMatrix<scalar>>
 div
 (
     const edgeScalarField& flux,

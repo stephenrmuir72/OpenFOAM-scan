@@ -42,7 +42,7 @@ namespace fa
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
 
 template<class Type>
-tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
+tmp<GeometricField<Type, faePatchField, edgeMesh>>
 uncorrectedLnGrad<Type>::correction
 (
     const GeometricField<Type, fvPatchField, areaMesh>& vf

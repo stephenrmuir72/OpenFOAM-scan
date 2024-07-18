@@ -112,7 +112,7 @@ public:
         //- Return the interpolation weighting factors
         virtual tmp<edgeScalarField> weights
         (
-            const GeometricField<Type, fvPatchField, areaMesh>& vf
+            const GeometricField<Type, faPatchField, areaMesh>& vf
         ) const
         {
             return tScheme_().weights(vf);
@@ -126,19 +126,19 @@ public:
              || skewCorrectionVectors::New(this->mesh()).skew();
         }
 
-        tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
+        tmp<GeometricField<Type, faePatchField, edgeMesh>>
         skewCorrection
         (
-            const GeometricField<Type, fvPatchField, areaMesh>& vf
+            const GeometricField<Type, faPatchField, areaMesh>& vf
         ) const
         {
             const faMesh& mesh = this->mesh();
 
             const skewCorrectionVectors& scv = skewCorrectionVectors::New(mesh);
 
-            tmp<GeometricField<Type, fvsPatchField, edgeMesh>> tsfCorr
+            tmp<GeometricField<Type, faePatchField, edgeMesh>> tsfCorr
             (
-                new GeometricField<Type, fvsPatchField, edgeMesh>
+                new GeometricField<Type, faePatchField, edgeMesh>
                 (
                     IOobject
                     (
@@ -151,7 +151,7 @@ public:
                 )
             );
 
-            GeometricField<Type, fvsPatchField, edgeMesh>& corr = tsfCorr.ref();
+            GeometricField<Type, faePatchField, edgeMesh>& corr = tsfCorr.ref();
 
             for (direction cmpt=0; cmpt<pTraits<Type>::nComponents; ++cmpt)
             {
@@ -178,10 +178,10 @@ public:
 
 
         //- Return the explicit correction to the face-interpolate
-        virtual tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
+        virtual tmp<GeometricField<Type, faePatchField, edgeMesh>>
         correction
         (
-            const GeometricField<Type, fvPatchField, areaMesh>& vf
+            const GeometricField<Type, faPatchField, areaMesh>& vf
         ) const
         {
             if
@@ -203,7 +203,7 @@ public:
             else
             {
                 return
-                    tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
+                    tmp<GeometricField<Type, faePatchField, edgeMesh>>
                     (
                         nullptr
                     );

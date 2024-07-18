@@ -27,7 +27,7 @@ License
 
 #include "vectorFamDiv.H"
 #include "faMesh.H"
-#include "fvMatrix.H"
+#include "faMatrices.H"
 #include "faConvectionScheme.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -43,7 +43,7 @@ namespace fam
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 template<>
-tmp<fvMatrix<scalar>>
+tmp<faMatrix<scalar>>
 div
 (
     const edgeScalarField& flux,

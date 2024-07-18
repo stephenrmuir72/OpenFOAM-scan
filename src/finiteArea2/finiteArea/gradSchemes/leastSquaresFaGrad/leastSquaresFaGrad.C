@@ -47,13 +47,13 @@ tmp
     GeometricField
     <
         typename outerProduct<vector, Type>::type,
-        fvPatchField,
+        faPatchField,
         areaMesh
     >
 >
 leastSquaresFaGrad<Type>::calcGrad
 (
-    const GeometricField<Type, fvPatchField, areaMesh>& vsf,
+    const GeometricField<Type, faPatchField, areaMesh>& vsf,
     const word& name
 ) const
 {
@@ -61,9 +61,9 @@ leastSquaresFaGrad<Type>::calcGrad
 
     const faMesh& mesh = vsf.mesh();
 
-    tmp<GeometricField<GradType, fvPatchField, areaMesh>> tlsGrad
+    tmp<GeometricField<GradType, faPatchField, areaMesh>> tlsGrad
     (
-        new GeometricField<GradType, fvPatchField, areaMesh>
+        new GeometricField<GradType, faPatchField, areaMesh>
         (
             IOobject
             (
@@ -75,10 +75,10 @@ leastSquaresFaGrad<Type>::calcGrad
             ),
             mesh,
             dimensioned<GradType>(vsf.dimensions()/dimLength, Zero),
-            fvPatchFieldBase::zeroGradientType()
+            faPatchFieldBase::zeroGradientType()
         )
     );
-    GeometricField<GradType, fvPatchField, areaMesh>& lsGrad = tlsGrad.ref();
+    GeometricField<GradType, faPatchField, areaMesh>& lsGrad = tlsGrad.ref();
 
     // Get reference to least square vectors
     const leastSquaresFaVectors& lsv = leastSquaresFaVectors::New(mesh);
@@ -103,13 +103,13 @@ leastSquaresFaGrad<Type>::calcGrad
     // Boundary edges
     forAll(vsf.boundaryField(), patchi)
     {
-        const fvPatchField<Type>& bf = vsf.boundaryField()[patchi];
+        const faPatchField<Type>& bf = vsf.boundaryField()[patchi];
 
         const Field<Type>& vsfp =
         (
             bf.coupled()
           ? bf.patchNeighbourField().cref()
-          : const_cast<fvPatchField<Type>&>(bf)
+          : const_cast<faPatchField<Type>&>(bf)
         );
 
         const faePatchVectorField& ownLsp = ownLs.boundaryField()[patchi];

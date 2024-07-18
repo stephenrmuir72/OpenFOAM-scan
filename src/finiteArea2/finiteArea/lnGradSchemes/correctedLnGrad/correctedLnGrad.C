@@ -49,17 +49,17 @@ correctedLnGrad<Type>::~correctedLnGrad()
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
 
 template<class Type>
-tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
+tmp<GeometricField<Type, faePatchField, edgeMesh>>
 correctedLnGrad<Type>::correction
 (
-    const GeometricField<Type, fvPatchField, areaMesh>& vf
+    const GeometricField<Type, faPatchField, areaMesh>& vf
 ) const
 {
     const faMesh& mesh = this->mesh();
 
-    tmp<GeometricField<Type, fvsPatchField, edgeMesh>> tssf
+    tmp<GeometricField<Type, faePatchField, edgeMesh>> tssf
     (
-        new GeometricField<Type, fvsPatchField, edgeMesh>
+        new GeometricField<Type, faePatchField, edgeMesh>
         (
             IOobject
             (
@@ -71,7 +71,7 @@ correctedLnGrad<Type>::correction
             vf.dimensions()*mesh.deltaCoeffs().dimensions()
         )
     );
-    GeometricField<Type, fvsPatchField, edgeMesh>& ssf = tssf.ref();
+    GeometricField<Type, faePatchField, edgeMesh>& ssf = tssf.ref();
 
     for (direction cmpt = 0; cmpt < pTraits<Type>::nComponents; ++cmpt)
     {

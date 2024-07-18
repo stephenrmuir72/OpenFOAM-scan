@@ -27,7 +27,7 @@ License
 
 #include "gaussFaLaplacianScheme.H"
 #include "facDiv.H"
-#include "fvMatrices.H"
+#include "faMatrices.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -42,11 +42,11 @@ namespace fa
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 template<class Type>
-tmp<fvMatrix<Type>>
+tmp<faMatrix<Type>>
 gaussLaplacianScheme<Type>::famLaplacian
 (
     const edgeScalarField& gamma,
-    const GeometricField<Type, fvPatchField, areaMesh>& vf
+    const GeometricField<Type, faPatchField, areaMesh>& vf
 )
 {
     tmp<edgeScalarField> tdeltaCoeffs = this->tlnGradScheme_().deltaCoeffs(vf);
@@ -54,23 +54,23 @@ gaussLaplacianScheme<Type>::famLaplacian
 
     const edgeScalarField gammaMagSf(gamma*this->mesh().magLe());
 
-    tmp<fvMatrix<Type>> tfam
+    tmp<faMatrix<Type>> tfam
     (
-        new fvMatrix<Type>
+        new faMatrix<Type>
         (
             vf,
             deltaCoeffs.dimensions()*gammaMagSf.dimensions()*vf.dimensions()
         )
     );
-    fvMatrix<Type>& fam = tfam.ref();
+    faMatrix<Type>& fam = tfam.ref();
 
     fam.upper() = deltaCoeffs.internalField()*gammaMagSf.internalField();
     fam.negSumDiag();
 
     forAll(fam.psi().boundaryField(), patchI)
     {
-        const fvPatchField<Type>& psf = fam.psi().boundaryField()[patchI];
-        const fvsPatchScalarField& patchGamma =
+        const faPatchField<Type>& psf = fam.psi().boundaryField()[patchI];
+        const faePatchScalarField& patchGamma =
             gammaMagSf.boundaryField()[patchI];
 
         fam.internalCoeffs()[patchI] = patchGamma*psf.gradientInternalCoeffs();
@@ -84,7 +84,7 @@ gaussLaplacianScheme<Type>::famLaplacian
         {
             fam.faceFluxCorrectionPtr() = std::make_unique
             <
-                GeometricField<Type, fvsPatchField, edgeMesh>
+                GeometricField<Type, faePatchField, edgeMesh>
             >
             (
                 gammaMagSf*this->tlnGradScheme_().correction(vf)
@@ -113,13 +113,13 @@ gaussLaplacianScheme<Type>::famLaplacian
 
 
 template<class Type>
-tmp<GeometricField<Type, fvPatchField, areaMesh>>
+tmp<GeometricField<Type, faPatchField, areaMesh>>
 gaussLaplacianScheme<Type>::facLaplacian
 (
-    const GeometricField<Type, fvPatchField, areaMesh>& vf
+    const GeometricField<Type, faPatchField, areaMesh>& vf
 )
 {
-    tmp<GeometricField<Type, fvPatchField, areaMesh>> tLaplacian
+    tmp<GeometricField<Type, faPatchField, areaMesh>> tLaplacian
     (
         fac::div(this->tlnGradScheme_().lnGrad(vf)*vf.mesh().magLe())
     );
@@ -131,14 +131,14 @@ gaussLaplacianScheme<Type>::facLaplacian
 
 
 template<class Type>
-tmp<GeometricField<Type, fvPatchField, areaMesh>>
+tmp<GeometricField<Type, faPatchField, areaMesh>>
 gaussLaplacianScheme<Type>::facLaplacian
 (
     const edgeScalarField& gamma,
-    const GeometricField<Type, fvPatchField, areaMesh>& vf
+    const GeometricField<Type, faPatchField, areaMesh>& vf
 )
 {
-    tmp<GeometricField<Type, fvPatchField, areaMesh>> tLaplacian
+    tmp<GeometricField<Type, faPatchField, areaMesh>> tLaplacian
     (
         fac::div(gamma*this->tlnGradScheme_().lnGrad(vf)*vf.mesh().magLe())
     );

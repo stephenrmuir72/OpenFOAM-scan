@@ -27,7 +27,7 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "edgeInterpolation.H"
-//#include "fvMesh.H"
+#include "faMesh.H"
 #include "volFields.H"
 #include "surfaceFields.H"
 
@@ -41,9 +41,9 @@ namespace Foam
 
 // * * * * * * * * * * * * * * * * Constructors * * * * * * * * * * * * * * //
 
-Foam::edgeInterpolation::edgeInterpolation(const fvMesh& fam)
+Foam::edgeInterpolation::edgeInterpolation(const faMesh& fam)
 :
-    fvMesh_(fam),
+    faMesh_(fam),
     orthogonal_(false),
     skew_(true)
 {}

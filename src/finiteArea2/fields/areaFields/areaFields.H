@@ -46,7 +46,6 @@ SourceFiles
 //#include "areaFaMesh.H"
 #include "faMesh.H"
 //#include "faPatchFields.H"
-#include "fvsPatchFields.H"
 #include "areaFieldsFwd.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //

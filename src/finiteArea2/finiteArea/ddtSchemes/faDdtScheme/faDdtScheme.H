@@ -42,17 +42,12 @@ SourceFiles
 #include "edgeFieldsFwd.H"
 #include "runTimeSelectionTables.H"
 #include "faMesh.H"
+#include "faMatrices.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 namespace Foam
 {
-
-// Forward Declarations
-template<class Type>
-class fvMatrix;
-
-//class faMesh;
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -137,65 +132,65 @@ public:
         //- Return mesh reference
         const faMesh& mesh() const noexcept { return mesh_; }
 
-        virtual tmp<GeometricField<Type, fvPatchField, areaMesh>> facDdt
+        virtual tmp<GeometricField<Type, faPatchField, areaMesh>> facDdt
         (
             const dimensioned<Type>
         ) = 0;
 
-        virtual tmp<GeometricField<Type, fvPatchField, areaMesh>> facDdt0
+        virtual tmp<GeometricField<Type, faPatchField, areaMesh>> facDdt0
         (
             const dimensioned<Type>
         ) = 0;
 
-        virtual tmp<GeometricField<Type, fvPatchField, areaMesh>> facDdt
+        virtual tmp<GeometricField<Type, faPatchField, areaMesh>> facDdt
         (
-            const GeometricField<Type, fvPatchField, areaMesh>&
+            const GeometricField<Type, faPatchField, areaMesh>&
         ) = 0;
 
-        virtual tmp<GeometricField<Type, fvPatchField, areaMesh>> facDdt0
+        virtual tmp<GeometricField<Type, faPatchField, areaMesh>> facDdt0
         (
-            const GeometricField<Type, fvPatchField, areaMesh>&
+            const GeometricField<Type, faPatchField, areaMesh>&
         ) = 0;
 
-        virtual tmp<GeometricField<Type, fvPatchField, areaMesh>> facDdt
+        virtual tmp<GeometricField<Type, faPatchField, areaMesh>> facDdt
         (
             const dimensionedScalar&,
-            const GeometricField<Type, fvPatchField, areaMesh>&
+            const GeometricField<Type, faPatchField, areaMesh>&
         ) = 0;
 
-        virtual tmp<GeometricField<Type, fvPatchField, areaMesh>> facDdt0
+        virtual tmp<GeometricField<Type, faPatchField, areaMesh>> facDdt0
         (
             const dimensionedScalar&,
-            const GeometricField<Type, fvPatchField, areaMesh>&
+            const GeometricField<Type, faPatchField, areaMesh>&
         ) = 0;
 
-        virtual tmp<GeometricField<Type, fvPatchField, areaMesh>> facDdt
+        virtual tmp<GeometricField<Type, faPatchField, areaMesh>> facDdt
         (
             const areaScalarField&,
-            const GeometricField<Type, fvPatchField, areaMesh>&
+            const GeometricField<Type, faPatchField, areaMesh>&
         ) = 0;
 
-        virtual tmp<GeometricField<Type, fvPatchField, areaMesh>> facDdt0
+        virtual tmp<GeometricField<Type, faPatchField, areaMesh>> facDdt0
         (
             const areaScalarField&,
-            const GeometricField<Type, fvPatchField, areaMesh>&
+            const GeometricField<Type, faPatchField, areaMesh>&
         ) = 0;
 
-        virtual tmp<fvMatrix<Type>> famDdt
+        virtual tmp<faMatrix<Type>> famDdt
         (
-            const GeometricField<Type, fvPatchField, areaMesh>&
+            const GeometricField<Type, faPatchField, areaMesh>&
         ) = 0;
 
-        virtual tmp<fvMatrix<Type>> famDdt
+        virtual tmp<faMatrix<Type>> famDdt
         (
             const dimensionedScalar&,
-            const GeometricField<Type, fvPatchField, areaMesh>&
+            const GeometricField<Type, faPatchField, areaMesh>&
         ) = 0;
 
-        virtual tmp<fvMatrix<Type>> famDdt
+        virtual tmp<faMatrix<Type>> famDdt
         (
             const areaScalarField&,
-            const GeometricField<Type, fvPatchField, areaMesh>&
+            const GeometricField<Type, faPatchField, areaMesh>&
         ) = 0;
 };
 

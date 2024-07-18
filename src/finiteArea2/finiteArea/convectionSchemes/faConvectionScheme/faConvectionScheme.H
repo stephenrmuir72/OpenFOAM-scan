@@ -42,17 +42,12 @@ SourceFiles
 #include "runTimeSelectionTables.H"
 #include "edgeFaMesh.H"
 #include "faMesh.H"
+#include "faMatrices.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 namespace Foam
 {
-
-//// Forward Declarations
-//template<class Type>
-//class fvMatrix;
-//
-//class faMesh;
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -134,22 +129,22 @@ public:
         //- Return mesh reference
         const faMesh& mesh() const noexcept { return mesh_; }
 
-        virtual tmp<GeometricField<Type, fvsPatchField, edgeMesh>> flux
+        virtual tmp<GeometricField<Type, faePatchField, edgeMesh>> flux
         (
             const edgeScalarField&,
-            const GeometricField<Type, fvPatchField, areaMesh>&
+            const GeometricField<Type, faPatchField, areaMesh>&
         ) const = 0;
 
-        virtual tmp<fvMatrix<Type>> famDiv
+        virtual tmp<faMatrix<Type>> famDiv
         (
             const edgeScalarField&,
-            const GeometricField<Type, fvPatchField, areaMesh>&
+            const GeometricField<Type, faPatchField, areaMesh>&
         ) const = 0;
 
-        virtual tmp<GeometricField<Type, fvPatchField, areaMesh>> facDiv
+        virtual tmp<GeometricField<Type, faPatchField, areaMesh>> facDiv
         (
             const edgeScalarField&,
-            const GeometricField<Type, fvPatchField, areaMesh>&
+            const GeometricField<Type, faPatchField, areaMesh>&
         ) const = 0;
 };
 

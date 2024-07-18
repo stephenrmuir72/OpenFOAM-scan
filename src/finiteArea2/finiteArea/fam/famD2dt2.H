@@ -38,7 +38,7 @@ SourceFiles
 #define famD2dt2_H
 
 #include "areaFieldsFwd.H"
-#include "fvMatrix.H"
+#include "faMatrices.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -52,20 +52,20 @@ namespace Foam
 namespace fam
 {
     template<class Type>
-    tmp<fvMatrix<Type>> d2dt2
+    tmp<faMatrix<Type>> d2dt2
     (
         const GeometricField<Type, fvPatchField, areaMesh>&
     );
 
     template<class Type>
-    tmp<fvMatrix<Type>> d2dt2
+    tmp<faMatrix<Type>> d2dt2
     (
         const dimensionedScalar&,
         const GeometricField<Type, fvPatchField, areaMesh>&
     );
 
     template<class Type>
-    tmp<fvMatrix<Type>> d2dt2
+    tmp<faMatrix<Type>> d2dt2
     (
         const areaScalarField&,
         const GeometricField<Type, fvPatchField, areaMesh>&

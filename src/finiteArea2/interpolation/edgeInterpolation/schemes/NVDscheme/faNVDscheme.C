@@ -57,7 +57,7 @@ inline tmp<areaScalarField> limiter(const areaTensorField& phi)
 template<class Type, class NVDweight>
 Foam::tmp<Foam::edgeScalarField> Foam::faNVDscheme<Type,NVDweight>::weights
 (
-    const GeometricField<Type, fvPatchField, areaMesh>& phi
+    const GeometricField<Type, faPatchField, areaMesh>& phi
 ) const
 {
     const faMesh& mesh = this->mesh();

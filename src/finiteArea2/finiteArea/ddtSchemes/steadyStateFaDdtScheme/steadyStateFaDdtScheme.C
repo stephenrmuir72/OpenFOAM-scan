@@ -27,7 +27,7 @@ License
 
 #include "steadyStateFaDdtScheme.H"
 #include "facDiv.H"
-#include "fvMatrices.H"
+#include "faMatrices.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -188,15 +188,15 @@ steadyStateFaDdtScheme<Type>::facDdt0
 }
 
 template<class Type>
-tmp<fvMatrix<Type>>
+tmp<faMatrix<Type>>
 steadyStateFaDdtScheme<Type>::famDdt
 (
     const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
-    tmp<fvMatrix<Type>> tfam
+    tmp<faMatrix<Type>> tfam
     (
-        new fvMatrix<Type>
+        new faMatrix<Type>
         (
             vf,
             vf.dimensions()*dimArea/dimTime
@@ -208,16 +208,16 @@ steadyStateFaDdtScheme<Type>::famDdt
 
 
 template<class Type>
-tmp<fvMatrix<Type>>
+tmp<faMatrix<Type>>
 steadyStateFaDdtScheme<Type>::famDdt
 (
     const dimensionedScalar& rho,
     const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
-    tmp<fvMatrix<Type>> tfam
+    tmp<faMatrix<Type>> tfam
     (
-        new fvMatrix<Type>
+        new faMatrix<Type>
         (
             vf,
             rho.dimensions()*vf.dimensions()*dimArea/dimTime
@@ -229,16 +229,16 @@ steadyStateFaDdtScheme<Type>::famDdt
 
 
 template<class Type>
-tmp<fvMatrix<Type>>
+tmp<faMatrix<Type>>
 steadyStateFaDdtScheme<Type>::famDdt
 (
     const areaScalarField& rho,
     const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
-    tmp<fvMatrix<Type>> tfam
+    tmp<faMatrix<Type>> tfam
     (
-        new fvMatrix<Type>
+        new faMatrix<Type>
         (
             vf,
             rho.dimensions()*vf.dimensions()*dimArea/dimTime

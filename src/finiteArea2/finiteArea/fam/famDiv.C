@@ -27,7 +27,7 @@ License
 
 #include "famDiv.H"
 #include "faMesh.H"
-#include "fvMatrix.H"
+#include "faMatrices.H"
 #include "faConvectionScheme.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -43,7 +43,7 @@ namespace fam
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 template<class Type>
-tmp<fvMatrix<Type>>
+tmp<faMatrix<Type>>
 div
 (
     const edgeScalarField& flux,
@@ -53,7 +53,7 @@ div
 {
     const areaVectorField& n = vf.mesh().faceAreaNormals();
 
-    tmp<fvMatrix<Type>> tM
+    tmp<faMatrix<Type>> tM
     (
         fa::convectionScheme<Type>::New
         (
@@ -62,7 +62,7 @@ div
             vf.mesh().divScheme(name)
         ).ref().famDiv(flux, vf)
     );
-    fvMatrix<Type>& M = tM.ref();
+    faMatrix<Type>& M = tM.ref();
 
     GeometricField<Type, fvPatchField, areaMesh> v
     (
@@ -82,7 +82,7 @@ div
 
 
 template<class Type>
-tmp<fvMatrix<Type>>
+tmp<faMatrix<Type>>
 div
 (
     const tmp<edgeScalarField>& tflux,
@@ -90,7 +90,7 @@ div
     const word& name
 )
 {
-    tmp<fvMatrix<Type>> Div(fam::div(tflux(), vf, name));
+    tmp<faMatrix<Type>> Div(fam::div(tflux(), vf, name));
     tflux.clear();
 
     return Div;
@@ -98,7 +98,7 @@ div
 
 
 template<class Type>
-tmp<fvMatrix<Type>>
+tmp<faMatrix<Type>>
 div
 (
     const edgeScalarField& flux,
@@ -109,14 +109,14 @@ div
 }
 
 template<class Type>
-tmp<fvMatrix<Type>>
+tmp<faMatrix<Type>>
 div
 (
     const tmp<edgeScalarField>& tflux,
     const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
-    tmp<fvMatrix<Type>> Div(fam::div(tflux(), vf));
+    tmp<faMatrix<Type>> Div(fam::div(tflux(), vf));
     tflux.clear();
 
     return Div;

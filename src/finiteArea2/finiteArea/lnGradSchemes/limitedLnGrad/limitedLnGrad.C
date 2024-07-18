@@ -51,13 +51,13 @@ limitedLnGrad<Type>::~limitedLnGrad()
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
 
 template<class Type>
-tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
+tmp<GeometricField<Type, faePatchField, edgeMesh>>
 limitedLnGrad<Type>::correction
 (
     const GeometricField<Type, fvPatchField, areaMesh>& vf
 ) const
 {
-    const GeometricField<Type, fvsPatchField, edgeMesh> corr
+    const GeometricField<Type, faePatchField, edgeMesh> corr
     (
         correctedLnGrad<Type>(this->mesh()).correction(vf)
     );

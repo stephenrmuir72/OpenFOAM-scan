@@ -27,7 +27,7 @@ License
 
 #include "gaussFaDivScheme.H"
 #include "facEdgeIntegrate.H"
-#include "fvMatrices.H"
+#include "faMatrices.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
