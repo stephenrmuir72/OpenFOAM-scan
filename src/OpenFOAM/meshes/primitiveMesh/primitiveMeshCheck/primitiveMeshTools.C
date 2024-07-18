@@ -151,16 +151,15 @@ void Foam::primitiveMeshTools::updateCellCentresAndVols
     const List<cell>& cells,
     vectorField& cellCtrs_s,
     scalarField& cellVols_s,
-    vectorField& cellAreas_s
+    vectorField& cellDir0s_s
 )
 {
     PrecisionAdaptor<solveVector, vector> tcellCtrs(cellCtrs_s, false);
     PrecisionAdaptor<solveScalar, scalar> tcellVols(cellVols_s, false);
-
-    PrecisionAdaptor<solveVector, vector> tcellAreas(cellAreas_s, false);
+    PrecisionAdaptor<solveVector, vector> tcellDir0s(cellDir0s_s, false);
     auto& cellCtrs = tcellCtrs.ref();
     auto& cellVols = tcellVols.ref();
-    auto& cellAreas = tcellAreas.ref();
+    auto& cellDir0s = tcellDir0s.ref();
 
     // Use current cell centres as estimates for the new cell centres
     // Note - not currently used
@@ -244,9 +243,9 @@ void Foam::primitiveMeshTools::updateCellCentresAndVols
                 // Accumulate face-pyramid volume
                 cellVols[celli] += ta;
 
-                if (cellAreas.size())
+                if (cellDir0s.size())
                 {
-                    cellAreas[celli] = tri.areaNormal();
+                    cellDir0s[celli] += tri.areaNormal();
                 }
             }
             forAll(cellCtrs, celli)
@@ -259,6 +258,10 @@ void Foam::primitiveMeshTools::updateCellCentresAndVols
                 {
                     cellCtrs[celli] = Cc0[i];
                 }
+            }
+            if (cellDir0s.size())
+            {
+                cellDir0s[celli].normalise(VSMALL);
             }
         }
         else
@@ -401,20 +404,20 @@ void Foam::primitiveMeshTools::makeCellCentresAndVols
     const vectorField& fAreas,
     vectorField& cellCtrs_s,
     scalarField& cellVols_s,
-    vectorField& cellAreas_s
+    vectorField& cellDir0s_s
 )
 {
     PrecisionAdaptor<solveVector, vector> tcellCtrs(cellCtrs_s, false);
     PrecisionAdaptor<solveScalar, scalar> tcellVols(cellVols_s, false);
-    PrecisionAdaptor<solveVector, vector> tcellAreas(cellAreas_s, false);
+    PrecisionAdaptor<solveVector, vector> tcellDir0s(cellDir0s_s, false);
     auto& cellCtrs = tcellCtrs.ref();
     auto& cellVols = tcellVols.ref();
-    auto& cellAreas = tcellAreas.ref();
+    auto& cellDir0s = tcellDir0s.ref();
 
     // Clear the fields for accumulation
     cellCtrs = Zero;
     cellVols = Zero;
-    cellAreas = Zero;
+    cellDir0s = Zero;
 
     const labelList& own = mesh.faceOwner();
     const labelList& nei = mesh.faceNeighbour();
@@ -473,9 +476,9 @@ void Foam::primitiveMeshTools::makeCellCentresAndVols
             // Accumulate face-pyramid volume
             cellVols[own[facei]] += ta;
 
-            if (cellAreas.size())
+            if (cellDir0s.size())
             {
-                cellAreas[own[facei]] += tri.areaNormal();
+                cellDir0s[own[facei]] += tri.areaNormal();
             }
         }
 
@@ -496,9 +499,9 @@ void Foam::primitiveMeshTools::makeCellCentresAndVols
             // Accumulate face-pyramid volume
             cellVols[nei[facei]] += ta;
 
-            if (cellAreas.size())
+            if (cellDir0s.size())
             {
-                cellAreas[nei[facei]] += tri.areaNormal();
+                cellDir0s[nei[facei]] += tri.areaNormal();
             }
         }
 
@@ -511,6 +514,14 @@ void Foam::primitiveMeshTools::makeCellCentresAndVols
             else
             {
                 cellCtrs[celli] = cEst[celli];
+            }
+        }
+
+        forAll(cellCtrs, celli)
+        {
+            if (cellDir0s.size())
+            {
+                cellDir0s[celli].normalise(VSMALL);
             }
         }
     }

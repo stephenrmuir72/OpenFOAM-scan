@@ -31,6 +31,43 @@ License
 
 // * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * //
 
+Foam::mapPolyMesh::mapPolyMesh(mapPolyMesh&& map)
+:
+    mapPolyMesh
+    (
+        map.mesh_,
+        map.nOldPoints_,
+        map.nOldFaces_,
+        map.nOldCells_,
+        map.pointMap_,
+        map.pointsFromPointsMap_,
+        map.faceMap_,
+        map.facesFromPointsMap_,
+        map.facesFromEdgesMap_,
+        map.facesFromFacesMap_,
+        map.cellMap_,
+        map.cellsFromPointsMap_,
+        map.cellsFromEdgesMap_,
+        map.cellsFromFacesMap_,
+        map.cellsFromCellsMap_,
+        map.reversePointMap_,
+        map.reverseFaceMap_,
+        map.reverseCellMap_,
+        map.flipFaceFlux_,
+        map.patchPointMap_,
+        map.pointZoneMap_,
+        map.faceZonePointMap_,
+        map.faceZoneFaceMap_,
+        map.cellZoneMap_,
+        map.preMotionPoints_,
+        map.oldPatchStarts_,
+        map.oldPatchNMeshPoints_,
+        map.oldCellVolumesPtr_,
+        true            // const bool reuse
+    )
+{}
+
+
 Foam::mapPolyMesh::mapPolyMesh(const polyMesh& mesh)
 :
     mesh_(mesh),
@@ -282,6 +319,124 @@ Foam::mapPolyMesh::mapPolyMesh
             }
         }
     }
+}
+
+
+// * * * * * * * * * * * * * * * IOstream Operators  * * * * * * * * * * * * //
+
+Foam::Istream& Foam::operator>>(Istream& is, mapPolyMesh& map)
+{
+    is.fatalCheck(FUNCTION_NAME);
+
+    bool hasOldCellVols = false;
+
+    is  >> map.nOldPoints_ >> map.nOldFaces_ >> map.nOldCells_
+        >> map.pointMap_
+        >> map.pointsFromPointsMap_
+        >> map.faceMap_
+        >> map.facesFromPointsMap_
+        >> map.facesFromEdgesMap_
+        >> map.facesFromFacesMap_
+        >> map.cellMap_
+        >> map.cellsFromPointsMap_
+        >> map.cellsFromEdgesMap_
+        >> map.cellsFromFacesMap_
+        >> map.cellsFromCellsMap_
+        >> map.reversePointMap_
+        >> map.reverseFaceMap_
+        >> map.reverseCellMap_
+        >> map.flipFaceFlux_
+        >> map.patchPointMap_
+        >> map.pointZoneMap_
+        >> map.faceZonePointMap_
+        >> map.faceZoneFaceMap_
+        >> map.cellZoneMap_
+        >> map.preMotionPoints_
+        >> map.oldPatchSizes_
+        >> map.oldPatchStarts_
+        >> map.oldPatchNMeshPoints_
+        >> hasOldCellVols;
+    if (hasOldCellVols)
+    {
+        map.oldCellVolumesPtr_ = scalarField::New(is);
+    }
+    return is;
+}
+
+
+Foam::Ostream& Foam::operator<<(Ostream& os, const mapPolyMesh& map)
+{
+    os  << map.nOldPoints_ << map.nOldFaces_ << map.nOldCells_ << token::NL
+        << map.pointMap_ << token::NL
+        << map.pointsFromPointsMap_ << token::NL
+        << map.faceMap_ << token::NL
+        << map.facesFromPointsMap_ << token::NL
+        << map.facesFromEdgesMap_ << token::NL
+        << map.facesFromFacesMap_ << token::NL
+        << map.cellMap_ << token::NL
+        << map.cellsFromPointsMap_ << token::NL
+        << map.cellsFromEdgesMap_ << token::NL
+        << map.cellsFromFacesMap_ << token::NL
+        << map.cellsFromCellsMap_ << token::NL
+        << map.reversePointMap_ << token::NL
+        << map.reverseFaceMap_ << token::NL
+        << map.reverseCellMap_ << token::NL
+        << map.flipFaceFlux_ << token::NL
+        << map.patchPointMap_ << token::NL
+        << map.pointZoneMap_ << token::NL
+        << map.faceZonePointMap_ << token::NL
+        << map.faceZoneFaceMap_ << token::NL
+        << map.cellZoneMap_ << token::NL
+        << map.preMotionPoints_ << token::NL
+        << map.oldPatchSizes_ << token::NL
+        << map.oldPatchStarts_ << token::NL
+        << map.oldPatchNMeshPoints_ << token::NL
+        << map.oldCellVolumesPtr_.valid() << token::NL;
+    if (map.oldCellVolumesPtr_.valid())
+    {
+        os  << map.oldCellVolumesPtr_() << token::NL;
+    }
+    return os;
+}
+
+
+// * * * * * * * * * * * * * * * Member Operators  * * * * * * * * * * * * * //
+
+void Foam::mapPolyMesh::operator=(const mapPolyMesh& rhs)
+{
+    if (this == &rhs)
+    {
+        return;  // Self-assignment is a no-op
+    }
+
+    nOldPoints_          = rhs.nOldPoints_;
+    nOldFaces_           = rhs.nOldFaces_;
+    nOldCells_           = rhs.nOldCells_;
+    pointMap_            = rhs.pointMap_;
+    pointsFromPointsMap_ = rhs.pointsFromPointsMap_;
+    faceMap_             = rhs.faceMap_;
+    facesFromPointsMap_  = rhs.facesFromPointsMap_;
+    facesFromEdgesMap_   = rhs.facesFromEdgesMap_;
+    facesFromFacesMap_   = rhs.facesFromFacesMap_;
+    cellMap_             = rhs.cellMap_;
+    cellsFromPointsMap_  = rhs.cellsFromPointsMap_;
+    cellsFromEdgesMap_   = rhs.cellsFromEdgesMap_;
+    cellsFromFacesMap_   = rhs.cellsFromFacesMap_;
+    cellsFromCellsMap_   = rhs.cellsFromCellsMap_;
+    reversePointMap_     = rhs.reversePointMap_;
+    reverseFaceMap_      = rhs.reverseFaceMap_;
+    reverseCellMap_      = rhs.reverseCellMap_;
+    flipFaceFlux_        = rhs.flipFaceFlux_;
+    patchPointMap_       = rhs.patchPointMap_;
+    pointZoneMap_        = rhs.pointZoneMap_;
+    faceZonePointMap_    = rhs.faceZonePointMap_;
+    faceZoneFaceMap_     = rhs.faceZoneFaceMap_;
+    cellZoneMap_         = rhs.cellZoneMap_;
+    preMotionPoints_     = rhs.preMotionPoints_;
+    oldPatchSizes_       = rhs.oldPatchSizes_;
+    oldPatchStarts_      = rhs.oldPatchStarts_;
+    oldPatchNMeshPoints_ = rhs.oldPatchNMeshPoints_;
+    oldCellVolumesPtr_   = rhs.oldCellVolumesPtr_.clone();
 }
 
 

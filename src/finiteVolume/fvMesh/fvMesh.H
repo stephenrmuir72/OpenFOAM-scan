@@ -65,6 +65,7 @@ SourceFiles
 #include "slicedSurfaceFieldsFwd.H"
 #include "className.H"
 #include "SolverPerformance.H"
+#include "FieldField.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -133,7 +134,20 @@ protected:
         // 2D
 
             //- Cell normals
-            mutable slicedVolVectorField* cellAreasPtr_;
+            mutable slicedVolVectorField* faceAreaNormalsPtr_;
+
+            //- Face curvatures
+            mutable std::unique_ptr<volScalarField> faceCurvaturesPtr_;
+
+            //- Face tangential direction
+            mutable slicedSurfaceVectorField* edgeAreaNormalsPtr_;
+
+            //- Edge directions (= second tangential face direction)
+            mutable slicedSurfaceVectorField* LePtr_;
+
+            //- Edge transformation tensors
+            mutable std::unique_ptr<FieldField<Field, tensor>>
+                edgeTransformTensorsPtr_;
 
 
     // Private Member Functions
@@ -157,7 +171,7 @@ protected:
             void clearOutLocal(const bool isMeshUpdate = false);
 
             //- Preserve old volume(s)
-            void storeOldVol(const scalarField&);
+            void storeOldVol(const dimensionSet& ds, const scalarField&);
 
 
        // Make geometric data
@@ -167,6 +181,13 @@ protected:
 
             void makeC() const;
             void makeCf() const;
+            void makeFaceCurvatures() const;
+            //- Calculate edge transformation tensors
+            void calcEdgeTransformTensors() const;
+
+
+        //- Helper: search for parent mesh
+        refPtr<fvMesh> parentMesh(const objectRegistry& obr) const;
 
 
         //- No copy construct
@@ -302,6 +323,9 @@ public:
             {
                 return true;
             }
+
+            //- Return null or parent mesh
+            virtual refPtr<fvMesh> parentMesh() const;
 
             //- Return the object registry - resolve conflict polyMesh/lduMesh
             virtual const objectRegistry& thisDb() const
@@ -500,8 +524,64 @@ public:
             // 2D
 
                 //- Return cell area normals as volVectorField
-                //- (faMesh::faceAreaNormals())
-                const volVectorField& cellAreas() const;
+                const volVectorField& faceAreaNormals() const;
+
+                //- Return face area normals as surfaceVectorField
+                const surfaceVectorField& edgeAreaNormals() const;
+
+                //- Return point area normals
+                const vectorField& pointAreaNormals() const;
+
+                //- Return face curvatures
+                const volScalarField& faceCurvatures() const;
+
+                //- Return edge transformation tensors
+                const FieldField<Field, tensor>& edgeTransformTensors() const;
+
+                //- Return edge length vectors
+                const surfaceVectorField& Le() const;
+
+                //- Return edge length magnitudes. Store?
+                tmp<surfaceScalarField> magLe() const;
+
+                //- Return normalised edge length vectors. Store?
+                tmp<surfaceVectorField> unitLe() const;
+
+                //- Return edge length correction
+                tmp<surfaceScalarField> edgeLengthCorrection() const;
+
+
+                // Compatibility
+
+                    //- Return face centres as areaVectorField
+                    const volVectorField& areaCentres() const
+                    {
+                        return C();
+                    }
+
+                    //- Return edge centres as edgeVectorField
+                    const surfaceVectorField& edgeCentres() const
+                    {
+                        return Cf();
+                    }
+
+                    //- Return face areas
+                    const DimensionedField<scalar, volMesh>& S() const
+                    {
+                        return V();
+                    }
+
+                    //- Return old-time face areas
+                    const DimensionedField<scalar, volMesh>& S0() const
+                    {
+                        return V0();
+                    }
+
+                    //- Return old-old-time face areas
+                    const DimensionedField<scalar, volMesh>& S00() const
+                    {
+                        return V00();
+                    }
 
 
         // Edit

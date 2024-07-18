@@ -500,12 +500,9 @@ void Foam::face::flip()
 {
     const label n = size();
 
-    if (n > 2)
+    for (label i=1; i < (n+1)/2; ++i)
     {
-        for (label i=1; i < (n+1)/2; ++i)
-        {
-            std::swap(operator[](i), operator[](n-i));
-        }
+        std::swap(operator[](i), operator[](n-i));
     }
 }
 
@@ -625,13 +622,22 @@ Foam::face Foam::face::reverseFace() const
     const label len = origFace.size();
 
     face newFace(len);
-    if (len)
+    if (len > 2)
     {
         newFace[0] = origFace[0];
         for (label i=1; i < len; ++i)
         {
             newFace[i] = origFace[len - i];
         }
+    }
+    else if (len == 2)
+    {
+        newFace[0] = origFace[1];
+        newFace[1] = origFace[0];
+    }
+    else if (len == 1)
+    {
+        newFace[0] = origFace[0];
     }
 
     return newFace;

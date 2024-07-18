@@ -50,6 +50,26 @@ namespace Foam
 
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
+Foam::refPtr<Foam::fvMesh>
+Foam::fvMesh::parentMesh(const objectRegistry& obr) const
+{
+    const fvMesh* meshPtr = isA<fvMesh>(obr);
+
+    if (meshPtr)
+    {
+        return refPtr<fvMesh>(*meshPtr);
+    }
+    else if (obr.isTimeDb())
+    {
+        return refPtr<fvMesh>();
+    }
+    else
+    {
+        return parentMesh(obr.parent());
+    }
+}
+
+
 void Foam::fvMesh::clearGeomNotOldVol()
 {
     meshObject::clearUpto
@@ -71,6 +91,10 @@ void Foam::fvMesh::clearGeomNotOldVol()
     magSfPtr_.reset(nullptr);
     CPtr_.reset(nullptr);
     CfPtr_.reset(nullptr);
+    faceAreaNormalsPtr_.reset(nullptr);
+    faceCurvaturesPtr_.reset();
+    edgeAreaNormalsPtr_.reset(nullptr);
+    LePtr_.reset(nullptr);
 }
 
 
@@ -161,7 +185,7 @@ void Foam::fvMesh::clearAddressing(const bool isMeshUpdate)
 }
 
 
-void Foam::fvMesh::storeOldVol(const scalarField& V)
+void Foam::fvMesh::storeOldVol(const dimensionSet& ds, const scalarField& V)
 {
     if (curTimeIndex_ < time().timeIndex())
     {
@@ -190,7 +214,7 @@ void Foam::fvMesh::storeOldVol(const scalarField& V)
                     IOobject::NO_REGISTER
                 ),
                 *this,
-                dimVolume
+                ds    //dimVolume
             );
             // Note: V0 now sized with current mesh, not with (potentially
             //       different size) V.
@@ -255,7 +279,20 @@ Foam::fvMesh::fvMesh(const IOobject& io, const bool doInit)
     surfaceInterpolation(*this),
     fvSolution(static_cast<const objectRegistry&>(*this)),
     boundary_(*this, boundaryMesh()),
-    curTimeIndex_(time().timeIndex())
+    lduPtr_(nullptr),
+    curTimeIndex_(time().timeIndex()),
+    VPtr_(nullptr),
+    V0Ptr_(nullptr),
+    V00Ptr_(nullptr),
+    SfPtr_(nullptr),
+    magSfPtr_(nullptr),
+    CPtr_(nullptr),
+    CfPtr_(nullptr),
+    phiPtr_(nullptr),
+    faceAreaNormalsPtr_(nullptr),
+    faceCurvaturesPtr_(nullptr),
+    edgeAreaNormalsPtr_(nullptr),
+    LePtr_(nullptr)
 {
     DebugInFunction << "Constructing fvMesh from IOobject" << endl;
 
@@ -305,7 +342,8 @@ bool Foam::fvMesh::init(const bool doInit)
         (
             rio,
             *this,
-            dimensionedScalar(dimVol, Foam::zero{})
+            //dimensionedScalar(dimVol, Foam::zero{})
+            dimensionedScalar(V().dimensions(), Foam::zero{})
         );
 
         // Set the moving flag early in case demand-driven geometry
@@ -330,7 +368,7 @@ bool Foam::fvMesh::init(const bool doInit)
         (
             rio,
             *this,
-            dimensionedScalar(dimVol/dimTime, Foam::zero{})
+            dimensionedScalar(V().dimensions()/dimTime, Foam::zero{})
         );
 
         // Set the moving flag early in case demand-driven geometry
@@ -386,7 +424,20 @@ Foam::fvMesh::fvMesh
     surfaceInterpolation(*this),
     fvSolution(static_cast<const objectRegistry&>(*this)),
     boundary_(*this),
-    curTimeIndex_(time().timeIndex())
+    lduPtr_(nullptr),
+    curTimeIndex_(time().timeIndex()),
+    VPtr_(nullptr),
+    V0Ptr_(nullptr),
+    V00Ptr_(nullptr),
+    SfPtr_(nullptr),
+    magSfPtr_(nullptr),
+    CPtr_(nullptr),
+    CfPtr_(nullptr),
+    phiPtr_(nullptr),
+    faceAreaNormalsPtr_(nullptr),
+    faceCurvaturesPtr_(nullptr),
+    edgeAreaNormalsPtr_(nullptr),
+    LePtr_(nullptr)
 {
     DebugInFunction << "Constructing fvMesh from components" << endl;
 }
@@ -413,7 +464,20 @@ Foam::fvMesh::fvMesh
     surfaceInterpolation(*this),
     fvSolution(static_cast<const objectRegistry&>(*this)),
     boundary_(*this),
-    curTimeIndex_(time().timeIndex())
+    lduPtr_(nullptr),
+    curTimeIndex_(time().timeIndex()),
+    VPtr_(nullptr),
+    V0Ptr_(nullptr),
+    V00Ptr_(nullptr),
+    SfPtr_(nullptr),
+    magSfPtr_(nullptr),
+    CPtr_(nullptr),
+    CfPtr_(nullptr),
+    phiPtr_(nullptr),
+    faceAreaNormalsPtr_(nullptr),
+    faceCurvaturesPtr_(nullptr),
+    edgeAreaNormalsPtr_(nullptr),
+    LePtr_(nullptr)
 {
     DebugInFunction << "Constructing fvMesh from components" << endl;
 }
@@ -480,7 +544,20 @@ Foam::fvMesh::fvMesh
         static_cast<const dictionary*>(baseMesh.hasSolution())
     ),
     boundary_(*this),
-    curTimeIndex_(time().timeIndex())
+    lduPtr_(nullptr),
+    curTimeIndex_(time().timeIndex()),
+    VPtr_(nullptr),
+    V0Ptr_(nullptr),
+    V00Ptr_(nullptr),
+    SfPtr_(nullptr),
+    magSfPtr_(nullptr),
+    CPtr_(nullptr),
+    CfPtr_(nullptr),
+    phiPtr_(nullptr),
+    faceAreaNormalsPtr_(nullptr),
+    faceCurvaturesPtr_(nullptr),
+    edgeAreaNormalsPtr_(nullptr),
+    LePtr_(nullptr)
 {
     DebugInFunction << "Constructing fvMesh as copy and primitives" << endl;
 
@@ -521,7 +598,20 @@ Foam::fvMesh::fvMesh
         static_cast<const dictionary*>(baseMesh.hasSolution())
     ),
     boundary_(*this),
-    curTimeIndex_(time().timeIndex())
+    lduPtr_(nullptr),
+    curTimeIndex_(time().timeIndex()),
+    VPtr_(nullptr),
+    V0Ptr_(nullptr),
+    V00Ptr_(nullptr),
+    SfPtr_(nullptr),
+    magSfPtr_(nullptr),
+    CPtr_(nullptr),
+    CfPtr_(nullptr),
+    phiPtr_(nullptr),
+    faceAreaNormalsPtr_(nullptr),
+    faceCurvaturesPtr_(nullptr),
+    edgeAreaNormalsPtr_(nullptr),
+    LePtr_(nullptr)
 {
     DebugInFunction << "Constructing fvMesh as copy and primitives" << endl;
 
@@ -539,6 +629,12 @@ Foam::fvMesh::~fvMesh()
 
 
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
+
+Foam::refPtr<Foam::fvMesh> Foam::fvMesh::parentMesh() const
+{
+    return parentMesh(thisDb());
+}
+
 
 const Foam::fvSchemes* Foam::fvMesh::hasSchemes() const
 {
@@ -896,7 +992,7 @@ void Foam::fvMesh::movePoints(const pointField& p)
     // This will update V0, V00
     if (curTimeIndex_ < time().timeIndex())
     {
-        storeOldVol(V());
+        storeOldVol(V().dimensions(), V());
     }
 
 
@@ -920,7 +1016,7 @@ void Foam::fvMesh::movePoints(const pointField& p)
                 IOobject::NO_REGISTER
             ),
             *this,
-            dimensionedScalar(dimVolume/dimTime, Foam::zero{})
+            dimensionedScalar(V().dimensions()/dimTime, Foam::zero{})
         );
     }
     else
@@ -978,7 +1074,7 @@ void Foam::fvMesh::updateMesh(const mapPolyMesh& mpm)
     {
         // Grab old time volumes if the time has been incremented
         // This will update V0, V00
-        storeOldVol(mpm.oldCellVolumes());
+        storeOldVol(VPtr_->dimensions(), mpm.oldCellVolumes());
 
         // Few checks
         if (VPtr_ && (VPtr_->size() != mpm.nOldCells()))

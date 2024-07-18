@@ -1023,10 +1023,8 @@ void Foam::polyTopoChange::compact
                     // Valid boundary face
                     const face& f = faces_[facei];
 
-                    forAll(f, fp)
+                    for (const label pointi : f)
                     {
-                        label pointi = f[fp];
-
                         if (localPointMap[pointi] == -1)
                         {
                             if
@@ -1048,8 +1046,8 @@ void Foam::polyTopoChange::compact
                 }
             }
 
-            label nBoundaryPoints = newPointi;
-            nInternalPoints = nActivePoints - nBoundaryPoints;
+            const label nBoundaryPoints = newPointi;
+            const label nInternalPoints = points_.size()-nBoundaryPoints;
 
             // Move the boundary addressing up
             forAll(localPointMap, pointi)
@@ -1075,10 +1073,8 @@ void Foam::polyTopoChange::compact
                     // Valid internal face
                     const face& f = faces_[facei];
 
-                    forAll(f, fp)
+                    for (const label pointi : f)
                     {
-                        label pointi = f[fp];
-
                         if (localPointMap[pointi] == -1)
                         {
                             if
@@ -1100,12 +1096,22 @@ void Foam::polyTopoChange::compact
                 }
             }
 
-            if (newPointi != nInternalPoints)
+
+            // Assure there is no gap between internal points and boundary
+            // points
+
+            if (newPointi < nInternalPoints)
             {
-                FatalErrorInFunction
-                    << "Problem." << abort(FatalError);
+                // Move the boundary addressing down
+                forAll(localPointMap, pointi)
+                {
+                    if (localPointMap[pointi] >= newPointi)
+                    {
+                        localPointMap[pointi] -= (nInternalPoints-newPointi);
+                    }
+                }
             }
-            newPointi = nActivePoints;
+            newPointi += nBoundaryPoints;
         }
 
         for (const label pointi : retiredPoints_)

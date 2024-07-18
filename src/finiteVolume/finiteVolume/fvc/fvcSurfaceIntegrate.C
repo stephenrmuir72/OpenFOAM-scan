@@ -100,7 +100,7 @@ surfaceIntegrate
                 IOobject::NO_WRITE
             ),
             mesh,
-            dimensioned<Type>(ssf.dimensions()/dimVol, Zero),
+            dimensioned<Type>(ssf.dimensions()/mesh.V().dimensions(), Zero),
             fvPatchFieldBase::extrapolatedCalculatedType()
         )
     );

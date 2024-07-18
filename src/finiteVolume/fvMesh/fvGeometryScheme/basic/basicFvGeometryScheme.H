@@ -52,6 +52,23 @@ class basicFvGeometryScheme
 :
     public fvGeometryScheme
 {
+protected:
+
+    // Protected Member Functions
+
+        void calcPointAreaNormals(vectorField& result) const;
+
+        void calcFaceAreaNormalsInvDistSqrWeighted(vectorField& fDir1) const;
+
+        void calcFaceAreaNormalsAvgPoint
+        (
+            const vectorField& pointNormals,
+            vectorField& fDir1
+        ) const;
+
+
+private:
+
     // Private Member Functions
 
         //- No copy construct
