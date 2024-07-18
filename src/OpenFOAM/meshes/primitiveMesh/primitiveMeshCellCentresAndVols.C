@@ -60,11 +60,11 @@ void Foam::primitiveMesh::calcCellCentresAndVols() const
     cellVolumesPtr_ = new scalarField(nCells(), Zero);
     scalarField& cellVols = *cellVolumesPtr_;
 
-    cellAreasPtr_ = new vectorField();
-    vectorField& cellAreas = *cellAreasPtr_;
+    cellDir0Ptr_ = new vectorField();
+    vectorField& cellDir0 = *cellDir0Ptr_;
     if (nTopologicalD() == 2)
     {
-        cellAreas.setSize(nCells(), Zero);
+        cellDir0.setSize(nCells(), Zero);
     }
 
     // Make centres and volumes
@@ -75,7 +75,7 @@ void Foam::primitiveMesh::calcCellCentresAndVols() const
         faceAreas(),
         cellCtrs,
         cellVols,
-        cellAreas
+        cellDir0
     );
 
     if (debug)
@@ -113,22 +113,21 @@ const Foam::scalarField& Foam::primitiveMesh::cellVolumes() const
 }
 
 
-const Foam::vectorField& Foam::primitiveMesh::cellAreas() const
+const Foam::vectorField& Foam::primitiveMesh::cellDir0() const
 {
-    if (!cellAreasPtr_)
+    if (!cellDir0Ptr_)
     {
         //calcCellCentresAndVols();
         const_cast<primitiveMesh&>(*this).updateGeom();
     }
 
-    return *cellAreasPtr_;
+    return *cellDir0Ptr_;
 }
 
 
-Foam::tmp<Foam::vectorField> Foam::primitiveMesh::cellDir0() const
+Foam::tmp<Foam::vectorField> Foam::primitiveMesh::cellAreas() const
 {
-    const auto& areas = cellAreas();
-    return areas/mag(areas);
+    return cellVolumes()*cellDir0();
 }
 
 
@@ -142,6 +141,19 @@ const Foam::vectorField& Foam::primitiveMesh::cellDir1() const
     }
 
     return *cellDir1Ptr_;
+}
+
+
+const Foam::vectorField& Foam::primitiveMesh::pointDir0() const
+{
+    if (!pointDir0Ptr_)
+    {
+        // Externally calculated
+        FatalErrorInFunction<< "No calculated point normal direction"
+            << exit(FatalError);
+    }
+
+    return *pointDir0Ptr_;
 }
 
 

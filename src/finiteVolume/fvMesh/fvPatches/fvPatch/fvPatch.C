@@ -157,7 +157,26 @@ Foam::tmp<Foam::vectorField> Foam::fvPatch::delta() const
 {
     // Use patch-normal delta for all non-coupled BCs
     const vectorField nHat(nf());
-    return nHat*(nHat & (Cf() - Cn()));
+
+    tmp<vectorField> PN(Cf() - Cn());
+
+    if (boundaryMesh().mesh().nTopologicalD() == 2)
+    {
+        // Do not allow any mag(val) < SMALL
+        // sqrt(1/3) = 0.5773502691896257, but slightly rounded down
+        const vector minVector(vector::uniform(0.57735*SMALL));
+        const scalar minLenSqr(SMALL*SMALL);
+
+        for (vector& e : PN.ref())
+        {
+            if (e.magSqr() < minLenSqr)
+            {
+                e = minVector;
+            }
+        }
+    }
+
+    return nHat*(nHat & PN);
 }
 
 
@@ -167,8 +186,13 @@ void Foam::fvPatch::makeWeights(scalarField& w) const
 }
 
 
-void Foam::fvPatch::makeDeltaCoeffs(scalarField& w) const
-{}
+void Foam::fvPatch::makeDeltaCoeffs(scalarField& dc) const
+{
+    if (boundaryMesh().mesh().nTopologicalD() == 2)
+    {
+        dc = scalar(1)/(unitSf() & delta());
+    }
+}
 
 
 void Foam::fvPatch::makeNonOrthoDeltaCoeffs(scalarField& w) const

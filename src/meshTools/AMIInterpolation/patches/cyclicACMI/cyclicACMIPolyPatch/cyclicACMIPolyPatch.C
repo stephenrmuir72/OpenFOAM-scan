@@ -275,7 +275,7 @@ void Foam::cyclicACMIPolyPatch::scalePatchFaceAreas
         mesh.cells(),
         const_cast<vectorField&>(mesh.cellCentres()),
         const_cast<scalarField&>(mesh.cellVolumes()),
-        const_cast<vectorField&>(mesh.cellAreas())
+        const_cast<vectorField&>(mesh.cellDir0())
     );
 }
 

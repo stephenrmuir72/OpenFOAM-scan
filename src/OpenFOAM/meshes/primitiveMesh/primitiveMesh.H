@@ -182,19 +182,23 @@ class primitiveMesh
             //- Face areas
             mutable vectorField* faceAreasPtr_;
 
+
             // 2D/1D
 
                 //- Cell areas
-                mutable vectorField* cellAreasPtr_;
+                mutable vectorField* cellDir0Ptr_;
 
                 //- Cell tangential direction
                 mutable vectorField* cellDir1Ptr_;
 
-                //- Face tangential direction
+                //- Face tangential direction1
                 mutable vectorField* faceDir1Ptr_;
 
-                //- Face tangential direction
-                mutable vectorField* faceDir2Ptr_;
+                //- Face tangential vector2 (unnormalised)
+                mutable vectorField* faceVec2Ptr_;
+
+                //- Point normal direction (average of surrounding cellDir0)
+                mutable vectorField* pointDir0Ptr_;
 
 
     // Private Member Functions
@@ -607,14 +611,23 @@ public:
                 const vectorField& faceCentres() const;
                 const scalarField& cellVolumes() const;
                 const vectorField& faceAreas() const;
-                const vectorField& cellAreas() const;
 
-                tmp<vectorField> cellDir0() const;
-                const vectorField& cellDir1() const;
 
-                tmp<vectorField> faceDir0() const;
-                const vectorField& faceDir1() const;
-                const vectorField& faceDir2() const;
+                // 2D
+
+                    const vectorField& cellDir0() const;
+                    const vectorField& cellDir1() const;
+                    tmp<vectorField> cellAreas() const;
+
+                    // Outwards pointing unit normal
+                    tmp<vectorField> faceDir0() const;
+                    // Normalised tangential direction
+                    const vectorField& faceDir1() const;
+                    // Unnormalised second tangential direction
+                    const vectorField& faceVec2() const;
+                    tmp<vectorField> faceDir2() const;
+                    // Unit normal on points - usually average of cellDir0
+                    const vectorField& pointDir0() const;
 
 
             // Mesh motion
@@ -917,6 +930,10 @@ public:
 
             const labelList& cellEdges(const label celli) const;
 
+            //- Return loop of cell in case of 2D topology. Assumes individual
+            //- faces are size two and have correct orientation
+            face loop(const label celli) const;
+
             //- Update all geometric data
             virtual void updateGeom();
 
@@ -936,10 +953,11 @@ public:
             //- Reset additional mesh primitive data
             void resetPrimitives
             (
-                autoPtr<vectorField>&& cellAreas,
+                autoPtr<vectorField>&& cellDir0,
                 autoPtr<vectorField>&& cellDir1,
                 autoPtr<vectorField>&& faceDir1,
-                autoPtr<vectorField>&& faceDir2
+                autoPtr<vectorField>&& faceVec2,
+                autoPtr<vectorField>&& pointDir0
             );
 };
 

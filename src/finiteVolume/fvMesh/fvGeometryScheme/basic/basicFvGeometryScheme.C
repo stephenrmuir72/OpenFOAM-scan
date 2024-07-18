@@ -30,6 +30,8 @@ License
 #include "surfaceFields.H"
 #include "volFields.H"
 #include "syncTools.H"
+#include "triPointRef.H"
+#include "wedgePolyPatch.H"
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -37,6 +39,436 @@ namespace Foam
 {
     defineTypeNameAndDebug(basicFvGeometryScheme, 0);
     addToRunTimeSelectionTable(fvGeometryScheme, basicFvGeometryScheme, dict);
+}
+
+
+// * * * * * * * * * * * * * * * Local Functions * * * * * * * * * * * * * * //
+
+namespace Foam
+{
+
+// Define an area-weighted normal for three points (defining a triangle)
+// (p0, p1, p2) are the base, first, second points respectively
+//
+// From the original Tukovic code:
+//
+//   vector n = (d1^d2)/mag(d1^d2);
+//   scalar sinAlpha = mag(d1^d2)/(mag(d1)*mag(d2));
+//   scalar w = sinAlpha/(mag(d1)*mag(d2));
+//
+// ie, normal weighted by area, sine angle and inverse distance squared.
+// - area : larger weight for larger areas
+// - sin  : lower weight for narrow angles (eg, shards)
+// - inv distance squared : lower weights for distant points
+//
+// The above refactored, with 0.5 for area:
+//
+//   (d1 ^ d2) / (2 * magSqr(d1) * magSqr(d2))
+
+static inline vector areaInvDistSqrWeightedNormal
+(
+    const vector& a,
+    const vector& b
+)
+{
+    // TBD: Use volatile to avoid aggressive branch optimization
+    const scalar s(2*magSqr(a)*magSqr(b));
+
+    return s < ROOTVSMALL ? Zero : (a ^ b) / s;
+}
+
+
+// The area normal for the face dual (around base-point)
+// described by the right/left edge points and the centre point
+//
+// The adjustment for 1/2 edge point (the dual point) is done internally
+static inline vector areaInvDistSqrWeightedNormalDualEdge
+(
+    const point& basePoint,
+    const point& rightPoint,
+    const point& leftPoint,
+    const point& centrePoint
+)
+{
+    const vector mid(centrePoint - basePoint);
+
+    return
+    (
+        areaInvDistSqrWeightedNormal
+        (
+            0.5*(rightPoint - basePoint),   // vector to right 1/2 edge
+            mid
+        )
+      + areaInvDistSqrWeightedNormal
+        (
+            mid,
+            0.5*(leftPoint - basePoint)     // vector to left 1/2 edge
+        )
+    );
+}
+
+
+// Weighted area normal for the face triangle (around base-point)
+// to the edge points and the centre point.
+// Used for example for area-weighted edge normals
+// ---------------------------------------------------------------------------
+//         own          |
+//          *           | Don't bother trying to split the triangle into
+//         /.\          | sub-triangles. Planar anyhow and skew weighting
+//        / . \         | is less relevant here.
+//       /  .  \        |
+//      /   .   \       | Note: need negative for neighbour side orientation.
+//  e0 *----:----* e1   |
+// ---------------------------------------------------------------------------
+
+static inline vector areaInvDistSqrWeightedNormalFaceTriangle
+(
+    const linePointRef& edgeLine,
+    const point& faceCentre
+)
+{
+    return
+    (
+        areaInvDistSqrWeightedNormal
+        (
+            (edgeLine.a() - faceCentre),  // From centre to right edge
+            (edgeLine.b() - faceCentre)   // From centre to left edge
+        )
+    );
+}
+
+
+// Simple area normal calculation for specified edge vector and face centre
+// The face centre comes last since it is less accurate
+static inline vector areaNormalFaceTriangle
+(
+    const linePointRef& edgeLine,
+    const point& faceCentre
+)
+{
+    return triPointRef::areaNormal(edgeLine.a(), edgeLine.b(), faceCentre);
+}
+
+} // End namespace Foam
+
+
+// * * * * * * * * * * * * * * * Local Functions * * * * * * * * * * * * * * //
+
+namespace Foam
+{
+
+//- Calculate the 'Le' vector from faceCentre to edge centre
+//  using the edge normal to correct for curvature
+//
+//  Normalise and rescaled to the edge length
+static inline vector calcLeVector
+(
+    const point& faceCentre,
+    const linePointRef& edgeLine,
+    const vector& edgeNormal   // (unit or area normal)
+)
+{
+    const vector centreToEdge(edgeLine.centre() - faceCentre);
+
+    vector leVector(edgeLine.vec() ^ edgeNormal);
+
+    scalar s(mag(leVector));
+
+    if (s < ROOTVSMALL)
+    {
+        // The calculated edgeNormal somehow degenerate and thus a
+        // bad cross-product?
+        // Revert to basic centre -> edge
+
+        leVector = centreToEdge;
+        leVector.removeCollinear(edgeLine.unitVec());
+        s = mag(leVector);
+
+        if (s < ROOTVSMALL)
+        {
+            // Unlikely that this should happen
+            return Zero;
+        }
+
+        leVector *= edgeLine.mag()/s;
+    }
+    else
+    {
+        // The additional orientation is probably unnecessary
+        leVector *= edgeLine.mag()/s * sign(leVector & centreToEdge);
+    }
+
+    return leVector;
+}
+
+} // End namespace Foam
+
+
+namespace Foam
+{
+
+// Impose a minimum (edge) vector length
+// - disallow any mag(vec) < SMALL
+static inline void imposeMinVectorLength(vectorField& fld)
+{
+    // If it is small, no orientation information reasonably possible
+    // so use a vector(1,1,1) * sqrt(1/3)*min-length
+
+    // sqrt(1/3) = 0.5773502691896257, but slightly rounded down
+    const vector minVector(vector::uniform(0.57735*SMALL));
+    const scalar minLenSqr(SMALL*SMALL);
+
+    for (vector& v : fld)
+    {
+        if (v.magSqr() < minLenSqr)
+        {
+            v = minVector;
+        }
+    }
+}
+
+} // End namespace Foam
+
+
+// * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
+
+void Foam::basicFvGeometryScheme::calcPointAreaNormals
+(
+    vectorField& result
+) const
+{
+    // See finiteArea/faMesh/faMeshDemandDrivenData.C
+
+    DebugInFunction
+        << "Calculating pointAreaNormals : face dual method" << endl;
+
+    result.resize_nocopy(mesh_.nPoints());
+    result = Zero;
+
+    const auto& cells = mesh_.cells();
+    const auto& points = mesh_.points();
+    const auto& faces = mesh_.faces();
+    //const auto& cc = mesh_.cellCentres();
+
+    // Loop over all cells
+    //face f;
+    forAll(cells, celli)
+    {
+        // Collect vertices as a face
+        const face f(mesh_.loop(celli));
+
+        if (uniqueSort(f).size() != f.size())
+        {
+            const auto& cFaces = cells[celli];
+            FatalErrorInFunction
+                << "problem cell:" << celli
+                << " faces:" << cFaces
+                << " verts:" << UIndirectList<face>(faces, cFaces)
+                << " sorted verts:" << f
+                << exit(FatalError);
+        }
+
+        //Pout<< "cell:" << celli
+        //    << " verts:" << flatOutput(f)
+        //    << " points:" << flatOutput(UIndirectList<point>(points, f))
+        //    << " normal:" << f.unitNormal(points)
+        //    << endl;
+
+        //- Use centroid
+        //point centrePoint(cc[celli]);
+        //- Use average
+        point centrePoint(Zero);
+        for (const label pointi : f)
+        {
+            centrePoint += points[pointi];
+        }
+        centrePoint /= f.size();
+
+        forAll(f, i)
+        {
+            const label pt0 = f.thisLabel(i);    // base
+            result[pt0] +=
+                areaInvDistSqrWeightedNormalDualEdge
+                (
+                    points[pt0],             // base
+                    points[f.nextLabel(i)],  // right
+                    points[f.prevLabel(i)],  // left
+                    centrePoint
+                );
+        }
+    }
+
+    // Parallel
+    syncTools::syncPointList
+    (
+        mesh_,
+        result,
+        plusEqOp<point>(),
+        vector::zero,
+        mapDistribute::transform()
+    );
+
+    // TBD: wedge correction?
+    {
+        for (const auto& fpp : mesh_.boundary())
+        {
+            if (isA<wedgePolyPatch>(fpp.patch()))
+            {
+                WarningInFunction<< "Special wedge handling not supported"
+                    << endl;
+            }
+        }
+    }
+
+    // TBD: guarantee point normal perpendicular to any coupled fvMesh
+    WarningInFunction
+        << "PointNormals not perpendicular to any coupled fvPatch."
+        << endl;
+
+//for (label facei = mesh_.nInternalFaces(); facei < mesh_.nFaces(); facei++)
+//{
+//    const face& f = faces[facei];
+//    forAll(f, i)
+//    {
+//        result[f[i]].removeCollinear(vector(0, 0, 1));
+//    }
+//}
+
+    result.normalise();
+}
+
+
+void Foam::basicFvGeometryScheme::calcFaceAreaNormalsInvDistSqrWeighted
+(
+    vectorField& fDir1
+) const
+{
+    // See finiteArea/faMesh/faMeshDemandDrivenData.C
+
+    DebugInFunction
+        << "Calculating faceAreaNormals : face triangle-normal method" << endl;
+
+    const labelUList& owner = mesh_.faceOwner();
+    const labelUList& neighbour = mesh_.neighbour();
+    const auto& faces = mesh_.faces();
+    const auto& pts = mesh_.points();
+    const auto& cc = mesh_.cellCentres();
+
+    forAll(owner, facei)
+    {
+        const face& f = faces[facei];
+        const linePointRef edgeLine(pts[f[0]], pts[f[1]]);
+
+        fDir1[facei] = areaInvDistSqrWeightedNormalFaceTriangle
+        (
+            edgeLine,
+            cc[owner[facei]]
+        );
+
+        Pout<< "face:" << facei << " owner vector:" << fDir1[facei]
+            << endl;
+    }
+
+    vectorField nbrDir1
+    (
+        SubList<vector>
+        (
+            fDir1,
+            mesh_.nBoundaryFaces(),
+            mesh_.nInternalFaces()
+        )
+    );
+    syncTools::swapBoundaryFaceList(mesh_, nbrDir1);
+
+    // Finish internal faces
+    forAll(neighbour, facei)
+    {
+        const face& f = faces[facei];
+        const linePointRef edgeLine(pts[f[1]], pts[f[0]]);
+
+        const vector v
+        (
+            areaInvDistSqrWeightedNormalFaceTriangle
+            (
+                edgeLine,
+                cc[neighbour[facei]]
+            )
+        );
+
+        fDir1[facei] += areaInvDistSqrWeightedNormalFaceTriangle
+        (
+            edgeLine,
+            cc[neighbour[facei]]
+        );
+
+        Pout<< "face:" << facei << " neighbour vector:" << v
+            << endl;
+
+    }
+
+    // Finish coupled faces
+    for (auto& fpp : mesh_.boundary())
+    {
+        if (isA<wedgePolyPatch>(fpp.patch()))
+        {
+            WarningInFunction<< "Special wedge handling not supported"
+                << endl;
+        }
+
+        const auto* ppPtr = isA<coupledPolyPatch>(fpp.patch());
+        if (ppPtr)
+        {
+            const auto& pp = *ppPtr;
+            forAll(pp, i)
+            {
+                const label bFacei = pp.offset()+i;
+                fDir1[pp.start()+i] += nbrDir1[bFacei];
+            }
+        }
+    }
+
+
+    // TBD: guarantee point normal perpendicular to any coupled fvMesh
+    WarningInFunction
+        << "PointNormals not perpendicular to any coupled fvPatch."
+        << endl;
+
+//for (label facei = mesh_.nInternalFaces(); facei < mesh_.nFaces(); facei++)
+//{
+//    fDir1[facei].removeCollinear(vector(0, 0, 1));
+//}
+
+    fDir1.normalise();
+    imposeMinVectorLength(fDir1);
+}
+
+
+void Foam::basicFvGeometryScheme::calcFaceAreaNormalsAvgPoint
+(
+    const vectorField& pointNormals,
+    vectorField& fDir1
+) const
+{
+    DebugInFunction
+        << "Calculating faceAreaNormals : average point-normal method" << endl;
+
+    const auto& faces = mesh_.faces();
+    const auto& pts = mesh_.points();
+
+    // All faces
+    forAll(faces, facei)
+    {
+        const face& f = faces[facei];
+        const linePointRef edgeLine(pts[f[0]], pts[f[1]]);
+
+        // Average of both ends
+        fDir1[facei] = (pointNormals[f[0]] + pointNormals[f[1]]);
+
+        fDir1[facei].removeCollinear(edgeLine.unitVec());
+        fDir1[facei].normalise();
+    }
+
+    imposeMinVectorLength(fDir1);
 }
 
 
@@ -69,70 +501,156 @@ void Foam::basicFvGeometryScheme::movePoints()
 
     if (mesh_.nTopologicalD() == 2)
     {
-        // Now we are parallel aware:
+        // In 2D above primitiveMesh will now have the edge-vectors stored
+        // in the faceAreas.
+        // Correct:
         // - calculate cell direction1 (= normal, since is now a face)
-        // - average cell direction1 onto face
+        // - option1: average cell direction1 onto face
+        // - option2: average triangle direction1 onto face
         // - re-orient face area to be perpendicular to direction1
-
-        tmp<vectorField> tcDir0(mesh_.cellDir0());
-        const auto& cDir0 = tcDir0();
-
-        autoPtr<vectorField> tfDir1
-        (
-            autoPtr<vectorField>::New
-            (
-                mesh_.nFaces(),
-                Zero
-            )
-        );
-        auto& fDir1 = tfDir1.ref();
 
         const labelUList& owner = mesh_.faceOwner();
         const labelUList& neighbour = mesh_.neighbour();
+        const auto& faces = mesh_.faces();
+        const auto& pts = mesh_.points();
+        const auto& cc = mesh_.cellCentres();
 
-        forAll(owner, facei)
+        // Calculate point normals from cell normals (cellDir0)
+        autoPtr<vectorField> tpointDir0
+        (
+            autoPtr<vectorField>::New(mesh_.nPoints())
+        );
+        calcPointAreaNormals(tpointDir0.ref());
+
+
+        // Average of element normals onto face
+        autoPtr<vectorField> tfDir1(autoPtr<vectorField>::New(mesh_.nFaces()));
+        auto& fDir1 = tfDir1.ref();
+
+
+        // Option 1: use average cell normals ...
+        if (false)
         {
-            fDir1[facei] = cDir0[owner[facei]];
-        }
+            // Cell normals
+            const auto& cDir0 = mesh_.cellDir0();
 
-        vectorField nbrCellDir0;
-        syncTools::swapBoundaryCellList(mesh_, cDir0, nbrCellDir0);
-
-        // Finish internal faces
-        forAll(neighbour, facei)
-        {
-            fDir1[facei] += cDir0[neighbour[facei]];
-        }
-
-        // Finish coupled faces
-        for (auto& fpp : mesh_.boundary())
-        {
-            const auto* ppPtr = isA<coupledPolyPatch>(fpp.patch());
-            if (ppPtr)
+            forAll(owner, facei)
             {
-                vectorField s
+                fDir1[facei] = cDir0[owner[facei]];
+            }
+
+            vectorField nbrCellDir0;
+            syncTools::swapBoundaryCellList(mesh_, cDir0, nbrCellDir0);
+
+            // Finish internal faces
+            forAll(neighbour, facei)
+            {
+                fDir1[facei] += cDir0[neighbour[facei]];
+            }
+
+            // Finish coupled faces
+            for (auto& fpp : mesh_.boundary())
+            {
+                const auto* ppPtr = isA<coupledPolyPatch>(fpp.patch());
+                if (ppPtr)
+                {
+                    vectorField s
+                    (
+                        fpp.boundarySlice(nbrCellDir0)
+                      + fpp.patchInternalField(cDir0)
+                    );
+                    SubList<vector>(fDir1, fpp.size(), fpp.start()) = s;
+                }
+            }
+
+            fDir1.normalise();
+
+            // Re-do face-area to be perpendicular to the tangential
+            // face-direction
+            vectorField& faceAreas =
+                const_cast<vectorField&>(mesh_.faceAreas());
+            const scalarField magS(mag(faceAreas));
+
+            // edge-vector as calculated by primitiveMesh
+            autoPtr<vectorField> tfVec2(autoPtr<vectorField>::New(faceAreas));
+
+            // primitiveMesh::faceAreas becomes the faceDir0
+            faceAreas = (faceAreas ^ fDir1);
+            faceAreas.normalise();
+            faceAreas *= magS;
+
+            const_cast<fvMesh&>(mesh_).primitiveMesh::resetPrimitives
+            (
+                autoPtr<vectorField>(),
+                autoPtr<vectorField>(),
+                std::move(tfDir1),          // average cell normal
+                std::move(tfVec2),          // 'edge' vector (unnormalised)
+                std::move(tpointDir0)       // point normal
+            );
+        }
+
+        // Option 2: average local triangle normals instead of the cell normal
+        //           (see areaInvDistSqrWeightedNormalFaceTriangle in
+        //            faMeshDemandDrivenData.C)
+
+        const label geometryOrder = 2;
+
+        if (geometryOrder < 2)
+        {
+            // Face normal direction from triangle orientation
+            calcFaceAreaNormalsInvDistSqrWeighted(fDir1);
+        }
+        else
+        {
+
+            // This is the original approach using an average of the
+            // point normals.  May be removed in the future (2022-09)
+
+            // Starting from point area normals
+            calcFaceAreaNormalsAvgPoint(tpointDir0(), fDir1);
+        }
+
+
+        vectorField& faceAreas =
+            const_cast<vectorField&>(mesh_.faceAreas());
+
+        autoPtr<vectorField> tLe(autoPtr<vectorField>::New(faceAreas));
+        // Re-calculate edge vectors from the edgeAreaNormals
+        {
+            vectorField& Le = tLe.ref();
+
+            forAll(owner, facei)
+            {
+                const face& f = faces[facei];
+                const linePointRef edgeLine(pts[f[0]], pts[f[1]]);
+
+                Le[facei] = calcLeVector
                 (
-                    fpp.boundarySlice(nbrCellDir0)
-                  + fpp.patchInternalField(cDir0)
+                    cc[owner[facei]],   // only used for sign
+                    edgeLine,
+                    fDir1[facei]        // face-tangential direction
                 );
-                SubList<vector>(fDir1, fpp.size(), fpp.start()) = s;
             }
         }
 
-        // Re-do face-area to be perpendicular to the tangential face-direction
-        vectorField& faceAreas = const_cast<vectorField&>(mesh_.faceAreas());
+
+        // Re-do face-area to be perpendicular to the tangential
+        // face-directions
         const scalarField magS(mag(faceAreas));
 
         faceAreas = (faceAreas ^ fDir1);
         faceAreas.normalise();
         faceAreas *= magS;
 
+        // Store on the primitiveMesh level; fvMesh will demand-driven slice it
+        // into vol- and surface- fields
         const_cast<fvMesh&>(mesh_).primitiveMesh::resetPrimitives
         (
             autoPtr<vectorField>(),
             autoPtr<vectorField>(),
-            std::move(tfDir1),
-            autoPtr<vectorField>()
+            std::move(tfDir1),          // face normal from average cell normal
+            std::move(tLe),             // edge vector (unnormalised)
+            std::move(tpointDir0)       // point normal
         );
     }
 }

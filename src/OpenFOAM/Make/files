@@ -691,6 +691,7 @@ $(cellMatcher)/degenerateMatcher.C
 
 mapPolyMesh = $(polyMesh)/mapPolyMesh
 $(mapPolyMesh)/mapPolyMesh.C
+$(mapPolyMesh)/IOmapPolyMesh.C
 $(mapPolyMesh)/faceMapper/faceMapper.C
 $(mapPolyMesh)/cellMapper/cellMapper.C
 $(mapPolyMesh)/mapDistribute/mapDistribute.C

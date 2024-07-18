@@ -118,16 +118,23 @@ const Foam::vectorField& Foam::primitiveMesh::faceDir1() const
 }
 
 
-const Foam::vectorField& Foam::primitiveMesh::faceDir2() const
+const Foam::vectorField& Foam::primitiveMesh::faceVec2() const
 {
-    if (!faceDir2Ptr_)
+    if (!faceVec2Ptr_)
     {
         // Externally calculated
         FatalErrorInFunction<< "No calculated tangential vector"
             << exit(FatalError);
     }
 
-    return *faceDir2Ptr_;
+    return *faceVec2Ptr_;
+}
+
+
+Foam::tmp<Foam::vectorField> Foam::primitiveMesh::faceDir2() const
+{
+    const auto& areas = faceVec2();
+    return areas/mag(areas);
 }
 
 

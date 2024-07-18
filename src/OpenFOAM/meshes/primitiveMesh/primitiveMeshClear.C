@@ -121,9 +121,9 @@ void Foam::primitiveMesh::printAllocated() const
         Pout<< "    Face-areas" << endl;
     }
 
-    if (cellAreasPtr_)
+    if (cellDir0Ptr_)
     {
-        Pout<< "    Cell-areas" << endl;
+        Pout<< "    Cell-area normals" << endl;
     }
 
     if (cellDir1Ptr_)
@@ -136,9 +136,14 @@ void Foam::primitiveMesh::printAllocated() const
         Pout<< "    Face-direction 1" << endl;
     }
 
-    if (faceDir2Ptr_)
+    if (faceVec2Ptr_)
     {
-        Pout<< "    Face-direction 2" << endl;
+        Pout<< "    Face-direction 2 (unnormalised)" << endl;
+    }
+
+    if (pointDir0Ptr_)
+    {
+        Pout<< "    Point-area normals" << endl;
     }
 }
 
@@ -158,10 +163,11 @@ void Foam::primitiveMesh::clearGeom()
     deleteDemandDrivenData(faceAreasPtr_);
 
     // 2D
-    deleteDemandDrivenData(cellAreasPtr_);
+    deleteDemandDrivenData(cellDir0Ptr_);
     deleteDemandDrivenData(cellDir1Ptr_);
     deleteDemandDrivenData(faceDir1Ptr_);
-    deleteDemandDrivenData(faceDir2Ptr_);
+    deleteDemandDrivenData(faceVec2Ptr_);
+    deleteDemandDrivenData(pointDir0Ptr_);
 }
 
 
@@ -178,7 +184,7 @@ void Foam::primitiveMesh::clearCellGeom()
     deleteDemandDrivenData(cellVolumesPtr_);
 
     // 2D
-    deleteDemandDrivenData(cellAreasPtr_);
+    deleteDemandDrivenData(cellDir0Ptr_);
     deleteDemandDrivenData(cellDir1Ptr_);
 }
 

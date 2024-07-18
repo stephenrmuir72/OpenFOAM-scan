@@ -35,6 +35,43 @@ License
 #include "SubField.H"
 #include "cyclicFvPatchFields.H"
 #include "cyclicAMIFvPatchFields.H"
+#include "fvcSurfaceIntegrate.H"
+#include "skewCorrectionVectors.H"
+
+// * * * * * * * * * * * * * * * Local Functions * * * * * * * * * * * * * * //
+
+namespace Foam
+{
+
+// Calculate transform tensor with reference vector (unitAxis1)
+// and direction vector (axis2).
+//
+// This is nearly identical to the meshTools axesRotation
+// with an E3_E1 transformation with the following exceptions:
+//
+// - axis1 (e3 == unitAxis1): is already normalized (unit vector)
+// - axis2 (e1 == dirn): no difference
+// - transformation is row-vectors, not column-vectors
+static inline tensor rotation_e3e1
+(
+    const vector& unitAxis1,
+    vector dirn
+)
+{
+    dirn.removeCollinear(unitAxis1);
+    dirn.normalise();
+
+    // Set row vectors
+    return tensor
+    (
+        dirn,
+        (unitAxis1^dirn),
+        unitAxis1
+    );
+}
+
+} // End namespace Foam
+
 
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
@@ -64,6 +101,7 @@ void Foam::fvMesh::makeSf() const
             IOobject::NO_REGISTER
         ),
         *this,
+        //(nTopologicalD() == 2 ? dimLength : dimArea),
         dimArea,
         faceAreas()
     );
@@ -100,7 +138,7 @@ void Foam::fvMesh::makeMagSf() const
             IOobject::NO_WRITE,
             IOobject::NO_REGISTER
         ),
-        mag(Sf()) + dimensionedScalar("vs", dimArea, VSMALL)
+        mag(Sf()) + dimensionedScalar("vs", Sf().dimensions(), VSMALL)
     );
 }
 
@@ -111,7 +149,7 @@ void Foam::fvMesh::makeC() const
 
     // It is an error to attempt to recalculate
     // if the pointer is already set
-    if (CPtr_ || cellAreasPtr_)
+    if (CPtr_ || faceAreaNormalsPtr_)
     {
         FatalErrorInFunction
             << "cell centres already exist"
@@ -140,14 +178,40 @@ void Foam::fvMesh::makeC() const
         true                //preserveProcOnly
     );
 
+
     if (nTopologicalD() == 2)
     {
-        // What on boundary?
-        cellAreasPtr_ = new slicedVolVectorField
+        DebugInFunction << "Assembling 2D cell normals" << endl;
+
+        //faceAreaNormalsPtr_ = new volVectorField
+        //(
+        //    IOobject
+        //    (
+        //        "faceAreaNormals",
+        //        pointsInstance(),
+        //        meshSubDir,
+        //        *this,
+        //        IOobject::NO_READ,
+        //        IOobject::NO_WRITE,
+        //        IOobject::NO_REGISTER
+        //    ),
+        //    *this,
+        //    dimless,
+        //    primitiveMesh::cellDir0()
+        //);
+        //
+        //auto& n = *faceAreaNormalsPtr_;
+        //const tmp<vectorField> faceDir1(primitiveMesh::faceDir1());
+        //for (auto& pfld : n.boundaryFieldRef())
+        //{
+        //    pfld = pfld.patch().patchSlice(faceDir1());
+        //}
+        //n.boundaryFieldRef().template evaluateCoupled<processorFvPatch>();
+        faceAreaNormalsPtr_ = new slicedVolVectorField
         (
             IOobject
             (
-                "cellAreas",
+                "faceAreaNormals",
                 pointsInstance(),
                 meshSubDir,
                 *this,
@@ -156,12 +220,14 @@ void Foam::fvMesh::makeC() const
                 IOobject::NO_REGISTER
             ),
             *this,
-            dimLength,
-            cellAreas(),
-            faceAreas(),
+            dimless,
+            cellDir0(),
+            faceDir1(),
             true,               //preserveCouples
             true                //preserveProcOnly
         );
+
+        faceAreaNormalsPtr_->setOriented();
     }
 }
 
@@ -172,7 +238,7 @@ void Foam::fvMesh::makeCf() const
 
     // It is an error to attempt to recalculate
     // if the pointer is already set
-    if (CfPtr_)
+    if (CfPtr_ || LePtr_ || faceAreaNormalsPtr_)
     {
         FatalErrorInFunction
             << "face centres already exist"
@@ -195,6 +261,247 @@ void Foam::fvMesh::makeCf() const
         dimLength,
         faceCentres()
     );
+
+    if (nTopologicalD() == 2)
+    {
+        DebugInFunction << "Assembling 2D face vectors" << endl;
+
+        LePtr_ = new slicedSurfaceVectorField
+        (
+            IOobject
+            (
+                "Le",
+                pointsInstance(),
+                meshSubDir,
+                *this,
+                IOobject::NO_READ,
+                IOobject::NO_WRITE,
+                IOobject::NO_REGISTER
+            ),
+            *this,
+            dimLength,
+            faceVec2()
+        );
+
+        LePtr_->setOriented();
+
+        edgeAreaNormalsPtr_ = new slicedSurfaceVectorField
+        (
+            IOobject
+            (
+                "edgeAreaNormals",
+                pointsInstance(),
+                meshSubDir,
+                *this,
+                IOobject::NO_READ,
+                IOobject::NO_WRITE,
+                IOobject::NO_REGISTER
+            ),
+            *this,
+            dimless,
+            faceDir1()
+        );
+
+        edgeAreaNormalsPtr_->setOriented();
+    }
+}
+
+
+void Foam::fvMesh::makeFaceCurvatures() const
+{
+    DebugInFunction
+        << "Calculating face curvatures" << endl;
+
+    if (faceCurvaturesPtr_)
+    {
+        FatalErrorInFunction
+            << "faceCurvaturesPtr_ already allocated"
+            << abort(FatalError);
+    }
+
+    faceCurvaturesPtr_ = std::make_unique<volScalarField>
+    (
+        IOobject
+        (
+            "faceCurvatures",
+            pointsInstance(),
+            meshSubDir,
+            thisDb(),
+            IOobject::NO_READ,
+            IOobject::NO_WRITE,
+            IOobject::NO_REGISTER
+        ),
+        *this,
+        dimless/dimLength
+    );
+    volScalarField& faceCurvatures = *faceCurvaturesPtr_;
+
+
+//     faceCurvatures =
+//         fac::edgeIntegrate(Le()*edgeLengthCorrection())
+//         &faceAreaNormals();
+
+    auto kN(fvc::surfaceIntegrate(Le()*edgeLengthCorrection()));
+
+    faceCurvatures = sign(kN()&faceAreaNormals())*mag(kN());
+}
+
+
+void Foam::fvMesh::calcEdgeTransformTensors() const
+{
+    DebugInFunction
+        << "Calculating edge transformation tensors" << endl;
+
+    if (edgeTransformTensorsPtr_)
+    {
+        FatalErrorInFunction
+            << "edgeTransformTensorsPtr_ already allocated"
+            << abort(FatalError);
+    }
+
+    edgeTransformTensorsPtr_ =
+        std::make_unique<FieldField<Field, tensor>>(nFaces());
+    auto& edgeTransformTensors = *edgeTransformTensorsPtr_;
+
+    // Initialize all transformation tensors
+    for (label edgei = 0; edgei < nFaces(); ++edgei)
+    {
+        edgeTransformTensors.set(edgei, new Field<tensor>(3, tensor::I));
+    }
+
+    const volVectorField& Nf = faceAreaNormals();
+    const volVectorField& Cf = areaCentres();
+
+    const surfaceVectorField& Ne = edgeAreaNormals();
+    const surfaceVectorField& Ce = edgeCentres();
+
+    const auto& scv = skewCorrectionVectors::New(*this);
+
+    // Internal edges transformation tensors
+    for (label edgei = 0; edgei < nInternalFaces(); ++edgei)
+    {
+        const label ownFacei = owner()[edgei];
+        const label neiFacei = neighbour()[edgei];
+        auto& tensors = edgeTransformTensors[edgei];
+
+        vector edgeCtr = Ce.internalField()[edgei];
+
+        if (scv.skew())
+        {
+            edgeCtr -= scv().internalField()[edgei];
+        }
+
+        // Edge transformation tensor
+        tensors[0] =
+            rotation_e3e1
+            (
+                Ne.internalField()[edgei],
+                (edgeCtr - Cf.internalField()[ownFacei])
+            );
+
+        // Owner transformation tensor
+        tensors[1] =
+            rotation_e3e1
+            (
+                Nf.internalField()[ownFacei],
+                (edgeCtr - Cf.internalField()[ownFacei])
+            );
+
+        // Neighbour transformation tensor
+        tensors[2] =
+            rotation_e3e1
+            (
+                Nf.internalField()[neiFacei],
+                (Cf.internalField()[neiFacei] - edgeCtr)
+            );
+    }
+
+    // Boundary edges transformation tensors
+    forAll(boundary(), patchi)
+    {
+        const labelUList& edgeFaces = boundary()[patchi].faceCells();
+
+        if (boundary()[patchi].coupled())
+        {
+            vectorField nbrCf(Cf.boundaryField()[patchi].patchNeighbourField());
+            vectorField nbrNf(Nf.boundaryField()[patchi].patchNeighbourField());
+
+            forAll(edgeFaces, bndEdgei)
+            {
+                const label ownFacei = edgeFaces[bndEdgei];
+                const label meshEdgei(boundary()[patchi].start() + bndEdgei);
+
+                auto& tensors = edgeTransformTensors[meshEdgei];
+
+                vector edgeCtr = Ce.boundaryField()[patchi][bndEdgei];
+
+                if (scv.skew())
+                {
+                    edgeCtr -= scv().boundaryField()[patchi][bndEdgei];
+                }
+
+                // Edge transformation tensor
+                tensors[0] =
+                    rotation_e3e1
+                    (
+                        Ne.boundaryField()[patchi][bndEdgei],
+                        (edgeCtr - Cf.internalField()[ownFacei])
+                    );
+
+                // Owner transformation tensor
+                tensors[1] =
+                    rotation_e3e1
+                    (
+                        Nf.internalField()[ownFacei],
+                        (edgeCtr - Cf.internalField()[ownFacei])
+                    );
+
+                // Neighbour transformation tensor
+                tensors[2] =
+                    rotation_e3e1
+                    (
+                        nbrNf[bndEdgei],
+                        (nbrCf[bndEdgei] - edgeCtr)
+                    );
+            }
+        }
+        else
+        {
+            forAll(edgeFaces, bndEdgei)
+            {
+                const label ownFacei = edgeFaces[bndEdgei];
+                const label meshEdgei(boundary()[patchi].start() + bndEdgei);
+
+                auto& tensors = edgeTransformTensors[meshEdgei];
+
+                vector edgeCtr = Ce.boundaryField()[patchi][bndEdgei];
+
+                if (scv.skew())
+                {
+                    edgeCtr -= scv().boundaryField()[patchi][bndEdgei];
+                }
+
+                // Edge transformation tensor
+                tensors[0] =
+                    rotation_e3e1
+                    (
+                        Ne.boundaryField()[patchi][bndEdgei],
+                        (edgeCtr - Cf.internalField()[ownFacei])
+                    );
+
+                // Owner transformation tensor
+                tensors[1] =
+                    rotation_e3e1
+                    (
+                        Nf.internalField()[ownFacei],
+                        (edgeCtr - Cf.internalField()[ownFacei])
+                    );
+
+                // Neighbour transformation tensor
+                tensors[2] = tensor::I;
+            }
+        }
+    }
 }
 
 
@@ -219,6 +526,7 @@ const Foam::volScalarField::Internal& Foam::fvMesh::V() const
                 IOobject::NO_REGISTER
             ),
             *this,
+            //(nTopologicalD() == 2 ? dimArea : dimVolume),
             dimVolume,
             cellVolumes()
         );
@@ -385,14 +693,20 @@ const Foam::volVectorField& Foam::fvMesh::C() const
 }
 
 
-const Foam::volVectorField& Foam::fvMesh::cellAreas() const
+const Foam::volVectorField& Foam::fvMesh::faceAreaNormals() const
 {
-    if (!cellAreasPtr_)
+    if (!faceAreaNormalsPtr_)
     {
+        if (nTopologicalD() == 3)
+        {
+            FatalErrorInFunction
+                << "undefined cell normal direction in 3 dimensions"
+                << exit(FatalError);
+        }
         makeC();
     }
 
-    return *cellAreasPtr_;
+    return *faceAreaNormalsPtr_;
 }
 
 
@@ -404,6 +718,158 @@ const Foam::surfaceVectorField& Foam::fvMesh::Cf() const
     }
 
     return *CfPtr_;
+}
+
+
+const Foam::surfaceVectorField& Foam::fvMesh::edgeAreaNormals() const
+{
+    if (!edgeAreaNormalsPtr_)
+    {
+        if (nTopologicalD() == 3)
+        {
+            FatalErrorInFunction
+                << "undefined face tangential direction in 3 dimensions"
+                << exit(FatalError);
+        }
+        makeCf();
+    }
+
+    return *edgeAreaNormalsPtr_;
+}
+
+
+const Foam::surfaceVectorField& Foam::fvMesh::Le() const
+{
+    if (!LePtr_)
+    {
+        if (nTopologicalD() == 3)
+        {
+            FatalErrorInFunction
+                << "undefined face tangential direction in 3 dimensions"
+                << exit(FatalError);
+        }
+        makeCf();
+    }
+
+    return *LePtr_;
+}
+
+
+Foam::tmp<Foam::surfaceScalarField> Foam::fvMesh::magLe() const
+{
+    return mag(Le());
+}
+
+
+Foam::tmp<Foam::surfaceVectorField> Foam::fvMesh::unitLe() const
+{
+    return Le()/mag(Le());
+}
+
+
+const Foam::vectorField& Foam::fvMesh::pointAreaNormals() const
+{
+    return pointDir0();
+}
+
+
+const Foam::volScalarField& Foam::fvMesh::faceCurvatures() const
+{
+    if (!faceCurvaturesPtr_)
+    {
+        if (nTopologicalD() == 3)
+        {
+            FatalErrorInFunction
+                << "undefined cell tangential direction in 3 dimensions"
+                << exit(FatalError);
+        }
+        makeFaceCurvatures();
+    }
+
+    return *faceCurvaturesPtr_;
+}
+
+
+const Foam::FieldField<Foam::Field, Foam::tensor>&
+Foam::fvMesh::edgeTransformTensors() const
+{
+    if (!edgeTransformTensorsPtr_)
+    {
+        calcEdgeTransformTensors();
+    }
+
+    return *edgeTransformTensorsPtr_;
+}
+
+
+Foam::tmp<Foam::surfaceScalarField> Foam::fvMesh::edgeLengthCorrection() const
+{
+    DebugInFunction
+        << "Calculating edge length correction" << endl;
+
+    auto tcorrection = tmp<surfaceScalarField>::New
+    (
+        IOobject
+        (
+            "edgeLengthCorrection",
+            pointsInstance(),
+            meshSubDir,
+            thisDb(),
+            IOobject::NO_READ,
+            IOobject::NO_WRITE,
+            IOobject::NO_REGISTER
+        ),
+        *this,
+        dimless
+    );
+    auto& correction = tcorrection.ref();
+
+    const vectorField& pointNormals = pointAreaNormals();
+
+    const auto angleCorrection =
+        [](const vector& a, const vector& b) -> scalar
+        {
+            return Foam::cos(0.5*Foam::asin(Foam::mag(a ^ b)));
+        };
+
+
+    // Internal
+    {
+        auto& fld = correction.primitiveFieldRef();
+
+        forAll(fld, facei)
+        {
+            const auto& f = faces()[facei];
+            fld[facei] = angleCorrection
+            (
+                pointNormals[f[0]],
+                pointNormals[f[1]]
+            );
+        }
+    }
+
+    // Boundary
+    {
+        auto& bfld = correction.boundaryFieldRef();
+
+        forAll(boundary(), patchi)
+        {
+            const fvPatch& fap = boundary()[patchi];
+            scalarField& pfld = bfld[patchi];
+
+            forAll(pfld, patchFacei)
+            {
+                const auto& f = fap.patch()[patchFacei];
+                pfld[patchFacei] = angleCorrection
+                (
+                    pointNormals[f[0]],
+                    pointNormals[f[1]]
+                );
+            }
+        }
+    }
+
+    return tcorrection;
 }
 
 
@@ -462,7 +928,8 @@ const Foam::surfaceScalarField& Foam::fvMesh::phi() const
     // mesh motion fluxes if the time has been incremented
     if (!time().subCycling() && phiPtr_->timeIndex() != time().timeIndex())
     {
-        (*phiPtr_) = dimensionedScalar(dimVolume/dimTime, Foam::zero{});
+        (*phiPtr_) =
+            dimensionedScalar(V().dimensions()/dimTime, Foam::zero{});
     }
 
     phiPtr_->setOriented();

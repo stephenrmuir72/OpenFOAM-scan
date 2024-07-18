@@ -156,6 +156,10 @@ namespace Foam
 // Forward Declarations
 class polyMesh;
 
+Istream& operator>>(Istream&, mapPolyMesh&);
+Ostream& operator<<(Ostream&, const mapPolyMesh&);
+
+
 /*---------------------------------------------------------------------------*\
                          Class mapPolyMesh Declaration
 \*---------------------------------------------------------------------------*/
@@ -168,13 +172,13 @@ class mapPolyMesh
         const polyMesh& mesh_;
 
         //- Number of old live points
-        const label nOldPoints_;
+        mutable label nOldPoints_;
 
         //- Number of old live faces
-        const label nOldFaces_;
+        mutable label nOldFaces_;
 
         //- Number of old live cells
-        const label nOldCells_;
+        mutable label nOldCells_;
 
         //- Old point map.
         //  Contains the old point label for all new points.
@@ -182,10 +186,10 @@ class mapPolyMesh
         //  - for added points this is the master point ID
         //  - for points added with no master, this is -1
         //  Size of the list equals the size of new points
-        const labelList pointMap_;
+        mutable labelList pointMap_;
 
         //- Points resulting from merging points
-        const List<objectMap> pointsFromPointsMap_;
+        mutable List<objectMap> pointsFromPointsMap_;
 
         //- Old face map.
         //  Contains a list of old face labels for every new face.
@@ -194,45 +198,45 @@ class mapPolyMesh
         //  - for faces added from faces this is the master face ID
         //  - for faces added with no master, this is -1
         //  - for faces added from points or edges, this is -1
-        const labelList faceMap_;
+        mutable labelList faceMap_;
 
         //- Faces inflated from points
-        const List<objectMap> facesFromPointsMap_;
+        mutable List<objectMap> facesFromPointsMap_;
 
         //- Faces inflated from edges
-        const List<objectMap> facesFromEdgesMap_;
+        mutable List<objectMap> facesFromEdgesMap_;
 
         //- Faces resulting from merging faces
-        const List<objectMap> facesFromFacesMap_;
+        mutable List<objectMap> facesFromFacesMap_;
 
         //- Old cell map.
         //  Contains old cell label for all preserved cells.
         //  Size of the list equals the number or preserved cells
-        const labelList cellMap_;
+        mutable labelList cellMap_;
 
         //- Cells inflated from points
-        const List<objectMap> cellsFromPointsMap_;
+        mutable List<objectMap> cellsFromPointsMap_;
 
         //- Cells inflated from edges
-        const List<objectMap> cellsFromEdgesMap_;
+        mutable List<objectMap> cellsFromEdgesMap_;
 
         //- Cells inflated from faces
-        const List<objectMap> cellsFromFacesMap_;
+        mutable List<objectMap> cellsFromFacesMap_;
 
         //- Cells resulting from merging cells
-        const List<objectMap> cellsFromCellsMap_;
+        mutable List<objectMap> cellsFromCellsMap_;
 
         //- Reverse point map
-        const labelList reversePointMap_;
+        mutable labelList reversePointMap_;
 
         //- Reverse face map
-        const labelList reverseFaceMap_;
+        mutable labelList reverseFaceMap_;
 
         //- Reverse cell map
-        const labelList reverseCellMap_;
+        mutable labelList reverseCellMap_;
 
         //- Map of flipped face flux faces
-        const labelHashSet flipFaceFlux_;
+        mutable labelHashSet flipFaceFlux_;
 
         //- Patch mesh point renumbering
         labelListList patchPointMap_;
@@ -259,13 +263,13 @@ class mapPolyMesh
 
         //- Pre-motion point positions.
         //  This specifies the correct way of blowing up zero-volume objects
-        const pointField preMotionPoints_;
+        mutable pointField preMotionPoints_;
 
         //- List of the old patch sizes
         labelList oldPatchSizes_;
 
         //- List of the old patch start labels
-        const labelList oldPatchStarts_;
+        mutable labelList oldPatchStarts_;
 
         //- List of numbers of mesh points per old patch
         labelList oldPatchNMeshPoints_;
@@ -276,16 +280,10 @@ class mapPolyMesh
 
 public:
 
-    // Generated Methods
-
-        //- No copy construct
-        mapPolyMesh(const mapPolyMesh&) = delete;
-
-        //- No copy assignment
-        void operator=(const mapPolyMesh&) = delete;
-
-
     // Constructors
+
+        //- Move construct
+        explicit mapPolyMesh(mapPolyMesh&& map);
 
         //- Construct from mesh
         mapPolyMesh(const polyMesh& mesh);
@@ -656,6 +654,25 @@ public:
             {
                 return *oldCellVolumesPtr_;
             }
+
+
+
+    // Member Operators
+
+        //- Copy assignment
+        void operator=(const mapPolyMesh& rhs);
+
+        ////- Move assignment
+        //void operator=(mapPolyMesh&& rhs);
+
+
+    // IOstream Operators
+
+        //- Read plain content (not dictionary) from Istream
+        friend Istream& operator>>(Istream&, mapPolyMesh&);
+
+        //- Write plain content (not dictionary) to Ostream
+        friend Ostream& operator<<(Ostream&, const mapPolyMesh&);
 };
 
 

@@ -224,4 +224,78 @@ const Foam::cellList& Foam::primitiveMesh::cells() const
 }
 
 
+Foam::face Foam::primitiveMesh::loop(const label celli) const
+{
+    const auto& fcs = faces();
+    const auto& owner = faceOwner();
+    const auto& cFaces = cells()[celli];
+
+    for (const label facei : cFaces)
+    {
+        if (fcs[facei].size() != 2)
+        {
+            FatalErrorInFunction << "Only applicable for 2D faces"
+                << " cell:" << celli
+                << " with faces " << cFaces
+                << " with vertices " << UIndirectList<face>(fcs, cFaces)
+                << exit(FatalError);
+        }
+    }
+
+    // Storage for new face
+    face newF(cFaces.size());
+    newF.UList<label>::operator=(-1);
+    label fp = 0;
+
+    // Start with zero'th face
+    const label facei = cFaces[0];
+    edge e(fcs[facei].edge(0));
+    if (owner[facei] != celli)
+    {
+        std::swap(e[0], e[1]);
+    }
+    newF[fp++] = e[0];
+    newF[fp++] = e[1];
+    label nextPointi = e[1];
+    label prevFacei = facei;
+
+    for (label i = 1; i < cFaces.size(); i++)
+    {
+        // Find nextPointi in other faces (there should be only one other face)
+        for (label j = 1; j < cFaces.size(); j++)
+        {
+            const label facei = cFaces[j];
+
+            if (facei != prevFacei)
+            {
+                edge e(fcs[facei].edge(0));
+                if (owner[facei] != celli)
+                {
+                    std::swap(e[0], e[1]);
+                }
+
+                if (e[0] == nextPointi)
+                {
+                    newF[fp++] = e[1];
+                    nextPointi = e[1];
+                    prevFacei = facei;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (newF.found(-1))
+    {
+        FatalErrorInFunction << "Did not find loop on"
+            << " cell:" << celli
+            << " with faces " << cFaces
+            << " with vertices " << UIndirectList<face>(fcs, cFaces)
+            << exit(FatalError);
+    }
+
+    return newF;
+}
+
+
 // ************************************************************************* //
