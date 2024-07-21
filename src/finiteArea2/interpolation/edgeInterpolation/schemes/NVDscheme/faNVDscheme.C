@@ -62,9 +62,11 @@ Foam::tmp<Foam::edgeScalarField> Foam::faNVDscheme<Type,NVDweight>::weights
 {
     const faMesh& mesh = this->mesh();
 
+    const edgeInterpolation& ei = edgeInterpolation::New(mesh);
+
     tmp<edgeScalarField> tWeightingFactors
     (
-        new edgeScalarField(mesh.edgeInterpolation::weights())
+        new edgeScalarField(ei.weights())
     );
     edgeScalarField& weightingFactors = tWeightingFactors.ref();
 
@@ -78,14 +80,14 @@ Foam::tmp<Foam::edgeScalarField> Foam::faNVDscheme<Type,NVDweight>::weights
 //     edgeVectorField d
 //     (
 //         mesh.Le()
-//        /(mesh.magLe()*mesh.edgeInterpolation::deltaCoeffs())
+//        /(mesh.magLe()*ei.deltaCoeffs())
 //     );
 
 //     if (!mesh.orthogonal())
 //     {
 //         d -=
-//             mesh.edgeInterpolation::correctionVectors()
-//            /mesh.edgeInterpolation::deltaCoeffs();
+//             ei.correctionVectors()
+//            /ei.deltaCoeffs();
 //     }
 
     const labelUList& owner = mesh.owner();
@@ -106,7 +108,7 @@ Foam::tmp<Foam::edgeScalarField> Foam::faNVDscheme<Type,NVDweight>::weights
             d.removeCollinear(n[neighbour[edge]]);
         }
         d.normalise();
-        d *= mesh.edgeInterpolation::lPN().internalField()[edge];
+        d *= ei.lPN().internalField()[edge];
 
         // No zero-length vectors (after normalise)
         if (d.magSqr() < ROOTSMALL)
@@ -178,7 +180,7 @@ Foam::tmp<Foam::edgeScalarField> Foam::faNVDscheme<Type,NVDweight>::weights
 
             scalarField pLPN
             (
-                mesh.edgeInterpolation::lPN().boundaryField()[patchI]
+                ei.lPN().boundaryField()[patchI]
             );
 
             forAll(pWeights, edgeI)

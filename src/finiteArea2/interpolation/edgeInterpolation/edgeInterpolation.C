@@ -43,7 +43,7 @@ namespace Foam
 
 Foam::edgeInterpolation::edgeInterpolation(const faMesh& fam)
 :
-    faMesh_(fam),
+    MeshObject_type(fam),
     orthogonal_(false),
     skew_(true)
 {}
@@ -133,7 +133,7 @@ Foam::edgeInterpolation::skewCorrectionVectors() const
 }
 
 
-bool Foam::edgeInterpolation::movePoints() const
+bool Foam::edgeInterpolation::movePoints()
 {
     lPNptr_.reset(nullptr);
     weightingFactorsPtr_.reset(nullptr);

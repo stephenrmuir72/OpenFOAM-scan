@@ -110,8 +110,8 @@ $(edgeInterpolation)/edgeInterpolationScheme/edgeInterpolationSchemes.C
 schemes = $(edgeInterpolation)/schemes
 $(schemes)/linear/linearEdgeInterpolationMake.C
 $(schemes)/upwind/upwindEdgeInterpolationMake.C
-/*
 $(schemes)/linearUpwind/linearUpwindEdgeInterpolationMake.C
+/*
 $(schemes)/Gamma/GammaEdgeInterpolationMake.C
 $(schemes)/blended/blendedEdgeInterpolationMake.C
 */

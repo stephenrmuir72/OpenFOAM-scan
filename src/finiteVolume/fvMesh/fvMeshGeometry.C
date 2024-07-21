@@ -238,7 +238,7 @@ void Foam::fvMesh::makeCf() const
 
     // It is an error to attempt to recalculate
     // if the pointer is already set
-    if (CfPtr_ || LePtr_ || faceAreaNormalsPtr_)
+    if (CfPtr_ || LePtr_ || edgeAreaNormalsPtr_)
     {
         FatalErrorInFunction
             << "face centres already exist"

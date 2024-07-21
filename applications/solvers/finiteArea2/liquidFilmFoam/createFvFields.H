@@ -1,5 +1,5 @@
 // Volume-to surface mapping object
-const word patchName("film");
+const word& patchName(aRegionName);
 const label patchi = mesh.boundaryMesh().findPatchID(patchName);
 const auto& pp = mesh.boundaryMesh()[patchi];
 labelList meshFaces(pp.size());
