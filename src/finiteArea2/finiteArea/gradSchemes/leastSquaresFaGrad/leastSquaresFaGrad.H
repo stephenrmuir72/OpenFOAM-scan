@@ -99,10 +99,10 @@ public:
         virtual tmp
         <
             GeometricField
-            <typename outerProduct<vector, Type>::type, faPatchField, areaMesh>
+            <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>
         > calcGrad
         (
-            const GeometricField<Type, faPatchField, areaMesh>& vsf,
+            const GeometricField<Type, fvPatchField, areaMesh>& vsf,
             const word& name
         ) const;
 };

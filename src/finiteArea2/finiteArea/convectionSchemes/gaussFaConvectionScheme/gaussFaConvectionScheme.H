@@ -113,22 +113,22 @@ public:
 
     // Member Functions
 
-        tmp<GeometricField<Type, faePatchField, edgeMesh>> flux
+        tmp<GeometricField<Type, fvsPatchField, edgeMesh>> flux
         (
             const edgeScalarField&,
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         ) const;
 
         tmp<faMatrix<Type>> famDiv
         (
             const edgeScalarField&,
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         ) const;
 
-        tmp<GeometricField<Type, faPatchField, areaMesh>> facDiv
+        tmp<GeometricField<Type, fvPatchField, areaMesh>> facDiv
         (
             const edgeScalarField&,
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         ) const;
 };
 

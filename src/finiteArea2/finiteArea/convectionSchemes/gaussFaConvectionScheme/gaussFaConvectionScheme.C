@@ -42,11 +42,11 @@ namespace fa
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 template<class Type>
-tmp<GeometricField<Type, faePatchField, edgeMesh>>
+tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
 gaussConvectionScheme<Type>::flux
 (
     const edgeScalarField& faceFlux,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 ) const
 {
     return faceFlux*tinterpScheme_().interpolate(vf);
@@ -58,7 +58,7 @@ tmp<faMatrix<Type>>
 gaussConvectionScheme<Type>::famDiv
 (
     const edgeScalarField& faceFlux,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 ) const
 {
     tmp<edgeScalarField> tweights = tinterpScheme_().weights(vf);
@@ -80,7 +80,7 @@ gaussConvectionScheme<Type>::famDiv
 
     forAll(fam.psi().boundaryField(), patchI)
     {
-        const faPatchField<Type>& psf = fam.psi().boundaryField()[patchI];
+        const fvPatchField<Type>& psf = fam.psi().boundaryField()[patchI];
         const faePatchScalarField& patchFlux = faceFlux.boundaryField()[patchI];
         const faePatchScalarField& pw = weights.boundaryField()[patchI];
 
@@ -94,7 +94,7 @@ gaussConvectionScheme<Type>::famDiv
 //     }
 
     // Non-euclidian and other corrections
-    GeometricField<Type, faePatchField, edgeMesh> convFluxCorr
+    GeometricField<Type, fvsPatchField, edgeMesh> convFluxCorr
     (
         flux(faceFlux, vf)
       - faceFlux*tinterpScheme_().euclidianInterpolate(vf)
@@ -107,14 +107,14 @@ gaussConvectionScheme<Type>::famDiv
 
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 gaussConvectionScheme<Type>::facDiv
 (
     const edgeScalarField& faceFlux,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 ) const
 {
-    tmp<GeometricField<Type, faPatchField, areaMesh>> tConvection
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> tConvection
     (
         fac::edgeIntegrate(flux(faceFlux, vf))
     );

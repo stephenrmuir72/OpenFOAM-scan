@@ -99,7 +99,7 @@ public:
         template<class Type>
         void mapToSurface
         (
-            const GeometricBoundaryField<Type, faPatchField, volMesh>&,
+            const GeometricBoundaryField<Type, fvPatchField, volMesh>&,
             Field<Type>& result
         ) const;
 
@@ -107,14 +107,14 @@ public:
         template<class Type>
         tmp<Field<Type>> mapToSurface
         (
-            const GeometricBoundaryField<Type, faPatchField, volMesh>&
+            const GeometricBoundaryField<Type, fvPatchField, volMesh>&
         ) const;
 
         //- Map volume (boundary) fields to area field
         template<class Type>
         void mapToSurface
         (
-            const GeometricField<Type, faPatchField, volMesh>&,
+            const GeometricField<Type, fvPatchField, volMesh>&,
             Field<Type>& result
         ) const;
 
@@ -122,7 +122,7 @@ public:
         template<class Type>
         void mapToSurface
         (
-            const tmp<GeometricField<Type, faPatchField, volMesh>>&,
+            const tmp<GeometricField<Type, fvPatchField, volMesh>>&,
             Field<Type>& result
         ) const;
 
@@ -130,14 +130,14 @@ public:
         template<class Type>
         tmp<Field<Type>> mapToSurface
         (
-            const GeometricField<Type, faPatchField, volMesh>&
+            const GeometricField<Type, fvPatchField, volMesh>&
         ) const;
 
         //- Map volume (boundary) fields to area field
         template<class Type>
         tmp<Field<Type>> mapToSurface
         (
-            const tmp<GeometricField<Type, faPatchField, volMesh>>&
+            const tmp<GeometricField<Type, fvPatchField, volMesh>>&
         ) const;
 
 
@@ -145,7 +145,7 @@ public:
         template<class Type>
         void mapToSurface
         (
-            const GeometricField<Type, faePatchField, surfaceMesh>&,
+            const GeometricField<Type, fvsPatchField, surfaceMesh>&,
             Field<Type>& result
         ) const;
 
@@ -153,14 +153,14 @@ public:
         template<class Type>
         tmp<Field<Type>> mapToSurface
         (
-            const GeometricField<Type, faePatchField, surfaceMesh>&
+            const GeometricField<Type, fvsPatchField, surfaceMesh>&
         ) const;
 
         //- Map surface fields to area field
         template<class Type>
         void mapToSurface
         (
-            const tmp<GeometricField<Type, faePatchField, surfaceMesh>>&,
+            const tmp<GeometricField<Type, fvsPatchField, surfaceMesh>>&,
             Field<Type>& result
         ) const;
 
@@ -168,7 +168,7 @@ public:
         template<class Type>
         tmp<Field<Type>> mapToSurface
         (
-            const tmp<GeometricField<Type, faePatchField, surfaceMesh>>&
+            const tmp<GeometricField<Type, fvsPatchField, surfaceMesh>>&
         ) const;
 
 
@@ -207,7 +207,7 @@ public:
         template<class Type>
         void mapInternalToSurface
         (
-            const GeometricBoundaryField<Type, faPatchField, volMesh>&,
+            const GeometricBoundaryField<Type, fvPatchField, volMesh>&,
             Field<Type>& result
         ) const;
 
@@ -215,14 +215,14 @@ public:
         template<class Type>
         tmp<Field<Type>> mapInternalToSurface
         (
-            const GeometricBoundaryField<Type, faPatchField, volMesh>&
+            const GeometricBoundaryField<Type, fvPatchField, volMesh>&
         ) const;
 
         //- Map patch internal field to area field
         template<class Type>
         void mapInternalToSurface
         (
-            const GeometricField<Type, faPatchField, volMesh>&,
+            const GeometricField<Type, fvPatchField, volMesh>&,
             Field<Type>& result
         ) const;
 
@@ -230,7 +230,7 @@ public:
         template<class Type>
         void mapInternalToSurface
         (
-            const tmp<GeometricField<Type, faPatchField, volMesh>>&,
+            const tmp<GeometricField<Type, fvPatchField, volMesh>>&,
             Field<Type>& result
         ) const;
 
@@ -238,14 +238,14 @@ public:
         template<class Type>
         tmp<Field<Type>> mapInternalToSurface
         (
-            const GeometricField<Type, faPatchField, volMesh>&
+            const GeometricField<Type, fvPatchField, volMesh>&
         ) const;
 
         //- Map patch internal field to area field
         template<class Type>
         tmp<Field<Type>> mapInternalToSurface
         (
-            const tmp<GeometricField<Type, faPatchField, volMesh>>&
+            const tmp<GeometricField<Type, fvPatchField, volMesh>>&
         ) const;
 
 
@@ -257,7 +257,7 @@ public:
         void mapToVolume
         (
             const DimensionedField<Type, areaMesh>&,
-            GeometricBoundaryField<Type, faPatchField, volMesh>& dest,
+            GeometricBoundaryField<Type, fvPatchField, volMesh>& dest,
             const label destPatchi = -1
         ) const;
 
@@ -267,7 +267,7 @@ public:
         void mapToVolume
         (
             const tmp<DimensionedField<Type, areaMesh>>&,
-            GeometricBoundaryField<Type, faPatchField, volMesh>& dest,
+            GeometricBoundaryField<Type, fvPatchField, volMesh>& dest,
             const label destPatchi = -1
         ) const;
 
@@ -277,7 +277,7 @@ public:
         void mapToVolume
         (
             const DimensionedField<Type, areaMesh>&,
-            GeometricField<Type, faPatchField, volMesh>& dest,
+            GeometricField<Type, fvPatchField, volMesh>& dest,
             const label destPatchi = -1
         ) const;
 
@@ -287,7 +287,7 @@ public:
         void mapToVolume
         (
             const tmp<DimensionedField<Type, areaMesh>>&,
-            GeometricField<Type, faPatchField, volMesh>& dest,
+            GeometricField<Type, fvPatchField, volMesh>& dest,
             const label destPatchi = -1
         ) const;
 
@@ -296,8 +296,8 @@ public:
         template<class Type>
         void mapToVolume
         (
-            const tmp<GeometricField<Type, faPatchField, areaMesh>>&,
-            GeometricBoundaryField<Type, faPatchField, volMesh>& dest,
+            const tmp<GeometricField<Type, fvPatchField, areaMesh>>&,
+            GeometricBoundaryField<Type, fvPatchField, volMesh>& dest,
             const label destPatchi = -1
         ) const;
 
@@ -306,8 +306,8 @@ public:
         template<class Type>
         void mapToVolume
         (
-            const tmp<GeometricField<Type, faPatchField, areaMesh>>&,
-            GeometricField<Type, faPatchField, volMesh>& dest,
+            const tmp<GeometricField<Type, fvPatchField, areaMesh>>&,
+            GeometricField<Type, fvPatchField, volMesh>& dest,
             const label destPatchi = -1
         ) const;
 
@@ -336,7 +336,7 @@ public:
         template<class Type>
         void mapToVolumePatch
         (
-            const tmp<GeometricField<Type, faPatchField, areaMesh>>& taf,
+            const tmp<GeometricField<Type, fvPatchField, areaMesh>>& taf,
             Field<Type>& dest,
             const label destPatchi
         ) const;

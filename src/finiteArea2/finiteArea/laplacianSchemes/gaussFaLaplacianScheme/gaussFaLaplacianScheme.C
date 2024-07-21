@@ -46,7 +46,7 @@ tmp<faMatrix<Type>>
 gaussLaplacianScheme<Type>::famLaplacian
 (
     const edgeScalarField& gamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     tmp<edgeScalarField> tdeltaCoeffs = this->tlnGradScheme_().deltaCoeffs(vf);
@@ -69,7 +69,7 @@ gaussLaplacianScheme<Type>::famLaplacian
 
     forAll(fam.psi().boundaryField(), patchI)
     {
-        const faPatchField<Type>& psf = fam.psi().boundaryField()[patchI];
+        const fvPatchField<Type>& psf = fam.psi().boundaryField()[patchI];
         const faePatchScalarField& patchGamma =
             gammaMagSf.boundaryField()[patchI];
 
@@ -84,7 +84,7 @@ gaussLaplacianScheme<Type>::famLaplacian
         {
             fam.faceFluxCorrectionPtr() = std::make_unique
             <
-                GeometricField<Type, faePatchField, edgeMesh>
+                GeometricField<Type, fvsPatchField, edgeMesh>
             >
             (
                 gammaMagSf*this->tlnGradScheme_().correction(vf)
@@ -113,13 +113,13 @@ gaussLaplacianScheme<Type>::famLaplacian
 
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 gaussLaplacianScheme<Type>::facLaplacian
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
-    tmp<GeometricField<Type, faPatchField, areaMesh>> tLaplacian
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> tLaplacian
     (
         fac::div(this->tlnGradScheme_().lnGrad(vf)*vf.mesh().magLe())
     );
@@ -131,14 +131,14 @@ gaussLaplacianScheme<Type>::facLaplacian
 
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 gaussLaplacianScheme<Type>::facLaplacian
 (
     const edgeScalarField& gamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
-    tmp<GeometricField<Type, faPatchField, areaMesh>> tLaplacian
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> tLaplacian
     (
         fac::div(gamma*this->tlnGradScheme_().lnGrad(vf)*vf.mesh().magLe())
     );

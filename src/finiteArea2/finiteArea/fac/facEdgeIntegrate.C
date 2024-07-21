@@ -45,7 +45,7 @@ template<class Type>
 tmp<GeometricField<Type, fvPatchField, areaMesh>>
 edgeIntegrate
 (
-    const GeometricField<Type, faePatchField, edgeMesh>& ssf
+    const GeometricField<Type, fvsPatchField, edgeMesh>& ssf
 )
 {
     const faMesh& mesh = ssf.mesh();
@@ -82,7 +82,7 @@ edgeIntegrate
         const labelUList& pEdgeFaces =
             mesh.boundary()[patchI].faceCells();
 
-        const faePatchField<Type>& pssf = ssf.boundaryField()[patchI];
+        const fvsPatchField<Type>& pssf = ssf.boundaryField()[patchI];
 
         forAll(mesh.boundary()[patchI], faceI)
         {
@@ -101,7 +101,7 @@ template<class Type>
 tmp<GeometricField<Type, fvPatchField, areaMesh>>
 edgeIntegrate
 (
-    const tmp<GeometricField<Type, faePatchField, edgeMesh>>& tssf
+    const tmp<GeometricField<Type, fvsPatchField, edgeMesh>>& tssf
 )
 {
     tmp<GeometricField<Type, fvPatchField, areaMesh>> tvf
@@ -117,7 +117,7 @@ template<class Type>
 tmp<GeometricField<Type, fvPatchField, areaMesh>>
 edgeSum
 (
-    const GeometricField<Type, faePatchField, edgeMesh>& ssf
+    const GeometricField<Type, fvsPatchField, edgeMesh>& ssf
 )
 {
     const faMesh& mesh = ssf.mesh();
@@ -153,7 +153,7 @@ edgeSum
         const labelUList& pEdgeFaces =
             mesh.boundary()[patchI].faceCells();
 
-        const faePatchField<Type>& pssf = ssf.boundaryField()[patchI];
+        const fvsPatchField<Type>& pssf = ssf.boundaryField()[patchI];
 
         forAll(mesh.boundary()[patchI], faceI)
         {
@@ -170,7 +170,7 @@ edgeSum
 template<class Type>
 tmp<GeometricField<Type, fvPatchField, areaMesh>> edgeSum
 (
-    const tmp<GeometricField<Type, faePatchField, edgeMesh>>& tssf
+    const tmp<GeometricField<Type, fvsPatchField, edgeMesh>>& tssf
 )
 {
     tmp<GeometricField<Type, fvPatchField, areaMesh>> tvf =

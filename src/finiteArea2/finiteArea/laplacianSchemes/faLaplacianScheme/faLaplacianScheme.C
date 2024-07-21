@@ -96,7 +96,7 @@ tmp<faMatrix<Type>>
 laplacianScheme<Type>::famLaplacian
 (
     const areaScalarField& gamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     return famLaplacian(tinterpGammaScheme_().interpolate(gamma)(), vf);
@@ -104,11 +104,11 @@ laplacianScheme<Type>::famLaplacian
 
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 laplacianScheme<Type>::facLaplacian
 (
     const areaScalarField& gamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     return facLaplacian(tinterpGammaScheme_().interpolate(gamma)(), vf);

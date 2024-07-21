@@ -45,7 +45,7 @@ template<class Type>
 tmp<GeometricField<Type, fvPatchField, areaMesh>>
 average
 (
-    const GeometricField<Type,  faePatchField, edgeMesh>& ssf
+    const GeometricField<Type,  fvsPatchField, edgeMesh>& ssf
 )
 {
     const faMesh& mesh = ssf.mesh();
@@ -89,7 +89,7 @@ template<class Type>
 tmp<GeometricField<Type, fvPatchField, areaMesh>>
 average
 (
-    const tmp<GeometricField<Type,  faePatchField, edgeMesh>>& tssf
+    const tmp<GeometricField<Type,  fvsPatchField, edgeMesh>>& tssf
 )
 {
     tmp<GeometricField<Type, fvPatchField, areaMesh>> taverage

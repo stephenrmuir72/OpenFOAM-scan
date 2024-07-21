@@ -164,30 +164,30 @@ public:
         virtual tmp<faMatrix<Type>> famLaplacian
         (
             const edgeScalarField&,
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         ) = 0;
 
         virtual tmp<faMatrix<Type>> famLaplacian
         (
             const areaScalarField&,
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         );
 
-        virtual tmp<GeometricField<Type, faPatchField, areaMesh>> facLaplacian
+        virtual tmp<GeometricField<Type, fvPatchField, areaMesh>> facLaplacian
         (
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         ) = 0;
 
-        virtual tmp<GeometricField<Type, faPatchField, areaMesh>> facLaplacian
+        virtual tmp<GeometricField<Type, fvPatchField, areaMesh>> facLaplacian
         (
             const edgeScalarField&,
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         ) = 0;
 
-        virtual tmp<GeometricField<Type, faPatchField, areaMesh>> facLaplacian
+        virtual tmp<GeometricField<Type, fvPatchField, areaMesh>> facLaplacian
         (
             const areaScalarField&,
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         );
 };
 

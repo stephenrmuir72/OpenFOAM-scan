@@ -54,21 +54,21 @@ namespace fam
     template<class Type>
     tmp<faMatrix<Type>> ddt
     (
-        const GeometricField<Type, faPatchField, areaMesh>&
+        const GeometricField<Type, fvPatchField, areaMesh>&
     );
 
     template<class Type>
     tmp<faMatrix<Type>> ddt
     (
         const dimensionedScalar&,
-        const GeometricField<Type, faPatchField, areaMesh>&
+        const GeometricField<Type, fvPatchField, areaMesh>&
     );
 
     template<class Type>
     tmp<faMatrix<Type>> ddt
     (
         const areaScalarField&,
-        const GeometricField<Type, faPatchField, areaMesh>&
+        const GeometricField<Type, fvPatchField, areaMesh>&
     );
 }
 

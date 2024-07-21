@@ -41,7 +41,7 @@ namespace fa
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 EulerFaDdtScheme<Type>::facDdt
 (
     const dimensioned<Type> dt
@@ -60,9 +60,9 @@ EulerFaDdtScheme<Type>::facDdt
 
     if (mesh().moving())
     {
-        tmp<GeometricField<Type, faPatchField, areaMesh>> tdtdt
+        tmp<GeometricField<Type, fvPatchField, areaMesh>> tdtdt
         (
-            new GeometricField<Type, faPatchField, areaMesh>
+            new GeometricField<Type, fvPatchField, areaMesh>
             (
                 ddtIOobject,
                 mesh(),
@@ -77,18 +77,18 @@ EulerFaDdtScheme<Type>::facDdt
     }
 
 
-    return tmp<GeometricField<Type, faPatchField, areaMesh>>::New
+    return tmp<GeometricField<Type, fvPatchField, areaMesh>>::New
     (
         ddtIOobject,
         mesh(),
         dimensioned<Type>(dt.dimensions()/dimTime, Zero),
-        faPatchField<Type>::calculatedType()
+        fvPatchField<Type>::calculatedType()
     );
 }
 
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 EulerFaDdtScheme<Type>::facDdt0
 (
     const dimensioned<Type> dt
@@ -105,9 +105,9 @@ EulerFaDdtScheme<Type>::facDdt0
         )
     );
 
-    tmp<GeometricField<Type, faPatchField, areaMesh>> tdtdt0
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> tdtdt0
     (
-        new GeometricField<Type, faPatchField, areaMesh>
+        new GeometricField<Type, fvPatchField, areaMesh>
         (
             ddtIOobject,
             mesh(),
@@ -126,10 +126,10 @@ EulerFaDdtScheme<Type>::facDdt0
 
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 EulerFaDdtScheme<Type>::facDdt
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     dimensionedScalar rDeltaT = 1.0/mesh().time().deltaT();
@@ -145,9 +145,9 @@ EulerFaDdtScheme<Type>::facDdt
 
     if (mesh().moving())
     {
-        return tmp<GeometricField<Type, faPatchField, areaMesh>>
+        return tmp<GeometricField<Type, fvPatchField, areaMesh>>
         (
-            new GeometricField<Type, faPatchField, areaMesh>
+            new GeometricField<Type, fvPatchField, areaMesh>
             (
                 ddtIOobject,
                 mesh(),
@@ -166,9 +166,9 @@ EulerFaDdtScheme<Type>::facDdt
     }
     else
     {
-        return tmp<GeometricField<Type, faPatchField, areaMesh>>
+        return tmp<GeometricField<Type, fvPatchField, areaMesh>>
         (
-            new GeometricField<Type, faPatchField, areaMesh>
+            new GeometricField<Type, fvPatchField, areaMesh>
             (
                 ddtIOobject,
                 rDeltaT*(vf - vf.oldTime())
@@ -179,10 +179,10 @@ EulerFaDdtScheme<Type>::facDdt
 
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 EulerFaDdtScheme<Type>::facDdt0
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     dimensionedScalar rDeltaT = 1.0/mesh().time().deltaT();
@@ -198,9 +198,9 @@ EulerFaDdtScheme<Type>::facDdt0
 
     if (mesh().moving())
     {
-        return tmp<GeometricField<Type, faPatchField, areaMesh>>
+        return tmp<GeometricField<Type, fvPatchField, areaMesh>>
         (
-            new GeometricField<Type, faPatchField, areaMesh>
+            new GeometricField<Type, fvPatchField, areaMesh>
             (
                 ddtIOobject,
                 mesh(),
@@ -212,9 +212,9 @@ EulerFaDdtScheme<Type>::facDdt0
     }
     else
     {
-        return tmp<GeometricField<Type, faPatchField, areaMesh>>
+        return tmp<GeometricField<Type, fvPatchField, areaMesh>>
         (
-            new GeometricField<Type, faPatchField, areaMesh>
+            new GeometricField<Type, fvPatchField, areaMesh>
             (
                 ddtIOobject,
                 (-rDeltaT)*vf.oldTime()
@@ -225,11 +225,11 @@ EulerFaDdtScheme<Type>::facDdt0
 
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 EulerFaDdtScheme<Type>::facDdt
 (
     const dimensionedScalar& rho,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     dimensionedScalar rDeltaT = 1.0/mesh().time().deltaT();
@@ -245,9 +245,9 @@ EulerFaDdtScheme<Type>::facDdt
 
     if (mesh().moving())
     {
-        return tmp<GeometricField<Type, faPatchField, areaMesh>>
+        return tmp<GeometricField<Type, fvPatchField, areaMesh>>
         (
-            new GeometricField<Type, faPatchField, areaMesh>
+            new GeometricField<Type, fvPatchField, areaMesh>
             (
                 ddtIOobject,
                 mesh(),
@@ -266,9 +266,9 @@ EulerFaDdtScheme<Type>::facDdt
     }
     else
     {
-        return tmp<GeometricField<Type, faPatchField, areaMesh>>
+        return tmp<GeometricField<Type, fvPatchField, areaMesh>>
         (
-            new GeometricField<Type, faPatchField, areaMesh>
+            new GeometricField<Type, fvPatchField, areaMesh>
             (
                 ddtIOobject,
                 rDeltaT*rho*(vf - vf.oldTime())
@@ -278,11 +278,11 @@ EulerFaDdtScheme<Type>::facDdt
 }
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 EulerFaDdtScheme<Type>::facDdt0
 (
     const dimensionedScalar& rho,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     dimensionedScalar rDeltaT = 1.0/mesh().time().deltaT();
@@ -298,9 +298,9 @@ EulerFaDdtScheme<Type>::facDdt0
 
     if (mesh().moving())
     {
-        return tmp<GeometricField<Type, faPatchField, areaMesh>>
+        return tmp<GeometricField<Type, fvPatchField, areaMesh>>
         (
-            new GeometricField<Type, faPatchField, areaMesh>
+            new GeometricField<Type, fvPatchField, areaMesh>
             (
                 ddtIOobject,
                 mesh(),
@@ -314,9 +314,9 @@ EulerFaDdtScheme<Type>::facDdt0
     }
     else
     {
-        return tmp<GeometricField<Type, faPatchField, areaMesh>>
+        return tmp<GeometricField<Type, fvPatchField, areaMesh>>
         (
-            new GeometricField<Type, faPatchField, areaMesh>
+            new GeometricField<Type, fvPatchField, areaMesh>
             (
                 ddtIOobject,
                 (-rDeltaT)*rho*vf.oldTime()
@@ -327,11 +327,11 @@ EulerFaDdtScheme<Type>::facDdt0
 
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 EulerFaDdtScheme<Type>::facDdt
 (
     const areaScalarField& rho,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     dimensionedScalar rDeltaT = 1.0/mesh().time().deltaT();
@@ -347,9 +347,9 @@ EulerFaDdtScheme<Type>::facDdt
 
     if (mesh().moving())
     {
-        return tmp<GeometricField<Type, faPatchField, areaMesh>>
+        return tmp<GeometricField<Type, fvPatchField, areaMesh>>
         (
-            new GeometricField<Type, faPatchField, areaMesh>
+            new GeometricField<Type, fvPatchField, areaMesh>
             (
                 ddtIOobject,
                 mesh(),
@@ -371,9 +371,9 @@ EulerFaDdtScheme<Type>::facDdt
     }
     else
     {
-        return tmp<GeometricField<Type, faPatchField, areaMesh>>
+        return tmp<GeometricField<Type, fvPatchField, areaMesh>>
         (
-            new GeometricField<Type, faPatchField, areaMesh>
+            new GeometricField<Type, fvPatchField, areaMesh>
             (
                 ddtIOobject,
                 rDeltaT*(rho*vf - rho.oldTime()*vf.oldTime())
@@ -384,11 +384,11 @@ EulerFaDdtScheme<Type>::facDdt
 
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 EulerFaDdtScheme<Type>::facDdt0
 (
     const areaScalarField& rho,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     dimensionedScalar rDeltaT = 1.0/mesh().time().deltaT();
@@ -404,9 +404,9 @@ EulerFaDdtScheme<Type>::facDdt0
 
     if (mesh().moving())
     {
-        return tmp<GeometricField<Type, faPatchField, areaMesh>>
+        return tmp<GeometricField<Type, fvPatchField, areaMesh>>
         (
-            new GeometricField<Type, faPatchField, areaMesh>
+            new GeometricField<Type, fvPatchField, areaMesh>
             (
                 ddtIOobject,
                 mesh(),
@@ -426,9 +426,9 @@ EulerFaDdtScheme<Type>::facDdt0
     }
     else
     {
-        return tmp<GeometricField<Type, faPatchField, areaMesh>>
+        return tmp<GeometricField<Type, fvPatchField, areaMesh>>
         (
-            new GeometricField<Type, faPatchField, areaMesh>
+            new GeometricField<Type, fvPatchField, areaMesh>
             (
                 ddtIOobject,
                 (-rDeltaT)*rho.oldTime()*vf.oldTime()
@@ -441,7 +441,7 @@ template<class Type>
 tmp<faMatrix<Type>>
 EulerFaDdtScheme<Type>::famDdt
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     tmp<faMatrix<Type>> tfam
@@ -477,7 +477,7 @@ tmp<faMatrix<Type>>
 EulerFaDdtScheme<Type>::famDdt
 (
     const dimensionedScalar& rho,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     tmp<faMatrix<Type>> tfam
@@ -514,7 +514,7 @@ tmp<faMatrix<Type>>
 EulerFaDdtScheme<Type>::famDdt
 (
     const areaScalarField& rho,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     tmp<faMatrix<Type>> tfam

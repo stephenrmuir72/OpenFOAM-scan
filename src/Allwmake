@@ -94,9 +94,13 @@ wmake $targetType meshTools
 #------------------------------------------------------------------------------
 
 wmake $targetType finiteArea
-wmake $targetType finiteArea2
 wmake $targetType finiteVolume
 wmake $targetType fused/finiteVolume
+
+
+# ************************************************************
+wmake $targetType finiteArea2
+# ************************************************************
 
 wmake $targetType mesh/blockMesh
 wmake $targetType mesh/extrudeModel  # Requires: blockMesh

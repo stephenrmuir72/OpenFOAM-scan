@@ -95,20 +95,20 @@ lnGradScheme<Type>::~lnGradScheme()
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
 
 template<class Type>
-tmp<GeometricField<Type, faePatchField, edgeMesh>>
+tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
 lnGradScheme<Type>::lnGrad
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf,
+    const GeometricField<Type, fvPatchField, areaMesh>& vf,
     const tmp<edgeScalarField>& tdeltaCoeffs,
     const word& lnGradName
 )
 {
     const faMesh& mesh = vf.mesh();
 
-    // construct GeometricField<Type, faePatchField, edgeMesh>
-    tmp<GeometricField<Type, faePatchField, edgeMesh>> tssf
+    // construct GeometricField<Type, fvsPatchField, edgeMesh>
+    tmp<GeometricField<Type, fvsPatchField, edgeMesh>> tssf
     (
-        new GeometricField<Type, faePatchField, edgeMesh>
+        new GeometricField<Type, fvsPatchField, edgeMesh>
         (
             IOobject
             (
@@ -122,7 +122,7 @@ lnGradScheme<Type>::lnGrad
             vf.dimensions()*tdeltaCoeffs().dimensions()
         )
     );
-    GeometricField<Type, faePatchField, edgeMesh>& ssf = tssf.ref();
+    GeometricField<Type, fvsPatchField, edgeMesh>& ssf = tssf.ref();
 
     // set reference to difference factors array
     const scalarField& deltaCoeffs = tdeltaCoeffs().internalField();
@@ -149,13 +149,13 @@ lnGradScheme<Type>::lnGrad
 
 
 template<class Type>
-tmp<GeometricField<Type, faePatchField, edgeMesh>>
+tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
 lnGradScheme<Type>::lnGrad
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 ) const
 {
-    tmp<GeometricField<Type, faePatchField, edgeMesh>> tsf =
+    tmp<GeometricField<Type, fvsPatchField, edgeMesh>> tsf =
         lnGrad(vf, deltaCoeffs(vf));
 
     if (corrected())
@@ -168,13 +168,13 @@ lnGradScheme<Type>::lnGrad
 
 
 template<class Type>
-tmp<GeometricField<Type, faePatchField, edgeMesh>>
+tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
 lnGradScheme<Type>::lnGrad
 (
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf
 ) const
 {
-    tmp<GeometricField<Type, faePatchField, edgeMesh>> tinterpVf =
+    tmp<GeometricField<Type, fvsPatchField, edgeMesh>> tinterpVf =
         lnGrad(tvf());
     tvf.clear();
     return tinterpVf;
