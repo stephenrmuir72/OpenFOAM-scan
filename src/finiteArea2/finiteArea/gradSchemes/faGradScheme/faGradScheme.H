@@ -125,10 +125,10 @@ public:
         virtual tmp
         <
             GeometricField
-            <typename outerProduct<vector, Type>::type, faPatchField, areaMesh>
+            <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>
         > calcGrad
         (
-            const GeometricField<Type, faPatchField, areaMesh>&,
+            const GeometricField<Type, fvPatchField, areaMesh>&,
             const word& name
         ) const = 0;
 
@@ -137,10 +137,10 @@ public:
         tmp
         <
             GeometricField
-            <typename outerProduct<vector, Type>::type, faPatchField, areaMesh>
+            <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>
         > grad
         (
-            const GeometricField<Type, faPatchField, areaMesh>&,
+            const GeometricField<Type, fvPatchField, areaMesh>&,
             const word& name
         ) const;
 
@@ -150,10 +150,10 @@ public:
         tmp
         <
             GeometricField
-            <typename outerProduct<vector, Type>::type, faPatchField, areaMesh>
+            <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>
         > grad
         (
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         ) const;
 
         //- Calculate and return the grad of the given field
@@ -162,10 +162,10 @@ public:
         tmp
         <
             GeometricField
-            <typename outerProduct<vector, Type>::type, faPatchField, areaMesh>
+            <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>
         > grad
         (
-            const tmp<GeometricField<Type, faPatchField, areaMesh>>&
+            const tmp<GeometricField<Type, fvPatchField, areaMesh>>&
         ) const;
 };
 

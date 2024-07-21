@@ -48,7 +48,7 @@ template<class Type>
 tmp<GeometricField<Type, fvPatchField, areaMesh>>
 div
 (
-    const GeometricField<Type, faePatchField, edgeMesh>& ssf
+    const GeometricField<Type, fvsPatchField, edgeMesh>& ssf
 )
 {
     const areaVectorField& n = ssf.mesh().faceAreaNormals();
@@ -70,7 +70,7 @@ template<class Type>
 tmp<GeometricField<Type, fvPatchField, areaMesh>>
 div
 (
-    const tmp<GeometricField<Type, faePatchField, edgeMesh>>& tssf
+    const tmp<GeometricField<Type, fvsPatchField, edgeMesh>>& tssf
 )
 {
     tmp<GeometricField<Type, fvPatchField, areaMesh>> tDiv(fac::div(tssf()));

@@ -93,21 +93,20 @@ $(constraintFaePatchFields)/processor/processorFaePatchFields.C
 $(constraintFaePatchFields)/wedge/wedgeFaePatchFields.C
 $(constraintFaePatchFields)/cyclic/cyclicFaePatchFields.C
 $(constraintFaePatchFields)/symmetry/symmetryFaePatchFields.C
-
 */
+
 fields/areaFields/areaFields.C
 fields/edgeFields/edgeFields.C
+
 /*
 faMatrices/faMatrices.C
 faMatrices/faScalarMatrix/faScalarMatrix.C
-
 */
+
 edgeInterpolation = interpolation/edgeInterpolation
 $(edgeInterpolation)/edgeInterpolation.C
 $(edgeInterpolation)/edgeInterpolationScheme/edgeInterpolationSchemes.C
-/*
 
-*/
 schemes = $(edgeInterpolation)/schemes
 $(schemes)/linear/linearEdgeInterpolationMake.C
 $(schemes)/upwind/upwindEdgeInterpolationMake.C

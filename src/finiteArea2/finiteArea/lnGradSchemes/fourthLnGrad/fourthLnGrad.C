@@ -51,7 +51,7 @@ fourthLnGrad<Type>::~fourthLnGrad()
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
 
 template<class Type>
-tmp<GeometricField<Type, faePatchField, edgeMesh>>
+tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
 fourthLnGrad<Type>::correction
 (
     const GeometricField<Type, fvPatchField, areaMesh>& vf
@@ -59,9 +59,9 @@ fourthLnGrad<Type>::correction
 {
     const faMesh& mesh = this->mesh();
 
-    tmp<GeometricField<Type, faePatchField, edgeMesh>> tcorr
+    tmp<GeometricField<Type, fvsPatchField, edgeMesh>> tcorr
     (
-        new GeometricField<Type, faePatchField, edgeMesh>
+        new GeometricField<Type, fvsPatchField, edgeMesh>
         (
             IOobject
             (
@@ -73,7 +73,7 @@ fourthLnGrad<Type>::correction
             vf.dimensions()*this->mesh().deltaCoeffs().dimensions()
         )
     );
-    GeometricField<Type, faePatchField, edgeMesh>& corr = tcorr.ref();
+    GeometricField<Type, fvsPatchField, edgeMesh>& corr = tcorr.ref();
 
     edgeVectorField m(mesh.Le()/mesh.magLe());
 
@@ -98,7 +98,7 @@ fourthLnGrad<Type>::correction
     corr += (1.0/15.0)*correctedLnGrad<Type>(mesh).lnGrad(vf);
 
 
-//     tmp<GeometricField<Type, faePatchField, edgeMesh>> tcorr
+//     tmp<GeometricField<Type, fvsPatchField, edgeMesh>> tcorr
 //     (
 //         (1.0/15.0)
 //        *(

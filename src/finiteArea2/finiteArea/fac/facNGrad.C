@@ -55,7 +55,7 @@ tmp
 >
 ngrad
 (
-    const GeometricField<Type, faePatchField, edgeMesh>& ssf
+    const GeometricField<Type, fvsPatchField, edgeMesh>& ssf
 )
 {
     const areaVectorField& n = ssf.mesh().faceAreaNormals();
@@ -83,7 +83,7 @@ tmp
 >
 ngrad
 (
-    const tmp<GeometricField<Type, faePatchField, edgeMesh>>& tssf
+    const tmp<GeometricField<Type, fvsPatchField, edgeMesh>>& tssf
 )
 {
     typedef typename outerProduct<vector, Type>::type GradType;

@@ -92,18 +92,18 @@ tmp
     GeometricField
     <
         typename outerProduct<vector, Type>::type,
-        faPatchField,
+        fvPatchField,
         areaMesh
     >
 >
 gradScheme<Type>::grad
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vsf,
+    const GeometricField<Type, fvPatchField, areaMesh>& vsf,
     const word& name
 ) const
 {
     typedef typename outerProduct<vector, Type>::type GradType;
-    typedef GeometricField<GradType, faPatchField, areaMesh> GradFieldType;
+    typedef GeometricField<GradType, fvPatchField, areaMesh> GradFieldType;
 
     GradFieldType* pgGrad =
         mesh().thisDb().template getObjectPtr<GradFieldType>(name);
@@ -155,13 +155,13 @@ tmp
     GeometricField
     <
         typename outerProduct<vector, Type>::type,
-        faPatchField,
+        fvPatchField,
         areaMesh
     >
 >
 gradScheme<Type>::grad
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vsf
+    const GeometricField<Type, fvPatchField, areaMesh>& vsf
 ) const
 {
     return grad(vsf, "grad(" + vsf.name() + ')');
@@ -174,17 +174,17 @@ tmp
     GeometricField
     <
         typename outerProduct<vector, Type>::type,
-        faPatchField,
+        fvPatchField,
         areaMesh
     >
 >
 gradScheme<Type>::grad
 (
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvsf
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvsf
 ) const
 {
     typedef typename outerProduct<vector, Type>::type GradType;
-    typedef GeometricField<GradType, faPatchField, areaMesh> GradFieldType;
+    typedef GeometricField<GradType, fvPatchField, areaMesh> GradFieldType;
 
     tmp<GradFieldType> tgrad = grad(tvsf());
     tvsf.clear();

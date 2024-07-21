@@ -67,23 +67,23 @@ using AreaInternalField = DimensionedField<Type, areaMesh>;
 // Typedefs
 
 typedef
-    GeometricField<scalar, faPatchField, areaMesh>
+    GeometricField<scalar, fvPatchField, areaMesh>
     areaScalarField;
 
 typedef
-    GeometricField<vector, faPatchField, areaMesh>
+    GeometricField<vector, fvPatchField, areaMesh>
     areaVectorField;
 
 typedef
-    GeometricField<sphericalTensor, faPatchField, areaMesh>
+    GeometricField<sphericalTensor, fvPatchField, areaMesh>
     areaSphericalTensorField;
 
 typedef
-    GeometricField<symmTensor, faPatchField, areaMesh>
+    GeometricField<symmTensor, fvPatchField, areaMesh>
     areaSymmTensorField;
 
 typedef
-    GeometricField<tensor, faPatchField, areaMesh>
+    GeometricField<tensor, fvPatchField, areaMesh>
     areaTensorField;
 
 typedef faPatchField<scalar> faPatchScalarField;

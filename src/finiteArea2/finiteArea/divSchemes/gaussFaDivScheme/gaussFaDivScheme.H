@@ -94,10 +94,10 @@ public:
         tmp
         <
             GeometricField
-            <typename innerProduct<vector, Type>::type, faPatchField, areaMesh>
+            <typename innerProduct<vector, Type>::type, fvPatchField, areaMesh>
         > facDiv
         (
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         );
 };
 

@@ -108,7 +108,7 @@ public:
 
         //- Return the explicit correction to the uncorrectedLnGrad
         //- for the given field
-        virtual tmp<GeometricField<Type, faePatchField, edgeMesh>>
+        virtual tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
         correction(const GeometricField<Type, fvPatchField, areaMesh>&) const;
 };
 

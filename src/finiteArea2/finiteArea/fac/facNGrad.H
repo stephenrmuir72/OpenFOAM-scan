@@ -59,7 +59,7 @@ namespace fac
         <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>
     > ngrad
     (
-        const GeometricField<Type, faePatchField, edgeMesh>&
+        const GeometricField<Type, fvsPatchField, edgeMesh>&
     );
 
     template<class Type>
@@ -69,7 +69,7 @@ namespace fac
         <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>
     > ngrad
     (
-        const tmp<GeometricField<Type, faePatchField, edgeMesh>>&
+        const tmp<GeometricField<Type, fvsPatchField, edgeMesh>>&
     );
 
     template<class Type>

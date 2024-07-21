@@ -152,10 +152,10 @@ public:
         virtual tmp
         <
             GeometricField
-            <typename innerProduct<vector, Type>::type, faPatchField, volMesh>
+            <typename innerProduct<vector, Type>::type, fvPatchField, volMesh>
         > facDiv
         (
-            const GeometricField<Type, faPatchField, volMesh>&
+            const GeometricField<Type, fvPatchField, volMesh>&
         ) = 0;
 };
 

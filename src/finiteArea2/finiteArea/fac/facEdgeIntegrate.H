@@ -57,26 +57,26 @@ namespace fac
     tmp<GeometricField<Type, fvPatchField, areaMesh>>
     edgeIntegrate
     (
-        const GeometricField<Type, faePatchField, edgeMesh>&
+        const GeometricField<Type, fvsPatchField, edgeMesh>&
     );
 
     template<class Type>
     tmp<GeometricField<Type, fvPatchField, areaMesh>>
     edgeIntegrate
     (
-        const tmp<GeometricField<Type, faePatchField, edgeMesh>>&
+        const tmp<GeometricField<Type, fvsPatchField, edgeMesh>>&
     );
 
     template<class Type>
     tmp<GeometricField<Type, fvPatchField, areaMesh>> edgeSum
     (
-        const GeometricField<Type, faePatchField, edgeMesh>&
+        const GeometricField<Type, fvsPatchField, edgeMesh>&
     );
 
     template<class Type>
     tmp<GeometricField<Type, fvPatchField, areaMesh>> edgeSum
     (
-        const tmp<GeometricField<Type, faePatchField, edgeMesh>>&
+        const tmp<GeometricField<Type, fvsPatchField, edgeMesh>>&
     );
 }
 

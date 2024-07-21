@@ -129,22 +129,22 @@ public:
         //- Return mesh reference
         const faMesh& mesh() const noexcept { return mesh_; }
 
-        virtual tmp<GeometricField<Type, faePatchField, edgeMesh>> flux
+        virtual tmp<GeometricField<Type, fvsPatchField, edgeMesh>> flux
         (
             const edgeScalarField&,
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         ) const = 0;
 
         virtual tmp<faMatrix<Type>> famDiv
         (
             const edgeScalarField&,
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         ) const = 0;
 
-        virtual tmp<GeometricField<Type, faPatchField, areaMesh>> facDiv
+        virtual tmp<GeometricField<Type, fvPatchField, areaMesh>> facDiv
         (
             const edgeScalarField&,
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         ) const = 0;
 };
 

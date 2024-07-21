@@ -144,30 +144,30 @@ public:
 
         //- Return the face-interpolate of the given cell field
         //  with the given owner and neighbour weighting factors
-        static tmp<GeometricField<Type, faePatchField, surfaceMesh>>
+        static tmp<GeometricField<Type, fvsPatchField, surfaceMesh>>
         interpolate
         (
-            const GeometricField<Type, faPatchField, volMesh>&,
+            const GeometricField<Type, fvPatchField, volMesh>&,
             const tmp<surfaceScalarField>&,
             const tmp<surfaceScalarField>&
         );
 
         //- Return the face-interpolate of the given cell field
         //  with the given weighting factors
-        static tmp<GeometricField<Type, faePatchField, surfaceMesh>>
+        static tmp<GeometricField<Type, fvsPatchField, surfaceMesh>>
         interpolate
         (
-            const GeometricField<Type, faPatchField, volMesh>&,
+            const GeometricField<Type, fvPatchField, volMesh>&,
             const tmp<surfaceScalarField>&
         );
 
 
         //- Return the euclidian edge-interpolate of the given area field
         //  with the given weighting factors
-        static tmp<GeometricField<Type, faePatchField, surfaceMesh>>
+        static tmp<GeometricField<Type, fvsPatchField, surfaceMesh>>
         euclidianInterpolate
         (
-            const GeometricField<Type, faPatchField, volMesh>&,
+            const GeometricField<Type, fvPatchField, volMesh>&,
             const tmp<surfaceScalarField>&
         );
 
@@ -175,7 +175,7 @@ public:
         //- Return the interpolation weighting factors for the given field
         virtual tmp<surfaceScalarField> weights
         (
-            const GeometricField<Type, faPatchField, volMesh>&
+            const GeometricField<Type, fvPatchField, volMesh>&
         ) const = 0;
 
         //- Return true if this scheme uses an explicit correction
@@ -183,31 +183,31 @@ public:
 
         //- Return the explicit correction to the face-interpolate
         //  for the given field
-        virtual tmp<GeometricField<Type, faePatchField, surfaceMesh>>
-        correction(const GeometricField<Type, faPatchField, volMesh>&) const
+        virtual tmp<GeometricField<Type, fvsPatchField, surfaceMesh>>
+        correction(const GeometricField<Type, fvPatchField, volMesh>&) const
         {
             return nullptr;
         }
 
         //- Return the face-interpolate of the given cell field
         //  with explicit correction
-        virtual tmp<GeometricField<Type, faePatchField, surfaceMesh>>
-        interpolate(const GeometricField<Type, faPatchField, volMesh>&) const;
+        virtual tmp<GeometricField<Type, fvsPatchField, surfaceMesh>>
+        interpolate(const GeometricField<Type, fvPatchField, volMesh>&) const;
 
         //- Return the euclidian edge-interpolate of the given area field
         //  without explicit correction
-        virtual tmp<GeometricField<Type, faePatchField, surfaceMesh>>
+        virtual tmp<GeometricField<Type, fvsPatchField, surfaceMesh>>
         euclidianInterpolate
         (
-            const GeometricField<Type, faPatchField, volMesh>&
+            const GeometricField<Type, fvPatchField, volMesh>&
         ) const;
 
         //- Return the face-interpolate of the given tmp cell field
         //  with explicit correction
-        tmp<GeometricField<Type, faePatchField, surfaceMesh>>
+        tmp<GeometricField<Type, fvsPatchField, surfaceMesh>>
         interpolate
         (
-            const tmp<GeometricField<Type, faPatchField, volMesh>>&
+            const tmp<GeometricField<Type, fvPatchField, volMesh>>&
         ) const;
 };
 

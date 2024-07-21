@@ -64,23 +64,23 @@ using faePatchField = fvsPatchField<Type>;
 //// Typedefs
 //
 typedef
-    GeometricField<scalar, faePatchField, edgeMesh>
+    GeometricField<scalar, fvsPatchField, edgeMesh>
     edgeScalarField;
 
 typedef
-    GeometricField<vector, faePatchField, edgeMesh>
+    GeometricField<vector, fvsPatchField, edgeMesh>
     edgeVectorField;
 
 typedef
-    GeometricField<sphericalTensor, faePatchField, edgeMesh>
+    GeometricField<sphericalTensor, fvsPatchField, edgeMesh>
     edgeSphericalTensorField;
 
 typedef
-    GeometricField<symmTensor, faePatchField, edgeMesh>
+    GeometricField<symmTensor, fvsPatchField, edgeMesh>
     edgeSymmTensorField;
 
 typedef
-    GeometricField<tensor, faePatchField, edgeMesh>
+    GeometricField<tensor, fvsPatchField, edgeMesh>
     edgeTensorField;
 
 typedef faePatchField<scalar> faePatchScalarField;

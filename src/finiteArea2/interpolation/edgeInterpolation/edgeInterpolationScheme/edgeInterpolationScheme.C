@@ -132,10 +132,10 @@ Foam::edgeInterpolationScheme<Type>::~edgeInterpolationScheme()
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
 
 template<class Type>
-Foam::tmp<Foam::GeometricField<Type, Foam::faePatchField, Foam::surfaceMesh>>
+Foam::tmp<Foam::GeometricField<Type, Foam::fvsPatchField, Foam::surfaceMesh>>
 Foam::edgeInterpolationScheme<Type>::interpolate
 (
-    const GeometricField<Type, faPatchField, volMesh>& vf,
+    const GeometricField<Type, fvPatchField, volMesh>& vf,
     const tmp<surfaceScalarField>& tlambdas,
     const tmp<surfaceScalarField>& tys
 )
@@ -162,9 +162,9 @@ Foam::edgeInterpolationScheme<Type>::interpolate
     const labelUList& P = mesh.owner();
     const labelUList& N = mesh.neighbour();
 
-    tmp<GeometricField<Type, faePatchField, surfaceMesh>> tsf
+    tmp<GeometricField<Type, fvsPatchField, surfaceMesh>> tsf
     (
-        new GeometricField<Type, faePatchField, surfaceMesh>
+        new GeometricField<Type, fvsPatchField, surfaceMesh>
         (
             IOobject
             (
@@ -176,7 +176,7 @@ Foam::edgeInterpolationScheme<Type>::interpolate
             vf.dimensions()
         )
     );
-    GeometricField<Type, faePatchField, surfaceMesh>& sf = tsf.ref();
+    GeometricField<Type, fvsPatchField, surfaceMesh>& sf = tsf.ref();
 
     Field<Type>& sfi = sf.primitiveFieldRef();
 
@@ -251,10 +251,10 @@ Foam::edgeInterpolationScheme<Type>::interpolate
 
 
 template<class Type>
-Foam::tmp<Foam::GeometricField<Type, Foam::faePatchField, Foam::surfaceMesh>>
+Foam::tmp<Foam::GeometricField<Type, Foam::fvsPatchField, Foam::surfaceMesh>>
 Foam::edgeInterpolationScheme<Type>::interpolate
 (
-    const GeometricField<Type, faPatchField, volMesh>& vf,
+    const GeometricField<Type, fvPatchField, volMesh>& vf,
     const tmp<surfaceScalarField>& tlambdas
 )
 {
@@ -278,9 +278,9 @@ Foam::edgeInterpolationScheme<Type>::interpolate
     const labelUList& P = mesh.owner();
     const labelUList& N = mesh.neighbour();
 
-    tmp<GeometricField<Type, faePatchField, surfaceMesh>> tsf
+    tmp<GeometricField<Type, fvsPatchField, surfaceMesh>> tsf
     (
-        new GeometricField<Type, faePatchField, surfaceMesh>
+        new GeometricField<Type, fvsPatchField, surfaceMesh>
         (
             IOobject
             (
@@ -292,7 +292,7 @@ Foam::edgeInterpolationScheme<Type>::interpolate
             vf.dimensions()
         )
     );
-    GeometricField<Type, faePatchField, surfaceMesh>& sf = tsf.ref();
+    GeometricField<Type, fvsPatchField, surfaceMesh>& sf = tsf.ref();
 
     Field<Type>& sfi = sf.primitiveFieldRef();
 
@@ -367,10 +367,10 @@ Foam::edgeInterpolationScheme<Type>::interpolate
 
 
 template<class Type>
-Foam::tmp<Foam::GeometricField<Type, Foam::faePatchField, Foam::surfaceMesh>>
+Foam::tmp<Foam::GeometricField<Type, Foam::fvsPatchField, Foam::surfaceMesh>>
 Foam::edgeInterpolationScheme<Type>::euclidianInterpolate
 (
-    const GeometricField<Type, faPatchField, volMesh>& vf,
+    const GeometricField<Type, fvPatchField, volMesh>& vf,
     const tmp<surfaceScalarField>& tlambdas
 )
 {
@@ -394,9 +394,9 @@ Foam::edgeInterpolationScheme<Type>::euclidianInterpolate
     const labelUList& P = mesh.owner();
     const labelUList& N = mesh.neighbour();
 
-    tmp<GeometricField<Type, faePatchField, surfaceMesh>> tsf
+    tmp<GeometricField<Type, fvsPatchField, surfaceMesh>> tsf
     (
-        new GeometricField<Type, faePatchField, surfaceMesh>
+        new GeometricField<Type, fvsPatchField, surfaceMesh>
         (
             IOobject
             (
@@ -408,7 +408,7 @@ Foam::edgeInterpolationScheme<Type>::euclidianInterpolate
             vf.dimensions()
         )
     );
-    GeometricField<Type, faePatchField, surfaceMesh>& sf = tsf.ref();
+    GeometricField<Type, fvsPatchField, surfaceMesh>& sf = tsf.ref();
 
     Field<Type>& sfi = sf.primitiveFieldRef();
 
@@ -443,10 +443,10 @@ Foam::edgeInterpolationScheme<Type>::euclidianInterpolate
 
 
 template<class Type>
-Foam::tmp<Foam::GeometricField<Type, Foam::faePatchField, Foam::surfaceMesh>>
+Foam::tmp<Foam::GeometricField<Type, Foam::fvsPatchField, Foam::surfaceMesh>>
 Foam::edgeInterpolationScheme<Type>::interpolate
 (
-    const GeometricField<Type, faPatchField, volMesh>& vf
+    const GeometricField<Type, fvPatchField, volMesh>& vf
 ) const
 {
     if (edgeInterpolation::debug)
@@ -459,7 +459,7 @@ Foam::edgeInterpolationScheme<Type>::interpolate
             << endl;
     }
 
-    tmp<GeometricField<Type, faePatchField, surfaceMesh>> tsf =
+    tmp<GeometricField<Type, fvsPatchField, surfaceMesh>> tsf =
         interpolate(vf, weights(vf));
 
     if (corrected())
@@ -472,10 +472,10 @@ Foam::edgeInterpolationScheme<Type>::interpolate
 
 
 template<class Type>
-Foam::tmp<Foam::GeometricField<Type, Foam::faePatchField, Foam::surfaceMesh>>
+Foam::tmp<Foam::GeometricField<Type, Foam::fvsPatchField, Foam::surfaceMesh>>
 Foam::edgeInterpolationScheme<Type>::euclidianInterpolate
 (
-    const GeometricField<Type, faPatchField, volMesh>& vf
+    const GeometricField<Type, fvPatchField, volMesh>& vf
 ) const
 {
     if (edgeInterpolation::debug)
@@ -488,7 +488,7 @@ Foam::edgeInterpolationScheme<Type>::euclidianInterpolate
             << endl;
     }
 
-    tmp<GeometricField<Type, faePatchField, surfaceMesh>> tsf =
+    tmp<GeometricField<Type, fvsPatchField, surfaceMesh>> tsf =
         euclidianInterpolate(vf, weights(vf));
 
     return tsf;
@@ -496,13 +496,13 @@ Foam::edgeInterpolationScheme<Type>::euclidianInterpolate
 
 
 template<class Type>
-Foam::tmp<Foam::GeometricField<Type, Foam::faePatchField, Foam::surfaceMesh>>
+Foam::tmp<Foam::GeometricField<Type, Foam::fvsPatchField, Foam::surfaceMesh>>
 Foam::edgeInterpolationScheme<Type>::interpolate
 (
-    const tmp<GeometricField<Type, faPatchField, volMesh>>& tvf
+    const tmp<GeometricField<Type, fvPatchField, volMesh>>& tvf
 ) const
 {
-    tmp<GeometricField<Type, faePatchField, surfaceMesh>> tinterpVf =
+    tmp<GeometricField<Type, fvsPatchField, surfaceMesh>> tinterpVf =
         interpolate(tvf());
     tvf.clear();
     return tinterpVf;

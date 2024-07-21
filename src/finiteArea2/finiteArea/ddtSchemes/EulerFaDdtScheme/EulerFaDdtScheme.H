@@ -97,65 +97,65 @@ public:
             return fa::faDdtScheme<Type>::mesh();
         }
 
-        tmp<GeometricField<Type, faPatchField, areaMesh>> facDdt
+        tmp<GeometricField<Type, fvPatchField, areaMesh>> facDdt
         (
             const dimensioned<Type>
         );
 
-        tmp<GeometricField<Type, faPatchField, areaMesh>> facDdt0
+        tmp<GeometricField<Type, fvPatchField, areaMesh>> facDdt0
         (
             const dimensioned<Type>
         );
 
-        tmp<GeometricField<Type, faPatchField, areaMesh>> facDdt
+        tmp<GeometricField<Type, fvPatchField, areaMesh>> facDdt
         (
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         );
 
-        tmp<GeometricField<Type, faPatchField, areaMesh>> facDdt0
+        tmp<GeometricField<Type, fvPatchField, areaMesh>> facDdt0
         (
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         );
 
-        tmp<GeometricField<Type, faPatchField, areaMesh>> facDdt
+        tmp<GeometricField<Type, fvPatchField, areaMesh>> facDdt
         (
             const dimensionedScalar&,
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         );
 
-        tmp<GeometricField<Type, faPatchField, areaMesh>> facDdt0
+        tmp<GeometricField<Type, fvPatchField, areaMesh>> facDdt0
         (
             const dimensionedScalar&,
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         );
 
-        tmp<GeometricField<Type, faPatchField, areaMesh>> facDdt
+        tmp<GeometricField<Type, fvPatchField, areaMesh>> facDdt
         (
             const areaScalarField&,
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         );
 
-        tmp<GeometricField<Type, faPatchField, areaMesh>> facDdt0
+        tmp<GeometricField<Type, fvPatchField, areaMesh>> facDdt0
         (
             const areaScalarField&,
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         );
 
         tmp<faMatrix<Type>> famDdt
         (
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         );
 
         tmp<faMatrix<Type>> famDdt
         (
             const dimensionedScalar&,
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         );
 
         tmp<faMatrix<Type>> famDdt
         (
             const areaScalarField&,
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         );
 };
 
