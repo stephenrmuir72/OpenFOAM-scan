@@ -46,6 +46,7 @@ SourceFiles
 #include "volFieldsFwd.H"
 #include "surfaceFieldsFwd.H"
 #include "areaFieldsFwd.H"
+#include "MeshObject.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -57,12 +58,20 @@ namespace Foam
 \*---------------------------------------------------------------------------*/
 
 class edgeInterpolation
+:
+    public MeshObject<faMesh, MoveableMeshObject, edgeInterpolation>
 {
+    // Private Typedefs
+
+        typedef MeshObject
+        <
+            faMesh,
+            MoveableMeshObject,
+            edgeInterpolation
+        > MeshObject_type;
+
+
     // Private Data
-
-        // Reference to faMesh
-        const faMesh& faMesh_;
-
 
         // Demand-driven data
 
@@ -137,9 +146,6 @@ public:
 
     // Member Functions
 
-        //- Return mesh reference
-        const faMesh& mesh() const noexcept { return faMesh_; }
-
         //- Return reference to PN geodesic distance
         const surfaceScalarField& lPN() const;
 
@@ -165,7 +171,7 @@ public:
     // Mesh Motion
 
         //- Do what is necessary if the mesh has moved
-        bool movePoints() const;
+        virtual bool movePoints();
 
 
     // Storage Management

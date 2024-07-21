@@ -56,7 +56,10 @@ int main(int argc, char *argv[])
     #include "setRootCaseLists.H"
     #include "createTime.H"
     #include "createMesh.H"
+
+    const word aRegionName("film");
     #include "createFaMesh.H"
+
     #include "readGravitationalAcceleration.H"
     #include "readTransportProperties.H"
     #include "createFaFields.H"

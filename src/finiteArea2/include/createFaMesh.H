@@ -35,7 +35,7 @@ Foam::faMesh aMesh
 (
     Foam::IOobject
     (
-        regionName,
+        aRegionName,
         runTime.timeName(),
         mesh,   //runTime,
         Foam::IOobject::MUST_READ
@@ -45,8 +45,10 @@ Foam::faMesh aMesh
 aMesh.init(true);   // initialise all (lower levels and current)
 
 // Make sure all 'fv' properties are of the correct dimensions
-const_cast<surfaceVectorField&>(aMesh.Sf()).dimensions() = dimLength;
-const_cast<DimensionedField<scalar, volMesh>&>(aMesh.V()).dimensions() =
-    dimArea;
+const_cast<surfaceVectorField&>(aMesh.Sf()).dimensions().reset(dimLength);
+const_cast<DimensionedField<scalar, volMesh>&>
+(
+    aMesh.V()
+).dimensions().reset(dimArea);
 
 // ************************************************************************* //
