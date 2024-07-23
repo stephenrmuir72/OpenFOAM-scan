@@ -9,14 +9,14 @@ FoamFile
 {
     version     2.0;
     format      ascii;
-    class       volVectorField;
-    object      Us;
+    class       volScalarField;
+    object      manningField;
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-dimensions          [0 1 -1 0 0 0 0];
+dimensions          [0 1 0 0 0 0 0];
 
-internalField       uniform (0 0 0);
+internalField       uniform 0.1;
 
 boundaryField
 {
@@ -34,7 +34,7 @@ boundaryField
 
     side
     {
-        type        slip;
+        type        zeroGradient;
     }
 
     symmetry
@@ -44,7 +44,17 @@ boundaryField
 
     cylinder
     {
-        type        slip;
+        type        zeroGradient;
+    }
+
+    film
+    {
+        type        zeroGradient;
+    }
+
+    top
+    {
+        type        zeroGradient;
     }
 }
 

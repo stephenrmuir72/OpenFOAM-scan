@@ -480,12 +480,12 @@ void Foam::edgeInterpolation::makeCorrectionVectors() const
         vector edgeNormal =
             normalised(lengths[edgeI] ^ fe.vec(points));
 
-        Pout<< "makeCorrectionVectors2 : edge:" << edgeI
-            << " points:" << fe.line(points)
-            << " vec:" << fe.vec(points)
-            << " le:" << lengths[edgeI]
-            << " normal:" << (lengths[edgeI] ^ fe.vec(points))
-            << endl;
+        //Pout<< "makeCorrectionVectors2 : edge:" << edgeI
+        //    << " points:" << fe.line(points)
+        //    << " vec:" << fe.vec(points)
+        //    << " le:" << lengths[edgeI]
+        //    << " normal:" << (lengths[edgeI] ^ fe.vec(points))
+        //   << endl;
 
 
         // Unit delta vector
