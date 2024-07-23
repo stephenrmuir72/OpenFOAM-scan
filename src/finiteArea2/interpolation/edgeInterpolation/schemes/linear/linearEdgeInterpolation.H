@@ -104,10 +104,7 @@ public:
             const GeometricField<Type, fvPatchField, areaMesh>&
         ) const
         {
-            return reinterpret_cast<const edgeScalarField&>
-            (
-                this->mesh().surfaceInterpolation::weights()
-            );
+            return this->mesh().surfaceInterpolation::weights();
         }
 };
 
@@ -119,10 +116,7 @@ linearEdgeInterpolate(const GeometricField<Type, fvPatchField, areaMesh>& vf)
     return edgeInterpolationScheme<Type>::interpolate
     (
         vf,
-        reinterpret_cast<const edgeScalarField&>
-        (
-            vf.mesh().surfaceInterpolation::weights()
-        )
+        vf.mesh().surfaceInterpolation::weights()
     );
 }
 
