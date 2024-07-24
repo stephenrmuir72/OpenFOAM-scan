@@ -72,6 +72,7 @@ correctedLnGrad<Type>::correction
         )
     );
     GeometricField<Type, fvsPatchField, edgeMesh>& ssf = tssf.ref();
+    ssf.setOriented();
 
     for (direction cmpt = 0; cmpt < pTraits<Type>::nComponents; ++cmpt)
     {
