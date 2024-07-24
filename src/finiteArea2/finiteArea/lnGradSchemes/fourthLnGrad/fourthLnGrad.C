@@ -74,6 +74,7 @@ fourthLnGrad<Type>::correction
         )
     );
     GeometricField<Type, fvsPatchField, edgeMesh>& corr = tcorr.ref();
+    corr.setOriented();
 
     edgeVectorField m(mesh.Le()/mesh.magLe());
 

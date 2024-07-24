@@ -48,6 +48,7 @@ SourceFiles
 #define limitedLnGrad_H
 
 #include "lnGradScheme.H"
+#include "edgeInterpolation.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -133,7 +134,8 @@ public:
         //- Return true if this scheme uses an explicit correction
         virtual bool corrected() const
         {
-            return !this->mesh().orthogonal();
+            //return !this->mesh().orthogonal();
+            return !edgeInterpolation::New(this->mesh()).orthogonal();
         }
 
         //- Return the explicit correction to the limitedLnGrad

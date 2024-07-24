@@ -38,6 +38,7 @@ SourceFiles
 #define correctedLnGrad_H
 
 #include "lnGradScheme.H"
+#include "edgeInterpolation.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -108,7 +109,7 @@ public:
         virtual bool corrected() const
         {
             //return !this->mesh().orthogonal();
-            return true;
+            return !edgeInterpolation::New(this->mesh()).orthogonal();
         }
 
         //- Return the explicit correction to the correctedLnGrad

@@ -30,6 +30,7 @@ License
 #include "lnGradScheme.H"
 #include "areaFields.H"
 #include "edgeFields.H"
+#include "volFields.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -123,6 +124,7 @@ lnGradScheme<Type>::lnGrad
         )
     );
     GeometricField<Type, fvsPatchField, edgeMesh>& ssf = tssf.ref();
+    ssf.setOriented();
 
     // set reference to difference factors array
     const scalarField& deltaCoeffs = tdeltaCoeffs().internalField();
