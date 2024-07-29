@@ -632,7 +632,7 @@ Foam::fvMesh::~fvMesh()
 
 Foam::refPtr<Foam::fvMesh> Foam::fvMesh::parentMesh() const
 {
-    return parentMesh(thisDb());
+    return parentMesh(thisDb().parent());
 }
 
 

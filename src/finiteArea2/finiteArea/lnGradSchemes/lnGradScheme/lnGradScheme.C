@@ -139,6 +139,9 @@ lnGradScheme<Type>::lnGrad
             deltaCoeffs[faceI]*(vf[neighbour[faceI]] - vf[owner[faceI]]);
     }
 
+    // Sign of contribution depends on owner/neighbour so ssf is oriented
+    ssf.setOriented();
+
     auto& ssfb = ssf.boundaryFieldRef();
 
     forAll(vf.boundaryField(), patchI)
