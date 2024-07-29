@@ -302,7 +302,8 @@ void Foam::fvMesh::makeCf() const
             faceDir1()
         );
 
-        edgeAreaNormalsPtr_->setOriented();
+        //- Related to neighbouring faces, not the edge itself
+        //edgeAreaNormalsPtr_->setOriented();
     }
 }
 
