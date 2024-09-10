@@ -43,9 +43,8 @@ SourceFiles
 #define Foam_edgeInterpolation_H
 
 #include "faMesh.H"
-#include "volFieldsFwd.H"
-#include "surfaceFieldsFwd.H"
 #include "areaFieldsFwd.H"
+#include "edgeFieldsFwd.H"
 #include "MeshObject.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -76,19 +75,19 @@ class edgeInterpolation
         // Demand-driven data
 
             //- Geodesic distance between centroids of neighbour finite areas
-            mutable std::unique_ptr<surfaceScalarField> lPNptr_;
+            mutable std::unique_ptr<edgeScalarField> lPNptr_;
 
             //- Central-differencing weighting factors
-            mutable std::unique_ptr<surfaceScalarField> weightingFactorsPtr_;
+            mutable std::unique_ptr<edgeScalarField> weightingFactorsPtr_;
 
             //- Face-gradient difference factors
-            mutable std::unique_ptr<surfaceScalarField> differenceFactorsPtr_;
+            mutable std::unique_ptr<edgeScalarField> differenceFactorsPtr_;
 
             //- Non-orthogonality correction vectors
-            mutable std::unique_ptr<surfaceVectorField> correctionVectorsPtr_;
+            mutable std::unique_ptr<edgeVectorField> correctionVectorsPtr_;
 
             //- Skew correction vectors
-            mutable std::unique_ptr<surfaceVectorField>
+            mutable std::unique_ptr<edgeVectorField>
                 skewCorrectionVectorsPtr_;
 
             //- Is mesh orthogonal
@@ -147,19 +146,19 @@ public:
     // Member Functions
 
         //- Return reference to PN geodesic distance
-        const surfaceScalarField& lPN() const;
+        const edgeScalarField& lPN() const;
 
         //- Return reference to weighting factors array
-        const surfaceScalarField& weights() const;
+        const edgeScalarField& weights() const;
 
         //- Return reference to difference factors array
-        const surfaceScalarField& deltaCoeffs() const;
+        const edgeScalarField& deltaCoeffs() const;
 
         //- Return reference to non-orthogonality correction vectors array
-        const surfaceVectorField& correctionVectors() const;
+        const edgeVectorField& correctionVectors() const;
 
         //- Return reference to skew vectors array
-        const surfaceVectorField& skewCorrectionVectors() const;
+        const edgeVectorField& skewCorrectionVectors() const;
 
         //- Return whether mesh is orthogonal or not
         bool orthogonal() const;
