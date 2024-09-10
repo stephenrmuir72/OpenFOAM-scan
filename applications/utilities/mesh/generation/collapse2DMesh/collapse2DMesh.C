@@ -42,7 +42,7 @@ Description
 #include "processorMeshes.H"
 #include "emptyPolyPatch.H"
 #include "bitSet.H"
-#include "fvMeshTools.H"
+#include "fvMesh2DTools.H"
 #include "IOmapPolyMesh.H"
 
 using namespace Foam;
@@ -80,199 +80,236 @@ int main(int argc, char *argv[])
             << "Patch " << patchName << " does not exist. Valid patches are "
             << pbm.names() << exit(FatalError);
     }
-
+    const label defaultPatchID = -1;
 
     const polyPatch& pp = pbm[keepPatchi];
-    const edgeList& edges = pp.edges();
-    const labelListList& edgeFaces = pp.edgeFaces();
-    const labelList& mp = pp.meshPoints();
-
-    forAll(edgeFaces, edgei)
-    {
-        if (edgeFaces[edgei].size() > 2)
-        {
-            FatalErrorInFunction << "Patch is non-manifold at edge "
-                << edges[edgei].line(pp.localPoints())
-                << exit(FatalError);
-        }
-    }
-
-    // Mark on pp outside the connected patches. Note: maybe also have
-    // orientation so if extruding faceZone we can pick the 'correct' patch
-
-    EdgeMap<label> edgeToPatch(pp.nEdges()-pp.nInternalEdges());
-
-    {
-        // Insert (with -1) all wanted edges
-        for (label edgei = pp.nInternalEdges(); edgei < pp.nEdges(); edgei++)
-        {
-            const edge meshE(mp, edges[edgei]);
-            edgeToPatch.insert(meshE, -1);
-        }
-
-        // Find on other patches
-        forAll(pbm, patchi)
-        {
-            if (patchi != keepPatchi)
-            {
-                for (const edge& patchE : pbm[patchi].edges())
-                {
-                    const edge meshE(pbm[patchi].meshPoints(), patchE);
-                    auto fnd = edgeToPatch.find(meshE);
-                    if (fnd)
-                    {
-                        if (fnd() == -1)
-                        {
-                            //Pout<< "For mesh edge:" << meshE
-                            //    << " points:" << meshE.line(mesh.points())
-                            //    << " found patch " << patchi
-                            //    << " name:" << pbm[patchi].name()
-                            //    << endl;
-                            fnd() = patchi;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-
-
-    // Constructing a 2D mesh
-    polyTopoChange meshMod(pbm.size(), true, 2);
-    // Pre-size with expected number of cells, faces, points
-    meshMod.setCapacity(mp.size(), edges.size(), pp.size());
-
-    labelList faceToCell(pp.size());
-    forAll(pp, facei)
-    {
-        faceToCell[facei] = meshMod.addCell
-        (
-            -1,
-            -1,
-            pp.start()+facei,   // original mesh face label
-            -1,
-            -1
-        );
-    }
-
-    labelList pointToPoint(pp.nPoints());
-    forAll(pp.localPoints(), pointi)
-    {
-        pointToPoint[pointi] = meshMod.addPoint
-        (
-            pp.localPoints()[pointi],
-            mp[pointi],     // original mesh point label
-            -1,
-            true
-        );
-    }
-
-    labelList edgeToFace(edges.size(), -1);
-    face newFace(2);
-    forAll(pp, facei)
-    {
-        const auto& f = pp.localFaces()[facei];
-        const auto& fEdges = pp.faceEdges()[facei];
-
-        forAll(f, fp)
-        {
-            const label edgei = fEdges[fp];
-
-            if (edgeToFace[edgei] != -1)
-            {
-                // Edge already done
-                continue;
-            }
-
-            // Get neighbour
-            const auto& eFaces = edgeFaces[edgei];
-
-            // Get edge in same order as face
-            newFace[0] = pointToPoint[f[fp]];
-            newFace[1] = pointToPoint[f[f.fcIndex(fp)]];
-
-            if (eFaces.size() == 2)
-            {
-                label ownCell = faceToCell[facei];
-                label nbrCell = -1;
-                if (eFaces[0] == facei)
-                {
-                    nbrCell = faceToCell[eFaces[1]];
-                }
-                else
-                {
-                    nbrCell = faceToCell[eFaces[0]];
-                }
-
-                if (nbrCell < ownCell)
-                {
-                    std::swap(newFace[0], newFace[1]);
-                    std::swap(ownCell, nbrCell);
-                }
-
-                edgeToFace[edgei] = meshMod.addFace
-                (
-                    newFace,
-                    ownCell,
-                    nbrCell,
-                    -1,             //masterPointID,
-                    -1,             //masterEdgeID,
-                    -1,             //masterFaceID,
-                    false,          // flipFaceFlux
-                    -1,             // patchID
-                    -1,             // zoneID
-                    false           // zoneFlip
-                );
-            }
-            else
-            {
-                const label ownCell = faceToCell[facei];
-                const edge meshE(mp, edges[edgei]);
-                const label patchi = edgeToPatch[meshE];
-
-                edgeToFace[edgei] = meshMod.addFace
-                (
-                    newFace,
-                    ownCell,
-                    -1,
-                    -1,             //masterPointID,
-                    -1,             //masterEdgeID,
-                    -1,             //masterFaceID,
-                    false,          // flipFaceFlux
-                    patchi,         // patchID
-                    -1,             // zoneID
-                    false           // zoneFlip
-                );
-            }
-        }
-    }
+//    const edgeList& edges = pp.edges();
+//    const labelListList& edgeFaces = pp.edgeFaces();
+//    const labelList& mp = pp.meshPoints();
+//
+//    forAll(edgeFaces, edgei)
+//    {
+//        if (edgeFaces[edgei].size() > 2)
+//        {
+//            FatalErrorInFunction << "Patch is non-manifold at edge "
+//                << edges[edgei].line(pp.localPoints())
+//                << exit(FatalError);
+//        }
+//    }
+//
+//    // Mark on pp outside the connected patches. Note: maybe also have
+//    // orientation so if extruding faceZone we can pick the 'correct' patch
+//
+//    EdgeMap<label> edgeToPatch(pp.nEdges()-pp.nInternalEdges());
+//
+//    {
+//        // Insert (with -1) all wanted edges
+//        for (label edgei = pp.nInternalEdges(); edgei < pp.nEdges(); edgei++)
+//        {
+//            const edge meshE(mp, edges[edgei]);
+//            edgeToPatch.insert(meshE, -1);
+//        }
+//
+//        // Find on other patches
+//        forAll(pbm, patchi)
+//        {
+//            if (patchi != keepPatchi)
+//            {
+//                for (const edge& patchE : pbm[patchi].edges())
+//                {
+//                    const edge meshE(pbm[patchi].meshPoints(), patchE);
+//                    auto fnd = edgeToPatch.find(meshE);
+//                    if (fnd)
+//                    {
+//                        if (fnd() == -1)
+//                        {
+//                            //Pout<< "For mesh edge:" << meshE
+//                            //    << " points:" << meshE.line(mesh.points())
+//                            //    << " found patch " << patchi
+//                            //    << " name:" << pbm[patchi].name()
+//                            //    << endl;
+//                            fnd() = patchi;
+//                        }
+//                    }
+//                }
+//            }
+//        }
+//    }
 
 
-    // Create dummy fvSchemes, fvSolution
-    fvMeshTools::createDummyFvMeshFiles
+    const labelList addressing(pp.range().labels());
+
+    const EdgeMap<label> edgeToPatch
     (
-        mesh,
-        patchName,
-        true
+        fvMesh2DTools::edgePatch
+        (
+            mesh,
+            defaultPatchID,
+            pp,
+            addressing
+        )
     );
 
-    // Create a mesh from topo changes.
-    //autoPtr<mapPolyMesh> morphMap = meshMod.changeMesh(mesh, false);
-    //mesh.updateMesh(morphMap);
-    autoPtr<fvMesh> subMeshPtr;
-    autoPtr<mapPolyMesh> morphMap = meshMod.makeMesh
+
+
+//    // Constructing a 2D mesh
+//    polyTopoChange meshMod(pbm.size(), true, 2);
+//    // Pre-size with expected number of cells, faces, points
+//    meshMod.setCapacity(mp.size(), edges.size(), pp.size());
+//
+//    labelList faceToCell(pp.size());
+//    forAll(pp, facei)
+//    {
+//        faceToCell[facei] = meshMod.addCell
+//        (
+//            -1,
+//            -1,
+//            pp.start()+facei,   // original mesh face label
+//            -1,
+//            -1
+//        );
+//    }
+//
+//    labelList pointToPoint(pp.nPoints());
+//    forAll(pp.localPoints(), pointi)
+//    {
+//        pointToPoint[pointi] = meshMod.addPoint
+//        (
+//            pp.localPoints()[pointi],
+//            mp[pointi],     // original mesh point label
+//            -1,
+//            true
+//        );
+//    }
+//
+//    labelList edgeToFace(edges.size(), -1);
+//    face newFace(2);
+//    forAll(pp, facei)
+//    {
+//        const auto& f = pp.localFaces()[facei];
+//        const auto& fEdges = pp.faceEdges()[facei];
+//
+//        forAll(f, fp)
+//        {
+//            const label edgei = fEdges[fp];
+//
+//            if (edgeToFace[edgei] != -1)
+//            {
+//                // Edge already done
+//                continue;
+//            }
+//
+//            // Get neighbour
+//            const auto& eFaces = edgeFaces[edgei];
+//
+//            // Get edge in same order as face
+//            newFace[0] = pointToPoint[f[fp]];
+//            newFace[1] = pointToPoint[f[f.fcIndex(fp)]];
+//
+//            if (eFaces.size() == 2)
+//            {
+//                label ownCell = faceToCell[facei];
+//                label nbrCell = -1;
+//                if (eFaces[0] == facei)
+//                {
+//                    nbrCell = faceToCell[eFaces[1]];
+//                }
+//                else
+//                {
+//                    nbrCell = faceToCell[eFaces[0]];
+//                }
+//
+//                if (nbrCell < ownCell)
+//                {
+//                    std::swap(newFace[0], newFace[1]);
+//                    std::swap(ownCell, nbrCell);
+//                }
+//
+//                edgeToFace[edgei] = meshMod.addFace
+//                (
+//                    newFace,
+//                    ownCell,
+//                    nbrCell,
+//                    -1,             //masterPointID,
+//                    -1,             //masterEdgeID,
+//                    -1,             //masterFaceID,
+//                    false,          // flipFaceFlux
+//                    -1,             // patchID
+//                    -1,             // zoneID
+//                    false           // zoneFlip
+//                );
+//            }
+//            else
+//            {
+//                const label ownCell = faceToCell[facei];
+//                const edge meshE(mp, edges[edgei]);
+//                const label patchi = edgeToPatch[meshE];
+//
+//                edgeToFace[edgei] = meshMod.addFace
+//                (
+//                    newFace,
+//                    ownCell,
+//                    -1,
+//                    -1,             //masterPointID,
+//                    -1,             //masterEdgeID,
+//                    -1,             //masterFaceID,
+//                    false,          // flipFaceFlux
+//                    patchi,         // patchID
+//                    -1,             // zoneID
+//                    false           // zoneFlip
+//                );
+//            }
+//        }
+//    }
+//
+//
+//    // Create dummy fvSchemes, fvSolution
+//    fvMeshTools::createDummyFvMeshFiles
+//    (
+//        mesh,
+//        patchName,
+//        true
+//    );
+//
+//    // Create a mesh from topo changes.
+//    //autoPtr<mapPolyMesh> morphMap = meshMod.changeMesh(mesh, false);
+//    //mesh.updateMesh(morphMap);
+//    autoPtr<fvMesh> subMeshPtr;
+//    autoPtr<mapPolyMesh> morphMap = meshMod.makeMesh
+//    (
+//        subMeshPtr,
+//        IOobject
+//        (
+//            patchName,
+//            mesh.pointsInstance(),
+//            //"finite-area",
+//            mesh.thisDb(),
+//            IOobjectOption::NO_READ
+//        ),
+//        mesh
+//    );
+
+    labelList pointMap;
+
+    autoPtr<fvMesh> subMeshPtr
     (
-        subMeshPtr,
-        IOobject
+        fvMesh2DTools::createMesh
         (
-            patchName,
-            mesh.pointsInstance(),
-            //"finite-area",
-            mesh.thisDb(),
-            IOobjectOption::NO_READ
-        ),
-        mesh
+            IOobject
+            (
+                patchName,
+                mesh.pointsInstance(),
+                //"finite-area",
+                mesh.thisDb(),
+                IOobjectOption::NO_READ
+            ),
+            mesh,
+            pp,
+            addressing,
+            edgeToPatch,
+    
+            pointMap         // From point to parent mesh point
+        )
     );
 
     // TBD:
