@@ -51,7 +51,7 @@ Foam::edgeInterpolation::edgeInterpolation(const faMesh& fam)
 
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
 
-const Foam::surfaceScalarField& Foam::edgeInterpolation::lPN() const
+const Foam::edgeScalarField& Foam::edgeInterpolation::lPN() const
 {
     if (!lPNptr_)
     {
@@ -62,7 +62,7 @@ const Foam::surfaceScalarField& Foam::edgeInterpolation::lPN() const
 }
 
 
-const Foam::surfaceScalarField& Foam::edgeInterpolation::weights() const
+const Foam::edgeScalarField& Foam::edgeInterpolation::weights() const
 {
     if (!weightingFactorsPtr_)
     {
@@ -73,7 +73,7 @@ const Foam::surfaceScalarField& Foam::edgeInterpolation::weights() const
 }
 
 
-const Foam::surfaceScalarField& Foam::edgeInterpolation::deltaCoeffs() const
+const Foam::edgeScalarField& Foam::edgeInterpolation::deltaCoeffs() const
 {
     if (!differenceFactorsPtr_)
     {
@@ -95,7 +95,7 @@ bool Foam::edgeInterpolation::orthogonal() const
 }
 
 
-const Foam::surfaceVectorField& Foam::edgeInterpolation::correctionVectors() const
+const Foam::edgeVectorField& Foam::edgeInterpolation::correctionVectors() const
 {
     if (orthogonal())
     {
@@ -119,7 +119,7 @@ bool Foam::edgeInterpolation::skew() const
 }
 
 
-const Foam::surfaceVectorField&
+const Foam::edgeVectorField&
 Foam::edgeInterpolation::skewCorrectionVectors() const
 {
     if (!skew())
@@ -175,7 +175,7 @@ void Foam::edgeInterpolation::makeLPN() const
         << endl;
 
 
-    lPNptr_ = std::make_unique<surfaceScalarField>
+    lPNptr_ = std::make_unique<edgeScalarField>
     (
         IOobject
         (
@@ -189,7 +189,7 @@ void Foam::edgeInterpolation::makeLPN() const
         mesh(),
         dimLength
     );
-    surfaceScalarField& lPN = *lPNptr_;
+    edgeScalarField& lPN = *lPNptr_;
 
     // Set local references to mesh data
     const surfaceVectorField& edgeCentres = mesh().edgeCentres();
@@ -256,7 +256,7 @@ void Foam::edgeInterpolation::makeWeights() const
         << endl;
 
 
-    weightingFactorsPtr_ = std::make_unique<surfaceScalarField>
+    weightingFactorsPtr_ = std::make_unique<edgeScalarField>
     (
         IOobject
         (
@@ -270,7 +270,7 @@ void Foam::edgeInterpolation::makeWeights() const
         mesh(),
         dimensionedScalar(dimless, 1)
     );
-    surfaceScalarField& weightingFactors = *weightingFactorsPtr_;
+    edgeScalarField& weightingFactors = *weightingFactorsPtr_;
 
 
     // Set local references to mesh data
@@ -336,7 +336,7 @@ void Foam::edgeInterpolation::makeDeltaCoeffs() const
     // needed to make sure deltaCoeffs are calculated for parallel runs.
     weights();
 
-    differenceFactorsPtr_ = std::make_unique<surfaceScalarField>
+    differenceFactorsPtr_ = std::make_unique<edgeScalarField>
     (
         IOobject
         (
@@ -350,7 +350,7 @@ void Foam::edgeInterpolation::makeDeltaCoeffs() const
         mesh(),
         dimensionedScalar(dimless/dimLength, SMALL)
     );
-    surfaceScalarField& DeltaCoeffs = *differenceFactorsPtr_;
+    edgeScalarField& DeltaCoeffs = *differenceFactorsPtr_;
     scalarField& dc = DeltaCoeffs.primitiveFieldRef();
 
     // Set local references to mesh data
@@ -440,7 +440,7 @@ void Foam::edgeInterpolation::makeCorrectionVectors() const
         << "Constructing non-orthogonal correction vectors"
         << endl;
 
-    correctionVectorsPtr_ = std::make_unique<surfaceVectorField>
+    correctionVectorsPtr_ = std::make_unique<edgeVectorField>
     (
         IOobject
         (
@@ -454,7 +454,7 @@ void Foam::edgeInterpolation::makeCorrectionVectors() const
         mesh(),
         dimless
     );
-    surfaceVectorField& CorrVecs = *correctionVectorsPtr_;
+    edgeVectorField& CorrVecs = *correctionVectorsPtr_;
 
     // Set local references to mesh data
     const volVectorField& faceCentres = mesh().areaCentres();
@@ -513,7 +513,7 @@ void Foam::edgeInterpolation::makeCorrectionVectors() const
     }
 
 
-    surfaceVectorField::Boundary& CorrVecsbf = CorrVecs.boundaryFieldRef();
+    edgeVectorField::Boundary& CorrVecsbf = CorrVecs.boundaryFieldRef();
 
     forAll(CorrVecs.boundaryField(), patchI)
     {
@@ -559,7 +559,7 @@ void Foam::edgeInterpolation::makeSkewCorrectionVectors() const
         << "Constructing skew correction vectors"
         << endl;
 
-    skewCorrectionVectorsPtr_ = std::make_unique<surfaceVectorField>
+    skewCorrectionVectorsPtr_ = std::make_unique<edgeVectorField>
     (
         IOobject
         (
@@ -573,7 +573,7 @@ void Foam::edgeInterpolation::makeSkewCorrectionVectors() const
         mesh(),
         dimensionedVector(dimless, Zero)
     );
-    surfaceVectorField& SkewCorrVecs = *skewCorrectionVectorsPtr_;
+    edgeVectorField& SkewCorrVecs = *skewCorrectionVectorsPtr_;
 
     // Set local references to mesh data
     const volVectorField& C = mesh().areaCentres();
@@ -613,7 +613,7 @@ void Foam::edgeInterpolation::makeSkewCorrectionVectors() const
     }
 
 
-    surfaceVectorField::Boundary& bSkewCorrVecs =
+    edgeVectorField::Boundary& bSkewCorrVecs =
         SkewCorrVecs.boundaryFieldRef();
 
     forAll(SkewCorrVecs.boundaryField(), patchI)

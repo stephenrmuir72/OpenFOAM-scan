@@ -90,6 +90,8 @@ public:
             TET = 7,         //!< tet
             SPLITHEX = 8,    //!< splitHex
             TETWEDGE = 9,    //!< tetWedge
+            TRI = 10,        //!< triangle
+            QUAD = 11,       //!< quad
         };
 
         //- Names of commonly used cellModels corresponding to modelType.

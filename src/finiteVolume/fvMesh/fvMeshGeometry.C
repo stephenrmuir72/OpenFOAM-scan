@@ -342,6 +342,8 @@ void Foam::fvMesh::makeFaceCurvatures() const
 //         fac::edgeIntegrate(Le()*edgeLengthCorrection())
 //         &faceAreaNormals();
 
+    //- Using fvc instead of fac just to avoid dependency. Dimensions are
+    //- handled inside fvc::surfaceIntegrate using nTopologicalD.
     auto kN(fvc::surfaceIntegrate(Le()*edgeLengthCorrection()));
 
     faceCurvatures = sign(kN()&faceAreaNormals())*mag(kN());
