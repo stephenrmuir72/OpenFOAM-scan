@@ -6,7 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017, 2020 OpenFOAM Foundation
-    Copyright (C) 2016-2023 OpenCFD Ltd.
+    Copyright (C) 2016-2024 OpenCFD Ltd.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -59,6 +59,30 @@ void Foam::polyMesh::calcDirections() const
     {
         solutionD_[cmpt] = 1;
     }
+
+    if (nTopologicalD() <= 2)
+    {
+        // Do global reduction
+        const boundBox bb(points(), true);
+        vector bbSpan(bb.span());
+        const scalar min = bb.minDim();
+        for (direction cmpt=0; cmpt<vector::nComponents; cmpt++)
+        {
+            if (bbSpan[cmpt] > 1e-10*min)
+            {
+                solutionD_[cmpt] = 1;
+            }
+            else
+            {
+                // Close enough to zero ...
+                solutionD_[cmpt] = -1;
+            }
+        }
+        geometricD_ = solutionD_;
+
+        return;
+    }
+
 
     // Knock out empty and wedge directions. Note:they will be present on all
     // domains.

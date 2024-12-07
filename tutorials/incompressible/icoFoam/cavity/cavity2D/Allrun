@@ -1,0 +1,20 @@
+#!/bin/sh
+cd "${0%/*}" || exit                                # Run from this directory
+. ${WM_PROJECT_DIR:?}/bin/tools/RunFunctions        # Tutorial run functions
+#------------------------------------------------------------------------------
+
+#- Generate 3D mesh (empty front and back)
+runApplication blockMesh
+
+#- Convert to proper 2D
+runApplication collapse2DMesh back
+
+#- Check
+runApplication checkMesh -region back
+
+(cd constant && \rm -r polyMesh && mv back/polyMesh . && rmdir back)
+
+#- Run application
+runApplication $(getApplication)
+
+#------------------------------------------------------------------------------
