@@ -44,6 +44,9 @@ SourceFiles
 #if defined(CGAL_VERSION_NR) && (CGAL_VERSION_NR < 1050211000)
 #define BOOST_BIND_GLOBAL_PLACEHOLDERS
 #endif
+#pragma clang diagnostic ignored "-Wbitwise-instead-of-logical"
+#pragma clang diagnostic ignored "-Wdeprecated-builtins"
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
 
 // ------------------------------------------------------------------------- //
 

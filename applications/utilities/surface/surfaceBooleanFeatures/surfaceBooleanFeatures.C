@@ -95,9 +95,16 @@ Description
 #if defined(CGAL_VERSION_NR) && (CGAL_VERSION_NR < 1050211000)
 #define BOOST_BIND_GLOBAL_PLACEHOLDERS
 #endif
+#pragma clang diagnostic ignored "-Wbitwise-instead-of-logical"
+#pragma clang diagnostic ignored "-Wdeprecated-builtins"
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
 
 #include <CGAL/AABB_tree.h>
+#if defined(CGAL_VERSION_NR) && (CGAL_VERSION_NR < 1060011000)
 #include <CGAL/AABB_traits.h>
+#else
+#include <CGAL/AABB_traits_3.h>
+#endif
 #include <CGAL/AABB_face_graph_triangle_primitive.h>
 #include "CGALIndexedPolyhedron.H"
 #include "PolyhedronReader.H"
@@ -105,10 +112,19 @@ typedef CGAL::AABB_face_graph_triangle_primitive
 <
     Polyhedron, CGAL::Default, CGAL::Tag_false
 > Primitive;
+#if defined(CGAL_VERSION_NR) && (CGAL_VERSION_NR < 1060011000)
 typedef CGAL::AABB_traits<K, Primitive> Traits;
+#else
+typedef CGAL::AABB_traits_3<K, Primitive> Traits;
+#endif
 typedef CGAL::AABB_tree<Traits> Tree;
 
+// Used boost::optional prior to CGAL-6.0
+#if (CGAL_VERSION_NR < 1060000910)
 typedef boost::optional
+#else
+typedef std::optional
+#endif
 <
     Tree::Intersection_and_primitive_id<Segment>::Type
 > Segment_intersection;
@@ -647,7 +663,12 @@ labelPair edgeIntersectionsCGAL
             // Get intersection object
             if
             (
+                // Used boost::variant prior to CGAL-6.0
+                #if (CGAL_VERSION_NR < 1060000910)
                 const Point* ptPtr = boost::get<Point>(&(intersect->first))
+                #else
+                const Point* ptPtr = std::get_if<Point>(&(intersect->first))
+                #endif
             )
             {
                 point pt
@@ -679,7 +700,12 @@ labelPair edgeIntersectionsCGAL
             }
             else if
             (
+                // Used boost::variant prior to CGAL-6.0
+                #if (CGAL_VERSION_NR < 1060000910)
                 const Segment* sPtr = boost::get<Segment>(&(intersect->first))
+                #else
+                const Segment* sPtr = std::get_if<Segment>(&(intersect->first))
+                #endif
             )
             {
                 #if defined (CGAL_VERSION_NR) && (CGAL_VERSION_NR < 1041400000)
