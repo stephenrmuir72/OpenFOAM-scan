@@ -36,8 +36,19 @@ SourceFiles
 
 \*---------------------------------------------------------------------------*/
 
-#ifndef indexedCell_H
-#define indexedCell_H
+#ifndef Foam_CGAL_indexedCell_H
+#define Foam_CGAL_indexedCell_H
+
+// Silence boost bind deprecation warnings (before CGAL-5.2.1)
+#include "CGAL/version.h"
+#if defined(CGAL_VERSION_NR) && (CGAL_VERSION_NR < 1050211000)
+#define BOOST_BIND_GLOBAL_PLACEHOLDERS
+#endif
+#pragma clang diagnostic ignored "-Wbitwise-instead-of-logical"
+#pragma clang diagnostic ignored "-Wdeprecated-builtins"
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+
+// ------------------------------------------------------------------------- //
 
 #include "CGAL/Triangulation_3.h"
 #include "CGAL/Delaunay_triangulation_cell_base_with_circumcenter_3.h"
