@@ -32,10 +32,19 @@ Description
 
 \*---------------------------------------------------------------------------*/
 
-#ifndef CGAL3DKernel_H
-#define CGAL3DKernel_H
+#ifndef Foam_CGAL3DKernel_H
+#define Foam_CGAL3DKernel_H
 
-// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+// Silence boost bind deprecation warnings (before CGAL-5.2.1)
+#include "CGAL/version.h"
+#if defined(CGAL_VERSION_NR) && (CGAL_VERSION_NR < 1050211000)
+#define BOOST_BIND_GLOBAL_PLACEHOLDERS
+#endif
+#pragma clang diagnostic ignored "-Wbitwise-instead-of-logical"
+#pragma clang diagnostic ignored "-Wdeprecated-builtins"
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+
+// ------------------------------------------------------------------------- //
 
 #ifdef CGAL_INEXACT
 
