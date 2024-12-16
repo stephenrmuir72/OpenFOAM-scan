@@ -6,7 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2012-2016 OpenFOAM Foundation
-    Copyright (C) 2019 OpenCFD Ltd.
+    Copyright (C) 2019-2020 OpenCFD Ltd.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -37,8 +37,19 @@ SourceFiles
 
 \*---------------------------------------------------------------------------*/
 
-#ifndef indexedVertex_H
-#define indexedVertex_H
+#ifndef Foam_CGAL_indexedVertex_H
+#define Foam_CGAL_indexedVertex_H
+
+// Silence boost bind deprecation warnings (before CGAL-5.2.1)
+#include "CGAL/version.h"
+#if defined(CGAL_VERSION_NR) && (CGAL_VERSION_NR < 1050211000)
+#define BOOST_BIND_GLOBAL_PLACEHOLDERS
+#endif
+#pragma clang diagnostic ignored "-Wbitwise-instead-of-logical"
+#pragma clang diagnostic ignored "-Wdeprecated-builtins"
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+
+// ------------------------------------------------------------------------- //
 
 #include "CGAL/Triangulation_3.h"
 #include "CGALTriangulation3DKernel.H"
