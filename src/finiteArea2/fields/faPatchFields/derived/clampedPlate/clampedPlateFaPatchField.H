@@ -59,7 +59,7 @@ SourceFiles
 #ifndef clampedPlateFaPatchField_H
 #define clampedPlateFaPatchField_H
 
-#include "faPatchField.H"
+#include "fvPatchField.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -67,7 +67,7 @@ namespace Foam
 {
 
 /*---------------------------------------------------------------------------*\
-                      Class clampedPlateFaPatch Declaration
+                      Class clampedPlateFvPatchField Declaration
 \*---------------------------------------------------------------------------*/
 
 template<class Type>
