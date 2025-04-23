@@ -75,8 +75,10 @@ $(derivedFaPatchFields)/uniformFixedGradient/uniformFixedGradientFaPatchFields.C
 $(derivedFaPatchFields)/uniformFixedValue/uniformFixedValueFaPatchFields.C
 $(derivedFaPatchFields)/uniformMixed/uniformMixedFaPatchFields.C
 $(derivedFaPatchFields)/ignore/ignoreFaPatchFields.C
+*/
 $(derivedFaPatchFields)/clampedPlate/clampedPlateFaPatchFields.C
 
+/*
 faePatchFields = fields/faePatchFields
 $(faePatchFields)/faePatchField/faePatchFieldBase.C
 $(faePatchFields)/faePatchField/faePatchFields.C
@@ -125,8 +127,10 @@ ddtSchemes = finiteArea/ddtSchemes
 $(ddtSchemes)/faDdtScheme/faDdtSchemes.C
 $(ddtSchemes)/steadyStateFaDdtScheme/steadyStateFaDdtSchemes.C
 $(ddtSchemes)/EulerFaDdtScheme/EulerFaDdtSchemes.C
+/*
 $(ddtSchemes)/backwardFaDdtScheme/backwardFaDdtSchemes.C
 $(ddtSchemes)/boundedBackwardFaDdtScheme/boundedBackwardFaDdtScheme.C
+*/
 
 /*
 d2dt2Schemes = finiteArea/d2dt2Schemes
