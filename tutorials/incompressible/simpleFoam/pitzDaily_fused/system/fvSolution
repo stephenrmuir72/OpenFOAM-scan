@@ -58,7 +58,7 @@ relaxationFactors
 cache
 {
     // Cache all grads
-    "grad(.*)";
+    GRADIENT;
 }
 
 
