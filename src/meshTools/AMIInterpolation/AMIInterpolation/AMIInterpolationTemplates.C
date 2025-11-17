@@ -130,10 +130,10 @@ void Foam::AMIInterpolation::interpolate
         const UList<Type>& fld,
         const labelListList& srcAddr,
         const labelListList& tgtAddr,
-        const UList<Type>& defVals
+        const UList<Type>& defVals,
+        const List<Type>& result
     )
     {
-
         if (fld.size() != tgtAddr.size())
         {
             FatalErrorInFunction
@@ -144,10 +144,19 @@ void Foam::AMIInterpolation::interpolate
                 << "    supplied field = " << fld.size()
                 << abort(FatalError);
         }
-        else if
-        (
-            (lowWeightCorrection_ > 0) && (defVals.size() != srcAddr.size())
-        )
+
+        if (result.size() != srcAddr.size())
+        {
+            FatalErrorInFunction
+                << "Result field size is not equal to "
+                << (toSource ? "target" : "source") << " patch size" << nl
+                << "    source patch   = " << srcAddr.size() << nl
+                << "    target patch   = " << tgtAddr.size() << nl
+                << "    result field   = " << result.size()
+                << abort(FatalError);
+        }
+
+        if ((lowWeightCorrection_ > 0) && (defVals.size() != srcAddr.size()))
         {
             FatalErrorInFunction
                 << "Employing default values when sum of weights falls below "
@@ -159,7 +168,6 @@ void Foam::AMIInterpolation::interpolate
                 << abort(FatalError);
         }
     };
-
 
     // Work space for if distributed
     List<Type> work;
@@ -174,7 +182,7 @@ void Foam::AMIInterpolation::interpolate
         const auto& srcWeightsSum = cache_.cSrcWeightsSum0();
         const auto& tgtAddress = cache_.cTgtAddress0();
 
-        checkSizes(fld, srcAddress, tgtAddress, defaultValues);
+        checkSizes(fld, srcAddress, tgtAddress, defaultValues, result0);
 
         if (distributed() && cache_.cTgtMapPtr0())
         {
@@ -218,7 +226,7 @@ void Foam::AMIInterpolation::interpolate
         const auto& srcWeightsSum = cache_.cSrcWeightsSum1();
         const auto& tgtAddress = cache_.cTgtAddress1();
 
-        checkSizes(fld, srcAddress, tgtAddress, defaultValues);
+        checkSizes(fld, srcAddress, tgtAddress, defaultValues, result1);
 
         if (distributed() && cache_.cTgtMapPtr1())
         {
@@ -277,7 +285,7 @@ void Foam::AMIInterpolation::interpolate
             (toSource ? srcWeightsSum_ : tgtWeightsSum_);
         const auto& tgtAddress = (toSource ? tgtAddress_ : srcAddress_);
 
-        checkSizes(fld, srcAddress, tgtAddress, defaultValues);
+        checkSizes(fld, srcAddress, tgtAddress, defaultValues, result);
 
         if (distributed() && tgtMapPtr_)
         {

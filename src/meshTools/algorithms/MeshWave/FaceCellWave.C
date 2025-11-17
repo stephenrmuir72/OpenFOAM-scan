@@ -860,7 +860,7 @@ void Foam::FaceCellWave<Type, TrackingData>::handleAMICyclicPatches()
             const auto& cycPatch = *cpp;
             const auto& nbrPatch = cycPatch.neighbPatch();
 
-            List<Type> receiveInfo;
+            List<Type> receiveInfo(cycPatch.size());
 
             {
                 // Get nbrPatch data (so not just changed faces). Do not use
@@ -896,6 +896,7 @@ void Foam::FaceCellWave<Type, TrackingData>::handleAMICyclicPatches()
                     (
                         cycPatch.patchInternalList(allCellInfo_)
                     );
+
                     AMI.interpolate
                     (
                         cycPatch.owner(),
