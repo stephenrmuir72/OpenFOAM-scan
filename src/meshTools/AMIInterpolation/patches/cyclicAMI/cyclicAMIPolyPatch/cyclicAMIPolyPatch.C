@@ -790,6 +790,13 @@ Foam::cyclicAMIPolyPatch::cyclicAMIPolyPatch
     // read additional controls
     if (createAMIFaces_)
     {
+        if (AMIPtr_->cacheActive())
+        {
+            FatalIOErrorInFunction(dict)
+                << "createAMIFaces and AMI caching cannot be used together."
+                << exit(FatalIOError);
+        }
+
         srcFaceIDs_.setSize(dict.get<label>("srcSize"));
         tgtFaceIDs_.setSize(dict.get<label>("tgtSize"));
         moveFaceCentres_ = dict.getOrDefault("moveFaceCentres", true);
