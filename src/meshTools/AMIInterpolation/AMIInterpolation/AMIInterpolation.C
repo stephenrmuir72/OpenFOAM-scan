@@ -781,7 +781,13 @@ Foam::AMIInterpolation::AMIInterpolation
     tgtPatchPts_(),
     tgtMapPtr_(nullptr),
     upToDate_(false),
-    cache_(fineAMI.cache(), fineAMI, sourceRestrictAddressing, targetRestrictAddressing)
+    cache_
+    (
+        fineAMI.cache(),
+        fineAMI,
+        sourceRestrictAddressing,
+        targetRestrictAddressing
+    )
 {
     const label sourceCoarseSize =
     (

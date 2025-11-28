@@ -29,11 +29,14 @@ License
 #include "AMIInterpolation.H"
 #include "mathematicalConstants.H"
 
-// * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
+/* * * * * * * * * * * * * * * Static Member Data  * * * * * * * * * * * * * */
+
+namespace Foam
+{
+    defineTypeNameAndDebug(AMICache, 0);
+}
 
 Foam::scalar Foam::AMICache::cacheThetaTolerance_ = 1e-8;
-
-int Foam::AMICache::debug = 0;
 
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
@@ -72,6 +75,7 @@ Foam::AMICache::AMICache(const dictionary& dict, const bool toSource)
     rotationCentre_(dict.getOrDefault<point>("rotationCentre", Zero)),
     maxThetaDeg_(dict.getOrDefault<scalar>("maxThetaDeg", 5)),
     complete_(false),
+    toSource_(toSource),
     index0_(-1),
     index1_(-1),
     interpWeight_(0),
@@ -84,8 +88,7 @@ Foam::AMICache::AMICache(const dictionary& dict, const bool toSource)
     cachedTgtAddress_(),
     cachedTgtWeights_(),
     cachedTgtWeightsSum_(),
-    cachedTgtMapPtr_(),
-    toSource_(toSource)
+    cachedTgtMapPtr_()
 {
     if (size_ != 0)
     {
@@ -109,6 +112,7 @@ Foam::AMICache::AMICache(const bool toSource)
     rotationCentre_(Zero),
     maxThetaDeg_(5),
     complete_(false),
+    toSource_(toSource),
     index0_(-1),
     index1_(-1),
     interpWeight_(0),
@@ -121,8 +125,7 @@ Foam::AMICache::AMICache(const bool toSource)
     cachedTgtAddress_(),
     cachedTgtWeights_(),
     cachedTgtWeightsSum_(),
-    cachedTgtMapPtr_(),
-    toSource_(toSource)
+    cachedTgtMapPtr_()
 {}
 
 
@@ -133,6 +136,7 @@ Foam::AMICache::AMICache(const AMICache& cache)
     rotationCentre_(cache.rotationCentre_),
     maxThetaDeg_(cache.maxThetaDeg_),
     complete_(cache.complete_),
+    toSource_(cache.toSource_),
     index0_(cache.index0_),
     index1_(cache.index1_),
     interpWeight_(cache.interpWeight_),
@@ -145,8 +149,7 @@ Foam::AMICache::AMICache(const AMICache& cache)
     cachedTgtAddress_(cache.cachedTgtAddress_),
     cachedTgtWeights_(cache.cachedTgtWeights_),
     cachedTgtWeightsSum_(cache.cachedTgtWeightsSum_),
-    cachedTgtMapPtr_(cache.cachedTgtMapPtr_.size()),  // Need to clone
-    toSource_(cache.toSource_)
+    cachedTgtMapPtr_(cache.cachedTgtMapPtr_.size())  // Need to clone
 {
     if (cache.coordSysPtr_)
     {
@@ -178,6 +181,7 @@ Foam::AMICache::AMICache
     rotationCentre_(cache.rotationCentre_),
     maxThetaDeg_(cache.maxThetaDeg_),
     complete_(cache.complete_),
+    toSource_(cache.toSource_),
     index0_(cache.index0_),
     index1_(cache.index1_),
     interpWeight_(cache.interpWeight_),
@@ -190,8 +194,7 @@ Foam::AMICache::AMICache
     cachedTgtAddress_(cache.size_),
     cachedTgtWeights_(cache.size_),
     cachedTgtWeightsSum_(cache.size_),
-    cachedTgtMapPtr_(cache.size_),
-    toSource_(cache.toSource_)
+    cachedTgtMapPtr_(cache.size_)
 {
     if (size_ > 0 && fineAMI.comm() != -1)
     {
@@ -270,6 +273,7 @@ Foam::AMICache::AMICache(Istream& is)
     maxThetaDeg_(readScalar(is)),
 
     complete_(readBool(is)),
+    toSource_(readBool(is)),
 
     index0_(-1),
     index1_(-1),
@@ -375,12 +379,16 @@ void Foam::AMICache::addToCache
             }
         }
     }
+// // DebugVar(theta_);
+// scalarField thetaDeg(theta_);
+// thetaDeg *= 180.0/constant::mathematical::pi;
+// DebugVar(thetaDeg);
 
     if (!complete_)
     {
         const scalar theta = getRotationAngle(globalPoint);
-
-        const label bini = theta/constant::mathematical::twoPi*size_;
+        const label bini =
+            (theta + cacheThetaTolerance_)/constant::mathematical::twoPi*size_;
 
         DebugPout<< "  -- bini:" << bini << " for theta:" << theta << endl;
 
@@ -439,7 +447,7 @@ bool Foam::AMICache::restoreCache(const point& globalPoint)
     };
 
     // Maximum angle in degrees for which to search for cached bins
-    const scalar maxThetaStencil = maxThetaDeg_*constant::mathematical::pi/180.0;
+    const scalar maxThetaStencil = maxThetaDeg_*constant::mathematical::pi/180.;
 
     if
     (
@@ -577,6 +585,22 @@ bool Foam::AMICache::restoreCache(const point& globalPoint)
             << " i0:" << index0_ << " i1:" << index1_
             << " w:" << interpWeight_ << endl;
 
+        if (debug > 1)
+        {
+            DebugPout
+                << "Cached values for index0" << nl
+                << "  - src addressing:" << cachedSrcAddress_[index0_] << nl
+                << "  - src weights:" << cachedSrcWeights_[index0_] << nl
+                << "  - tgt addressing:" << cachedTgtAddress_[index0_] << nl
+                << "  - tgt weights:" << cachedTgtWeights_[index0_] << nl
+                << "Cached values for index1" << nl
+                << "  - src addressing:" << cachedSrcAddress_[index1_] << nl
+                << "  - src weights:" << cachedSrcWeights_[index1_] << nl
+                << "  - tgt addressing:" << cachedTgtAddress_[index1_] << nl
+                << "  - tgt weights:" << cachedTgtWeights_[index1_] << nl
+                << endl;
+        }
+
 
         return true;
     }
@@ -605,7 +629,8 @@ bool Foam::AMICache::writeData(Ostream& os) const
         << token::SPACE<< rotationAxis_
         << token::SPACE<< rotationCentre_
         << token::SPACE<< maxThetaDeg_
-        << token::SPACE<< complete_;
+        << token::SPACE<< complete_
+        << token::SPACE<< toSource_;
 
     bitSet goodMap(cachedSrcMapPtr_.size());
     forAll(goodMap, cachei)

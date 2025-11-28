@@ -42,6 +42,7 @@ SeeAlso
 
 #include "cylindricalCS.H"
 #include "mapDistribute.H"
+#include "className.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -64,7 +65,6 @@ public:
         //- current rotation angle has already been captured
         static scalar cacheThetaTolerance_;
 
-        static int debug;
 
 private:
 
@@ -84,6 +84,9 @@ private:
 
         //- Flag to indicate that the cache is complete
         bool complete_;
+
+        //- Flag to indicate interpolation direction
+        mutable bool toSource_;
 
         //- Cache index 0 in lists
         label index0_;
@@ -125,10 +128,6 @@ private:
         List<autoPtr<mapDistribute>> cachedTgtMapPtr_;
 
 
-        //- Flag to indicate interpolation direction
-        mutable bool toSource_;
-
-
     // Private Member Functions
 
         //- Get rotation angle for point using local co-ordinate system
@@ -136,6 +135,10 @@ private:
 
 
 public:
+
+    // RunTime Type Information
+
+        TypeName("AMICache");
 
     // Constructors
 
@@ -160,6 +163,10 @@ public:
 
         //- Construct from stream
         AMICache(Istream& is);
+
+
+    //- Destructor
+    virtual ~AMICache() = default;
 
 
     // Member Functions
