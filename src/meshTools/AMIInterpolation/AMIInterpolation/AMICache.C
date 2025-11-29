@@ -73,7 +73,7 @@ Foam::AMICache::AMICache(const dictionary& dict, const bool toSource)
     size_(dict.getOrDefault<label>("cacheSize", 0)),
     rotationAxis_(dict.getOrDefault<vector>("rotationAxis", Zero)),
     rotationCentre_(dict.getOrDefault<point>("rotationCentre", Zero)),
-    maxThetaDeg_(dict.getOrDefault<scalar>("maxThetaDeg", 5)),
+    nThetaStencilMax_(dict.getOrDefault<label>("nThetaStencilMax", 2)),
     complete_(false),
     toSource_(toSource),
     index0_(-1),
@@ -110,7 +110,7 @@ Foam::AMICache::AMICache(const bool toSource)
     size_(0),
     rotationAxis_(Zero),
     rotationCentre_(Zero),
-    maxThetaDeg_(5),
+    nThetaStencilMax_(2),
     complete_(false),
     toSource_(toSource),
     index0_(-1),
@@ -134,7 +134,7 @@ Foam::AMICache::AMICache(const AMICache& cache)
     size_(cache.size_),
     rotationAxis_(cache.rotationAxis_),
     rotationCentre_(cache.rotationCentre_),
-    maxThetaDeg_(cache.maxThetaDeg_),
+    nThetaStencilMax_(cache.nThetaStencilMax_),
     complete_(cache.complete_),
     toSource_(cache.toSource_),
     index0_(cache.index0_),
@@ -179,7 +179,7 @@ Foam::AMICache::AMICache
     size_(cache.size_),
     rotationAxis_(cache.rotationAxis_),
     rotationCentre_(cache.rotationCentre_),
-    maxThetaDeg_(cache.maxThetaDeg_),
+    nThetaStencilMax_(cache.nThetaStencilMax_),
     complete_(cache.complete_),
     toSource_(cache.toSource_),
     index0_(cache.index0_),
@@ -270,7 +270,7 @@ Foam::AMICache::AMICache(Istream& is)
 
     rotationAxis_(is),
     rotationCentre_(is),
-    maxThetaDeg_(readScalar(is)),
+    nThetaStencilMax_(readLabel(is)),
 
     complete_(readBool(is)),
     toSource_(readBool(is)),
@@ -437,7 +437,7 @@ bool Foam::AMICache::restoreCache(const point& globalPoint)
 
     const scalar theta = getRotationAngle(globalPoint);
     const scalar twoPi = constant::mathematical::twoPi;
-    const label bini = theta/twoPi*size_;
+    const label bini = (theta + cacheThetaTolerance_)/twoPi*size_;
 
     DebugPout<< "  -- bini:" << bini << " for theta:" << theta << endl;
 
@@ -446,8 +446,8 @@ bool Foam::AMICache::restoreCache(const point& globalPoint)
         return theta_[bini] < constant::mathematical::twoPi;
     };
 
-    // Maximum angle in degrees for which to search for cached bins
-    const scalar maxThetaStencil = maxThetaDeg_*constant::mathematical::pi/180.;
+    // Maximum angle in radians for which to search for cached bins
+    const scalar maxThetaStencil = twoPi/size_*nThetaStencilMax_;
 
     if
     (
@@ -507,44 +507,23 @@ bool Foam::AMICache::restoreCache(const point& globalPoint)
         thetap.push_back(thetap[1] + twoPi);
         binAddresses.push_back(binAddresses[1]);
 
-        // Find interpolation indices
+        // Find the lower and upper indices in the thetap list bracketing theta
         label loweri = labelMax;
-        label i = 0;
-        while (i < thetap.size())
+        label upperi = labelMax;
+        forAll(thetap, i)
         {
-            if (thetap[i] < theta)
+            if (thetap[i] <= theta)
             {
                 loweri = i;
             }
             else
             {
-                break;
-            }
-            ++i;
-        }
-
-        if (loweri == labelMax)
-        {
-            DebugPout<< "  -- no cache available" << endl;
-            return false;
-        }
-
-        label upperi = labelMax;
-        i = thetap.size() - 1;
-        while (i >= 0)
-        {
-            if (thetap[i] > theta)
-            {
                 upperi = i;
-            }
-            else
-            {
                 break;
             }
-            --i;
         }
 
-        if (upperi == labelMax)
+        if (loweri == labelMax || upperi == labelMax)
         {
             DebugPout<< "  -- no cache available" << endl;
             return false;
@@ -618,7 +597,7 @@ void Foam::AMICache::write(Ostream& os) const
         os.writeEntry("cacheSize", size_);
         os.writeEntry("rotationAxis", rotationAxis_);
         os.writeEntry("rotationCentre", rotationCentre_);
-        os.writeEntry("maxThetaDeg", maxThetaDeg_);
+        os.writeEntry("nThetaStencilMax", nThetaStencilMax_);
     }
 }
 
@@ -628,7 +607,7 @@ bool Foam::AMICache::writeData(Ostream& os) const
     os  << token::SPACE<< size_
         << token::SPACE<< rotationAxis_
         << token::SPACE<< rotationCentre_
-        << token::SPACE<< maxThetaDeg_
+        << token::SPACE<< nThetaStencilMax_
         << token::SPACE<< complete_
         << token::SPACE<< toSource_;
 
