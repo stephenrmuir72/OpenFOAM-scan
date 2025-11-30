@@ -101,6 +101,7 @@ private:
         autoPtr<coordSystem::cylindrical> coordSysPtr_;
 
         //- List of cached angle snapshots
+        //  Note: intialised to GREAT
         List<scalar> theta_;
 
         //- List of source addresses
@@ -279,8 +280,8 @@ public:
             const point& globalPoint
         );
 
-        //- Check cache index is valid
-        void checkIndex(const label index) const
+        //- Check cache index is within bounds
+        void checkBounds(const label index) const
         {
             if ((index < 0) || (index > size_-1))
             {
@@ -290,6 +291,24 @@ public:
             }
         }
 
+        //- Return true of the cache index is set for bini
+        bool validIndex(const label bini) const
+        {
+            // Note: theta_ is initialised to GREAT
+            return theta_[bini] < constant::mathematical::twoPi;
+        }
+
+        //- Return bin index for angle theta
+        label thetaIndex(const scalar theta) const noexcept
+        {
+            return
+                floor
+                (
+                    (theta + cacheThetaTolerance_)
+                   /constant::mathematical::twoPi
+                   *size_
+                );
+        }
 
         // Helper functions to retrieve cached values at index0 and index1
         // Note: uses interpolation direction toSource_
@@ -297,28 +316,28 @@ public:
         #define defineMethods01(Src, Tgt, idx)                                 \
             const labelListList& c##Src##Address##idx() const                  \
             {                                                                  \
-                checkIndex(index##idx##_);                                     \
+                checkBounds(index##idx##_);                                     \
                 return toSource_ ?                                             \
                     cached##Src##Address_[index##idx##_]                       \
                   : cached##Tgt##Address_[index##idx##_];                      \
             }                                                                  \
             const scalarListList& c##Src##Weights##idx() const                 \
             {                                                                  \
-                checkIndex(index##idx##_);                                     \
+                checkBounds(index##idx##_);                                     \
                 return toSource_ ?                                             \
                     cached##Src##Weights_[index##idx##_]                       \
                   : cached##Tgt##Weights_[index##idx##_];                      \
             }                                                                  \
             const scalarField& c##Src##WeightsSum##idx() const                 \
             {                                                                  \
-                checkIndex(index##idx##_);                                     \
+                checkBounds(index##idx##_);                                     \
                 return toSource_ ?                                             \
                     cached##Src##WeightsSum_[index##idx##_]                    \
                   : cached##Tgt##WeightsSum_[index##idx##_];                   \
             }                                                                  \
             const autoPtr<mapDistribute>& c##Src##MapPtr##idx() const          \
             {                                                                  \
-                checkIndex(index##idx##_);                                     \
+                checkBounds(index##idx##_);                                     \
                 return toSource_ ?                                             \
                     cached##Src##MapPtr_[index##idx##_]                        \
                   : cached##Tgt##MapPtr_[index##idx##_];                       \
@@ -336,21 +355,21 @@ public:
         #define defineMethodsIndex(Src, Tgt)                                   \
             const labelListList& c##Src##Address(const label index) const      \
             {                                                                  \
-                checkIndex(index);                                             \
+                checkBounds(index);                                             \
                 return toSource_ ?                                             \
                     cached##Src##Address_[index]                               \
                   : cached##Tgt##Address_[index];                              \
             }                                                                  \
             const scalarListList& c##Src##Weights(const label index) const     \
             {                                                                  \
-                checkIndex(index);                                             \
+                checkBounds(index);                                             \
                 return toSource_ ?                                             \
                     cached##Src##Weights_[index]                               \
                   : cached##Tgt##Weights_[index];                              \
             }                                                                  \
             const scalarField& c##Src##WeightsSum(const label index) const     \
             {                                                                  \
-                checkIndex(index);                                             \
+                checkBounds(index);                                             \
                 return toSource_ ?                                             \
                     cached##Src##WeightsSum_[index]                            \
                   : cached##Tgt##WeightsSum_[index];                           \
@@ -358,7 +377,7 @@ public:
             const autoPtr<mapDistribute>& c##Src##MapPtr(const label index)    \
             const                                                              \
             {                                                                  \
-                checkIndex(index);                                             \
+                checkBounds(index);                                             \
                 return toSource_ ?                                             \
                     cached##Src##MapPtr_[index]                                \
                   : cached##Tgt##MapPtr_[index];                               \

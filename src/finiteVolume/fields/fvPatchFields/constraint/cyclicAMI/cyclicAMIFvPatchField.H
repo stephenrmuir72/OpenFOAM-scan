@@ -104,7 +104,7 @@ class cyclicAMIFvPatchField
             //- Send buffers
             mutable PtrList<List<Type>> sendBufs_;
 
-            //- Receive buffers_
+            //- Receive buffers
             mutable PtrList<List<Type>> recvBufs_;
 
             //- Scalar send buffers

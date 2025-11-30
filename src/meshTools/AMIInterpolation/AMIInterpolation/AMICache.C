@@ -369,10 +369,10 @@ void Foam::AMICache::addToCache
     // Check if cache is complete
     if (!complete_)
     {
-        for (const scalar angle : theta_)
+        complete_ = true;
+        forAll(theta_, bini)
         {
-            // Check against null value; if any are present, cache is incomplete
-            if (angle > constant::mathematical::twoPi)
+            if (!validIndex(bini))
             {
                 complete_ = false;
                 break;
@@ -387,13 +387,12 @@ void Foam::AMICache::addToCache
     if (!complete_)
     {
         const scalar theta = getRotationAngle(globalPoint);
-        const label bini =
-            (theta + cacheThetaTolerance_)/constant::mathematical::twoPi*size_;
+        const label bini = thetaIndex(theta);
 
         DebugPout<< "  -- bini:" << bini << " for theta:" << theta << endl;
 
         // Check if already have entry for this bin
-        if (theta_[bini] > constant::mathematical::twoPi)
+        if (!validIndex(bini))
         {
             DebugPout<< "  -- setting cache at index " << bini << endl;
 
@@ -436,17 +435,12 @@ bool Foam::AMICache::restoreCache(const point& globalPoint)
     }
 
     const scalar theta = getRotationAngle(globalPoint);
-    const scalar twoPi = constant::mathematical::twoPi;
-    const label bini = (theta + cacheThetaTolerance_)/twoPi*size_;
+    const label bini = thetaIndex(theta);
 
     DebugPout<< "  -- bini:" << bini << " for theta:" << theta << endl;
 
-    const auto validIndex = [&](const scalar bini)
-    {
-        return theta_[bini] < constant::mathematical::twoPi;
-    };
-
     // Maximum angle in radians for which to search for cached bins
+    const scalar twoPi = constant::mathematical::twoPi;
     const scalar maxThetaStencil = twoPi/size_*nThetaStencilMax_;
 
     if
@@ -483,6 +477,10 @@ bool Foam::AMICache::restoreCache(const point& globalPoint)
         // Initialise wrap-around values
         thetap.push_back(0);
         binAddresses.push_back(-1);
+
+        // Add valid cached values
+        // Note: if the complete_ flag is set we could skip the validIndex check
+        //       or avoid the need to copy the values across
         forAll(theta_, thetai)
         {
             if (validIndex(thetai))
@@ -532,6 +530,7 @@ bool Foam::AMICache::restoreCache(const point& globalPoint)
         // Ensure distances are valid
         if (upperi == loweri)
         {
+            // Should not get here - go back to direct hit?
             DebugPout
                 << "  -- no cache available: theta:" << theta
                 << " lower:" << loweri << " upper:" << upperi << endl;
@@ -555,7 +554,7 @@ bool Foam::AMICache::restoreCache(const point& globalPoint)
         index0_ = binAddresses[loweri];
         index1_ = binAddresses[upperi];
         interpWeight_ =
-            (theta - theta_[index0_])/(theta_[index1_] - theta_[index0_]);
+            (theta - thetap[loweri])/(thetap[upperi] - thetap[loweri]);
 
         DebugInfo
             << theta_.size()
