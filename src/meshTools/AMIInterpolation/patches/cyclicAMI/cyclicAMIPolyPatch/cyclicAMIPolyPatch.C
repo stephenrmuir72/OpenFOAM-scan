@@ -386,7 +386,8 @@ void Foam::cyclicAMIPolyPatch::resetAMI(const UList<point>& points) const
     bool restoredFromCache = false;
     if (AMIPtr_->cacheActive())
     {
-        const label comm = boundaryMesh().mesh().comm();
+        const auto& mesh = boundaryMesh().mesh();
+        const label comm = mesh.comm();
 
         if (UPstream::parRun())
         {
@@ -399,7 +400,21 @@ void Foam::cyclicAMIPolyPatch::resetAMI(const UList<point>& points) const
 
             if (refProci == UPstream::myProcNo(comm))
             {
-                refPt = points[meshPoints()[0]];
+                const label meshPointi = meshPoints()[0];
+                refPt = points[meshPointi];
+
+                // Need to ensure that this patch is on the moving side!
+                const scalar d(magSqr(refPt - mesh.oldPoints()[meshPointi]));
+
+                if (d < tolerance_)
+                {
+                    WarningInFunction
+                        << "Attempted to use AMI caching on a static patch "
+                        << name()
+                        << ". Potential patch ordering issue - "
+                        << "flip owner and neighbour patches?"
+                        << endl;
+                }
             }
             reduce(refPt, minOp<point>(), UPstream::msgType(), comm);
         }
