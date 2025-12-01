@@ -82,6 +82,10 @@ private:
         //- Maximum number of bins for which to search for cached bins
         label nThetaStencilMax_;
 
+        //- Flag that values should always be cached if the bin is empty
+        //  even if a valid stencil an be created
+        bool forceCache_;
+
         //- Flag to indicate that the cache is complete
         bool complete_;
 

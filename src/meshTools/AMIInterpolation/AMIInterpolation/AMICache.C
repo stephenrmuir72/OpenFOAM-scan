@@ -74,6 +74,7 @@ Foam::AMICache::AMICache(const dictionary& dict, const bool toSource)
     rotationAxis_(dict.getOrDefault<vector>("rotationAxis", Zero)),
     rotationCentre_(dict.getOrDefault<point>("rotationCentre", Zero)),
     nThetaStencilMax_(dict.getOrDefault<label>("nThetaStencilMax", 2)),
+    forceCache_(dict.getOrDefault<bool>("forceCache", false)),
     complete_(false),
     toSource_(toSource),
     index0_(-1),
@@ -111,6 +112,7 @@ Foam::AMICache::AMICache(const bool toSource)
     rotationAxis_(Zero),
     rotationCentre_(Zero),
     nThetaStencilMax_(2),
+    forceCache_(false),
     complete_(false),
     toSource_(toSource),
     index0_(-1),
@@ -135,6 +137,7 @@ Foam::AMICache::AMICache(const AMICache& cache)
     rotationAxis_(cache.rotationAxis_),
     rotationCentre_(cache.rotationCentre_),
     nThetaStencilMax_(cache.nThetaStencilMax_),
+    forceCache_(cache.forceCache_),
     complete_(cache.complete_),
     toSource_(cache.toSource_),
     index0_(cache.index0_),
@@ -180,6 +183,7 @@ Foam::AMICache::AMICache
     rotationAxis_(cache.rotationAxis_),
     rotationCentre_(cache.rotationCentre_),
     nThetaStencilMax_(cache.nThetaStencilMax_),
+    forceCache_(cache.forceCache_),
     complete_(cache.complete_),
     toSource_(cache.toSource_),
     index0_(cache.index0_),
@@ -271,6 +275,7 @@ Foam::AMICache::AMICache(Istream& is)
     rotationAxis_(is),
     rotationCentre_(is),
     nThetaStencilMax_(readLabel(is)),
+    forceCache_(readBool(is)),
 
     complete_(readBool(is)),
     toSource_(readBool(is)),
@@ -439,6 +444,13 @@ bool Foam::AMICache::restoreCache(const point& globalPoint)
 
     DebugPout<< "  -- bini:" << bini << " for theta:" << theta << endl;
 
+    if (!validIndex(bini) && forceCache_)
+    {
+        DebugPout
+            << "  -- no cache available at bini - forcing evaluation" << endl;
+        return false;
+    }
+
     // Maximum angle in radians for which to search for cached bins
     const scalar twoPi = constant::mathematical::twoPi;
     const scalar maxThetaStencil = twoPi/size_*nThetaStencilMax_;
@@ -597,6 +609,7 @@ void Foam::AMICache::write(Ostream& os) const
         os.writeEntry("rotationAxis", rotationAxis_);
         os.writeEntry("rotationCentre", rotationCentre_);
         os.writeEntry("nThetaStencilMax", nThetaStencilMax_);
+        os.writeEntry("forceCache", forceCache_);
     }
 }
 
@@ -607,6 +620,7 @@ bool Foam::AMICache::writeData(Ostream& os) const
         << token::SPACE<< rotationAxis_
         << token::SPACE<< rotationCentre_
         << token::SPACE<< nThetaStencilMax_
+        << token::SPACE<< forceCache_
         << token::SPACE<< complete_
         << token::SPACE<< toSource_;
 
