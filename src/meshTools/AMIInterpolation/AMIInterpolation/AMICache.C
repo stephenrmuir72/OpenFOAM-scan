@@ -564,7 +564,7 @@ bool Foam::AMICache::restoreCache(const point& globalPoint)
         if
         (
             (bini - lowerBin) > nThetaStencilMax_
-         && (upperBin - bini) > nThetaStencilMax_
+         || (upperBin - bini) > nThetaStencilMax_
         )
         {
             DebugPout
