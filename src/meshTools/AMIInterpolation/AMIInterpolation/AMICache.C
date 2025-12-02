@@ -453,7 +453,6 @@ bool Foam::AMICache::restoreCache(const point& globalPoint)
 
     // Maximum angle in radians for which to search for cached bins
     const scalar twoPi = constant::mathematical::twoPi;
-    const scalar maxThetaStencil = twoPi/size_*nThetaStencilMax_;
 
     if
     (
@@ -491,8 +490,8 @@ bool Foam::AMICache::restoreCache(const point& globalPoint)
         binAddresses.push_back(-1);
 
         // Add valid cached values
-        // Note: if the complete_ flag is set we could skip the validIndex check
-        //       or avoid the need to copy the values across
+        // - Note if the complete_ flag is set we could skip the validIndex
+        //   check or avoid the need to copy the values across
         forAll(theta_, thetai)
         {
             if (validIndex(thetai))
@@ -548,18 +547,30 @@ bool Foam::AMICache::restoreCache(const point& globalPoint)
                 << " lower:" << loweri << " upper:" << upperi << endl;
             return false;
         }
-        if (mag(theta - thetap[loweri]) > maxThetaStencil)
+
+        // Check that bin distances are valid
+        // - Note: bin addresses wrap around
+        label lowerBin = binAddresses[loweri];
+        label upperBin = binAddresses[upperi];
+        if (bini > binAddresses[upperi])
         {
-            DebugPout
-                << "  -- no cache available: theta:" << theta
-                << " lower:" << thetap[loweri] << endl;
-            return false;
+            upperBin += size_;
         }
-        if (mag(theta - thetap[upperi]) > maxThetaStencil)
+        if (bini < binAddresses[loweri])
+        {
+            lowerBin -= size_;
+        }
+
+        if
+        (
+            (bini - lowerBin) > nThetaStencilMax_
+         && (upperBin - bini) > nThetaStencilMax_
+        )
         {
             DebugPout
-                << "  -- no cache available: theta:" << theta
-                << " upper:" << thetap[upperi] << endl;
+                << "  -- no cache available within nThetaStencilMax_:"
+                << "     bini:" << bini << " lower:" << lowerBin
+                << " upper:" << upperBin << endl;
             return false;
         }
 
