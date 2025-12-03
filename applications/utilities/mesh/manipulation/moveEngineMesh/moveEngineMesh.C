@@ -30,10 +30,14 @@ Group
     grpMeshManipulationUtilities
 
 Description
-    Solver for moving meshes for engine calculations.
+    Solver for moving meshes for engine calculations  incl. optional, auxiliary
+    3D mesh motion.
 
 \*---------------------------------------------------------------------------*/
 
+#include "argList.H"
+#include "fvMesh.H"
+#include "motionSolver.H"
 #include "fvCFD.H"
 #include "engineTime.H"
 #include "engineMesh.H"
@@ -44,20 +48,64 @@ int main(int argc, char *argv[])
 {
     argList::addNote
     (
-        "A solver utility for moving meshes for engine calculations"
+        "A solver utility for moving meshes for engine calculations incl."
+        " additional, auxiliary mesh motion"
     );
 
     #include "setRootCase.H"
     #include "createEngineTime.H"
     #include "createEngineMesh.H"
 
+    // Check for aux. motion switch. If true, any 3D motion involved on top.
+    // Possibly not the best way to access engineDict/'auxDynamicMesh' here.
+    IOdictionary engineGeometryDict
+    (
+        IOobject
+        (
+            "engineGeometry",
+            runTime.constant(),
+            mesh,
+            IOobject::MUST_READ,
+            IOobject::NO_WRITE
+        )
+    );
+    const bool auxDynamicMesh
+               = engineGeometryDict.getOrDefault<bool>("auxDynamicMesh", false);
+
+    // 'motionSolver' needs 'dynamicMeshDict' so tied directly to
+    // 'auxDynamicMesh' presence
+    autoPtr<motionSolver> motionPtr;
+    if (auxDynamicMesh)
+    {
+        Info<< "\nSelecting auxiliary motion solver" << endl;
+        motionPtr = motionSolver::New(mesh);
+    }
+
     Info<< "\nStarting time loop\n" << endl;
 
     while (runTime.loop())
     {
-        Info<< "Time = " << runTime.theta() << " CA-deg\n" << endl;
+        // deltaTheta normally more informative than deltaT
+        // More appropriate  implement next to deltaT???
+        if (runTime.controlDict().get< bool >("adjustTimeStep"))
+        {
+            Info<< "deltaCAD = " << runTime.deltaTheta() << runTime.unit()
+            << endl;
+        }
 
+        Info<< "Engine time = " << runTime.theta() << runTime.unit()
+        << endl;
+
+        // Default benaviour - no aux. mesh motion
+        Info<< "Engine mesh motion (1D)" << endl;
         mesh.move();
+
+        // Optional behaviour - also 3D motion, e.g., for canted valves
+        if (auxDynamicMesh)
+        {
+            Info<< "Auxiliary mesh motion (3D)" << endl;
+            mesh.movePoints(motionPtr->newPoints());
+        }
 
         runTime.write();
 

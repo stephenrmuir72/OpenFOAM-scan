@@ -26,7 +26,8 @@ EXE_INC = \
     -I$(LIB_SRC)/regionModels/surfaceFilmModels/lnInclude \
     -I$(LIB_SRC)/combustionModels/lnInclude \
     -I$(LIB_SRC)/regionFaModels/lnInclude \
-    -I$(LIB_SRC)/faOptions/lnInclude
+    -I$(LIB_SRC)/faOptions/lnInclude \
+    -I$(LIB_SRC)/dynamicMesh/lnInclude
 
 EXE_LIBS = \
     -lfiniteVolume \
@@ -55,4 +56,6 @@ EXE_LIBS = \
     -lcombustionModels \
     -lregionFaModels \
     -lfiniteArea \
-    -lfaOptions
+    -lfaOptions \
+    -ldynamicFvMesh
+

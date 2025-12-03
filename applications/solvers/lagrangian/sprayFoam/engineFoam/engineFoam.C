@@ -29,11 +29,12 @@ Application
 
 Description
     Transient solver for compressible, turbulent engine flow with a spray
-    particle cloud.
+    particle cloud incl. optional, auxiliary 3D mesh motion.
 
 \*---------------------------------------------------------------------------*/
 
 #include "fvCFD.H"
+#include "motionSolver.H"
 #include "engineTime.H"
 #include "engineMesh.H"
 #include "turbulentFluidThermoModel.H"
@@ -43,6 +44,7 @@ Description
 #include "radiationModel.H"
 #include "SLGThermo.H"
 #include "pimpleControl.H"
+#include "CorrectPhi.H"
 #include "fvOptions.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -52,7 +54,7 @@ int main(int argc, char *argv[])
     argList::addNote
     (
         "Transient solver for compressible, turbulent engine flow"
-        " with a spray particle cloud."
+        " with a spray particle cloud incl. additional, auxiliary mesh motion."
     );
 
     #define CREATE_TIME createEngineTime.H
@@ -76,6 +78,31 @@ int main(int argc, char *argv[])
 
     // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
+    // Check for aux. motion switch. If true, any 3D motion involved on top.
+    // Possibly not the best way to access engineDict/'auxDynamicMesh' here.
+    IOdictionary engineGeometryDict
+    (
+        IOobject
+        (
+            "engineGeometry",
+            runTime.constant(),
+            mesh,
+            IOobject::MUST_READ,
+            IOobject::NO_WRITE
+        )
+    );
+    const bool auxDynamicMesh
+               = engineGeometryDict.getOrDefault<bool>("auxDynamicMesh", false);
+
+    // 'motionSolver' needs 'dynamicMeshDict' so tied directly to
+    // 'auxDynamicMesh' presence
+    autoPtr<motionSolver> motionPtr;
+    if (auxDynamicMesh)
+    {
+        Info<< "\nSelecting auxiliary motion solver" << endl;
+        motionPtr = motionSolver::New(mesh);
+    }
+
     Info<< "\nStarting time loop\n" << endl;
 
     while (runTime.run())
@@ -86,9 +113,27 @@ int main(int argc, char *argv[])
 
         ++runTime;
 
-        Info<< "Engine time = " << runTime.theta() << runTime.unit() << endl;
+        // 'deltaTheta' normally much informative than 'deltaT'. Possibly more
+        // appropriate to implement next to 'deltaT' instead of here?
+        if (runTime.controlDict().get< bool >("adjustTimeStep"))
+        {
+            Info<< "deltaCAD = " << runTime.deltaTheta() << runTime.unit()
+            << endl;
+        }
 
+        Info<< "Engine time = " << runTime.theta() << runTime.unit()
+        << endl;
+
+        // Default behaviour - only 1D motion
+        Info<< "Engine mesh motion (1D)" << endl;
         mesh.move();
+
+        // Optional behaviour - aux. 3D motion, e.g., for usable canted valves
+        if (auxDynamicMesh)
+        {
+            Info<< "Auxiliary mesh motion (3D)" << endl;
+            mesh.movePoints(motionPtr->newPoints());
+        }
 
         parcels.evolve();
 
