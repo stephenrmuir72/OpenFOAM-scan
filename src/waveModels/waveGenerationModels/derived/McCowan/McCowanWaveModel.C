@@ -80,11 +80,16 @@ Foam::vector Foam::waveModels::McCowan::mn
 ) const
 {
     // m
-    scalar xin = 1;
+    // scalar xin = 1;
+    // scalar m = newtonRapsonF1(xin, H, h);
+    scalar alpha = H / h;
+    scalar xin = sqrt(3.0) * alpha;  // for faster convergence
     scalar m = newtonRapsonF1(xin, H, h);
 
     // n
-    scalar c1 = sin(m + (1.0 + (2.0*H/(3.0*h))));
+    // scalar c1 = sin(m + (1.0 + (2.0*H/(3.0*h))));
+    scalar a = m * (1.0 + 2.0/3.0 * alpha);
+    scalar c1 = sin(a);
     scalar n = (2.0/3.0)*sqr(c1);
 
     return vector(m, n, n);
@@ -108,11 +113,21 @@ Foam::scalar Foam::waveModels::McCowan::newtonRapsonF1
     while (iter <= N)
     {
         // f
+        /*
         scalar a = x + 1.0 + 2.0*H/(3.0*h);
         scalar b = 0.5*x*(1.0 + H/h);
         scalar c = 0.5*x*(1.0 + h/H);
         scalar c1 = sin(a);
         scalar fx = (2.0/3.0)*sqr(c1) - x*H/(h*tan(b));
+        */
+        scalar alpha = H / h;
+        scalar a = x * (1.0 + 2.0/3.0 * alpha);
+        scalar b = 0.5*x*(1.0 + alpha);
+        scalar c1 = sin(a);
+        scalar c2 = 1.0/tan(b);
+        scalar c3 = 1.0/sin(b);
+
+        scalar fx = (2.0/3.0)*sqr(c1) - x * alpha * c2; // this fx is right.
 
         residual = mag(fx);
 
@@ -130,10 +145,12 @@ Foam::scalar Foam::waveModels::McCowan::newtonRapsonF1
         }
 
         // f-prime
+        /*
         scalar c2 = 1.0/tan(c);
         scalar c3 = 1.0/sin(b);
-
         scalar fprime = (4.0/3.0)*c1*cos(a) - c2*h/H - b*sqr(c3);
+        */
+        scalar fprime = (4.0/3.0) * c1 * (1.0 + 2.0/3.0 * alpha) * cos(a) - alpha * c2 + b * alpha * sqr(c3);
 
         x -= fx/fprime;
         iter++;
@@ -167,11 +184,19 @@ Foam::scalar Foam::waveModels::McCowan::newtonRapsonF2
     while (iter <= N)
     {
         // f
+        /*
         scalar a = m*(1.0 + x/h);
         scalar c1 = cos(a);
         scalar c2 = sin(a);
 
         scalar fx = x - (h*n/m*(c2/(c1 + cosh(m*xa/h))));
+        */
+        scalar a = m * (1.0 + x/h);
+        scalar c1 = cos(a);
+        scalar c2 = sin(a);
+        scalar tmpA = c2;
+        scalar tmpB = c1 + cosh(m * xa / h);
+        scalar fx = x - h * n / m * tmpA / tmpB;
 
         residual = mag(fx);
 
@@ -190,7 +215,8 @@ Foam::scalar Foam::waveModels::McCowan::newtonRapsonF2
 
         // f-prime
         scalar c3 = cosh(xa*m/h) + c1;
-        scalar fprime = 1 - n/c3*(c1 - sqr(c2)/c3);
+        // scalar fprime = 1 - n/c3*(c1 - sqr(c2)/c3);
+        scalar fprime = 1 - sqr(c2) * n / sqr(c3) - n * c1 / c3; // this fprime is right
 
         x -= fx/fprime;
         iter++;
