@@ -111,6 +111,8 @@ makeRASModel(SSG);
 #include "EBRSM.H"
 makeRASModel(EBRSM);
 
+#include "GEKO.H"
+makeRASModel(GEKO);
 
 // -------------------------------------------------------------------------- //
 // LES models
