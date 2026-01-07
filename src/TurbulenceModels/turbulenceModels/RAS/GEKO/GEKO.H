@@ -217,12 +217,13 @@ class GEKO
         //- Calculate the turbulent viscosity
         virtual void correctNut();
 
+        /*
         //- The k-source term being used by finite-volume options
         virtual tmp<fvScalarMatrix> kSource() const;
 
         //- The omega-source term being used by finite-volume options
         virtual tmp<fvScalarMatrix> omegaSource() const;
-
+        */
 
 public:
 
