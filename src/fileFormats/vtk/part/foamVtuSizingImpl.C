@@ -250,8 +250,11 @@ void Foam::vtk::vtuSizing::populateArrays
     // Placement of additional decomposed cells
     label nCellDecomp = mesh.nCells();
 
-    // Placement of additional point labels
-    label nPointDecomp = mesh.nPoints();
+    // Placement of additional point labels (apex of decomposed cells)
+    label apexVertLabel = mesh.nPoints();
+
+    // Count of additional point labels
+    label nAddPoints = 0;
 
     // Non-decomposed polyhedral are represented as a face-stream.
     // For legacy format, this stream replaces the normal connectivity
@@ -446,11 +449,8 @@ void Foam::vtk::vtuSizing::populateArrays
             // to avoid defining negative cells.
             // VTK may not care, but we'll do it anyhow for safety.
 
-            // Mapping from additional point to cell, and the new vertex from
-            // the cell-centre
-            const label newVertexLabel = nPointDecomp;
-
-            addPointsIds[nPointDecomp++] = celli;
+            // The cell-centre corresponding to the apexVertLabel
+            addPointsIds[nAddPoints] = celli;
 
             // Whether to insert cell in place of original or not.
             bool firstCell = true;
@@ -521,7 +521,7 @@ void Foam::vtk::vtuSizing::populateArrays
                     }
 
                     // The apex
-                    vertLabels[vrtLoc++] = newVertexLabel;
+                    vertLabels[vrtLoc++] = apexVertLabel;
                 }
 
                 for (const face& tria : faces3)
@@ -571,9 +571,13 @@ void Foam::vtk::vtuSizing::populateArrays
                     }
 
                     // The apex
-                    vertLabels[vrtLoc++] = newVertexLabel;
+                    vertLabels[vrtLoc++] = apexVertLabel;
                 }
             }
+
+            // Increment values
+            ++apexVertLabel;
+            ++nAddPoints;
         }
         else
         {
