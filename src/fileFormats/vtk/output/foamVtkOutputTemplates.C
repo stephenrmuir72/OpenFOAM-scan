@@ -140,20 +140,15 @@ void Foam::vtk::writeValueParallel
     }
 
     // Gather [count, value] tuples, including from master
-    const List<std::pair<label, Type>> countValues
-    (
-        UPstream::listGatherValues<std::pair<label, Type>>
-        (
-            std::pair<label, Type>(count, val)
-        )
-    );
+    const List<label> counts(UPstream::listGatherValues(count));
+    const List<Type> values(UPstream::listGatherValues(val));
 
     if (Pstream::master())
     {
-        for (const auto& countVal : countValues)
+        forAll(counts, i)
         {
-            // Write [count, value] tuple
-            vtk::write(fmt, countVal.first, countVal.second);
+            // Write [value, count] tuple
+            vtk::write(fmt, values[i], counts[i]);
         }
     }
 }
