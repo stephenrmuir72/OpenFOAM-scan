@@ -46,8 +46,6 @@ SourceFiles
 #include "GeometricFieldExpression.H"
 #include "fvMesh.H"
 #include "surfaceFields.H"
-#include <type_traits>
-
 // #include <boost/core/demangle.hpp>
 // #include <typeinfo>
 // #include <iostream>
@@ -284,19 +282,30 @@ public:
         {
             {
                 // Assign to source.
+                // Pout<< "fvMatrixExpression::evaluate :" << nl
+                //     << " source  : "
+                //     << demangle(typeid(source())) << nl;
                 source().evaluate(m.source());
             }
             if (hasDiag())
             {
                 // Assign to diag. Also sets hasDiag.
+                // Pout<< "fvMatrixExpression::evaluate :" << nl
+                //     << " diag  : " << demangle(typeid(diag())) << nl;
                 diag().evaluate(m.diag());
             }
             if (hasUpper())
             {
+                // Pout<< "fvMatrixExpression::evaluate :" << nl
+                //     << " upper  : " << demangle(typeid(upper()))
+                // << nl;
                 upper().evaluate(m.upper());
             }
             if (hasLower())
             {
+                // Pout<< "fvMatrixExpression::evaluate :" << nl
+                //     << " lower  : " << demangle(typeid(lower()))
+                // << nl;
                 lower().evaluate(m.lower());
             }
             if (hasFaceFluxCorrection())
@@ -786,130 +795,6 @@ public:
             typename Matrix::faceFluxFieldType& ffc =
                 *const_cast<this_type&>(elems_).faceFluxCorrectionPtr();
             return ffc;
-        }
-};
-
-
-/*---------------------------------------------------------------------------*\
-                    Class fvMatrixConstTmpWrap Declaration
-\*---------------------------------------------------------------------------*/
-
-//- Expression wrap of const reference to fvMatrix
-template<class Matrix>
-class fvMatrixConstTmpWrap
-:
-    public fvMatrixExpression
-    <
-        fvMatrixConstTmpWrap<Matrix>,
-        ListConstRefWrap<typename Matrix::psiFieldType::value_type>, // diag
-        ListConstRefWrap<typename Matrix::psiFieldType::value_type>, // upper
-        ListConstRefWrap<typename Matrix::psiFieldType::value_type>, // lower
-        GeometricFieldConstRefWrap<typename Matrix::faceFluxFieldType>, // fflux
-        ListConstRefWrap<typename Matrix::psiFieldType::value_type>  // source
-    >
-{
-public:
-
-    static constexpr bool is_leaf = false;  //true;
-
-    //- The fvMatrix type
-    typedef tmp<Matrix> this_type;
-
-    //- Type to return for internal field
-    typedef typename Matrix::psiFieldType::value_type value_type;
-
-    //- Type to return for containers
-    typedef ListConstRefWrap<value_type> DiagExpr;
-    typedef ListConstRefWrap<value_type> UpperExpr;
-    typedef ListConstRefWrap<value_type> LowerExpr;
-    typedef GeometricFieldConstRefWrap
-    <
-        typename Matrix::faceFluxFieldType
-    > FaceFluxExpr;
-    typedef ListConstRefWrap<value_type> SourceExpr;
-
-
-private:
-
-    const this_type elems_;
-
-
-public:
-
-    // Construct from components
-    fvMatrixConstTmpWrap(const this_type& elems)
-    :
-        fvMatrixExpression
-        <
-            fvMatrixConstTmpWrap<Matrix>,
-            DiagExpr,
-            UpperExpr,
-            LowerExpr,
-            FaceFluxExpr,
-            SourceExpr
-        >
-        (
-            elems().hasDiag(),
-            elems().hasUpper(),
-            elems().hasLower(),
-            elems().hasFaceFluxCorrection(),
-            elems().dimensions()
-        ),
-        elems_(elems)
-    {}
-
-
-    // lduMatrix part
-
-        DiagExpr diag() const
-        {
-            return elems_().diag();
-        }
-
-        UpperExpr upper() const
-        {
-            return elems_().upper();
-        }
-
-        LowerExpr lower() const
-        {
-            return elems_().lower();
-        }
-
-
-    // fvMatrix
-
-        SourceExpr source() const
-        {
-            return elems_().source();
-        }
-
-        UpperExpr internalCoeffs(const label i) const
-        {
-            return
-            (
-                elems_().internalCoeffs().set(i)
-              ? elems_().internalCoeffs()[i]
-              : List<value_type>::null()
-            );
-        }
-
-        UpperExpr boundaryCoeffs(const label i) const
-        {
-            return
-            (
-                elems_().boundaryCoeffs().set(i)
-              ? elems_().boundaryCoeffs()[i]
-              : List<value_type>::null()
-            );
-        }
-
-        FaceFluxExpr faceFluxCorrection() const
-        {
-            return *const_cast<Matrix&>
-            (
-                elems_()
-            ).faceFluxCorrectionPtr();
         }
 };
 
