@@ -21,7 +21,7 @@ RAS
     // Tested with kEpsilon, realizableKE, kOmega, kOmegaSST,
     // ShihQuadraticKE, LienCubicKE, incompressibleKEpsilon/
     // incompressibleKOmegaSST (kEpsilon/kOmegaSST with expression templating)
-    RASModel        incompressibleKOmegaSST; //kEpsilon;
+    RASModel        kEpsilon;
 
     turbulence      on;
 
