@@ -39,6 +39,9 @@ SourceFiles
 #ifndef Foam_ListExpression_H
 #define Foam_ListExpression_H
 
+// Assume execution headers are complete on the target system
+#define Foam_Expression_execution
+
 #include <cassert>
 #include <iterator>
 
@@ -46,7 +49,7 @@ SourceFiles
 #if defined(_WIN32) || (defined(FOAM_REAL_GNUC) && (FOAM_REAL_GNUC < 10))
 // Ignore on mingw (needs tbb, which is less likely to be installed)
 // - older gcc also gives problems (has execution, but not everything...)
-#elif __has_include(<execution>)
+#elif __has_include(<execution>) && defined(Foam_Expression_execution)
     #include <execution>
 #endif
 #if defined(__STDPAR__) \
@@ -99,8 +102,7 @@ public:
             lst[i] = *src;
         }
 #else
-    #if defined(__STDPAR__) \
-        && defined(__cpp_lib_execution) && (__cpp_lib_execution >= 201902L)
+    #if defined(__STDPAR__) && defined(__cpp_lib_execution) && (__cpp_lib_execution >= 201902L)
         // //- Using iterators
         // std::copy
         // (
@@ -123,38 +125,13 @@ public:
         //     idx[i] = i;
         // }
         auto idx = std::views::iota(label(0), loopLen);
-        if (expr.is_alias(&lst))
-        {
-            // Need temporary storage to avoid overwriting source data
-            #ifdef DEBUG_ET
-            DebugVar(long(&lst));
-            #endif
-            std::vector<typename E::value_type> temp(loopLen);
-            std::transform
-            (
-                std::execution::par_unseq,
-                idx.begin(), idx.end(),
-                temp.begin(),
-                [&](label i) { return expr[i]; }
-            );
-            std::copy
-            (
-                std::execution::par_unseq,
-                temp.begin(),
-                temp.end(),
-                lst.begin()
-            );
-        }
-        else
-        {
-            std::transform
-            (
-                std::execution::par_unseq,
-                idx.begin(), idx.end(),
-                lst.begin(),
-                [&](label i) { return expr[i]; }
-            );
-        }
+        std::transform
+        (
+            std::execution::par_unseq,
+            idx.begin(), idx.end(),
+            lst.begin(),
+            [&](label i) { return expr[i]; }
+        );
     #else
         for (label i = 0; i < loopLen; ++i)
         {
@@ -432,11 +409,6 @@ public:
         return elems_.size();
     }
 
-    bool is_alias(const void* lst) const noexcept
-    {
-        return (&elems_ == lst);
-    }
-
     typedef typename List<T>::const_iterator const_iterator;
     // struct const_iterator
     // {
@@ -632,11 +604,6 @@ public:
         return elems_().size();
     }
 
-    bool is_alias(const void* lst) const noexcept
-    {
-        return (&elems_() == lst);
-    }
-
     typedef typename List<T>::const_iterator const_iterator;
     auto cbegin() const
     {
@@ -697,11 +664,6 @@ public:
     auto size() const noexcept
     {
         return elems_().size();
-    }
-
-    bool is_alias(const void* lst) const noexcept
-    {
-        return (&elems_() == lst);
     }
 
     // //- Define our own iterator so we can refer to it. 'normal', e.g. double*
@@ -853,11 +815,6 @@ public:
     auto size() const noexcept
     {
         return size_;
-    }
-
-    bool is_alias(const void* lst) const noexcept
-    {
-        return false;
     }
 
     struct const_iterator
