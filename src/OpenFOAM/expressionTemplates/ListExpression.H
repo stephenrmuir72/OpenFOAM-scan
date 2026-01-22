@@ -39,6 +39,9 @@ SourceFiles
 #ifndef Foam_ListExpression_H
 #define Foam_ListExpression_H
 
+// Assume execution headers are complete on the target system
+#define Foam_Expression_execution
+
 #include <cassert>
 #include <iterator>
 
@@ -46,7 +49,7 @@ SourceFiles
 #if defined(_WIN32) || (defined(FOAM_REAL_GNUC) && (FOAM_REAL_GNUC < 10))
 // Ignore on mingw (needs tbb, which is less likely to be installed)
 // - older gcc also gives problems (has execution, but not everything...)
-#elif __has_include(<execution>)
+#elif __has_include(<execution>) && defined(Foam_Expression_execution)
     #include <execution>
 #endif
 #if defined(__STDPAR__) \
