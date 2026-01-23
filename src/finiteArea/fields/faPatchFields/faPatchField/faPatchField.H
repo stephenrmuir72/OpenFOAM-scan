@@ -266,7 +266,7 @@ public:
 
 
     //- Destructor
-    virtual ~faPatchField<Type>() = default;
+    virtual ~faPatchField() = default;
 
 
     // Member functions
