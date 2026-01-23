@@ -62,21 +62,21 @@ public:
     // Constructors
 
         //- Construct null.
-        DiagonalMatrix<Type>();
+        DiagonalMatrix();
 
         //- Construct empty from size
-        explicit DiagonalMatrix<Type>(const label n);
+        explicit DiagonalMatrix(const label n);
 
         //- Construct from size
         //- initializing all elements to the given value
-        DiagonalMatrix<Type>(const label n, const zero);
+        DiagonalMatrix(const label n, const zero);
 
         //- Construct from size and a value
-        DiagonalMatrix<Type>(const label n, const Type& val);
+        DiagonalMatrix(const label n, const Type& val);
 
         //- Construct from the diagonal of a Matrix
         template<class Form>
-        DiagonalMatrix<Type>(const Matrix<Form, Type>& mat);
+        DiagonalMatrix(const Matrix<Form, Type>& mat);
 
 
     // Member Functions

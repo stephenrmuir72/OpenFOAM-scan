@@ -122,7 +122,7 @@ public:
 
 
     //- Destructor
-    virtual ~slicedFvsPatchField<Type>();
+    virtual ~slicedFvsPatchField();
 
 
     // Member functions

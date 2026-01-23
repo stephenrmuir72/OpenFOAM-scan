@@ -335,13 +335,15 @@ void Foam::faMatrix<Type>::setValues
     const UList<Type>& values
 )
 {
-    const faMesh& mesh = psi_.mesh();
-
+#if 0  /* Specific to foam-extend */
     // Record face labels of eliminated equations
     for (const label i : faceLabels)
     {
         this->eliminatedEqns().insert(i);
     }
+#endif
+
+    const faMesh& mesh = psi_.mesh();
 
     const labelListList& edges = mesh.patch().faceEdges();
     const labelUList& own = mesh.owner();

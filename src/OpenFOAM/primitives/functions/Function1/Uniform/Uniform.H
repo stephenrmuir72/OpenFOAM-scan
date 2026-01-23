@@ -42,8 +42,8 @@ SourceFiles
 
 \*---------------------------------------------------------------------------*/
 
-#ifndef Uniform_H
-#define Uniform_H
+#ifndef Function1Types_Uniform_H
+#define Function1Types_Uniform_H
 
 #include "Function1.H"
 
@@ -72,7 +72,7 @@ public:
     // Generated Methods
 
         //- Copy construct
-        Uniform<Type>(const Uniform&) = default;
+        Uniform(const Uniform<Type>&) = default;
 
         //- No copy assignment
         void operator=(const Uniform<Type>&) = delete;
