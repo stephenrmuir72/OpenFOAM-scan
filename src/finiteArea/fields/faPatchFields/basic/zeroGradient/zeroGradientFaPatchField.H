@@ -127,7 +127,7 @@ public:
 
 
     //- Destructor
-    virtual ~zeroGradientFaPatchField<Type>() = default;
+    virtual ~zeroGradientFaPatchField() = default;
 
 
     // Member functions
