@@ -82,14 +82,14 @@ public:
         explicit DiagonalMatrix<Type>(const label n);
 
         //- Construct from size and initialise all elems to zero
-        DiagonalMatrix<Type>(const label n, const Foam::zero);
+        DiagonalMatrix(const label n, const Foam::zero);
 
         //- Construct from size and initialise all elems to value
-        DiagonalMatrix<Type>(const label n, const Type& val);
+        DiagonalMatrix(const label n, const Type& val);
 
         //- Construct from the diagonal of a Matrix
         template<class Form>
-        DiagonalMatrix<Type>(const Matrix<Form, Type>& mat);
+        DiagonalMatrix(const Matrix<Form, Type>& mat);
 
 
     // Member Functions
