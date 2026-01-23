@@ -299,7 +299,7 @@ public:
 
 
     //- Destructor
-    virtual ~fvPatchField<Type>() = default;
+    virtual ~fvPatchField() = default;
 
 
     // Member Functions

@@ -249,7 +249,7 @@ public:
 
 
     //- Destructor
-    virtual ~pointPatchField<Type>() = default;
+    virtual ~pointPatchField() = default;
 
 
     // Member functions

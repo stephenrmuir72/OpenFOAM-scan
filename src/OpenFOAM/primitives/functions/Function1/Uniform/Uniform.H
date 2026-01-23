@@ -70,7 +70,7 @@ public:
     // Generated Methods
 
         //- Copy construct
-        Uniform<Type>(const Uniform&) = default;
+        Uniform(const Uniform<Type>&) = default;
 
         //- No copy assignment
         void operator=(const Uniform<Type>&) = delete;
