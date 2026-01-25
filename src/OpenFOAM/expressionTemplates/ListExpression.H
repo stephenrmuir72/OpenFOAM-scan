@@ -102,7 +102,8 @@ public:
             lst[i] = *src;
         }
 #else
-    #if defined(__STDPAR__) && defined(__cpp_lib_execution) && (__cpp_lib_execution >= 201902L)
+    #if defined(__STDPAR__) \
+        && defined(__cpp_lib_execution) && (__cpp_lib_execution >= 201902L)
         // //- Using iterators
         // std::copy
         // (
