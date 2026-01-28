@@ -126,13 +126,38 @@ public:
         //     idx[i] = i;
         // }
         auto idx = std::views::iota(label(0), loopLen);
-        std::transform
-        (
-            std::execution::par_unseq,
-            idx.begin(), idx.end(),
-            lst.begin(),
-            [&](label i) { return expr[i]; }
-        );
+        if (expr.is_alias(&lst))
+        {
+            // Need temporary storage to avoid overwriting source data
+            #ifdef DEBUG_ET
+            DebugVar(long(&lst));
+            #endif
+            std::vector<typename E::value_type> temp(loopLen);
+            std::transform
+            (
+                std::execution::par_unseq,
+                idx.begin(), idx.end(),
+                temp.begin(),
+                [&](label i) { return expr[i]; }
+            );
+            std::copy
+            (
+                std::execution::par_unseq,
+                temp.begin(),
+                temp.end(),
+                lst.begin()
+            );
+        }
+        else
+        {
+            std::transform
+            (
+                std::execution::par_unseq,
+                idx.begin(), idx.end(),
+                lst.begin(),
+                [&](label i) { return expr[i]; }
+            );
+        }
     #else
         for (label i = 0; i < loopLen; ++i)
         {
@@ -410,6 +435,11 @@ public:
         return elems_.size();
     }
 
+    bool is_alias(const void* lst) const noexcept
+    {
+        return (&elems_ == lst);
+    }
+
     typedef typename List<T>::const_iterator const_iterator;
     // struct const_iterator
     // {
@@ -605,6 +635,11 @@ public:
         return elems_().size();
     }
 
+    bool is_alias(const void* lst) const noexcept
+    {
+        return (&elems_() == lst);
+    }
+
     typedef typename List<T>::const_iterator const_iterator;
     auto cbegin() const
     {
@@ -665,6 +700,11 @@ public:
     auto size() const noexcept
     {
         return elems_().size();
+    }
+
+    bool is_alias(const void* lst) const noexcept
+    {
+        return (&elems_() == lst);
     }
 
     // //- Define our own iterator so we can refer to it. 'normal', e.g. double*
@@ -816,6 +856,11 @@ public:
     auto size() const noexcept
     {
         return size_;
+    }
+
+    bool is_alias(const void* lst) const noexcept
+    {
+        return false;
     }
 
     struct const_iterator
