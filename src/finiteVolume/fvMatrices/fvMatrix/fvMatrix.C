@@ -2997,6 +2997,7 @@ Foam::fvMatrix<Type>::fvMatrix
         typename E::DiagExpr,
         typename E::UpperExpr,
         typename E::LowerExpr,
+        typename E::BoundaryExpr,
         typename E::FaceFluxExpr,
         typename E::SourceExpr
    >& expr
@@ -3046,6 +3047,7 @@ void Foam::fvMatrix<Type>::operator=
         typename E::DiagExpr,
         typename E::UpperExpr,
         typename E::LowerExpr,
+        typename E::BoundaryExpr,
         typename E::FaceFluxExpr,
         typename E::SourceExpr
    >& expr

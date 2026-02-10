@@ -28,6 +28,7 @@ Application
 
 \*---------------------------------------------------------------------------*/
 
+#include "fvMatrixExpression.H"
 #include "Time.H"
 #include "argList.H"
 #include "polyMesh.H"
@@ -45,17 +46,60 @@ int main(int argc, char *argv[])
     #include "createTime.H"
     #include "createPolyMesh.H"
 
+
+    {
+        // Multiplication
+        Expression::ListWrap<scalar> expr1({1.0, 2.0, 3.0});
+        Expression::ListWrap<vector> expr2
+        ({
+            vector(1,2,3),
+            vector(4,5,6),
+            vector(7,8,9)
+        });
+        auto expr3 = expr1*expr2;
+        typedef decltype(expr1)::value_type expr1Type;
+        typedef decltype(expr2)::value_type expr2Type;
+        //typedef decltype(expr3)::value_type resultType;
+        typedef decltype(std::declval<expr1Type>() * std::declval<expr2Type>()) resultType;
+        DebugVar(typeid(resultType).name());
+
+        Field<resultType> result(expr3);
+        DebugVar(result);
+    }
+
+    {
+        const scalarField vals1({1.0, 2.0, 3.0});
+        const vectorField vals2
+        ({
+            vector(1,2,3),
+            vector(4,5,6),
+            vector(7,8,9)
+        });
+        typedef typename outerProduct
+        <
+            decltype(vals1)::value_type,
+            decltype(vals2)::value_type
+        >::type resultType;
+
+    }
+
     {
         // Use wrappers
 
         typedef Expression::ListConstRefWrap<scalar> expr;
+        typedef Expression::Default<expr> defaultExpr;
         scalarField vals0({1.0, 2.0, 3.0});
-        const expr wvals0(vals0);
+        // const expr wvals0(vals0);
+        const defaultExpr dvals0(5, -1, vals0);
+        DebugVar(dvals0.size());
+        DebugVar(dvals0[3]);
 
         scalarField vals1;
-        Expression::ListRefWrap<scalar> wvals1(vals1.size(), vals1);
-        wvals1 = expr(vals0) + expr(vals0) + sin(expr(vals0));
+        Expression::ListRefWrap<scalar> wvals1(dvals0.size(), vals1);
+        wvals1 = dvals0 + dvals0 + sin(dvals0);
         DebugVar(vals1);
+        DebugVar(dvals0.size());
+        DebugVar(dvals0[3]);
         // return 0;
     }
 
@@ -103,25 +147,30 @@ int main(int argc, char *argv[])
         dimensionedScalar("zero", Foam::sqr(p().dimensions()), 0)
     );
 
-    // Construct value + dimensions with correct sizing
-    const auto oneField(dimensionedScalar(dimless, 1.0).expr(p));
+    {
+        // Construct value + dimensions with correct sizing
+        const auto oneField(dimensionedScalar(dimless, 1.0).expr(p));
 
-    // Make expression
-    auto expression = oneField * p.expr() + p.expr();
+        // Make expression
+        auto expression = oneField * p.expr() + p.expr();
 
-    // Combine expressions
-    auto newExpression = sqr(expression);
+        // Combine expressions
+        auto newExpression = sqr(expression);
 
-    // Assign values
-    result = newExpression;
+        // Assign values
+        result = newExpression;
 
-    DebugVar(result);
+        DebugVar(result);
+    }
+
+    {
+        // Construct from expression
+        pointScalarField result2("result2", pMesh, sqrt(p.expr()));
+
+        DebugVar(result2);
+    }
 
 
-    // Construct from expression
-    pointScalarField result2("result2", pMesh, sqrt(p.expr()));
-
-    DebugVar(result2);
 
     return 0;
 }

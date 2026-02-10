@@ -1465,7 +1465,10 @@ public:                                                                        \
     static constexpr bool is_leaf = false;                                     \
                                                                                \
     /* Type to return for internal field */                                    \
-    typedef typename E1::value_type value_type;                                \
+    typedef typename E1::value_type E1Type;                                    \
+    typedef typename E2::value_type E2Type;                                    \
+    typedef decltype(BaseFunc(std::declval<E1Type>(), std::declval<E2Type>())) \
+        value_type;                                                            \
                                                                                \
     OpFunc(const E1& u, const E2& v)                                           \
     :                                                                          \
@@ -1694,7 +1697,10 @@ public:                                                                        \
     static constexpr bool is_leaf = false;                                     \
                                                                                \
     /* Type to return for internal field */                                    \
-    typedef typename E1::value_type value_type;                                \
+    typedef typename E1::value_type E1Type;                                    \
+    typedef typename E2::value_type E2Type;                                    \
+    typedef decltype(std::declval<E1Type>() Op std::declval<E2Type>())         \
+        value_type;                                                            \
                                                                                \
     OpFunc(const E1& u, const E2& v)                                           \
     :                                                                          \
@@ -1992,8 +1998,9 @@ EXPRESSION_OPERATOR(+, List_add)
 EXPRESSION_OPERATOR(-, List_subtract)
 EXPRESSION_OPERATOR(*, List_multiply)
 EXPRESSION_OPERATOR(/, List_divide)
+EXPRESSION_OPERATOR(^, List_cross)
 EXPRESSION_OPERATOR(&, List_dot)
-
+EXPRESSION_OPERATOR(&&, List_dotdot)
 #undef EXPRESSION_OPERATOR
 
 //- Not possible: a *= b has to return a new type so it can never be in-place
@@ -2201,7 +2208,7 @@ private:
 
 public:
 
-    static constexpr bool is_leaf = false;
+    static constexpr bool is_leaf = true;
 
     typedef T value_type;
 

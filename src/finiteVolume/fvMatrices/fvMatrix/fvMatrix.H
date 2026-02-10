@@ -53,8 +53,6 @@ SourceFiles
 #include "lduPrimitiveMeshAssembly.H"
 #include "lduMesh.H"
 
-#include "fvMatrixExpression.H"
-
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 namespace Foam
@@ -110,6 +108,22 @@ tmp<GeometricField<Type, fvPatchField, volMesh>> operator&
     const tmp<GeometricField<Type, fvPatchField, volMesh>>&
 );
 
+namespace Expression
+{
+    template
+    <
+        class E,
+        class DiagExpr,
+        class UpperExpr,
+        class LowerExpr,
+        class BoundaryExpr,
+        class FaceFluxExpr,
+        class SourceExpr
+    >
+    class fvMatrixExpression;
+
+    template<class Matrix> class fvMatrixConstRefWrap;
+}
 
 /*---------------------------------------------------------------------------*\
                            Class fvMatrix Declaration
@@ -768,6 +782,7 @@ public:
                 typename E::DiagExpr,
                 typename E::UpperExpr,
                 typename E::LowerExpr,
+                typename E::BoundaryExpr,
                 typename E::FaceFluxExpr,
                 typename E::SourceExpr
            >& expr
@@ -789,6 +804,7 @@ public:
                 typename E::DiagExpr,
                 typename E::UpperExpr,
                 typename E::LowerExpr,
+                typename E::BoundaryExpr,
                 typename E::FaceFluxExpr,
                 typename E::SourceExpr
            >& expr

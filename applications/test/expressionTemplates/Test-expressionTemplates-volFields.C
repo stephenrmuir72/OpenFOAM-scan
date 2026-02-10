@@ -36,6 +36,7 @@ Application
 #include "ListExpression.H"
 #include "GeometricFieldExpression.H"
 #include "fvCFD.H"
+#include "fvOptions.H"
 #include <ratio>
 #include <chrono>
 
@@ -47,7 +48,6 @@ tmp<volScalarField> someFunction(const volScalarField& fld)
 {
     return fld*1.0001;
 }
-
 
 
 using namespace std::chrono;
@@ -71,8 +71,24 @@ int main(int argc, char *argv[])
         ),
         mesh
     );
+    Info<< "Reading field U\n" << endl;
+    volVectorField U
+    (
+        IOobject
+        (
+            "U",
+            runTime.timeName(),
+            mesh.thisDb(),
+            IOobject::MUST_READ,
+            IOobject::AUTO_WRITE
+        ),
+        mesh
+    );
+    DebugVar(U);
+    #include "createPhi.H"
+    DebugVar(phi);
 
-    // if (false)
+    if (false)
     {
         // Test ListsRefWrap
 
@@ -223,6 +239,7 @@ int main(int argc, char *argv[])
         DebugVar(result);
     }
 
+    /*
     if (false)
     {
         // Fill p with some values
@@ -246,49 +263,122 @@ int main(int argc, char *argv[])
         );
         DebugVar(result);
     }
-
+    */
 
     {
         // Expressions of fvMatrix
 
-        tmp<fvMatrix<scalar>> tm0(fvm::laplacian(p));
+        // tmp<fvMatrix<scalar>> tm0(fvm::laplacian(p));
 
-        // Print a bit
+        // // Print a bit
+        // {
+        //     const fvMatrix<scalar>& m0 = tm0();
+        //     DebugVar(m0.dimensions());
+        //     DebugVar(m0.hasDiag());
+        //     DebugVar(m0.hasUpper());
+        //     DebugVar(m0.hasLower());
+        //     forAll(m0.internalCoeffs(), i)
+        //     {
+        //         DebugVar(i);
+        //         if (m0.internalCoeffs().set(i))
+        //         {
+        //             DebugVar(m0.internalCoeffs()[i]);
+        //         }
+        //         if (m0.boundaryCoeffs().set(i))
+        //         {
+        //             DebugVar(m0.boundaryCoeffs()[i]);
+        //         }
+        //     }
+        // }
+
+        // if (false)
+        // {
+        //     // Test templated tmp<fvMatrix> wrapper
+        //     Expression::fvMatrixConstTmpWrap2<fvScalarMatrix> mWrap(tm0);
+        //     DebugVar(mWrap.dimensions());
+        //     DebugVar(mWrap.hasDiag());
+        //     DebugVar(mWrap.hasUpper());
+        //     DebugVar(mWrap.hasLower());
+        // }
+
+
+        // fv::options& fvOptions(fv::options::New(mesh));
+
+        // const auto opts = fvOptions(p);
+
+        // Do some expression in fvMatrix syntax
+        const tmp<fvMatrix<scalar>> tm1
+        (
+            // fvm::ddt(p)
+            fvm::laplacian(p)
+         == fvc::Su(fvc::laplacian(p), p)
+          // + opts.expr()
+        );
+
+        // Do some expression in fvMatrixExpression syntax
+        // const auto tlaplacian = fvc::laplacian(p);
+        // const UList<scalar>& tl = tlaplacian().internalField();
+        // const auto expr =
+        // (
+        //     // fvm::ddt(p).expr()
+        //     fvm::laplacian(p).expr()
+        //  == Expression::Su<(fvc::laplacian(p), p)
+        // //  + opts.expr()
+        // );
+// {
+//     DebugVar(expr.hasDiag());
+//     DebugVar(typeid(expr.diag()).name());
+//     DebugVar(expr.diag().size());
+//     scalarField diag;
+//     expr.diag().evaluate(diag);
+//     Pout<< "Expression diag: " << flatOutput(diag) << nl;
+// }
+// {
+//     DebugVar(typeid(expr.source()).name());
+//     DebugVar(expr.source().size());
+//     scalarField source;
+//     expr.source().evaluate(source);
+//     Pout<< "Expression source: " << flatOutput(source) << nl;
+// }
+
+        // Evaluate expression
+        const fvMatrix<scalar> m2
+        (
+            p2,
+            (
+                fvm::laplacian(p).expr()
+             == Expression::Su(fvc::laplacian(p), p)
+            )
+        );
+
+DebugVar("here");
+
+// Print a bit
         {
-            const fvMatrix<scalar>& m0 = tm0();
-            DebugVar(m0.dimensions());
-            DebugVar(m0.hasDiag());
-            DebugVar(m0.hasUpper());
-            DebugVar(m0.hasLower());
-            forAll(m0.internalCoeffs(), i)
+            const fvMatrix<scalar>& m1 = tm1();
+            DebugVar(m1.dimensions());
+            DebugVar(m1.hasDiag());
+            DebugVar(m1.hasUpper());
+            DebugVar(m1.hasLower());
+            forAll(m1.internalCoeffs(), i)
             {
                 DebugVar(i);
-                if (m0.internalCoeffs().set(i))
+                if (m1.internalCoeffs().set(i))
                 {
-                    DebugVar(m0.internalCoeffs()[i]);
+                    DebugVar(m1.internalCoeffs()[i]);
                 }
-                if (m0.boundaryCoeffs().set(i))
+                if (m1.boundaryCoeffs().set(i))
                 {
-                    DebugVar(m0.boundaryCoeffs()[i]);
+                    DebugVar(m1.boundaryCoeffs()[i]);
                 }
             }
         }
-
-        tmp<fvMatrix<scalar>> tm1(fvm::laplacian(p));
-
-
-        // Do some expression
-        const auto expr = tm0.expr() + tm1.expr();
-
-        // Evaluate expression
-        const fvMatrix<scalar> m2(p, expr);
-
         // Print a bit
         {
             DebugVar(m2.dimensions());
             DebugVar(m2.hasDiag());
             DebugVar(m2.hasUpper());
-            DebugVar(expr.hasLower());
+            DebugVar(m2.hasLower());
             forAll(m2.internalCoeffs(), i)
             {
                 DebugVar(i);

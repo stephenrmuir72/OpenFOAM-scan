@@ -27,8 +27,6 @@ License
 
 #include "fvcSurfaceOps.H"
 #include "fvMesh.H"
-#include "fusedGaussLaplacianScheme.H"
-// #include "emptyFvPatchField.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 

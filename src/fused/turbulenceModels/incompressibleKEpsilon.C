@@ -34,6 +34,7 @@ License
 #include "bound.H"
 #include "addToRunTimeSelectionTable.H"
 #include "wallDist.H"
+#include "fvMatrixExpression.H"
 
 // #include <ratio>
 // #include <chrono>

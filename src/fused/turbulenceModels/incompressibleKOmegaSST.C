@@ -25,7 +25,6 @@ License
 
 \*---------------------------------------------------------------------------*/
 
-#include "fvMatrixExpression.H"
 #include "incompressibleKOmegaSST.H"
 #include "fvOptions.H"
 #include "bound.H"
@@ -33,6 +32,7 @@ License
 #include "fvCFD.H"
 
 #include "GeometricFieldExpression.H"
+#include "fvMatrixExpression.H"
 #include "addToRunTimeSelectionTable.H"
 
 #include <ratio>
