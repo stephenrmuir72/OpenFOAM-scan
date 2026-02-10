@@ -239,6 +239,7 @@ int main(int argc, char *argv[])
         DebugVar(result);
     }
 
+    /*
     if (false)
     {
         // Fill p with some values
