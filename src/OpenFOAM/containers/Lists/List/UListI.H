@@ -29,6 +29,15 @@ License
 #include "error.H"
 // <algorithm> already included by stdFoam.H
 
+template <typename Func>
+void Foam::apply_policy(size_t loop_length, Func&& f)
+{
+    if (loop_length > 128) {
+        f(std::execution::par_unseq);
+    } else {
+        f(std::execution::seq);
+    }
+}
 // * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * //
 
 template<class T>
@@ -55,35 +64,58 @@ inline void Foam::UList<T>::fill_uniform(const T& val)
     // Can dispatch with
     // - std::execution::par_unseq
     // - std::execution::unseq
-    std::fill_n
-    (
-        this->v_, this->size_, val
-    );
+
+    if constexpr(is_contiguous_v<T> && !std::is_same_v<T,bool>)
+    {
+        // For arithmetic types, we can use a more efficient fill
+        // operation that avoids the overhead of the generic algorithm.
+        if (this->size_ > 1024) // Arbitrary threshold for parallel execution
+        {
+            apply_policy(this->size_, [&](auto policy)
+            {
+                std::fill_n(policy, this->v_, this->size_, val);
+            });
+        }
+        else
+        {
+            std::fill_n
+            (
+                this->v_, this->size_, val
+            );
+        }
+    }
+    else
+    {
+        std::fill_n
+        (
+            this->v_, this->size_, val
+        );
+    }
 }
 
 
 template<class T>
 inline void Foam::UList<T>::fill_uniform(Foam::zero)
 {
-    if constexpr (std::is_arithmetic_v<T>)
+        if constexpr (std::is_arithmetic_v<T>)
     {
         // Can dispatch with
         // - std::execution::par_unseq
         // - std::execution::unseq
-        std::fill_n
-        (
-            this->v_, this->size_, T(0)
-        );
+        apply_policy(this->size_, [&](auto policy)
+        {
+            std::fill_n(policy, this->v_, this->size_, T(0));
+        });
     }
     else if constexpr (is_contiguous_v<T>)
     {
         // Can dispatch with
         // - std::execution::par_unseq
         // - std::execution::unseq
-        std::fill_n
-        (
-            this->data_bytes(), this->size_bytes(), char(0)
-        );
+        apply_policy(this->size_bytes(), [&](auto policy)
+        {
+            std::fill_n(policy, this->data_bytes(), this->size_bytes(), char(0));
+        });
     }
     else
     {
@@ -345,8 +377,8 @@ inline void Foam::UList<T>::shallowCopy(const UList<T>& list) noexcept
 
 template<class T>
 inline void Foam::UList<T>::operator=(const T& val)
-{
-    this->fill_uniform(val);
+{    
+        this->fill_uniform(val);
 }
 
 

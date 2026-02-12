@@ -46,14 +46,41 @@ inline void Foam::List<T>::copyList(const ListType& list)
 {
     // NB: operator[] for list read access (eg, an indirect list)
     // cannot necessarily replace with std::copy
-
+ 
     const label len = this->size_;
-
-    auto iter = this->v_;
-
-    for (label i = 0; i < len; (void)++i, (void)++iter)
+ 
+    // For noncontiguous element types or std::string, use sequential loop
+    if constexpr (!is_contiguous_v<T>)
     {
-        *iter = list[i];
+        T* dst = this->v_;
+ 
+        for (label i = 0; i < len; ++i)
+        {
+            dst[i] = list[i];
+        }
+        return;
+    }
+    else
+    {
+        auto iter = this->v_;
+        auto indices = std::views::iota(0, len);
+        apply_policy(len, [&](auto policy)
+        {
+            std::transform
+            (policy,
+                indices.begin(),
+                indices.end(),
+                iter,
+            [&] (const auto& idx)
+            {
+                return list[idx];
+            });
+        });
+            /*
+        for (label i = 0; i < len; (void)++i, (void)++iter)
+        {
+            *iter = list[i];
+        }*/
     }
 }
 
@@ -66,19 +93,41 @@ inline void Foam::List<T>::copyList
     const ListIndices& indices
 )
 {
-    // NB: operator[] for list read access (eg, an indirect list)
-    // cannot necessarily replace with std::copy
-
-    const label len = this->size_;
-
-    auto iter = this->v_;
-
-    for (label i = 0; i < len; (void)++i, (void)++iter)
+    const label n = this->size_;
+    if (n == 0) return;
+ 
+ 
+    T* dst = this->v_;
+ 
+    // For noncontiguous element types or std::string, use sequential loop
+    if constexpr (!is_contiguous_v<T>)
     {
-        *iter = list[indices[i]];
+        for (label i = 0; i < n; ++i)
+        {
+            dst[i] = list[indices[i]];
+        }
+        return;
+    }
+    else
+    {
+        auto r = std::views::iota(label(0), n);
+ 
+        apply_policy(n, [&](auto policy)
+        {
+            std::transform
+            (
+                policy,
+                r.begin(), r.end(),
+                dst,
+                [&](label i)
+                {
+                    return list[ indices[i] ];
+                }
+            );
+        });
     }
 }
-
+ 
 
 template<class T>
 template<class InputIterator>
