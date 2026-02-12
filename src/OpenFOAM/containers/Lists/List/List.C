@@ -356,21 +356,44 @@ template<class T>
 void Foam::List<T>::resize(const label len, const T& val)
 {
     const label oldLen = this->size_;
-
+ 
     if (oldLen == len)
     {
         return;
     }
-
+ 
     resize_copy(oldLen, len);
-
+ 
     // Fill trailing part with new values
     if (oldLen < this->size_)
     {
-        std::fill
-        (
-            (this->v_ + oldLen), (this->v_ + this->size_), val
-        );
+        if constexpr (is_contiguous_v<T>)
+        {
+            auto* vPtr = this->v_;
+            const label this_size = this->size_;
+            auto indices = std::views::iota(oldLen, this_size);
+ 
+            apply_policy(this_size - oldLen, [&](auto policy)
+            {
+                std::for_each
+                (
+                    policy,
+                    indices.begin(),
+                    indices.end(),
+                    [val, vPtr](const auto& i)
+                    {
+                        vPtr[i] = val;
+                    }
+                );
+            });
+        }
+        else
+        {
+            std::fill
+            (
+                (this->v_ + oldLen), (this->v_ + this->size_), val
+            );
+        }
     }
 }
 
