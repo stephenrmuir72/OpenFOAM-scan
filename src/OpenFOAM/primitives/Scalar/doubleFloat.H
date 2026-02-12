@@ -40,16 +40,32 @@ namespace Foam
 {
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+#if defined(__HIP_DEVICE_COMPILE__)
+    // Device compilation (ROCm)
+    #define FOAM_POW_CALL(base, exp)                                          \
+        __ocml_pow_f64(static_cast<double>(base), static_cast<double>(exp))
+#else
+    // Host (CPU) path
+    #define FOAM_POW_CALL(base, exp)                                          \
+    (::pow(static_cast<double>(base), static_cast<double>(exp)))
+#endif
 
-#define MAXMINPOW(RetType, Type1, Type2)                \
-                                                        \
-MAXMIN(RetType, Type1, Type2)                           \
-                                                        \
-/*! \brief Raise base to the power expon */             \
-inline double pow(const Type1 base, const Type2 expon)  \
-{                                                       \
-    return ::pow(double(base), double(expon));          \
+#if defined(__HIP_DEVICE_COMPILE__)
+#define MAXMINPOW(RetType, Type1, Type2)                                      \
+MAXMIN(RetType, Type1, Type2)                                                 \
+__host__ __device__                                                           \
+inline RetType pow(const Type1 base, const Type2 expon)                       \
+{                                                                             \
+    return FOAM_POW_CALL(base, expon);                                        \
 }
+#else
+#define MAXMINPOW(RetType, Type1, Type2)                                      \
+MAXMIN(RetType, Type1, Type2)                                                 \
+inline RetType pow(const Type1 base, const Type2 expon)                       \
+{                                                                             \
+    return FOAM_POW_CALL(base, expon);                                        \
+}
+#endif
 
 
 MAXMINPOW(double, double, double)

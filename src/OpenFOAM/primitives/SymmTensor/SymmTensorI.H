@@ -401,9 +401,9 @@ inline Foam::SymmTensor<Cmpt> Foam::SymmTensor<Cmpt>::safeInv() const
         {
             SymmTensor<Cmpt> work(*this);
 
-            if (small_xx) { work.xx() += pTraits<Cmpt>::one; }
-            if (small_yy) { work.yy() += pTraits<Cmpt>::one; }
-            if (small_zz) { work.zz() += pTraits<Cmpt>::one; }
+            if (small_xx) { work.xx() += 1.0; }
+            if (small_yy) { work.yy() += 1.0; }
+            if (small_zz) { work.zz() += 1.0; }
 
             const Cmpt detval = work.det();
 
@@ -415,9 +415,9 @@ inline Foam::SymmTensor<Cmpt> Foam::SymmTensor<Cmpt>::safeInv() const
 
             work = work.adjunct()/detval;
 
-            if (small_xx) { work.xx() -= pTraits<Cmpt>::one; }
-            if (small_yy) { work.yy() -= pTraits<Cmpt>::one; }
-            if (small_zz) { work.zz() -= pTraits<Cmpt>::one; }
+            if (small_xx) { work.xx() -= 1.0; }
+            if (small_yy) { work.yy() -= 1.0; }
+            if (small_zz) { work.zz() -= 1.0; }
 
             return work;
         }

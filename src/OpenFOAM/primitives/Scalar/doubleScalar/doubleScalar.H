@@ -72,17 +72,25 @@ constexpr doubleScalar doubleScalarROOTVSMALL = 1.0e-150;
 #define ScalarROOTVSMALL doubleScalarROOTVSMALL
 #define ScalarRead readDouble
 
-
+#if defined(__HIP_DEVICE_COMPILE__)
+__host__ __device__
+#endif
 inline Scalar mag(const Scalar s)
 {
     return ::fabs(s);
 }
 
+#if defined(__HIP_DEVICE_COMPILE__)
+__host__ __device__
+#endif
 inline Scalar hypot(const Scalar x, const Scalar y)
 {
     return ::hypot(x, y);
 }
 
+#if defined(__HIP_DEVICE_COMPILE__)
+__host__ __device__
+#endif
 inline Scalar atan2(const Scalar y, const Scalar x)
 {
     return ::atan2(y, x);
@@ -90,11 +98,21 @@ inline Scalar atan2(const Scalar y, const Scalar x)
 
 
 // Normal (double-precision) transcendental functions
+#if defined(__HIP_DEVICE_COMPILE__)
+// GPU version — use ROCm OCML intrinsics
+#define transFunc(func)                                         \
+__host__ __device__ inline Scalar func(const Scalar s)          \
+{                                                               \
+    return __ocml_##func##_f64(static_cast<float>(s));          \
+}
+#else
+// CPU version — normal math library call
 #define transFunc(func)                                         \
 inline Scalar func(const Scalar s)                              \
 {                                                               \
     return ::func(s);                                           \
 }
+#endif
 
 // Normal (double-precision) bessel functions.
 // May not be available on all systems
