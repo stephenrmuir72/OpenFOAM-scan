@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2017-2020 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -254,6 +255,9 @@ public:
         {
             return meshCutter_;
         }
+
+        //- Return access to the refinement engine
+        hexRef8& meshCutter() { return meshCutter_; }
 
         //- Cells which should not be refined/unrefined
         const bitSet& protectedCell() const
