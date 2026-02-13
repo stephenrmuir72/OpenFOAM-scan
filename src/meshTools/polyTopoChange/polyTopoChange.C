@@ -6,7 +6,12 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
+<<<<<<< HEAD
     Copyright (C) 2015-2022 OpenCFD Ltd.
+=======
+    Copyright (C) 2015-2022,2024 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
+>>>>>>> 76046a4cd9 (ENH: fvMesh: add meshPhi support and moving-mesh redistribution for DLB)
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -205,8 +210,9 @@ void Foam::polyTopoChange::writeMeshStats(const polyMesh& mesh, Ostream& os)
     os  << "    Points      : " << mesh.nPoints() << nl
         << "    Faces       : " << mesh.nFaces() << nl
         << "    Cells       : " << mesh.nCells() << nl
-        << "    PatchSizes  : " << patchSizes << nl
-        << "    PatchStarts : " << patchStarts << nl
+        << "    PatchSizes  : " << flatOutput(patchSizes) << nl
+        << "    PatchStarts : " << flatOutput(patchStarts) << nl
+        << "    moving      : " << mesh.moving() << nl
         << endl;
 }
 
@@ -3128,6 +3134,13 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::polyTopoChange::changeMesh
             syncParallel
         );
         mesh.topoChanging(true);
+    }
+
+    // Clear out the old polyPatch information since we've destroyed the old
+    // primitives.
+    {
+        const_cast<polyBoundaryMesh&>(mesh.boundaryMesh()).clearAddressing();
+        const_cast<polyBoundaryMesh&>(mesh.boundaryMesh()).clearGeom();
     }
 
     // Clear out primitives

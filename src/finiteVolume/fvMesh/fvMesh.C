@@ -6,7 +6,12 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017,2022 OpenFOAM Foundation
+<<<<<<< HEAD
     Copyright (C) 2016-2023 OpenCFD Ltd.
+=======
+    Copyright (C) 2016-2024 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
+>>>>>>> 76046a4cd9 (ENH: fvMesh: add meshPhi support and moving-mesh redistribution for DLB)
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -792,6 +797,26 @@ void Foam::fvMesh::mapFields(const mapPolyMesh& meshMap)
     MapGeometricFields<tensor, fvsPatchField, fvMeshMapper, surfaceMesh>
     (mapper);
 
+    // Map the old flux ourselves since not registered.
+    if (phiPtr_)
+    {
+        auto& fld = *phiPtr_;
+
+        if (polyMesh::debug)
+        {
+            Info<< "Mapping "
+                << std::remove_reference<decltype(fld)>::type::typeName
+                << ' ' << fld.name() << endl;
+        }
+        // Store old time mesh motion fluxes if the time has been incremented
+        fld.storeOldTimes();
+
+        MapGeometricField(mapper, fld);
+
+        fld.instance() = fld.time().timeName();
+    }
+
+
     // Map all the dimensionedFields in the objectRegistry
     MapDimensionedFields<scalar, fvMeshMapper, volMesh>(mapper);
     MapDimensionedFields<vector, fvMeshMapper, volMesh>(mapper);
@@ -1034,15 +1059,14 @@ void Foam::fvMesh::updateMesh(const mapPolyMesh& mpm)
 
     // Clear the sliced fields
     clearGeomNotOldVol();
-
-    // Map all fields
-    mapFields(mpm);
-
     // Clear the current volume and other geometry factors
     surfaceInterpolation::updateMesh(mpm);
 
     // Clear any non-updateable addressing
     clearAddressing(true);
+
+    // Map all fields
+    mapFields(mpm);
 
     meshObject::updateMesh<fvMesh>(*this, mpm);
     meshObject::updateMesh<lduMesh>(*this, mpm);

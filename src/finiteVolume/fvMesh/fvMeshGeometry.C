@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017,2022 OpenFOAM Foundation
     Copyright (C) 2020-2022 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -430,12 +431,34 @@ const Foam::surfaceScalarField& Foam::fvMesh::phi() const
     // mesh motion fluxes if the time has been incremented
     if (!time().subCycling() && phiPtr_->timeIndex() != time().timeIndex())
     {
+        DebugInFunction << "Zeroing mesh phi since time index has changed from "
+            << phiPtr_->timeIndex() << " to " << time().timeIndex() << endl;
         (*phiPtr_) = dimensionedScalar(dimVolume/dimTime, Zero);
     }
 
     phiPtr_->setOriented();
 
     return *phiPtr_;
+}
+
+
+void Foam::fvMesh::createMeshPhi()
+{
+    if (!phiPtr_)
+    {
+        phiPtr_ = std::make_unique<surfaceScalarField>
+        (
+            IOobject
+            (
+                "meshPhi",
+                this->time().timeName(),
+                *this,
+                IOobjectOption::NO_REGISTER
+            ),
+            *this,
+            dimensionedScalar(dimVolume/dimTime, Foam::zero{})
+        );
+    }
 }
 
 

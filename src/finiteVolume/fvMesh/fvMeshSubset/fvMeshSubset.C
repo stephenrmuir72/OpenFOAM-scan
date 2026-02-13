@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2015-2022 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -591,6 +592,7 @@ void Foam::fvMeshSubset::reset
     const cellList& oldCells = baseMesh().cells();
     const faceList& oldFaces = baseMesh().faces();
     const pointField& oldPoints = baseMesh().points();
+    const bool oldMoving = baseMesh().moving();
     const labelList& oldOwner = baseMesh().faceOwner();
     const labelList& oldNeighbour = baseMesh().faceNeighbour();
     const polyBoundaryMesh& oldPatches = baseMesh().boundaryMesh();
@@ -1232,6 +1234,108 @@ void Foam::fvMeshSubset::reset
 
     // Subset and add any zones
     subsetZones();
+<<<<<<< HEAD
+=======
+
+    if (oldMoving)
+    {
+        DebugPout<< "Transferring oldPoints; setting moving flag" << endl;
+        subMeshPtr_().moving(true);
+        const_cast<pointField&>(subMeshPtr_().oldPoints()) =
+            pointField(baseMesh_.oldPoints(), pointMap_);
+    }
+
+    if (basePointMeshPtr)
+    {
+        DebugPout<< "Subsetting pointMesh" << endl;
+        const auto& basePointMesh = *basePointMeshPtr;
+        const auto& oldPointBoundary = basePointMesh.boundary();
+
+        // 1. Generate pointBoundaryMesh from polyBoundaryMesh (so ignoring
+        //    any additional patches
+        const auto& newSubPointMesh = pointMesh::New(subMeshPtr_());
+
+        pointPatchMap_ = patchMap_;
+
+        auto& newBoundary =
+            const_cast<pointBoundaryMesh&>(newSubPointMesh.boundary());
+
+
+        // 2. Explicitly add subsetted meshPointPatches
+        labelList oldToNewPoints(baseMesh_.nPoints(), -1);
+        forAll(pointMap_, i)
+        {
+            oldToNewPoints[pointMap_[i]] = i;
+        }
+
+
+        // Add meshPointPatches
+        pointPatchMap_.setSize(newBoundary.size(), -1);
+
+        for (const auto& oldPointPatch : oldPointBoundary)
+        {
+            const auto* mppPtr = isA<meshPointPatch>(oldPointPatch);
+            if (mppPtr && (newBoundary.findPatchID(mppPtr->name()) == -1))
+            {
+                const auto& mp = mppPtr->meshPoints();
+                DynamicList<label> subPointMap(mp.size());
+                forAll(mp, i)
+                {
+                    const label newPointi = oldToNewPoints[mp[i]];
+                    if (newPointi != -1)
+                    {
+                        subPointMap.append(i);
+                    }
+                }
+
+                pointPatchMap_.push_back(mppPtr->index());
+
+                newBoundary.push_back
+                (
+                    mppPtr->clone
+                    (
+                        newBoundary,
+                        newBoundary.size(),
+                        subPointMap,        // map
+                        oldToNewPoints
+                    )
+                );
+            }
+        }
+
+
+        // 3. rotate into place:
+        //      - global patches (including meshPointPatches)
+        //      - optional 'internalFaces' patch
+        //      - processor patches
+        labelList oldToNew(newBoundary.size());
+        label newPatchi = 0;
+        forAll(newBoundary, patchi)
+        {
+            if
+            (
+                patchi != newInternalPatchID
+            && !isA<processorPointPatch>(newBoundary[patchi])
+            )
+            {
+                oldToNew[patchi] = newPatchi++;
+            }
+        }
+        if (newInternalPatchID != -1)
+        {
+            oldToNew[newInternalPatchID] = newPatchi++;
+        }
+        forAll(newBoundary, patchi)
+        {
+            if (isA<processorPointPatch>(newBoundary[patchi]))
+            {
+                oldToNew[patchi] = newPatchi++;
+            }
+        }
+        newBoundary.reorder(oldToNew, true);
+        inplaceReorder(oldToNew, pointPatchMap_);
+    }
+>>>>>>> 76046a4cd9 (ENH: fvMesh: add meshPhi support and moving-mesh redistribution for DLB)
 }
 
 

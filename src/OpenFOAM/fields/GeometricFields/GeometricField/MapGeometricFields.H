@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2017-2019 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -58,6 +59,66 @@ public:
         const MeshMapper& mapper
     ) const;
 };
+
+
+//- Generic Geometric field mapper.
+//  For "real" mapping, add template specialisations
+//  for mapping of internal fields depending on mesh type.
+template
+<
+    class Type,
+    template<class> class PatchField,
+    class MeshMapper,
+    class GeoMesh
+>
+void MapGeometricField
+(
+    const MeshMapper& mapper,
+    GeometricField<Type, PatchField, GeoMesh>& fld
+)
+{
+    typedef GeometricField<Type, PatchField, GeoMesh> FieldType;
+
+    // Note: old-time-level field needs to be stored outside
+
+    if (&fld.mesh() == &mapper.mesh())
+    {
+        if (polyMesh::debug)
+        {
+            Info<< "Mapping "
+                << FieldType::typeName << ' ' << fld.name() << endl;
+        }
+
+        // Map the internal field
+        MapInternalField<Type, MeshMapper, GeoMesh>()
+        (
+            fld.internalFieldRef(),
+            mapper
+        );
+
+        // Map the patch fields
+        auto& bfield = fld.boundaryFieldRef();
+
+        forAll(bfield, patchi)
+        {
+            // Cannot check sizes for patch fields because of
+            // empty fields in FV and because point fields get their size
+            // from the patch which has already been resized
+            //
+
+            bfield[patchi].autoMap(mapper.boundaryMap()[patchi]);
+        }
+
+        fld.instance() = fld.time().timeName();
+    }
+    else if (polyMesh::debug)
+    {
+        Info<< "Not mapping "
+            << FieldType::typeName << ' ' << fld.name()
+            << " since originating mesh differs from that of mapper."
+            << endl;
+    }
+}
 
 
 //- Generic Geometric field mapper.
@@ -140,6 +201,7 @@ void MapGeometricFields
                 << " since originating mesh differs from that of mapper."
                 << endl;
         }
+        // MapGeometricField(mapper, field.constCast());
     }
 }
 
