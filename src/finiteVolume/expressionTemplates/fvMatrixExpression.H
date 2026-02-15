@@ -51,16 +51,7 @@ SourceFiles
 #include "GeometricFieldExpression.H"
 #include "fvMesh.H"
 #include "surfaceFields.H"
-#include <type_traits>
-
-// #include <boost/core/demangle.hpp>
-// #include <typeinfo>
-// #include <iostream>
-// demangle
-#ifdef DEBUG_ET
-#include <cstdlib>
-#include <cxxabi.h>
-#endif
+#include "fvm.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -71,18 +62,6 @@ template<class Type> class fvMatrix;
 
 namespace Expression
 {
-
-#ifdef DEBUG_ET
-string demangle(const std::type_info& typeInfo)
-{
-    int status;
-    char* s = abi::__cxa_demangle(typeInfo.name(), NULL, NULL, &status);
-    const string typeName(s);
-    std::free(s);
-    return typeName;
-}
-#endif
-
 
 /*---------------------------------------------------------------------------*\
                      Class fvMatrixExpression Declaration
@@ -138,34 +117,34 @@ public:
         {
             #ifdef DEBUG_ET
             Pout<< "fvMatrixExpression :" << nl
-                << "    E              : " << demangle(typeid(E)) << nl;
+                << "    E              : " << error::demangle<E>() << nl;
             if (hasDiag_)
             {
                 Pout<< "    DiagExpr       : "
-                    << demangle(typeid(DiagExpr)) << nl;
+                    << error::demangle<DiagExpr>() << nl;
             }
             {
                 Pout<< "    SourceExpr     : "
-                    << demangle(typeid(SourceExpr)) << nl;
+                    << error::demangle<SourceExpr>() << nl;
             }
             if (hasUpper_)
             {
                 Pout<< "    UpperExpr      : "
-                    << demangle(typeid(UpperExpr)) << nl;
+                    << error::demangle<UpperExpr>() << nl;
             }
             if (hasLower_)
             {
                 Pout<< "    LowerExpr      : "
-                    << demangle(typeid(LowerExpr)) << nl;
+                    << error::demangle<LowerExpr>() << nl;
             }
             {
                 Pout<< "    BoundaryExpr   : "
-                    << demangle(typeid(BoundaryExpr)) << nl;
+                    << error::demangle<BoundaryExpr>() << nl;
             }
             if (hasFaceFluxCorrection_)
             {
                 Pout<< "    FaceFluxExpr   : "
-                    << demangle(typeid(FaceFluxExpr)) << nl;
+                    << error::demangle<FaceFluxExpr>() << nl;
             }
             #endif
         }
@@ -292,25 +271,56 @@ public:
         template<class Matrix>
         Matrix& evaluate(Matrix& m) const
         {
+            // Do any direct evaluation into the matrix
+            static_cast<const E&>(*this).evaluate(m, scalar(1));
             {
-                // Assign to source.
-                source().evaluate(m.source());
+                // Add to source.
+                (source() + m.source().expr()).evaluate(m.source());
             }
             if (hasDiag())
             {
-                diag().evaluate(m.diag());
+                if (m.hasDiag())
+                {
+                    (diag() + m.diag().expr()).evaluate(m.diag());
+                }
+                else
+                {
+                    diag().evaluate(m.diag());
+                }
             }
             if (hasUpper())
             {
-                upper().evaluate(m.upper());
+                if (m.hasUpper())
+                {
+                    (upper() + m.upper().expr()).evaluate(m.upper());
+                }
+                else
+                {
+                    upper().evaluate(m.upper());
+                }
             }
             if (hasLower())
             {
-                lower().evaluate(m.lower());
+                if (m.hasLower())
+                {
+                    (lower() + m.lower().expr()).evaluate(m.lower());
+                }
+                else
+                {
+                    lower().evaluate(m.lower());
+                }
             }
             if (hasFaceFluxCorrection())
             {
-                faceFluxCorrection().evaluate(*m.faceFluxCorrectionPtr());
+                if (m.hasFaceFluxCorrection())
+                {
+                    auto& mffCorr = *m.faceFluxCorrectionPtr();
+                    (faceFluxCorrection() + mffCorr.expr()).evaluate(mffCorr);
+                }
+                else
+                {
+                    faceFluxCorrection().evaluate(*m.faceFluxCorrectionPtr());
+                }
             }
 
             // Do boundary
@@ -333,52 +343,98 @@ public:
                 if constexpr (foam_offload)
                 {
                     //- Parallel via ListsRefWrap. See GeometricFieldExpression.
+                    //- Different behaviour for if adding v.s. writing
 
-                    // Split into internal and boundary expressions
-                    std::vector<BoundaryExpr> intExprs;
-                    std::vector<BoundaryExpr> bouExprs;
                     DynamicList<label> intID;
-
-                    intExprs.reserve(n);
-                    bouExprs.reserve(n);
                     intID.reserve(n);
+                    bool adding = false;
                     for (label i = 0; i < n; ++i)
                     {
-                        const auto intExpr = internalCoeffs(i);
-                        //if (intExpr.size())
+                        intID.emplace_back(i);
+                        if (intCoeffs.set(i) || bouCoeffs.set(i))
                         {
-                            intExprs.emplace_back(intExpr);
-                            intID.emplace_back(i);
-                            if (!intCoeffs.set(i))
-                            {
-                                intCoeffs.set(i, new FieldType(intExpr.size()));
-                            }
+                            adding = true;
+                        }
+                        if (!intCoeffs.set(i))
+                        {
+                            const auto intExpr = internalCoeffs(i);
+                            intCoeffs.set(i, new FieldType(intExpr.size()));
+                        }
+                        if (!bouCoeffs.set(i))
+                        {
                             const auto bouExpr = boundaryCoeffs(i);
-                            bouExprs.emplace_back(bouExpr);
-                            if (!bouCoeffs.set(i))
-                            {
-                                bouCoeffs.set(i, new FieldType(bouExpr.size()));
-                            }
+                            bouCoeffs.set(i, new FieldType(bouExpr.size()));
                         }
                     }
 
                     // Internal : register 'chunks' for destination container
                     ListsRefWrap<FieldType> intExpr
                     (
-                        intCoeffs,
+                        intCoeffs,      // destination
                         static_cast<const labelUList&>(intID)
                     );
-                    // Internal : evaluate all at once
-                    ListsRefWrap<BoundaryExpr>(intExprs).evaluate(intExpr);
-
                     // Boundary : register 'chunks' for destination container
                     ListsRefWrap<FieldType> bouExpr
                     (
-                        bouCoeffs,
+                        bouCoeffs,      // destination
                         static_cast<const labelUList&>(intID)
                     );
-                    // Boundary : evaluate all at once
-                    ListsRefWrap<BoundaryExpr>(bouExprs).evaluate(bouExpr);
+
+                    if (adding)
+                    {
+                        // Create new expression for adding components.
+
+                        typedef List_add
+                        <
+                            BoundaryExpr,
+                            ListConstRefWrap<typename BoundaryExpr::value_type>
+                        > NewBoundaryExpr;
+
+                        // Split into internal and boundary expressions
+                        std::vector<NewBoundaryExpr> intExprs;
+                        std::vector<NewBoundaryExpr> bouExprs;
+
+                        intExprs.reserve(n);
+                        bouExprs.reserve(n);
+                        for (label i = 0; i < n; ++i)
+                        {
+                            const auto intExpr = internalCoeffs(i);
+                            const auto intExpr2 = intExpr + intCoeffs[i].expr();
+                            intExprs.emplace_back(intExpr2);
+
+                            const auto bouExpr = boundaryCoeffs(i);
+                            const auto bouExpr2 = bouExpr + bouCoeffs[i].expr();
+                            bouExprs.emplace_back(bouExpr2);
+                        }
+
+                        // Internal : evaluate all at once
+                        ListsRefWrap<NewBoundaryExpr>(intExprs).evaluate(intExpr);
+
+                        // Boundary : evaluate all at once
+                        ListsRefWrap<NewBoundaryExpr>(bouExprs).evaluate(bouExpr);
+                    }
+                    else
+                    {
+                        // Split into internal and boundary expressions
+                        std::vector<BoundaryExpr> intExprs;
+                        std::vector<BoundaryExpr> bouExprs;
+
+                        intExprs.reserve(n);
+                        bouExprs.reserve(n);
+                        for (label i = 0; i < n; ++i)
+                        {
+                            const auto intExpr = internalCoeffs(i);
+                            intExprs.emplace_back(internalCoeffs(i));
+                            const auto bouExpr = boundaryCoeffs(i);
+                            bouExprs.emplace_back(boundaryCoeffs(i));
+                        }
+
+                        // Internal : evaluate all at once
+                        ListsRefWrap<BoundaryExpr>(intExprs).evaluate(intExpr);
+
+                        // Boundary : evaluate all at once
+                        ListsRefWrap<BoundaryExpr>(bouExprs).evaluate(bouExpr);
+                    }
                 }
                 else
                 {
@@ -386,17 +442,29 @@ public:
                     for (label i = 0; i < n; ++i)
                     {
                         const auto intExpr = internalCoeffs(i);
-                        if (!intCoeffs.set(i))
+                        if (intCoeffs.set(i))
+                        {
+                            // Add
+                            (intExpr + intCoeffs[i].expr()).
+                                evaluate(intCoeffs[i]);
+                        }
+                        else
                         {
                             intCoeffs.set(i, new FieldType(intExpr.size()));
+                            intExpr.evaluate(intCoeffs[i]);
                         }
-                        intExpr.evaluate(intCoeffs[i]);
                         const auto bouExpr = boundaryCoeffs(i);
-                        if (!bouCoeffs.set(i))
+                        if (bouCoeffs.set(i))
+                        {
+                            // Add
+                            (bouExpr + bouCoeffs[i].expr()).
+                                evaluate(bouCoeffs[i]);
+                        }
+                        else
                         {
                             bouCoeffs.set(i, new FieldType(bouExpr.size()));
+                            bouExpr.evaluate(bouCoeffs[i]);
                         }
-                        bouExpr.evaluate(bouCoeffs[i]);
                     }
                 }
             }
@@ -417,7 +485,7 @@ class Default
 :
     public ListExpression<Default<E>>
 {
-    const E expr_;
+    typename std::conditional<E::is_leaf, const E&, const E>::type expr_;
 
     const label size_;
 
@@ -872,6 +940,12 @@ public:
         {
             return *elems_.faceFluxCorrectionPtr().get();
         }
+
+        // template<class Matrix>
+        Matrix& evaluate(Matrix& m, const scalar scale) const
+        {
+            return m;
+        }
 };
 
 
@@ -880,6 +954,7 @@ public:
 \*---------------------------------------------------------------------------*/
 
 //- Expression wrap of const reference to fvMatrix
+// TBD: have Default for faceFluxFieldType as well.
 template<class Matrix>
 class fvMatrixConstRefWrap
 :
@@ -955,7 +1030,7 @@ public:
             if (!elems_.hasDiag())
             {
                 #ifdef DEBUG_ET
-                Pout<< demangle(typeid(fvMatrixConstRefWrap<Matrix>))
+                Pout<< error::demangle<fvMatrixConstRefWrap<Matrix>>()
                     << " : dummy diag" << nl;
                 #endif
                 const label sz = elems_.lduAddr().size();
@@ -969,7 +1044,7 @@ public:
             if (!elems_.hasUpper())
             {
                 #ifdef DEBUG_ET
-                Pout<< demangle(typeid(fvMatrixConstRefWrap<Matrix>))
+                Pout<< error::demangle<fvMatrixConstRefWrap<Matrix>>()
                     << " : dummy upper" << nl;
                 #endif
                 const label sz = elems_.lduAddr().lowerAddr().size();
@@ -983,7 +1058,7 @@ public:
             if (!elems_.hasLower())
             {
                 #ifdef DEBUG_ET
-                Pout<< demangle(typeid(fvMatrixConstRefWrap<Matrix>))
+                Pout<< error::demangle<fvMatrixConstRefWrap<Matrix>>()
                     << " : dummy lower" << nl;
                 #endif
                 const label sz = elems_.lduAddr().lowerAddr().size();
@@ -1027,6 +1102,11 @@ public:
             typename Matrix::faceFluxFieldType& ffc =
                 *const_cast<this_type&>(elems_).faceFluxCorrectionPtr();
             return ffc;
+        }
+
+        Matrix& evaluate(Matrix& m, const scalar scale) const
+        {
+            return m;
         }
 };
 
@@ -1112,7 +1192,7 @@ public:
             if (!elems_().hasDiag())
             {
                 #ifdef DEBUG_ET
-                Pout<< demangle(typeid(fvMatrixConstRefWrap<Matrix>))
+                Pout<< error::demangle<fvMatrixConstRefWrap<Matrix>>()
                     << " : dummy diag" << nl;
                 #endif
                 const label sz = elems_().lduAddr().size();
@@ -1126,7 +1206,7 @@ public:
             if (!elems_().hasUpper())
             {
                 #ifdef DEBUG_ET
-                Pout<< demangle(typeid(fvMatrixConstRefWrap<Matrix>))
+                Pout<< error::demangle<fvMatrixConstRefWrap<Matrix>>()
                     << " : dummy upper" << nl;
                 #endif
                 const label sz = elems_().lduAddr().lowerAddr().size();
@@ -1140,7 +1220,7 @@ public:
             if (!elems_().hasLower())
             {
                 #ifdef DEBUG_ET
-                Pout<< demangle(typeid(fvMatrixConstRefWrap<Matrix>))
+                Pout<< error::demangle<fvMatrixConstRefWrap<Matrix>>()
                     << " : dummy lower" << nl;
                 #endif
                 const label sz = elems_().lduAddr().lowerAddr().size();
@@ -1185,6 +1265,11 @@ public:
             (
                 elems_()
             ).faceFluxCorrectionPtr();
+        }
+
+        Matrix& evaluate(Matrix& m, const scalar scale) const
+        {
+            return m;
         }
 };
 
@@ -1355,6 +1440,14 @@ public:
         FaceFluxExpr faceFluxCorrection() const
         {
             return FaceFluxExpr(u_.faceFluxCorrection(), v_.faceFluxCorrection());
+        }
+
+        template<class Matrix>
+        Matrix& evaluate(Matrix& m, const scalar scale) const
+        {
+            u_.evaluate(m, scale);
+            v_.evaluate(m, scale);
+            return m;
         }
 };
 template<typename E1, typename E2>
@@ -1574,6 +1667,14 @@ public:
         FaceFluxExpr faceFluxCorrection() const
         {
             return FaceFluxExpr(u_.faceFluxCorrection(), v_.faceFluxCorrection());
+        }
+
+        template<class Matrix>
+        Matrix& evaluate(Matrix& m, const scalar scale) const
+        {
+            u_.evaluate(m, scale);
+            v_.evaluate(m, -1.0*scale);
+            return m;
         }
 };
 template<typename E1, typename E2>
@@ -1828,6 +1929,13 @@ public:
         {
             return u_.faceFluxCorrection();
         }
+
+        template<class Matrix>
+        Matrix& evaluate(Matrix& m, const scalar scale) const
+        {
+            u_.evaluate(m, -1.0*scale);
+            return m;
+        }
 };
 template<typename E1>
 auto operator-
@@ -2013,6 +2121,12 @@ public:
                 *const_cast<fvMatrix<value_type>&>(m_).
                     faceFluxCorrectionPtr().get()
             );
+        }
+
+        template<class Matrix>
+        Matrix& evaluate(Matrix& m, const scalar scale) const
+        {
+            return m;
         }
 };
 
@@ -2215,6 +2329,12 @@ public:
         FaceFluxExpr faceFluxCorrection() const
         {
             return FaceFluxExpr(Zero);
+        }
+
+        template<class Matrix>
+        Matrix& evaluate(Matrix& m, const scalar scale) const
+        {
+            return m;
         }
 };
 template<typename E1, typename Type>
@@ -2576,6 +2696,192 @@ void fvmLaplacianUncorrected
         }
     }
 }
+
+//XXXXXXXX
+template<class Type, class EvalOp>
+class DirectOp
+:
+    public fvMatrixExpression
+    <
+        DirectOp<Type, EvalOp>,
+        UniformListWrap<scalar>, // Diag
+        UniformListWrap<scalar>, // Upper
+        UniformListWrap<scalar>, // Lower
+        UniformListWrap<Type>, // Boundary, Not used
+        UniformGeometricFieldWrap2<Type>,  // FFlux, Not used
+        UniformListWrap<Type>
+    >
+{
+public:
+
+    static constexpr bool is_leaf = false;  //true;
+
+    //- Type to return for internal field
+    typedef Type value_type;
+
+    //- Type to return for containers
+    typedef UniformListWrap<scalar> DiagExpr;
+    typedef UniformListWrap<scalar> UpperExpr;
+    typedef UniformListWrap<scalar> LowerExpr;
+    typedef UniformListWrap<value_type> BoundaryExpr;
+    typedef UniformGeometricFieldWrap2<value_type> FaceFluxExpr;
+    typedef UniformListWrap<value_type> SourceExpr;
+
+
+private:
+
+    const GeometricField<value_type, fvPatchField, volMesh>& psi_;
+
+    const EvalOp evalOp_;
+
+public:
+
+    // Construct from component expressions
+    DirectOp
+    (
+        const GeometricField<value_type, fvPatchField, volMesh>& psi,
+        const EvalOp& evalOp,
+        const dimensionSet& dimensions
+    )
+    :
+        fvMatrixExpression
+        <
+            DirectOp<Type, EvalOp>,
+            DiagExpr,
+            UpperExpr,       // upper not yet used
+            LowerExpr,       // lower not yet used
+            BoundaryExpr,    // boundary not yet used
+            FaceFluxExpr,    // face flux not used
+            SourceExpr
+        >
+        (
+            false,      //elems.hasDiag(),
+            false,      //elems.hasUpper(),
+            false,      //elems.hasLower(),
+            false,      //elems.hasFaceFluxCorrection(),
+            dimensions  //elems.dimensions()
+        ),
+        psi_(psi),
+        evalOp_(evalOp)
+    {}
+
+
+    // lduMatrix part
+
+        DiagExpr diag() const
+        {
+            const label sz = psi_.mesh().lduAddr().size();
+            return DiagExpr(sz, Zero);
+        }
+
+        UpperExpr upper() const
+        {
+            const label sz = psi_.mesh().lduAddr().lowerAddr().size();
+            return UpperExpr(sz, Zero);
+        }
+
+        LowerExpr lower() const
+        {
+            const label sz = psi_.mesh().lduAddr().lowerAddr().size();
+            return LowerExpr(sz, Zero);
+        }
+
+
+    // fvMatrix
+
+        SourceExpr source() const
+        {
+            const label sz = psi_.mesh().lduAddr().size();
+            return SourceExpr(sz, Zero);
+        }
+
+        BoundaryExpr internalCoeffs(const label i) const
+        {
+            const label sz = psi_.mesh().boundary()[i].size();
+            return BoundaryExpr(sz, Zero);
+        }
+
+        BoundaryExpr boundaryCoeffs(const label i) const
+        {
+            const label sz = psi_.mesh().boundary()[i].size();
+            return BoundaryExpr(sz, Zero);
+        }
+
+        FaceFluxExpr faceFluxCorrection() const
+        {
+            return FaceFluxExpr(Zero);
+        }
+
+        template<class Matrix>
+        Matrix& evaluate(Matrix& m, const scalar scale) const
+        {
+            // Dimensions supplied in constructor - feed through to matrix
+            const_cast<dimensionSet&>(m.dimensions()).reset(this->dimensions());
+            // Fill in matrix using supplied operator
+            evalOp_(m, scale, psi_);
+            return m;
+        }
+};
+struct ddtOp
+{
+    template<class Type>
+    void operator()
+    (
+        fvMatrix<Type>& fvm,
+        const scalar scale,
+        const GeometricField<Type, fvPatchField, volMesh>& vf
+    ) const
+    {
+        fvm::ddt<Type>(fvm, scale, vf);
+    }
+};
+template<class Type>
+class ddt
+:
+    public DirectOp<Type, ddtOp>
+{
+public:
+
+    ddt(const GeometricField<Type, fvPatchField, volMesh>& psi)
+    :
+        DirectOp<Type, ddtOp>
+        (
+            psi,
+            ddtOp(),
+            psi.dimensions()*dimVol/dimTime
+        )
+    {}
+};
+struct laplacianOp
+{
+    template<class Type>
+    void operator()
+    (
+        fvMatrix<Type>& fvm,
+        const scalar scale,
+        const GeometricField<Type, fvPatchField, volMesh>& vf
+    ) const
+    {
+        fvm = scale*fvm::laplacian(vf);
+    }
+};
+template<class Type>
+class laplacian
+:
+    public DirectOp<Type, laplacianOp>
+{
+public:
+
+    laplacian(const GeometricField<Type, fvPatchField, volMesh>& psi)
+    :
+        DirectOp<Type, laplacianOp>
+        (
+            psi,
+            laplacianOp(),
+            psi.dimensions()*dimLength*dimLength/dimTime
+        )
+    {}
+};//XXXXXXXX
 
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
