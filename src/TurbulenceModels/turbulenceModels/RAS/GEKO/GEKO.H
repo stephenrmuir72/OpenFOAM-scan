@@ -110,6 +110,7 @@ class GEKO
         // (MM:Eq. 16)
         dimensionedScalar CPKlim_;
 
+
     // Operand Fields
 
         //- Wall-distance field [m]
@@ -120,6 +121,7 @@ class GEKO
 
         //- Specific dissipation rate field [1/s]
         volScalarField omega_;
+
 
     // GEKO model fields
 
