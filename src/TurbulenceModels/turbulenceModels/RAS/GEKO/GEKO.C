@@ -349,7 +349,7 @@ GEKO<BasicTurbulenceModel>::GEKO
     {
         FatalIOErrorInFunction(this->coeffDict_)
             << "Invalid value for Cmu: " << Cmu_.value()
-            << ". Valid range is (0,inf]." << endl
+            << ". Valid range is (0,inf]."
             << exit(FatalIOError);
     }
 
@@ -411,7 +411,7 @@ bool GEKO<BasicTurbulenceModel>::read()
     {
         FatalIOErrorInFunction(this->coeffDict_)
             << "Invalid value for Cmu: " << Cmu_.value()
-            << ". Valid range is (0,inf]." << endl
+            << ". Valid range is (0,inf]."
             << exit(FatalIOError);
     }
 
