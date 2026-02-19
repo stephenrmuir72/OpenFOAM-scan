@@ -73,6 +73,23 @@ class GEKO
 {
     // Private Data
 
+    // Model switches
+
+        //- Flag to enable wall-distance-free model variant
+        Switch wallDistanceFree_;      // (MM:p. 14; if true: F_blend = 1)
+
+        //- Flag to disable production limiter for turbulent kinetic energy term
+        Switch productionLimiter_;     // (MM:Eq. 16; default true)
+
+        //- Flag to disable Kato-Launder correction for production term in
+        //- stagnation regions
+        Switch katoLaunder_;           // (MM:Eq. 15)
+
+        //- Flag to enable dilatation correction term in the Reynolds stress
+        //- tensor
+        Switch dilatationCorrection_;  // (MM:Eq. A7)
+
+
     // Model coefficients
 
         // (MM:Table 3; Main model coefficients for GEKO model)
@@ -92,8 +109,6 @@ class GEKO
 
         // (MM:Eq. 16)
         dimensionedScalar CPKlim_;
-
-
 
 
 

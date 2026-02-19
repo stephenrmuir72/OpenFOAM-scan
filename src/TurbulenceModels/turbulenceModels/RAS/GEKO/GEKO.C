@@ -72,6 +72,43 @@ GEKO<BasicTurbulenceModel>::GEKO
         propertiesName
     ),
 
+    wallDistanceFree_
+    (
+        Switch::getOrAddToDict
+        (
+            "wallDistanceFree",
+            this->coeffDict_,
+            false
+        )
+    ),
+    productionLimiter_
+    (
+        Switch::getOrAddToDict
+        (
+            "productionLimiter",
+            this->coeffDict_,
+            true
+        )
+    ),
+    katoLaunder_
+    (
+        Switch::getOrAddToDict
+        (
+            "katoLaunder",
+            this->coeffDict_,
+            false
+        )
+    ),
+    dilatationCorrection_
+    (
+        Switch::getOrAddToDict
+        (
+            "dilatationCorrection",
+            this->coeffDict_,
+            false
+        )
+    ),
+
     Cmu_
     (
         dimensionedScalar::getOrAddToDict
@@ -199,7 +236,27 @@ bool GEKO<BasicTurbulenceModel>::read()
         return false;
     }
 
+    wallDistanceFree_.readIfPresent("wallDistanceFree", this->coeffDict());
+    productionLimiter_.readIfPresent("productionLimiter", this->coeffDict());
+    katoLaunder_.readIfPresent("katoLaunder", this->coeffDict());
+    dilatationCorrection_.readIfPresent
+    (
+        "dilatationCorrection",
+        this->coeffDict()
+    );
+
     Cmu_.readIfPresent(this->coeffDict());
+    Comega2_.readIfPresent(this->coeffDict());
+    sigmakTilde_.readIfPresent(this->coeffDict());
+    sigmaOmegaTilde_.readIfPresent(this->coeffDict());
+    CRealize_.readIfPresent(this->coeffDict());
+    kappa_.readIfPresent(this->coeffDict());
+    CFbTurb_.readIfPresent(this->coeffDict());
+    CFbLam_.readIfPresent(this->coeffDict());
+    Aplus_.readIfPresent(this->coeffDict());
+    Cc1_.readIfPresent(this->coeffDict());
+    Cc2_.readIfPresent(this->coeffDict());
+    CPKlim_.readIfPresent(this->coeffDict());
 
     return true;
 }
