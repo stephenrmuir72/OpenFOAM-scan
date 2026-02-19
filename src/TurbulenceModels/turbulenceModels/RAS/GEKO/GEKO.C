@@ -572,6 +572,23 @@ void GEKO<BasicTurbulenceModel>::correct()
         )
        *(scalar(1) - FBlend)
     );
+
+
+    // Calculate the non-equilibrium calibration field, FNW (MM:Eqs. A11)
+
+    // Cross-diffusion term (MM:Eq. A6)  - PENDING rho??
+    const volScalarField CD
+    (
+        rho*(scalar(2)/sigmaOmega)
+       *(fvc::grad(k_) & fvc::grad(omega_))/omega_
+    );
+
+    // Destruction term (MM:Eq. A12)
+    const volScalarField Destr(Comega2_*FMIX*rho*sqr(omega_));
+
+    const volScalarField FLim(Destr/max(Destr, scalar(2)*CD));
+
+    volScalarField FNW(scalar(0)*FBlend_);
 }
 
 
