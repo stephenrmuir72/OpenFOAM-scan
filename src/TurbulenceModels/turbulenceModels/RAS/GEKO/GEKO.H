@@ -125,22 +125,34 @@ class GEKO
 
     // GEKO model fields
 
-        //- Field to optimise flow separation from smooth surfaces such as
-        //- boundary layers etc.
+        //- Coefficient field to optimise flow separation from smooth surfaces
+        //- such as boundary layers etc.
         volScalarField CSEP_;
 
-        //- Field to optimise flows in non-equilibrium near-wall regions
-        //- for such as heat transfer, skin friction etc.
+        //- Coefficient field to optimise flows in non-equilibrium near-wall
+        //- regions for such as heat transfer, skin friction etc.
         volScalarField CNW_;
 
-        //- Field to optimise spreading rates for free flows
+        //- Coefficient field to optimise spreading rates for free flows
         volScalarField CMIX_;
 
-        //- Field to optimise round jet flows
+        //- Coefficient field to optimise round jet flows
         volScalarField CJET_;
 
 
-    // Auxillary fields
+    // Auxiliary fields
+
+        //- Calibration field for flow separation
+        volScalarField FSEP_;
+
+        //- Calibration field for near-wall non-equilibrium effects
+        volScalarField FNW_;
+
+        //- Calibration field for mixing in free shear flows
+        volScalarField FMIX_;
+
+        //- Calibration field for jet flows
+        volScalarField FJET_;
 
         //- Blending function field (MM:Eq. A8)
         volScalarField FBlend_;

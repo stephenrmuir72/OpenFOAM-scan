@@ -72,6 +72,7 @@ GEKO<BasicTurbulenceModel>::GEKO
         propertiesName
     ),
 
+
     wallDistanceFree_
     (
         Switch::getOrAddToDict
@@ -108,6 +109,7 @@ GEKO<BasicTurbulenceModel>::GEKO
             false
         )
     ),
+
 
     Cmu_
     (
@@ -218,6 +220,7 @@ GEKO<BasicTurbulenceModel>::GEKO
         )
     ),
 
+
     y_(wallDist::New(this->mesh_).y()),
     k_
     (
@@ -243,6 +246,7 @@ GEKO<BasicTurbulenceModel>::GEKO
         ),
         this->mesh_
     ),
+
 
     CSEP_
     (
@@ -297,6 +301,7 @@ GEKO<BasicTurbulenceModel>::GEKO
         dimensionedScalar(dimless, 1.0)
     ),
 
+
     Ck_
     (
         IOobject
@@ -323,6 +328,60 @@ GEKO<BasicTurbulenceModel>::GEKO
         this->mesh_,
         dimensionedScalar(dimless, 0.0)
     ),
+
+
+    FSEP_
+    (
+        IOobject
+        (
+            IOobject::groupName("FSEP", alphaRhoPhi.group()),
+            this->runTime_.timeName(),
+            this->mesh_,
+            IOobject::NO_READ,
+            IOobject::NO_WRITE
+        ),
+        this->mesh_,
+        dimensionedScalar(dimless, 1.0)
+    ),
+    FNW_
+    (
+        IOobject
+        (
+            IOobject::groupName("FNW", alphaRhoPhi.group()),
+            this->runTime_.timeName(),
+            this->mesh_,
+            IOobject::NO_READ,
+            IOobject::NO_WRITE
+        ),
+        this->mesh_,
+        dimensionedScalar(dimless, 1.0)
+    ),
+    FMIX_
+    (
+        IOobject
+        (
+            IOobject::groupName("FMIX", alphaRhoPhi.group()),
+            this->runTime_.timeName(),
+            this->mesh_,
+            IOobject::NO_READ,
+            IOobject::NO_WRITE
+        ),
+        this->mesh_,
+        dimensionedScalar(dimless, 1.0)
+    ),
+    FJET_
+    (
+        IOobject
+        (
+            IOobject::groupName("FJET", alphaRhoPhi.group()),
+            this->runTime_.timeName(),
+            this->mesh_,
+            IOobject::NO_READ,
+            IOobject::NO_WRITE
+        ),
+        this->mesh_,
+        dimensionedScalar(dimless, 1.0)
+    ),
     Fblend_
     (
         IOobject
@@ -331,7 +390,7 @@ GEKO<BasicTurbulenceModel>::GEKO
             this->runTime_.timeName(),
             this->mesh_,
             IOobject::READ_IF_PRESENT,
-            IOobject::AUTO_WRITE
+            IOobject::NO_WRITE
         ),
         this->mesh_,
         dimensionedScalar(dimless, 1.0)  // wall-distance free variant
@@ -531,7 +590,8 @@ void GEKO<BasicTurbulenceModel>::correct()
 
     const volScalarField psi(Cpsi*(CSEP_ - scalar(1))*FBlend_);
 
-    const volScalarField FSEP(scalar(1) + fD*psi);
+    FSEP_ = scalar(1) + fD*psi;
+    FSEP_.correctBoundaryConditions();
 
 
     // Calculate the jet-flow calibration field, FJET (MM:Eqs. A14)
@@ -555,23 +615,20 @@ void GEKO<BasicTurbulenceModel>::correct()
         )
     );
 
-    const volScalarField FJET
-    (
-        scalar(0.5)*(scalar(1) + tanh(xJet))
-    );
+    FJET_ = scalar(0.5)*(scalar(1) + tanh(xJet));
+    FJET_.correctBoundaryConditions();
 
 
     // Calculate the mixing function field, FMIX (MM:Eq. A13)
 
-    const volScalarField FMIX
-    (
-        FSEP
+    FMIX_ =
+        FSEP_
       + (
             CMIX_
-          + scalar(0.13)*CJET_*(FJET - scalar(1))
+          + scalar(0.13)*CJET_*(FJET_ - scalar(1))
         )
-       *(scalar(1) - FBlend)
-    );
+       *(scalar(1) - FBlend_);
+    FMIX_.correctBoundaryConditions();
 
 
     // Calculate the non-equilibrium calibration field, FNW (MM:Eqs. A11)
@@ -588,7 +645,19 @@ void GEKO<BasicTurbulenceModel>::correct()
 
     const volScalarField FLim(Destr/max(Destr, scalar(2)*CD));
 
-    volScalarField FNW(scalar(0)*FBlend_);
+    forAll(FNW_, celli)
+    {
+        if (CD[celli] > scalar(0))
+        {
+            FNW_[celli] = scalar(1);
+        }
+        else
+        {
+            FNW_[celli] =
+                CNW_[celli] - (Cc1_ + Cc2_*CNW_[celli])*fd[celli]*FLim[celli];
+        }
+    }
+    FNW_.correctBoundaryConditions();
 }
 
 
