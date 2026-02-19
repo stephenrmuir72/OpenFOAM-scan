@@ -89,6 +89,9 @@ class GEKO
         //- tensor
         Switch dilatationCorrection_;  // (MM:Eq. A7)
 
+        //- Flag to enable writing of calibration fields
+        Switch writeCalibrationFields_;
+
 
     // Model coefficients
 

@@ -127,7 +127,15 @@ GEKO<BasicTurbulenceModel>::GEKO
             false
         )
     ),
-
+    writeCalibrationFields_
+    (
+        Switch::getOrAddToDict
+        (
+            "writeCalibrationFields",
+            this->coeffDict_,
+            false
+        )
+    ),
 
     Cmu_
     (
@@ -478,6 +486,11 @@ bool GEKO<BasicTurbulenceModel>::read()
         "dilatationCorrection",
         this->coeffDict()
     );
+    writeCalibrationFields_.readIfPresent
+    (
+        "writeCalibrationFields",
+        this->coeffDict()
+    );
 
     Cmu_.readIfPresent(this->coeffDict());
     Comega2_.readIfPresent(this->coeffDict());
@@ -773,6 +786,16 @@ void GEKO<BasicTurbulenceModel>::correct()
 
     // Update nut with realizability limiter (MM:Eq. A16)
     correctNut(S);
+
+    // Write the calibration fields if enabled
+    if (this->mesh_.time().writeTime() && writeCalibrationFields_)
+    {
+        FSEP_.write();
+        FNW_.write();
+        FMIX_.write();
+        FJET_.write();
+        FBlend_.write();
+    }
 }
 
 
