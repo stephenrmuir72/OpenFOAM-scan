@@ -344,6 +344,16 @@ GEKO<BasicTurbulenceModel>::GEKO
     {
         this->printCoeffs(type);
     }
+
+    if (Cmu_.value() < SMALL)
+    {
+        FatalIOErrorInFunction(this->coeffDict_)
+            << "Invalid value for Cmu: " << Cmu_.value()
+            << ". Valid range is (0,inf]." << endl
+            << exit(FatalIOError);
+    }
+
+    // y_ cannot go to zero or negative.
 }
 
 
@@ -378,6 +388,14 @@ bool GEKO<BasicTurbulenceModel>::read()
     Cc1_.readIfPresent(this->coeffDict());
     Cc2_.readIfPresent(this->coeffDict());
     CPKlim_.readIfPresent(this->coeffDict());
+
+    if (Cmu_.value() < SMALL)
+    {
+        FatalIOErrorInFunction(this->coeffDict_)
+            << "Invalid value for Cmu: " << Cmu_.value()
+            << ". Valid range is (0,inf]." << endl
+            << exit(FatalIOError);
+    }
 
     return true;
 }
@@ -420,6 +438,21 @@ void GEKO<BasicTurbulenceModel>::correct()
     omega_.boundaryFieldRef().updateCoeffs();
     // Push any changed cell values to coupled neighbours
     omega_.boundaryFieldRef().template evaluateCoupled<coupledFvPatch>();
+
+
+    // Calculate the blending function field (MM:Eq. A8)
+
+    if (!wallDistanceFree_)
+    {
+        const volScalarField kTilde(max(k_, CFbLam_*this->nu()*omega_)); // PENDING: cannot go to zero or neg.
+
+        const volScalarField LT(sqrt(kTilde)/(Cmu_*omega_));  // PENDING: omega cannot go to zero or neg.
+
+        const volScalarField xBlend(CFbTurb_*LT/y_);  // PENDING: y_ cannot go to zero or neg.
+
+        FBlend_ = tanh(pow4(xBlend));
+        FBlend_.correctBoundaryConditions();
+    }
 }
 
 
