@@ -121,6 +121,23 @@ class GEKO
         //- Specific dissipation rate field [1/s]
         volScalarField omega_;
 
+    // GEKO model fields
+
+        //- Field to optimise flow separation from smooth surfaces such as
+        //- boundary layers etc.
+        volScalarField CSEP_;
+
+        //- Field to optimise flows in non-equilibrium near-wall regions
+        //- for such as heat transfer, skin friction etc.
+        volScalarField CNW_;
+
+        //- Field to optimise spreading rates for free flows
+        volScalarField CMIX_;
+
+        //- Field to optimise round jet flows
+        volScalarField CJET_;
+
+
 
     // Private Member Functions
 

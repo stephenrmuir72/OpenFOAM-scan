@@ -244,6 +244,59 @@ GEKO<BasicTurbulenceModel>::GEKO
         this->mesh_
     ),
 
+    CSEP_
+    (
+        IOobject
+        (
+            IOobject::groupName("CSEP", alphaRhoPhi.group()),
+            this->runTime_.timeName(),
+            this->mesh_,
+            IOobject::READ_IF_PRESENT,
+            IOobject::AUTO_WRITE
+        ),
+        this->mesh_,
+        dimensionedScalar(dimless, 1.75)
+    ),
+    CNW_
+    (
+        IOobject
+        (
+            IOobject::groupName("CNW", alphaRhoPhi.group()),
+            this->runTime_.timeName(),
+            this->mesh_,
+            IOobject::READ_IF_PRESENT,
+            IOobject::AUTO_WRITE
+        ),
+        this->mesh_,
+        dimensionedScalar(dimless, 0.5)
+    ),
+    CMIX_
+    (
+        IOobject
+        (
+            IOobject::groupName("CMIX", alphaRhoPhi.group()),
+            this->runTime_.timeName(),
+            this->mesh_,
+            IOobject::READ_IF_PRESENT,
+            IOobject::AUTO_WRITE
+        ),
+        this->mesh_,
+        dimensionedScalar(dimless, 0.0)
+    ),
+    CJET_
+    (
+        IOobject
+        (
+            IOobject::groupName("CJET", alphaRhoPhi.group()),
+            this->runTime_.timeName(),
+            this->mesh_,
+            IOobject::READ_IF_PRESENT,
+            IOobject::AUTO_WRITE
+        ),
+        this->mesh_,
+        dimensionedScalar(dimless, 1.0)
+    ),
+
 {
     bound(k_, this->kMin_);
     bound(omega_, this->omegaMin_);
