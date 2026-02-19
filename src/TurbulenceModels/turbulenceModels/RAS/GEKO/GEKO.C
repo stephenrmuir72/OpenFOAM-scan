@@ -297,6 +297,32 @@ GEKO<BasicTurbulenceModel>::GEKO
         dimensionedScalar(dimless, 1.0)
     ),
 
+    Ck_
+    (
+        IOobject
+        (
+            IOobject::groupName("Ck", alphaRhoPhi.group()),
+            this->runTime_.timeName(),
+            this->mesh_,
+            IOobject::READ_IF_PRESENT,
+            IOobject::AUTO_WRITE
+        ),
+        this->mesh_,
+        dimensionedScalar(dimless, 0.0)
+    ),
+    Comega_
+    (
+        IOobject
+        (
+            IOobject::groupName("Comega", alphaRhoPhi.group()),
+            this->runTime_.timeName(),
+            this->mesh_,
+            IOobject::READ_IF_PRESENT,
+            IOobject::AUTO_WRITE
+        ),
+        this->mesh_,
+        dimensionedScalar(dimless, 0.0)
+    )
 {
     bound(k_, this->kMin_);
     bound(omega_, this->omegaMin_);

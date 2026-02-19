@@ -138,6 +138,14 @@ class GEKO
         volScalarField CJET_;
 
 
+    // Optional machine-learning fields (MM:p. 13)
+
+        //- Machine-learning field to optimise turbulent kinetic energy
+        volScalarField Ck_;
+
+        //- Machine-learning field to optimise specific dissipation rate
+        volScalarField Comega_;
+
 
     // Private Member Functions
 
