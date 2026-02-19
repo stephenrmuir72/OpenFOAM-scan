@@ -559,6 +559,19 @@ void GEKO<BasicTurbulenceModel>::correct()
     (
         scalar(0.5)*(scalar(1) + tanh(xJet))
     );
+
+
+    // Calculate the mixing function field, FMIX (MM:Eq. A13)
+
+    const volScalarField FMIX
+    (
+        FSEP
+      + (
+            CMIX_
+          + scalar(0.13)*CJET_*(FJET - scalar(1))
+        )
+       *(scalar(1) - FBlend)
+    );
 }
 
 
