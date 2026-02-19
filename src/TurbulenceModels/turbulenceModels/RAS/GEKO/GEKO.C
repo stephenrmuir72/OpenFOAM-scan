@@ -373,7 +373,40 @@ bool GEKO<BasicTurbulenceModel>::read()
 template<class BasicTurbulenceModel>
 void GEKO<BasicTurbulenceModel>::correct()
 {
+    if (!this->turbulence_)
+    {
+        return;
+    }
 
+    // Construct local convenience references
+    const alphaField& alpha = this->alpha_;
+    const rhoField& rho = this->rho_;
+    const surfaceScalarField& alphaRhoPhi = this->alphaRhoPhi_;
+    const volVectorField& U = this->U_;
+    const volScalarField& nut = this->nut_;
+
+    fv::options& fvOptions(fv::options::New(this->mesh_));
+
+    eddyViscosity<RASModel<BasicTurbulenceModel>>::correct();
+
+    // Calculate the velocity gradient tensor in Hessian form (delta_i u_j)
+    // Tranpose of the classical Jacobian form (delta_j u_i)
+    tmp<volTensorField> tgradU = fvc::grad(U);
+    const volTensorField& gradU = tgradU.cref();
+
+    // Strain-rate tensor (MM:Eq. 4)
+    const volScalarField S2(2.0*magSqr(symm(gradU)));
+
+    // Strain-rate tensor magnitude (MM:Eq. 4)
+    const volScalarField S(sqrt(S2));
+
+    // Rotation tensor magnitude (MM:Eq. A14)
+    const volScalarField OmegaMag(sqrt(2.0*magSqr(skew(gradU)))));
+
+    // Update omega and G at the wall  - PENDING G
+    omega_.boundaryFieldRef().updateCoeffs();
+    // Push any changed cell values to coupled neighbours
+    omega_.boundaryFieldRef().template evaluateCoupled<coupledFvPatch>();
 }
 
 
