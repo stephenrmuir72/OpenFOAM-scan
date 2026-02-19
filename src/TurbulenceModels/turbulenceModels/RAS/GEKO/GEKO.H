@@ -220,7 +220,7 @@ public:
             return tmp<volScalarField>::New
             (
                 "DkEff",
-                (this->nut_/sigmaKtilde_ + this->nu())  // check the sigma
+                (this->nut_/sigmaKtilde_ + this->nu())
             );
         }
 
@@ -230,7 +230,7 @@ public:
             return tmp<volScalarField>::New
             (
                 "DomegaEff",
-                (this->nut_/sigmaOmegaTilde_ + this->nu())  // check the sigma
+                (this->nut_/sigmaOmegaTilde_ + this->nu())
             );
         }
 
