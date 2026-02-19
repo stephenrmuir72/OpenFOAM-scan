@@ -322,6 +322,19 @@ GEKO<BasicTurbulenceModel>::GEKO
         ),
         this->mesh_,
         dimensionedScalar(dimless, 0.0)
+    ),
+    Fblend_
+    (
+        IOobject
+        (
+            IOobject::groupName("Fblend", alphaRhoPhi.group()),
+            this->runTime_.timeName(),
+            this->mesh_,
+            IOobject::READ_IF_PRESENT,
+            IOobject::AUTO_WRITE
+        ),
+        this->mesh_,
+        dimensionedScalar(dimless, 1.0)  // wall-distance free variant
     )
 {
     bound(k_, this->kMin_);

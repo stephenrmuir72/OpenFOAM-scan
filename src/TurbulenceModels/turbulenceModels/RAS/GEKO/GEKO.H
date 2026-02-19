@@ -140,6 +140,12 @@ class GEKO
         volScalarField CJET_;
 
 
+    // Auxillary fields
+
+        //- Blending function field (MM:Eq. A8)
+        volScalarField FBlend_;
+
+
     // Optional machine-learning fields (MM:p. 13)
 
         //- Machine-learning field to optimise turbulent kinetic energy
