@@ -110,7 +110,16 @@ class GEKO
         // (MM:Eq. 16)
         dimensionedScalar CPKlim_;
 
+    // Operand Fields
 
+        //- Wall-distance field [m]
+        const volScalarField& y_;
+
+        //- Turbulent kinetic energy field [m^2/s^2]
+        volScalarField k_;
+
+        //- Specific dissipation rate field [1/s]
+        volScalarField omega_;
 
 
     // Private Member Functions
@@ -171,10 +180,10 @@ public:
 
     // Access
 
-        //- Return the turbulence kinetic energy
+        //- Return the turbulence kinetic energy field [m^2/s^2]
         virtual tmp<volScalarField> k() const { return k_; }
 
-        //- Return the specific dissipation rate
+        //- Return the specific dissipation rate field [1/s]
         virtual tmp<volScalarField> omega() const { return omega_; }
 
 

@@ -218,7 +218,36 @@ GEKO<BasicTurbulenceModel>::GEKO
         )
     ),
 
+    y_(wallDist::New(this->mesh_).y()),
+    k_
+    (
+        IOobject
+        (
+            IOobject::groupName("k", alphaRhoPhi.group()),
+            this->runTime_.timeName(),
+            this->mesh_,
+            IOobject::MUST_READ,
+            IOobject::AUTO_WRITE
+        ),
+        this->mesh_
+    ),
+    omega_
+    (
+        IOobject
+        (
+            IOobject::groupName("omega", alphaRhoPhi.group()),
+            this->runTime_.timeName(),
+            this->mesh_,
+            IOobject::MUST_READ,
+            IOobject::AUTO_WRITE
+        ),
+        this->mesh_
+    ),
+
 {
+    bound(k_, this->kMin_);
+    bound(omega_, this->omegaMin_);
+
     if (type == typeName)
     {
         this->printCoeffs(type);
