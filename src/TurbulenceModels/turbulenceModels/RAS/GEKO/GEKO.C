@@ -353,7 +353,25 @@ GEKO<BasicTurbulenceModel>::GEKO
             << exit(FatalIOError);
     }
 
+    if (kappa_.value() < SMALL)
+    {
+        FatalIOErrorInFunction(this->coeffDict_)
+            << "Invalid value for kappa: " << kappa_.value()
+            << ". Valid range is (0,inf]."
+            << exit(FatalIOError);
+    }
+
+    if (Aplus_.value() < SMALL)
+    {
+        FatalIOErrorInFunction(this->coeffDict_)
+            << "Invalid value for Aplus: " << Aplus_.value()
+            << ". Valid range is (0,inf]."
+            << exit(FatalIOError);
+    }
+
     // y_ cannot go to zero or negative.
+
+    // omega_ and nu_ should not go to zero anytime.
 }
 
 
@@ -394,6 +412,22 @@ bool GEKO<BasicTurbulenceModel>::read()
         FatalIOErrorInFunction(this->coeffDict_)
             << "Invalid value for Cmu: " << Cmu_.value()
             << ". Valid range is (0,inf]." << endl
+            << exit(FatalIOError);
+    }
+
+    if (kappa_.value() < SMALL)
+    {
+        FatalIOErrorInFunction(this->coeffDict_)
+            << "Invalid value for kappa: " << kappa_.value()
+            << ". Valid range is (0,inf]."
+            << exit(FatalIOError);
+    }
+
+    if (Aplus_.value() < SMALL)
+    {
+        FatalIOErrorInFunction(this->coeffDict_)
+            << "Invalid value for Aplus: " << Aplus_.value()
+            << ". Valid range is (0,inf]."
             << exit(FatalIOError);
     }
 
@@ -476,6 +510,28 @@ void GEKO<BasicTurbulenceModel>::correct()
           - sqr(kappa_)*sqrtCmu/sigmaOmega
         )
     );
+
+
+    // Calculate the flow-separation calibration field, FSEP (MM:Eqs. A9-10)
+
+    const volScalarField yTildePlus
+    (
+        (scalar(1)/kappa_)*(k_/omega_)/this->nu()
+    );
+
+    const volScalarField fD
+    (
+        scalar(1)/(scalar(1) + sqr(yTildePlus/APlus_))
+    );
+
+    const volScalarField Cpsi
+    (
+        scalar(0.2454)*Foam::pow(CSEP_, scalar(-0.803))
+    );
+
+    const volScalarField psi(Cpsi*(CSEP_ - scalar(1))*FBlend_);
+
+    const volScalarField FSEP(scalar(1) + fD*psi);
 }
 
 
