@@ -240,7 +240,7 @@ public:
             return tmp<volScalarField>::New
             (
                 "DkEff",
-                (this->nut_/sigmaKtilde_ + this->nu())
+                (this->nut_/sigmaKtilde_ + this->nu())  // PENDING - problematic?
             );
         }
 
@@ -250,7 +250,7 @@ public:
             return tmp<volScalarField>::New
             (
                 "DomegaEff",
-                (this->nut_/sigmaOmegaTilde_ + this->nu())
+                (this->nut_/sigmaOmegaTilde_ + this->nu())  // PENDING - problematic?
             );
         }
 

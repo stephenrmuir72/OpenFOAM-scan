@@ -691,6 +691,29 @@ void GEKO<BasicTurbulenceModel>::correct()
         }
     }
     FNW_.correctBoundaryConditions();
+
+
+    // Calculate the specific dissipation rate field (MM:Eq. A2)
+
+    tmp<fvScalarMatrix> omegaEqn
+    (
+        fvm::ddt(alpha, rho, omega_)
+      + fvm::div(alphaRhoPhi, omega_)
+      - fvm::laplacian(alpha*rho*(this->nu() + this->nut_/sigmaOmega), omega_)
+     ==
+        alpha()*rho()*Comega1*Pomega_m
+      - fvm::Sp(alpha()*rho()*Comega2_*FMIX_*omega_(), omega_)
+      + alpha()*FNW_*CD
+      + alpha()*rho()*Comega_*sqr(omega_)
+      + fvOptions(alpha, rho, omega_)
+    );
+
+    omegaEqn.ref().relax();
+    fvOptions.constrain(omegaEqn.ref());
+    omegaEqn.ref().boundaryManipulate(omega_.boundaryFieldRef());
+    solve(omegaEqn);
+    fvOptions.correct(omega_);
+    bound(omega_, this->omegaMin_);
 }
 
 
