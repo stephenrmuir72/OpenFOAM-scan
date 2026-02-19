@@ -527,7 +527,40 @@ void GEKO<BasicTurbulenceModel>::correct()
     // Rotation tensor magnitude (MM:Eq. A14)
     const volScalarField OmegaMag(sqrt(2.0*magSqr(skew(gradU)))));
 
-    // Update omega and G at the wall  - PENDING G
+
+    // Calculate the production terms
+
+    // Turbulent kinetic energy production rate per mass (MM:Eq. 15)
+    tmp<volScalarField> tG;
+    if (katoLaunder_)
+    {
+        tG = tmp<volScalarField>::New(this->GName(), this->nut_*S*OmegaMag);
+    }
+    else
+    {
+        tG = tmp<volScalarField>::New(this->GName(), this->nut_*S2);
+    }
+    volScalarField& G = tG.ref();
+
+    // Omega production rate per-mass (MM:Eq. A4):
+    const volScalarField Pomega_m
+    (
+        G
+       /max
+       (
+            this->nut_ + scalar(0.001)*this->nu(),
+            dimensionedScalar(this->nut_.dimensions(), SMALL)
+       )
+    );
+
+    if (productionLimiter_)
+    {
+        // Limited production per-mass (MM:Eq. A15)
+        G = min(G, CPKlim_*Cmu_*k_*omega_);
+    }
+
+
+    // Update omega and G at the wall
     omega_.boundaryFieldRef().updateCoeffs();
     // Push any changed cell values to coupled neighbours
     omega_.boundaryFieldRef().template evaluateCoupled<coupledFvPatch>();
