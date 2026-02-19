@@ -79,7 +79,7 @@ class GEKO
         dimensionedScalar Cmu_;
         dimensionedScalar Comega2_;
         dimensionedScalar sigmakTilde_;
-        dimensionedScalar sigmaomegaTilde_;
+        dimensionedScalar sigmaOmegaTilde_;
         dimensionedScalar CRealize_;
 
         // (MM:Table 4; Auxiliary model coefficients for GEKO model)
