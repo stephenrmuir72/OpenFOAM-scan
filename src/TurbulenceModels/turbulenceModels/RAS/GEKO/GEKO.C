@@ -453,6 +453,29 @@ void GEKO<BasicTurbulenceModel>::correct()
         FBlend_ = tanh(pow4(xBlend));
         FBlend_.correctBoundaryConditions();
     }
+
+
+    // Calculate the blending-function coefficient fields (MM:Eqs. A17-A18)
+
+    const volScalarField sigmaK
+    (
+        sigmakTilde_*(scalar(1) + (CSEP_ - scalar(1))*scalar(0.25)*FBlend_)
+    );
+
+    const volScalarField sigmaOmega
+    (
+        sigmaOmegaTilde_*(scalar(1) + (CSEP_ - scalar(1))*FBlend_)  // PENDING: sigmaOmega cannot be zero
+    );
+
+    const scalar sqrtCmu = Foam::sqrt(Cmu_.value());
+    const volScalarField Comega1
+    (
+        (scalar(1)/Cmu_)
+       *(
+            Comega2_
+          - sqr(kappa_)*sqrtCmu/sigmaOmega
+        )
+    );
 }
 
 
