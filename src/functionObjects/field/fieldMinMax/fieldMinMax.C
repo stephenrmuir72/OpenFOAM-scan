@@ -80,7 +80,7 @@ void Foam::functionObjects::fieldMinMax::writeFileHeader(Ostream& os)
 
         if (Pstream::parRun())
         {
-            writeTabbed(os, "processor");
+            writeTabbed(os, "processor(min)");
         }
 
         writeTabbed(os, "max");
@@ -88,7 +88,7 @@ void Foam::functionObjects::fieldMinMax::writeFileHeader(Ostream& os)
 
         if (Pstream::parRun())
         {
-            writeTabbed(os, "processor");
+            writeTabbed(os, "processor(max)");
         }
     }
     else
