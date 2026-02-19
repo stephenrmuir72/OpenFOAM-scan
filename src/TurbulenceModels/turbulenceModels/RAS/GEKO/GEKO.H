@@ -169,17 +169,12 @@ class GEKO
 
     // Private Member Functions
 
-    // Convenience Functions
-
-
-
-    // GEKO Helper Functions
-
-
-    // Virtual Functions
-
-        //- Calculate the turbulent viscosity
+        //- Function to update nut without providing the strain-rate magnitude
         virtual void correctNut();
+
+        //- Function to update nut with realizability limiter
+        virtual void correctNut(const volScalarField& S);
+
 
 public:
 

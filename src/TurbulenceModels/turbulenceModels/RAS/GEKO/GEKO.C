@@ -41,7 +41,25 @@ namespace RASModels
 template<class BasicTurbulenceModel>
 void GEKO<BasicTurbulenceModel>::correctNut()
 {
+    const volScalarField S
+    (
+        sqrt(2.0*magSqr(symm(fvc::grad(this->U_))))
+    );
 
+    correctNut(S);
+}
+
+
+template<class BasicTurbulenceModel>
+void GEKO<BasicTurbulenceModel>::correctNut(const volScalarField& S)
+{
+    // Realizability limiter (MM:Eq. A16)
+    this->nut_ = k_/max(omega_, S/CRealize_);
+
+    this->nut_.correctBoundaryConditions();
+    fv::options::New(this->mesh_).correct(this->nut_);
+
+    BasicTurbulenceModel::correctNut();
 }
 
 
@@ -412,6 +430,14 @@ GEKO<BasicTurbulenceModel>::GEKO
             << exit(FatalIOError);
     }
 
+    if (CRealize_.value() < SMALL)
+    {
+        FatalIOErrorInFunction(this->coeffDict_)
+            << "Invalid value for CRealize: " << CRealize_.value()
+            << ". Valid range is (0,inf]."
+            << exit(FatalIOError);
+    }
+
     if (kappa_.value() < SMALL)
     {
         FatalIOErrorInFunction(this->coeffDict_)
@@ -470,6 +496,14 @@ bool GEKO<BasicTurbulenceModel>::read()
     {
         FatalIOErrorInFunction(this->coeffDict_)
             << "Invalid value for Cmu: " << Cmu_.value()
+            << ". Valid range is (0,inf]."
+            << exit(FatalIOError);
+    }
+
+    if (CRealize_.value() < SMALL)
+    {
+        FatalIOErrorInFunction(this->coeffDict_)
+            << "Invalid value for CRealize: " << CRealize_.value()
             << ". Valid range is (0,inf]."
             << exit(FatalIOError);
     }
@@ -714,6 +748,31 @@ void GEKO<BasicTurbulenceModel>::correct()
     solve(omegaEqn);
     fvOptions.correct(omega_);
     bound(omega_, this->omegaMin_);
+
+
+    // Calculate the turbulent kinetic energy field (MM:Eq. A1)
+
+    tmp<fvScalarMatrix> kEqn
+    (
+        fvm::ddt(alpha, rho, k_)
+      + fvm::div(alphaRhoPhi, k_)
+      - fvm::laplacian(alpha*rho*(this->nu() + this->nut_/sigmaK), k_)
+     ==
+        alpha()*rho()*G
+      - fvm::Sp(alpha()*rho()*Cmu_*omega_(), k_)
+      + alpha()*rho()*Ck_*k_*omega_
+      + fvOptions(alpha, rho, k_)
+    );
+
+    kEqn.ref().relax();
+    fvOptions.constrain(kEqn.ref());
+    kEqn.ref().boundaryManipulate(k_.boundaryFieldRef());
+    solve(kEqn);
+    fvOptions.correct(k_);
+    bound(k_, this->kMin_);
+
+    // Update nut with realizability limiter (MM:Eq. A16)
+    correctNut(S);
 }
 
 
