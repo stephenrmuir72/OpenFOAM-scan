@@ -532,6 +532,33 @@ void GEKO<BasicTurbulenceModel>::correct()
     const volScalarField psi(Cpsi*(CSEP_ - scalar(1))*FBlend_);
 
     const volScalarField FSEP(scalar(1) + fD*psi);
+
+
+    // Calculate the jet-flow calibration field, FJET (MM:Eqs. A14)
+
+    const volScalarField Soo
+    (
+        min
+        (
+            min(S, OmegaMag),
+            omega_
+        )
+       /(scalar(0.3)*omega_)
+    );
+
+    const volScalarField xJet
+    (
+        scalar(4.0)
+       *(
+            (Soo - scalar(0.9))/scalar(0.15)
+          - scalar(0.5)
+        )
+    );
+
+    const volScalarField FJET
+    (
+        scalar(0.5)*(scalar(1) + tanh(xJet))
+    );
 }
 
 
