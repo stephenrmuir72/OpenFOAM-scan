@@ -42,9 +42,11 @@ Description
     Output is:
     - volScalarField with regions as different scalars (-detectOnly)
             or
-    - mesh with multiple regions and mapped patches. These patches
-      either cover the whole interface between two region (default) or
-      only part according to faceZones (-useFaceZones)
+    - mesh with multiple regions and mapped patches. By default, a single 
+      patch covers the entire interface between two regions. Alternatively, 
+      the interface can be subdivided into multiple patches according to all 
+      existing faceZones (-useFaceZones) or only explicitly specified 
+      faceZones (-useSelectedFaceZones).
             or
     - mesh with cells put into cellZones (-makeCellZones)
 
@@ -59,6 +61,8 @@ Description
     addZones option supplies the destination region name as first element in
     the list. The combineZones option synthesises the region name e.g.
         zoneA_zoneB0_zoneB1
+    unless custom names are explicitly provided using the '-customRegionNames'
+    option (e.g. -customRegionNames '(solid fluid)').
 
     - cellZonesOnly does not do a walk and uses the cellZones only. Use
     this if you don't mind having disconnected domains in a single region.
@@ -296,23 +300,26 @@ void addToInterface
 }
 
 // Get the zone ID for a face, respecting the restriction list
-label getZoneID
+inline label getZoneID
 (
     const polyMesh& mesh,
     const label facei,
     const bool useFaceZones,
-    const labelHashSet& allowedFaceZoneIDs
+    const labelHashSet& selectedFaceZoneIDs
 )
 {
-    if (!useFaceZones)
+    const bool useSelectedFaceZones = !selectedFaceZoneIDs.empty();
+
+    // Exit early if NEITHER feature is being used
+    if (!useFaceZones && !useSelectedFaceZones)
     {
         return -1;
     }
 
     const label zoneID = mesh.faceZones().whichZone(facei);
 
-    // If a valid zone is found, check if it is permitted
-    if (zoneID != -1 && allowedFaceZoneIDs.size() && !allowedFaceZoneIDs.found(zoneID))
+    // If using selected face zones, check if the found zone is permitted
+    if ( zoneID != -1 && useSelectedFaceZones && !selectedFaceZoneIDs.found(zoneID) )
     {
         return -1;
     }
@@ -326,7 +333,7 @@ void getInterfaceSizes
 (
     const polyMesh& mesh,
     const bool useFaceZones,
-    const labelHashSet& allowedFaceZoneIDs,
+    const labelHashSet& selectedFaceZoneIDs,
     const labelList& cellRegion,
     const wordList& regionNames,
     edgeList& interfaces,
@@ -353,7 +360,7 @@ void getInterfaceSizes
             addToInterface
             (
                 mesh,
-                getZoneID(mesh, facei, useFaceZones, allowedFaceZoneIDs),
+                getZoneID(mesh, facei, useFaceZones, selectedFaceZoneIDs),
                 ownRegion,
                 neiRegion,
                 regionsToSize
@@ -385,7 +392,7 @@ void getInterfaceSizes
             addToInterface
             (
                 mesh,
-                getZoneID(mesh, facei, useFaceZones, allowedFaceZoneIDs),
+                getZoneID(mesh, facei, useFaceZones, selectedFaceZoneIDs),
                 ownRegion,
                 neiRegion,
                 regionsToSize
@@ -526,7 +533,7 @@ void getInterfaceSizes
             const auto interface(edge::sorted(ownRegion, neiRegion));
 
             const label zoneID = 
-                getZoneID(mesh, facei, useFaceZones, allowedFaceZoneIDs);
+                getZoneID(mesh, facei, useFaceZones, selectedFaceZoneIDs);
 
             faceToInterface[facei] = regionsToInterface[interface][zoneID];
         }
@@ -542,7 +549,7 @@ void getInterfaceSizes
             const auto interface(edge::sorted(ownRegion, neiRegion));
 
             const label zoneID = 
-                getZoneID(mesh, facei, useFaceZones, allowedFaceZoneIDs);
+                getZoneID(mesh, facei, useFaceZones, selectedFaceZoneIDs);
 
             faceToInterface[facei] = regionsToInterface[interface][zoneID];
         }
@@ -1449,21 +1456,24 @@ int main(int argc, char *argv[])
     argList::addOption
     (
         "combineZones",
-        "lists of zones",
-        "Combine zones in follow-on analysis"
+        "lists of cellZones",
+        "Combine zones in follow-on analysis. Synthesises the region name by "
+        "concatenation of zone names, e.g., zoneA_zoneB."
     );
     argList::addOption
     (
         "customRegionNames",
-        "list of custom region names to be used with combineZones option",
-        "Without this option, combineZones method results in region names,"
-        " which are a concatenation of different cellZones."
+        "wordList",
+        "list of custom region names to be used with combineZones option. "
+        "Without this option, combineZones results in region names, which are "
+        "a concatenation of different cellZone names."
     );
     argList::addOption
     (
         "addZones",
-        "lists of zones",
-        "Combine zones in follow-on analysis"
+        "lists of cellZones",
+        "Combine zones in follow-on analysis. Supplies the destination region "
+        "name as the first cellZone name in the list."
     );
     argList::addOption
     (
@@ -1500,15 +1510,14 @@ int main(int argc, char *argv[])
     argList::addBoolOption
     (
         "useFaceZones",
-        "Use faceZones to patch inter-region faces instead of single patch"
+        "Use all faceZones to patch inter-region faces instead of single patch"
     );
     argList::addOption
     (
-        "allowedFaceZones",
+        "useSelectedFaceZones",
         "wordList",
-        "Used together with useFaceZones option. By default useFaceZones "
-        "option considers all available faceZones. allowedFaceZones restricts "
-        " to only these specific faceZones for splitting interfaces."
+        "Use only the specified faceZones to patch inter-region faces instead "
+        "of single patch"
     );
     argList::addBoolOption
     (
@@ -1560,53 +1569,50 @@ int main(int argc, char *argv[])
             << exit(FatalError);
     }
 
-    labelHashSet allowedFaceZoneIDs;
-    wordList allowedFaceZoneNames;
+    labelHashSet selectedFaceZoneIDs;
+    wordList selectedFaceZoneNames;
 
-    const bool restrictFaceZones 
-           = args.readListIfPresent("allowedFaceZones", allowedFaceZoneNames);
+    const bool useSelectedFaceZones 
+        = args.readListIfPresent("useSelectedFaceZones", selectedFaceZoneNames);
+
+    if (useFaceZones && useSelectedFaceZones)
+    {
+        FatalErrorInFunction 
+            << "You cannot specify both useFaceZones and useSelectedFaceZones"
+            << exit(FatalError);
+    }
 
     if (useFaceZones)
     {
-        if (restrictFaceZones)
+        Info<< "Using current faceZones to divide inter-region interfaces"
+            << " into multiple patches."
+            << nl << endl;
+    }
+    else if (useSelectedFaceZones)
+    {
+        Info<< "Using specified faceZones to divide inter-region interfaces"
+            << " into multiple patches."
+            << nl << endl;
+
+        forAll(selectedFaceZoneNames, i)
         {
-            forAll(allowedFaceZoneNames, i)
+            const label zoneID 
+                = mesh.faceZones().findZoneID(selectedFaceZoneNames[i]);
+
+            if (zoneID != -1)
             {
-                const label zoneID 
-                    = mesh.faceZones().findZoneID(allowedFaceZoneNames[i]);
-
-                if (zoneID != -1)
-                {
-                    allowedFaceZoneIDs.insert(zoneID);
-                }
-                else
-                {
-                    FatalErrorInFunction
-                        << "faceZone - " << allowedFaceZoneNames[i]
-                        << " not found in mesh." << endl;
-                }
+                selectedFaceZoneIDs.insert(zoneID);
             }
-
-            Info<< "Using faceZones specified by -allowedFacesZones option to "
-                << "divide inter-region interfaces into multiple patches."
-                << nl << endl;
-        }
-        else
-        {
-            Info<< "Using current faceZones to divide inter-region interfaces"
-                << " into multiple patches."
-                << nl << endl;
+            else
+            {
+                FatalErrorInFunction
+                    << "faceZone - " << selectedFaceZoneNames[i]
+                    << " not found in mesh." << endl;
+            }
         }
     }
     else
     {
-        if (restrictFaceZones)
-        {
-            FatalErrorInFunction
-                << "You specified -allowedFaceZones but did not enable "
-                << "-useFaceZones." << exit(FatalError);
-        }
-
         Info<< "Creating single patch per inter-region interface."
             << nl << endl;
     }
@@ -1658,7 +1664,6 @@ int main(int argc, char *argv[])
             zoneClusterNames.setSize(zoneClusters.size());
             zoneClusterNames = word::null;
         }
-        zoneClusterNames.setSize(zoneClusters.size());
     }
     else if (addZones)
     {
@@ -2016,7 +2021,7 @@ int main(int argc, char *argv[])
     (
         mesh,
         useFaceZones,
-        allowedFaceZoneIDs,
+        selectedFaceZoneIDs,
         cellRegion,
         regionNames,
         interfaces,
