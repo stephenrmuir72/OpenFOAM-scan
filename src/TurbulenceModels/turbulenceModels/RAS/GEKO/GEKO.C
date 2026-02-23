@@ -781,8 +781,10 @@ void GEKO<BasicTurbulenceModel>::correct()
         else
         {
             FNW_[celli] =
-                CNW_[celli]
-              - (Cc1_.value() + Cc2_.value()*CNW_[celli])*fD[celli]*FLim[celli];
+                (
+                    CNW_[celli]
+                  - (Cc1_.value() + Cc2_.value()*CNW_[celli])*fD[celli]
+                )*FLim[celli];
         }
     }
     FNW_.correctBoundaryConditions();
