@@ -426,7 +426,7 @@ GEKO<BasicTurbulenceModel>::GEKO
             IOobject::groupName("FBlend", alphaRhoPhi.group()),
             this->runTime_.timeName(),
             this->mesh_,
-            IOobject::READ_IF_PRESENT,
+            IOobject::NO_READ,
             IOobject::NO_WRITE
         ),
         this->mesh_,
