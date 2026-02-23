@@ -250,6 +250,9 @@ public:
 
     // Evaluation
 
+        //- Return the Reynolds stress tensor; optional dilatation corr term
+        virtual tmp<volSymmTensorField> R() const;
+
         //- Return the effective diffusivity for k
         tmp<volScalarField> DkEff(const volScalarField& sigmaK) const
         {

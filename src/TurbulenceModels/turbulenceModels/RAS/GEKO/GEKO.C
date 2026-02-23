@@ -510,6 +510,33 @@ GEKO<BasicTurbulenceModel>::GEKO
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
 
 template<class BasicTurbulenceModel>
+tmp<volSymmTensorField> GEKO<BasicTurbulenceModel>::R() const
+{
+    // The gradient is Hessian form (∂U_j/∂x_i), but symm(...) is invariant
+    tmp<volTensorField> tgradU = fvc::grad(this->U_);
+
+    tmp<volScalarField> tk = this->k();
+
+    // (MM:Eq. A7)
+    // R = (2/3)k I - nu_t * (2S_ij - (2/3)divU δ_ij)
+    // The dilatation correction (-(2/3)divU term) is optional
+    return volSymmTensorField::New
+    (
+        IOobject::groupName("R", this->alphaRhoPhi_.group()),
+        IOobject::NO_REGISTER,
+        ((2.0/3.0)*I)*tk()
+      - this->nut_
+       *(
+            dilatationCorrection_
+          ? devTwoSymm(tgradU())
+          : (2.0*symm(tgradU()))
+        ),
+        tk().boundaryField().types()
+    );
+}
+
+
+template<class BasicTurbulenceModel>
 bool GEKO<BasicTurbulenceModel>::read()
 {
     if (!eddyViscosity<RASModel<BasicTurbulenceModel>>::read())
