@@ -238,7 +238,7 @@ public:
             return tmp<volScalarField>::New
             (
                 "DkEff",
-                (this->nut_/sigmaKtilde_ + this->nu())  // PENDING - problematic?
+                (this->nut_/sigmakTilde_ + this->nu())  // PENDING - problematic?
             );
         }
 

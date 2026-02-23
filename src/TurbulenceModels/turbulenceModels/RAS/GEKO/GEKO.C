@@ -328,34 +328,6 @@ GEKO<BasicTurbulenceModel>::GEKO
     ),
 
 
-    Ck_
-    (
-        IOobject
-        (
-            IOobject::groupName("Ck", alphaRhoPhi.group()),
-            this->runTime_.timeName(),
-            this->mesh_,
-            IOobject::READ_IF_PRESENT,
-            IOobject::AUTO_WRITE
-        ),
-        this->mesh_,
-        dimensionedScalar(dimless, 0.0)
-    ),
-    Comega_
-    (
-        IOobject
-        (
-            IOobject::groupName("Comega", alphaRhoPhi.group()),
-            this->runTime_.timeName(),
-            this->mesh_,
-            IOobject::READ_IF_PRESENT,
-            IOobject::AUTO_WRITE
-        ),
-        this->mesh_,
-        dimensionedScalar(dimless, 0.0)
-    ),
-
-
     FSEP_
     (
         IOobject
@@ -408,11 +380,11 @@ GEKO<BasicTurbulenceModel>::GEKO
         this->mesh_,
         dimensionedScalar(dimless, 1.0)
     ),
-    Fblend_
+    FBlend_
     (
         IOobject
         (
-            IOobject::groupName("Fblend", alphaRhoPhi.group()),
+            IOobject::groupName("FBlend", alphaRhoPhi.group()),
             this->runTime_.timeName(),
             this->mesh_,
             IOobject::READ_IF_PRESENT,
@@ -420,6 +392,34 @@ GEKO<BasicTurbulenceModel>::GEKO
         ),
         this->mesh_,
         dimensionedScalar(dimless, 1.0)  // wall-distance free variant
+    ),
+
+
+    Ck_
+    (
+        IOobject
+        (
+            IOobject::groupName("Ck", alphaRhoPhi.group()),
+            this->runTime_.timeName(),
+            this->mesh_,
+            IOobject::READ_IF_PRESENT,
+            IOobject::AUTO_WRITE
+        ),
+        this->mesh_,
+        dimensionedScalar(dimless, 0.0)
+    ),
+    Comega_
+    (
+        IOobject
+        (
+            IOobject::groupName("Comega", alphaRhoPhi.group()),
+            this->runTime_.timeName(),
+            this->mesh_,
+            IOobject::READ_IF_PRESENT,
+            IOobject::AUTO_WRITE
+        ),
+        this->mesh_,
+        dimensionedScalar(dimless, 0.0)
     )
 {
     bound(k_, this->kMin_);
@@ -572,7 +572,7 @@ void GEKO<BasicTurbulenceModel>::correct()
     const volScalarField S(sqrt(S2));
 
     // Rotation tensor magnitude (MM:Eq. A14)
-    const volScalarField OmegaMag(sqrt(2.0*magSqr(skew(gradU)))));
+    const volScalarField OmegaMag(sqrt(2.0*magSqr(skew(gradU))));
 
 
     // Calculate the production terms
@@ -581,11 +581,11 @@ void GEKO<BasicTurbulenceModel>::correct()
     tmp<volScalarField> tG;
     if (katoLaunder_)
     {
-        tG = tmp<volScalarField>::New(this->GName(), this->nut_*S*OmegaMag);
+        tG = tmp<volScalarField>::New(this->GName(), nut*S*OmegaMag);
     }
     else
     {
-        tG = tmp<volScalarField>::New(this->GName(), this->nut_*S2);
+        tG = tmp<volScalarField>::New(this->GName(), nut*S2);
     }
     volScalarField& G = tG.ref();
 
@@ -595,8 +595,8 @@ void GEKO<BasicTurbulenceModel>::correct()
         G
        /max
        (
-            this->nut_ + scalar(0.001)*this->nu(),
-            dimensionedScalar(this->nut_.dimensions(), SMALL)
+            nut + scalar(0.001)*this->nu(),
+            dimensionedScalar(nut.dimensions(), SMALL)
        )
     );
 
@@ -660,7 +660,7 @@ void GEKO<BasicTurbulenceModel>::correct()
 
     const volScalarField fD
     (
-        scalar(1)/(scalar(1) + sqr(yTildePlus/APlus_))
+        scalar(1)/(scalar(1) + sqr(yTildePlus/Aplus_))
     );
 
     const volScalarField Cpsi
@@ -721,7 +721,7 @@ void GEKO<BasicTurbulenceModel>::correct()
     );
 
     // Destruction term (MM:Eq. A12)
-    const volScalarField Destr(Comega2_*FMIX*rho*sqr(omega_));
+    const volScalarField Destr(Comega2_*FMIX_*rho*sqr(omega_));
 
     const volScalarField FLim(Destr/max(Destr, scalar(2)*CD));
 
@@ -734,7 +734,8 @@ void GEKO<BasicTurbulenceModel>::correct()
         else
         {
             FNW_[celli] =
-                CNW_[celli] - (Cc1_ + Cc2_*CNW_[celli])*fd[celli]*FLim[celli];
+                CNW_[celli]
+              - (Cc1_.value() + Cc2_.value()*CNW_[celli])*fD[celli]*FLim[celli];
         }
     }
     FNW_.correctBoundaryConditions();
@@ -746,12 +747,12 @@ void GEKO<BasicTurbulenceModel>::correct()
     (
         fvm::ddt(alpha, rho, omega_)
       + fvm::div(alphaRhoPhi, omega_)
-      - fvm::laplacian(alpha*rho*(this->nu() + this->nut_/sigmaOmega), omega_)
+      - fvm::laplacian(alpha*rho*(this->nu() + nut/sigmaOmega), omega_)
      ==
-        alpha()*rho()*Comega1*Pomega_m
-      - fvm::Sp(alpha()*rho()*Comega2_*FMIX_*omega_(), omega_)
-      + alpha()*FNW_*CD
-      + alpha()*rho()*Comega_*sqr(omega_)
+        alpha()*rho()*Comega1()*Pomega_m()
+      - fvm::Sp(alpha()*rho()*Comega2_*FMIX_()*omega_(), omega_)
+      + alpha()*FNW_()*CD()
+      + alpha()*rho()*Comega_()*sqr(omega_())
       + fvOptions(alpha, rho, omega_)
     );
 
@@ -769,11 +770,11 @@ void GEKO<BasicTurbulenceModel>::correct()
     (
         fvm::ddt(alpha, rho, k_)
       + fvm::div(alphaRhoPhi, k_)
-      - fvm::laplacian(alpha*rho*(this->nu() + this->nut_/sigmaK), k_)
+      - fvm::laplacian(alpha*rho*(this->nu() + nut/sigmaK), k_)
      ==
-        alpha()*rho()*G
+        alpha()*rho()*G()
       - fvm::Sp(alpha()*rho()*Cmu_*omega_(), k_)
-      + alpha()*rho()*Ck_*k_*omega_
+      + alpha()*rho()*Ck_*k_()*omega_()
       + fvOptions(alpha, rho, k_)
     );
 
