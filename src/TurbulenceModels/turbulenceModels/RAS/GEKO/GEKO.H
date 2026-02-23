@@ -251,22 +251,24 @@ public:
     // Evaluation
 
         //- Return the effective diffusivity for k
-        tmp<volScalarField> DkEff() const
+        tmp<volScalarField> DkEff(const volScalarField& sigmaK) const
         {
+            // (MM:Eq. A1; note that sigmaK is not sigmakTilde)
             return tmp<volScalarField>::New
             (
                 "DkEff",
-                (this->nut_/sigmakTilde_ + this->nu())  // PENDING - problematic?
+                (this->nut_/sigmaK + this->nu())
             );
         }
 
         //- Return the effective diffusivity for omega
-        tmp<volScalarField> DomegaEff() const
+        tmp<volScalarField> DomegaEff(const volScalarField& sigmaOmega) const
         {
+            // (MM:Eq. A1; note that sigmaOmega is not sigmaOmegaTilde)
             return tmp<volScalarField>::New
             (
                 "DomegaEff",
-                (this->nut_/sigmaOmegaTilde_ + this->nu())  // PENDING - problematic?
+                (this->nut_/sigmaOmega + this->nu())
             );
         }
 

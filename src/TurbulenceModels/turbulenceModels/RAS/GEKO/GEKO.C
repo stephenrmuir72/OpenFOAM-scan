@@ -796,7 +796,7 @@ void GEKO<BasicTurbulenceModel>::correct()
     (
         fvm::ddt(alpha, rho, omega_)
       + fvm::div(alphaRhoPhi, omega_)
-      - fvm::laplacian(alpha*rho*(this->nu() + nut/sigmaOmega), omega_)
+      - fvm::laplacian(alpha*rho*DomegaEff(sigmaOmega), omega_)
      ==
         alpha()*rho()*Comega1()*Pomega_m()
       - fvm::Sp(alpha()*rho()*Comega2_*FMIX_()*omega_(), omega_)
@@ -819,7 +819,7 @@ void GEKO<BasicTurbulenceModel>::correct()
     (
         fvm::ddt(alpha, rho, k_)
       + fvm::div(alphaRhoPhi, k_)
-      - fvm::laplacian(alpha*rho*(this->nu() + nut/sigmaK), k_)
+      - fvm::laplacian(alpha*rho*DkEff(sigmaK), k_)
      ==
         alpha()*rho()*G()
       - fvm::Sp(alpha()*rho()*Cmu_*omega_(), k_)
