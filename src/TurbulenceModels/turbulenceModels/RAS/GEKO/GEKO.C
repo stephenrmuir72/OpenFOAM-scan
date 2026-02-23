@@ -137,6 +137,7 @@ GEKO<BasicTurbulenceModel>::GEKO
         )
     ),
 
+
     Cmu_
     (
         dimensionedScalar::getOrAddToDict
@@ -247,6 +248,44 @@ GEKO<BasicTurbulenceModel>::GEKO
     ),
 
 
+    Csep_
+    (
+        dimensionedScalar::getOrAddToDict
+        (
+            "Csep",
+            this->coeffDict_,
+            1.75
+        )
+    ),
+    Cnw_
+    (
+        dimensionedScalar::getOrAddToDict
+        (
+            "Cnw",
+            this->coeffDict_,
+            0.5
+        )
+    ),
+    Cmix_
+    (
+        dimensionedScalar::getOrAddToDict
+        (
+            "Cmix",
+            this->coeffDict_,
+            0.0
+        )
+    ),
+    Cjet_
+    (
+        dimensionedScalar::getOrAddToDict
+        (
+            "Cjet",
+            this->coeffDict_,
+            1.0
+        )
+    ),
+
+
     y_(wallDist::New(this->mesh_).y()),
     k_
     (
@@ -285,7 +324,7 @@ GEKO<BasicTurbulenceModel>::GEKO
             IOobject::AUTO_WRITE
         ),
         this->mesh_,
-        dimensionedScalar(dimless, 1.75)
+        Csep_
     ),
     CNW_
     (
@@ -298,7 +337,7 @@ GEKO<BasicTurbulenceModel>::GEKO
             IOobject::AUTO_WRITE
         ),
         this->mesh_,
-        dimensionedScalar(dimless, 0.5)
+        Cnw_
     ),
     CMIX_
     (
@@ -311,7 +350,7 @@ GEKO<BasicTurbulenceModel>::GEKO
             IOobject::AUTO_WRITE
         ),
         this->mesh_,
-        dimensionedScalar(dimless, 0.0)
+        Cmix_
     ),
     CJET_
     (
@@ -324,7 +363,7 @@ GEKO<BasicTurbulenceModel>::GEKO
             IOobject::AUTO_WRITE
         ),
         this->mesh_,
-        dimensionedScalar(dimless, 1.0)
+        Cjet_
     ),
 
 
@@ -536,6 +575,14 @@ bool GEKO<BasicTurbulenceModel>::read()
             << ". Valid range is (0,inf]."
             << exit(FatalIOError);
     }
+
+    Csep_.readIfPresent(this->coeffDict());
+    Cnw_.readIfPresent(this->coeffDict());
+    Cmix_.readIfPresent(this->coeffDict());
+    Cjet_.readIfPresent(this->coeffDict());
+
+    // Pending: Update the fields if the fields do not exist and coeffs
+    // are updated
 
     return true;
 }

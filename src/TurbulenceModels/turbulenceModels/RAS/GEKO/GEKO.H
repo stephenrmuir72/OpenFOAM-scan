@@ -44,6 +44,9 @@ Usage
 
     The default model coefficients are
 
+Notes
+  - Add note for the coeff scalar and coeff field relations.
+
 SourceFiles
     GEKO.C
 
@@ -112,6 +115,21 @@ class GEKO
 
         // (MM:Eq. 16)
         dimensionedScalar CPKlim_;
+
+
+    // GEKO model coefficients
+
+        //- Coefficient for the CSEP field
+        dimensionedScalar Csep_;
+
+        //- Coefficient for the CNW field
+        dimensionedScalar Cnw_;
+
+        //- Coefficient for the CMIX field
+        dimensionedScalar Cmix_;
+
+        //- Coefficient for the CJET field
+        dimensionedScalar Cjet_;
 
 
     // Operand Fields
