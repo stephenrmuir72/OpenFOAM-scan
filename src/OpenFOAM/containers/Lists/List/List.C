@@ -367,27 +367,22 @@ void Foam::List<T>::resize(const label len, const T& val)
     // Fill trailing part with new values
     if (oldLen < this->size_)
     {
+        #ifdef FOAM_OFFLOAD
         if constexpr (is_contiguous_v<T>)
         {
-            auto* vPtr = this->v_;
-            const label this_size = this->size_;
-            auto indices = std::views::iota(oldLen, this_size);
- 
-            apply_policy(this_size - oldLen, [&](auto policy)
+            apply_policy(this->size_ - oldLen, [&](auto policy)
             {
-                std::for_each
+                std::fill
                 (
                     policy,
-                    indices.begin(),
-                    indices.end(),
-                    [val, vPtr](const auto& i)
-                    {
-                        vPtr[i] = val;
-                    }
+                    this->v_ + oldLen,
+                    this->v_ + this->size_,
+                    val
                 );
             });
         }
         else
+        #endif
         {
             std::fill
             (

@@ -745,6 +745,7 @@ fields/cloud/cloud.C
 Fields = fields/Fields
 
 $(Fields)/Field/FieldBase.C
+$(Fields)/Field/FieldOffload.C
 $(Fields)/boolField/boolField.C
 $(Fields)/boolField/boolIOField.C
 $(Fields)/labelField/labelField.C

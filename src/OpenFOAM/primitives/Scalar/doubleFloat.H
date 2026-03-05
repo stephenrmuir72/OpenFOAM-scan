@@ -40,7 +40,7 @@ namespace Foam
 {
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
-#if defined(__HIP_DEVICE_COMPILE__)
+#if defined(FOAM_OFFLOAD) && defined(__HIP_DEVICE_COMPILE__)
     // Device compilation (ROCm)
     #define FOAM_POW_CALL(base, exp)                                          \
         __ocml_pow_f64(static_cast<double>(base), static_cast<double>(exp))
@@ -50,7 +50,7 @@ namespace Foam
     (::pow(static_cast<double>(base), static_cast<double>(exp)))
 #endif
 
-#if defined(__HIP_DEVICE_COMPILE__)
+#if defined(FOAM_OFFLOAD) && defined(__HIP_DEVICE_COMPILE__)
 #define MAXMINPOW(RetType, Type1, Type2)                                      \
 MAXMIN(RetType, Type1, Type2)                                                 \
 __host__ __device__                                                           \
