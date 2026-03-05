@@ -36,6 +36,32 @@ License
 namespace Foam
 {
 
+template<class T>
+inline T deviceZero()
+{
+    #ifdef FOAM_OFFLOAD
+
+    if constexpr (std::is_arithmetic_v<T>)
+    {
+        return T(0);
+    }
+    else
+    {
+        T t;
+        for (direction d = 0; d < pTraits<T>::nComponents; ++d)
+        {
+            t[d] = typename pTraits<T>::cmptType(0);
+        }
+        return t;
+    }
+
+    #else
+
+    return pTraits<T>::zero;
+
+    #endif
+}
+
 // * * * * * * * * * * * * * * * Global Functions  * * * * * * * * * * * * * //
 
 template<class Type>

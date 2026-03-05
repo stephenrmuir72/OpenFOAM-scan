@@ -61,7 +61,7 @@ namespace Foam
 #define ScalarROOTVSMALL doubleScalarROOTVSMALL
 #define ScalarRead readDouble
 
-#if defined(__HIP_DEVICE_COMPILE__)
+#if defined(FOAM_OFFLOAD) && defined(__HIP_DEVICE_COMPILE__)
 __host__ __device__
 #endif
 inline Scalar mag(const Scalar s)
@@ -69,7 +69,7 @@ inline Scalar mag(const Scalar s)
     return std::fabs(s);
 }
 
-#if defined(__HIP_DEVICE_COMPILE__)
+#if defined(FOAM_OFFLOAD) && defined(__HIP_DEVICE_COMPILE__)
 __host__ __device__
 #endif
 inline Scalar hypot(const Scalar x, const Scalar y)
@@ -77,7 +77,7 @@ inline Scalar hypot(const Scalar x, const Scalar y)
     return std::hypot(x, y);
 }
 
-#if defined(__HIP_DEVICE_COMPILE__)
+#if defined(FOAM_OFFLOAD) && defined(__HIP_DEVICE_COMPILE__)
 __host__ __device__
 #endif
 inline Scalar atan2(const Scalar y, const Scalar x)
@@ -87,7 +87,7 @@ inline Scalar atan2(const Scalar y, const Scalar x)
 
 
 // Normal (double-precision) transcendental functions
-#if defined(__HIP_DEVICE_COMPILE__)
+#if defined(FOAM_OFFLOAD) && defined(__HIP_DEVICE_COMPILE__)
 // GPU version — use ROCm OCML intrinsics
 #define transFunc(func)                                                        \
 __host__ __device__ inline Scalar func(const Scalar s)                         \

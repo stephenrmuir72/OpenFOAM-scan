@@ -50,38 +50,38 @@ inline void Foam::List<T>::copyList(const ListType& list)
     const label len = this->size_;
  
     // For noncontiguous element types or std::string, use sequential loop
+    #ifdef FOAM_OFFLOAD
     if constexpr (!is_contiguous_v<T>)
-    {
-        T* dst = this->v_;
- 
-        for (label i = 0; i < len; ++i)
-        {
-            dst[i] = list[i];
-        }
-        return;
-    }
-    else
+    #endif
     {
         auto iter = this->v_;
-        auto indices = std::views::iota(0, len);
-        apply_policy(len, [&](auto policy)
-        {
-            std::transform
-            (policy,
-                indices.begin(),
-                indices.end(),
-                iter,
-            [&] (const auto& idx)
-            {
-                return list[idx];
-            });
-        });
-            /*
+
         for (label i = 0; i < len; (void)++i, (void)++iter)
         {
             *iter = list[i];
-        }*/
+        }
     }
+    #ifdef FOAM_OFFLOAD
+    else
+    {
+        T* dst = this->v_;
+
+        apply_policy(len, [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                dst,
+                dst + len,
+                [&, base = dst](T& x)
+                {
+                    const label idx = &x - base;
+                    x = list[idx];
+                }
+            );
+        });
+    }
+    #endif
 }
 
 
@@ -100,7 +100,9 @@ inline void Foam::List<T>::copyList
     T* dst = this->v_;
  
     // For noncontiguous element types or std::string, use sequential loop
+    #ifdef FOAM_OFFLOAD
     if constexpr (!is_contiguous_v<T>)
+    #endif
     {
         for (label i = 0; i < n; ++i)
         {
@@ -108,24 +110,28 @@ inline void Foam::List<T>::copyList
         }
         return;
     }
+    #ifdef FOAM_OFFLOAD
     else
     {
-        auto r = std::views::iota(label(0), n);
- 
+        labelList addr(n);
+        std::iota(addr.begin(), addr.end(), label(0));
+
         apply_policy(n, [&](auto policy)
         {
             std::transform
             (
                 policy,
-                r.begin(), r.end(),
+                addr.begin(),
+                addr.end(),
                 dst,
-                [&](label i)
+                [&](const label i)
                 {
-                    return list[ indices[i] ];
+                    return list[indices[i]];
                 }
             );
         });
     }
+    #endif
 }
  
 

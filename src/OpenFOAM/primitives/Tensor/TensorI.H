@@ -1366,6 +1366,34 @@ public:
     typedef Tensor<Cmpt> type;
 };
 
+#ifdef FOAM_OFFLOAD
+
+// GPU/stdpar-safe: no SVD
+inline Tensor<scalar> pinv(const Tensor<scalar>& t)
+{
+    const scalar detval = t.det();
+
+    if (mag(detval) >= ROOTVSMALL)
+    {
+        return inv(t, detval);
+    }
+
+    const scalar eps = ROOTVSMALL;
+    Tensor<scalar> reg(t);
+    reg.xx() += eps;
+    reg.yy() += eps;
+    reg.zz() += eps;
+
+    const scalar det2 = reg.det();
+    if (mag(det2) < ROOTVSMALL)
+    {
+        return Tensor<scalar>(Zero);
+    }
+
+    return inv(reg, det2);
+}
+
+#endif // FOAM_OFFLOAD
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
