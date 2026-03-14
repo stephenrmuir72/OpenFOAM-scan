@@ -750,6 +750,12 @@ int main(int argc, char *argv[])
         "writeObj",
         "Write obj files showing the cyclic matching process"
     );
+    argList::addBoolOption
+    (
+        "fields",
+        "Read, map and write fields after repatching",
+        true
+    );
 
     argList::noFunctionObjects();  // Never use function objects
 
@@ -905,12 +911,14 @@ int main(int argc, char *argv[])
     List<PtrList<surfaceSymmTensorField>> ssymtFlds(meshes.size());
     List<PtrList<surfaceTensorField>> stFlds(meshes.size());
 
+    const bool writeFields = args.found("fields");
+
     {
         forAll(meshes, meshi)
         {
             const fvMesh& mesh = meshes[meshi];
 
-            bool noFields = true;
+            bool noFields = !writeFields;
             for (const auto& d : patchInfoDicts[meshi])
             {
                 if (d.found("patchFields"))
@@ -1509,6 +1517,28 @@ int main(int argc, char *argv[])
                 const dictionary& pfd = patchDict.subDict("patchFields");
                 fvMeshTools::setPatchFields(mesh, patchID, pfd);
             }
+        }
+
+        if (writeFields)
+        {
+            const word& fieldInst = runTime.timeName();
+            auto setInstance = [&fieldInst](auto& flds)
+            {
+                for (auto& fld : flds) { fld.instance() = fieldInst; }
+            };
+            // Volume fields.
+            setInstance(vsFlds[meshi]);
+            setInstance(vvFlds[meshi]);
+            setInstance(vstFlds[meshi]);
+            setInstance(vsymtFlds[meshi]);
+            setInstance(vtFlds[meshi]);
+
+            // Surface fields.
+            setInstance(ssFlds[meshi]);
+            setInstance(svFlds[meshi]);
+            setInstance(sstFlds[meshi]);
+            setInstance(ssymtFlds[meshi]);
+            setInstance(stFlds[meshi]);
         }
 
         Info<< "\n\nWriting repatched mesh " << mesh.name()
