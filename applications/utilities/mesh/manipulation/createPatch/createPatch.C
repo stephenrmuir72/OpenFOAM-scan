@@ -753,8 +753,7 @@ int main(int argc, char *argv[])
     argList::addBoolOption
     (
         "fields",
-        "Read, map and write fields after repatching",
-        true
+        "Read, map and write fields after repatching"
     );
 
     argList::noFunctionObjects();  // Never use function objects
@@ -766,6 +765,9 @@ int main(int argc, char *argv[])
     const bool overwrite = args.found("overwrite");
 
     #include "createNamedMeshes.H"
+
+    // Read/write fields even in the absence of the "patchFields" entry
+    const bool writeFields = args.found("fields");
 
     const bool writeObj = args.found("writeObj");
 
@@ -910,8 +912,6 @@ int main(int argc, char *argv[])
     List<PtrList<surfaceSphericalTensorField>> sstFlds(meshes.size());
     List<PtrList<surfaceSymmTensorField>> ssymtFlds(meshes.size());
     List<PtrList<surfaceTensorField>> stFlds(meshes.size());
-
-    const bool writeFields = args.found("fields");
 
     {
         forAll(meshes, meshi)
