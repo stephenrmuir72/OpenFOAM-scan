@@ -364,22 +364,10 @@ scalar surfaceNoise::writeSurfaceData
 
             // (writeSurface == true)
             {
-                // Time-aware, with time spliced into the output path
                 writerPtr_->beginTime(freqInst);
-
-                writerPtr_->open
-                (
-                    surf.points(),
-                    surf.surfFaces(),
-                    (outDirBase / fName),
-                    false  // serial - already merged
-                );
-
                 writerPtr_->nFields(1); // Legacy VTK
                 writerPtr_->write(title, allData);
-
                 writerPtr_->endTime();
-                writerPtr_->clear();
             }
         }
     }
@@ -399,22 +387,10 @@ scalar surfaceNoise::writeSurfaceData
 
         // (writeSurface == true)
         {
-            // Time-aware, with time spliced into the output path
             writerPtr_->beginTime(freqInst);
-
-            writerPtr_->open
-            (
-                surf.points(),
-                surf.surfFaces(),
-                (outDirBase / fName),
-                false  // serial - already merged
-            );
-
             writerPtr_->nFields(1); // Legacy VTK
             writerPtr_->write(title, data);
-
             writerPtr_->endTime();
-            writerPtr_->clear();
         }
     }
 
@@ -711,6 +687,18 @@ void surfaceNoise::calculate()
             fileName outDir(outDirBase/"fft");
             fileName outSurfDir(filePath(outDir));
 
+            if (Pstream::master())
+            {
+                const meshedSurface& surf = readerPtr_->geometry(0);
+                writerPtr_->setSurface
+                (
+                    surf.points(),
+                    surf.surfFaces(),
+                    false  // serial - already merged
+                );
+                writerPtr_->open(outSurfDir / fNameBase);
+            }
+
             // Determine frequency range of interest
             // Note: frequencies have fixed interval, and are in the range
             //       0 to fftWriteInterval_*(n-1)*deltaf
@@ -837,6 +825,11 @@ void surfaceNoise::calculate()
                     writeFreqDataToFile(os, fOut, SPL(PSDfAve*deltaf, fOut));
                 }
             }
+
+            if (Pstream::master())
+            {
+                writerPtr_->clear();
+            }
         }
 
 
@@ -844,6 +837,18 @@ void surfaceNoise::calculate()
         {
             fileName outDir(outDirBase/"oneThirdOctave");
             fileName outSurfDir(filePath(outDir));
+
+            if (Pstream::master())
+            {
+                const meshedSurface& surf = readerPtr_->geometry(0);
+                writerPtr_->setSurface
+                (
+                    surf.points(),
+                    surf.surfFaces(),
+                    false  // serial - already merged
+                );
+                writerPtr_->open(outSurfDir / fNameBase);
+            }
 
             scalarField PSDfAve(surfPrms13f.size(), Zero);
             scalarField Prms13fAve(surfPrms13f.size(), Zero);
@@ -885,6 +890,11 @@ void surfaceNoise::calculate()
                     octave13FreqCentre,
                     SPL(Prms13fAve, octave13FreqCentre)
                 );
+            }
+
+            if (Pstream::master())
+            {
+                writerPtr_->clear();
             }
         }
     }
