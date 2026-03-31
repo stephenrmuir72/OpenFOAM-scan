@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2020-2022 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -141,3 +142,88 @@ Foam::zoneMotion::zoneMotion
 
 
 // ************************************************************************* //
+
+
+void Foam::zoneMotion::rebuildPointIDs
+(
+    const dictionary& dict,
+    const polyMesh& mesh
+)
+{
+    pointIDs_.clear();
+    moveAllCells_ = true;
+
+    word cellSetName;
+    if
+    (
+        dict.readIfPresent("cellSet", cellSetName)
+     && cellSetName == "none"
+    )
+    {
+        cellSetName.clear();
+    }
+
+    labelList cellIDs;
+    if (!cellSetName.empty())
+    {
+        cellIDs = cellSet(mesh, cellSetName).toc();
+    }
+
+    wordRe cellZoneName;
+    if
+    (
+        dict.readIfPresent("cellZone", cellZoneName)
+     && cellZoneName == "none"
+    )
+    {
+        cellZoneName.clear();
+    }
+
+    labelList zoneIDs;
+    if (!cellZoneName.empty())
+    {
+        zoneIDs = mesh.cellZones().indices(cellZoneName);
+
+        if (zoneIDs.empty())
+        {
+            FatalIOErrorInFunction(dict)
+                << "No matching cellZones: " << cellZoneName << nl
+                << "    Valid zones : "
+                << flatOutput(mesh.cellZones().names()) << nl
+                << "    Valid groups: "
+                << flatOutput(mesh.cellZones().groupNames())
+                << nl
+                << exit(FatalIOError);
+        }
+    }
+
+    if (!cellSetName.empty() || !cellZoneName.empty())
+    {
+        bitSet movePts(mesh.nPoints());
+
+        for (const label zoneID : zoneIDs)
+        {
+            for (const label celli : mesh.cellZones()[zoneID])
+            {
+                for (const label facei : mesh.cells()[celli])
+                {
+                    movePts.set(mesh.faces()[facei]);
+                }
+            }
+        }
+
+        for (const label celli : cellIDs)
+        {
+            for (const label facei : mesh.cells()[celli])
+            {
+                movePts.set(mesh.faces()[facei]);
+            }
+        }
+
+        syncTools::syncPointList(mesh, movePts, orEqOp<unsigned int>(), 0u);
+
+        pointIDs_ = movePts.sortedToc();
+    }
+
+    moveAllCells_ = returnReduceAnd(pointIDs_.empty());
+}

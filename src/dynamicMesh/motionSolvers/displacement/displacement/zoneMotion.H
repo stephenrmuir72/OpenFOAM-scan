@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2019-2022 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -104,6 +105,10 @@ public:
         {
             return moveAllCells_;
         }
+
+        //- Rebuild pointIDs_ and moveAllCells_ from the current mesh state.
+        //  Call after parallel redistribution (DLB) to fix stale indices.
+        void rebuildPointIDs(const dictionary& dict, const polyMesh& mesh);
 };
 
 

@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2018-2022 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -32,6 +33,7 @@ License
 #include "cellZoneMesh.H"
 #include "bitSet.H"
 #include "syncTools.H"
+#include "mapDistributePolyMesh.H"
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -154,3 +156,51 @@ Foam::tmp<Foam::pointField> Foam::multiSolidBodyMotionSolver::curPoints() const
 
 
 // ************************************************************************* //
+
+
+void Foam::multiSolidBodyMotionSolver::distribute
+(
+    const mapDistributePolyMesh& map
+)
+{
+    // Redistribute points0_ (inherited from points0MotionSolver)
+    map.distributePointData(points0_);
+
+    // Rebuild per-zone pointIDs_ for the redistributed mesh
+    const polyMesh& mesh = this->mesh();
+    label zonei = 0;
+
+    for (const entry& dEntry : coeffDict())
+    {
+        if (dEntry.isDict())
+        {
+            const keyType& cellZoneName = dEntry.keyword();
+
+            labelList zoneIDs = mesh.cellZones().indices(cellZoneName);
+
+            bitSet movePts(mesh.nPoints());
+            for (const label zoneID : zoneIDs)
+            {
+                for (const label celli : mesh.cellZones()[zoneID])
+                {
+                    for (const label facei : mesh.cells()[celli])
+                    {
+                        movePts.set(mesh.faces()[facei]);
+                    }
+                }
+            }
+
+            syncTools::syncPointList
+            (
+                mesh, movePts, orEqOp<unsigned int>(), 0u
+            );
+
+            if (zonei < pointIDs_.size())
+            {
+                pointIDs_[zonei] = movePts.sortedToc();
+            }
+
+            ++zonei;
+        }
+    }
+}

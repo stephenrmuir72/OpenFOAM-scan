@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -96,6 +97,9 @@ public:
 
         //- Return point location obtained from the current motion field
         virtual tmp<pointField> curPoints() const;
+
+        //- Update local data after parallel redistribution (DLB)
+        virtual void distribute(const mapDistributePolyMesh& map);
 
         //- Solve for motion
         virtual void solve()
