@@ -687,7 +687,7 @@ void surfaceNoise::calculate()
             fileName outDir(outDirBase/"fft");
             fileName outSurfDir(filePath(outDir));
 
-            if (Pstream::master())
+            if (UPstream::master())
             {
                 const meshedSurface& surf = readerPtr_->geometry(0);
                 writerPtr_->setSurface
@@ -826,7 +826,8 @@ void surfaceNoise::calculate()
                 }
             }
 
-            if (Pstream::master())
+            // Expire the writer (reset surface etc)
+            if (writerPtr_)
             {
                 writerPtr_->clear();
             }
@@ -838,7 +839,7 @@ void surfaceNoise::calculate()
             fileName outDir(outDirBase/"oneThirdOctave");
             fileName outSurfDir(filePath(outDir));
 
-            if (Pstream::master())
+            if (UPstream::master())
             {
                 const meshedSurface& surf = readerPtr_->geometry(0);
                 writerPtr_->setSurface
@@ -892,7 +893,8 @@ void surfaceNoise::calculate()
                 );
             }
 
-            if (Pstream::master())
+            // Expire the writer (reset surface etc)
+            if (writerPtr_)
             {
                 writerPtr_->clear();
             }
