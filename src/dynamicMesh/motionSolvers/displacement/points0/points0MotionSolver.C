@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2012-2017 OpenFOAM Foundation
     Copyright (C) 2015-2022 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -28,6 +29,7 @@ License
 
 #include "points0MotionSolver.H"
 #include "mapPolyMesh.H"
+#include "mapDistributePolyMesh.H"
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -217,4 +219,18 @@ void Foam::points0MotionSolver::updateMesh(const mapPolyMesh& mpm)
 }
 
 
+void Foam::points0MotionSolver::distribute
+(
+    const mapDistributePolyMesh& map
+)
+{
+    // Redistribute points0_ to the new processor partition
+    map.distributePointData(points0_);
+
+    // Rebuild zone-based pointIDs_ for the redistributed mesh
+    zoneMotion::rebuildPointIDs(coeffDict(), mesh());
+}
+
+
 // ************************************************************************* //
+

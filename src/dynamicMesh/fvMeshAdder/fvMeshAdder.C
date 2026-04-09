@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2021 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -254,6 +255,21 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::fvMeshAdder::add
     }
     meshMod.setCapacity(nPoints, nFaces, nCells);
 
+    PtrList<pointField> oldMotionPoints(fvMeshes.size());
+    bool haveOldMotionPoints = false;
+    forAll(fvMeshes, proci)
+    {
+        if (fvMeshes.set(proci) && fvMeshes[proci].moving())
+        {
+            oldMotionPoints.set
+            (
+                proci,
+                new pointField(fvMeshes[proci].oldPoints())
+            );
+            haveOldMotionPoints = true;
+        }
+    }
+
     // Add all cells in meshes' order
     polyMeshAdder::add
     (
@@ -308,6 +324,42 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::fvMeshAdder::add
     for (labelList& pointMap : constructPointMap)
     {
         inplaceRenumber(mapPtr().reversePointMap(), pointMap);
+    }
+
+    if (haveOldMotionPoints)
+    {
+        pointField mappedOldPoints(fvMeshes[0].points());
+        boolList mappedPoint(mappedOldPoints.size(), false);
+
+        forAll(oldMotionPoints, proci)
+        {
+            if (oldMotionPoints.set(proci))
+            {
+                const pointField& sourceOldPoints = oldMotionPoints[proci];
+                const labelList& pointMap = constructPointMap[proci];
+
+                forAll(pointMap, pointi)
+                {
+                    const label newPointi = pointMap[pointi];
+
+                    if
+                    (
+                        newPointi >= 0
+                     && newPointi < mappedOldPoints.size()
+                     && pointi < sourceOldPoints.size()
+                     && !mappedPoint[newPointi]
+                    )
+                    {
+                        mappedOldPoints[newPointi] = sourceOldPoints[pointi];
+                        mappedPoint[newPointi] = true;
+                    }
+                }
+            }
+        }
+
+        fvMeshes[0].moving(true);
+        const_cast<pointField&>(fvMeshes[0].oldPoints()) =
+            std::move(mappedOldPoints);
     }
 
     // constructPatchMap is patchMap with -1 for the removed

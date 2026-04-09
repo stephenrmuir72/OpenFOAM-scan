@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2019-2021 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -2741,6 +2742,7 @@ void Foam::polyMeshAdder::add
         {
             const polyMesh& mesh = meshes[meshi];
             const cellZoneMesh& cellZones = mesh.cellZones();
+            const bool destinationMesh = (meshi == 0);
 
             // Precalc offset zones
             labelList newZoneID(mesh.nCells(), -1);
@@ -2779,8 +2781,8 @@ void Foam::polyMeshAdder::add
                     -1,
                     -1,
                     -1,
-                    celli,
-                    newZoneID[celli]
+                    destinationMesh ? celli : -1,
+                    zones
                 );
             }
         }
@@ -2798,6 +2800,7 @@ void Foam::polyMeshAdder::add
             const polyMesh& mesh = meshes[meshi];
             const pointField& points = mesh.points();
             const pointZoneMesh& pointZones = mesh.pointZones();
+            const bool destinationMesh = (meshi == 0);
 
             // Precalc offset zones
             labelList newZoneID(points.size(), -1);
@@ -2821,8 +2824,8 @@ void Foam::polyMeshAdder::add
                 pointProcAddressing[meshi][pointi] = meshMod.addPoint
                 (
                     points[pointi],
-                    pointi,
-                    newZoneID[pointi],
+                    destinationMesh ? pointi : -1,
+                    zones,
                     true
                 );
             }
@@ -2856,6 +2859,7 @@ void Foam::polyMeshAdder::add
             const labelList& faceOwner = mesh.faceOwner();
             const labelList& faceNeighbour = mesh.faceNeighbour();
             const faceZoneMesh& faceZones = mesh.faceZones();
+            const bool destinationMesh = (meshi == 0);
 
             // Precalc offset zones
             labelList newZoneID(faces.size(), -1);
@@ -2907,7 +2911,7 @@ void Foam::polyMeshAdder::add
                     newNei,
                     -1,                         // masterPointID
                     -1,                         // masterEdgeID
-                    facei,                      // masterFaceID
+                    destinationMesh ? facei : -1, // masterFaceID
                     flipFaceFlux,               // flipFaceFlux
                     -1,                         // patchID
                     newZoneID[facei],           // zoneID
@@ -2964,7 +2968,7 @@ void Foam::polyMeshAdder::add
                         newNei,                     // neighbour
                         -1,                         // masterPointID
                         -1,                         // masterEdgeID
-                        facei,                      // masterFaceID
+                        destinationMesh ? facei : -1, // masterFaceID
                         flipFaceFlux,               // flipFaceFlux
                         -1,                         // patchID
                         newZoneID[facei],           // zoneID
@@ -3011,7 +3015,7 @@ void Foam::polyMeshAdder::add
                                 -1,                         // neighbour
                                 -1,                         // masterPointID
                                 -1,                         // masterEdgeID
-                                facei,                      // masterFaceID
+                                destinationMesh ? facei : -1, // masterFaceID
                                 false,                      // flipFaceFlux
                                 newPatchi,                  // patchID
                                 newZoneID[facei],           // zoneID

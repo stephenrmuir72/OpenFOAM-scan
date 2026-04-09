@@ -32,6 +32,7 @@ License
 #include "cellZoneMesh.H"
 #include "bitSet.H"
 #include "syncTools.H"
+#include "mapDistributePolyMesh.H"
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -150,6 +151,31 @@ Foam::tmp<Foam::pointField> Foam::multiSolidBodyMotionSolver::curPoints() const
     }
 
     return ttransformedPts;
+}
+
+
+void Foam::multiSolidBodyMotionSolver::distribute
+(
+    const mapDistributePolyMesh& map
+)
+{
+    map.distributePointData(points0_);
+
+    const polyMesh& mesh = this->mesh();
+    label zonei = 0;
+
+    for (const entry& dEntry : coeffDict())
+    {
+        if (dEntry.isDict())
+        {
+            if (zonei < zoneMotions_.size())
+            {
+                zoneMotions_[zonei].resetZone(mesh, dEntry.keyword());
+            }
+
+            ++zonei;
+        }
+    }
 }
 
 

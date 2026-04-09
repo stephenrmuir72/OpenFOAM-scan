@@ -140,4 +140,14 @@ Foam::zoneMotion::zoneMotion
 }
 
 
+void Foam::zoneMotion::rebuildPointIDs
+(
+    const dictionary& dict,
+    const polyMesh& mesh
+)
+{
+    resetZone(mesh, dict);
+}
+
+
 // ************************************************************************* //

@@ -104,6 +104,20 @@ public:
         {
             return moveAllCells_;
         }
+
+        //- Reset to use all points
+        void resetZone();
+
+        //- Reset with cellZones specified by name.
+        //- An empty name corresponds to "all"
+        void resetZone(const polyMesh& mesh, const wordRe& cellZoneSelection);
+
+        //- Reset from dictionary (uses cellSet, cellZone entries)
+        void resetZone(const polyMesh& mesh, const dictionary& dict);
+
+        //- Rebuild pointIDs_ and selection state from the current mesh.
+        //  Call after parallel redistribution (DLB) to fix stale indices.
+        void rebuildPointIDs(const dictionary& dict, const polyMesh& mesh);
 };
 
 
