@@ -50,6 +50,12 @@ bool Foam::dynamicLoadBalancer::isBalancingDue() const
     const label timeIndex = mesh_.time().timeIndex();
     const label freq = max(label(1), frequencyPtr_().value(t));
 
+    DebugInFunction
+        << "t: " << t << nl
+        << "timeIndex: " << timeIndex << nl
+        << "freq: " << freq << nl
+        << endl;
+
     bool skipBalance = false;
     if (skipBalancePtr_)
     {
@@ -87,6 +93,9 @@ bool Foam::dynamicLoadBalancer::isBalancingDue() const
             }
         }
     }
+
+    DebugInFunction
+        << "isBalancingDue: " << isBalancingDue << endl;
 
     return isBalancingDue;
 }

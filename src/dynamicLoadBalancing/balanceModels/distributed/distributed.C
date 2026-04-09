@@ -247,11 +247,15 @@ bool Foam::balanceModels::distributed::balance(const scalarField& procWeights)
 
 
     // Create mesh distribution engine
+    DebugInFunction<< "balance: prior to distributor" << endl;
     fvMeshDistribute distributor(mesh());
+    DebugInFunction<< "balance: after distributor" << endl;
 
 
     // Do actual sending/receiving of mesh
+    DebugInFunction<< "balance: prior to distribute" << endl;
     autoPtr<mapDistributePolyMesh> map = distributor.distribute(distribution);
+    DebugInFunction<< "balance: after distribute" << endl;
 
     if (isA<dynamicRefineFvMesh>(mesh()))
     {
@@ -259,7 +263,9 @@ bool Foam::balanceModels::distributed::balance(const scalarField& procWeights)
 
         hexRef8& meshCutter = refineMesh.meshCutter();
 
+        DebugInFunction<< "balance: meshCutter: prior to distribute" << endl;
         meshCutter.distribute(map());
+        DebugInFunction<< "balance: meshCutter: after distribute" << endl;
     }
 
     // Update motion solver state (points0_ and zone-based pointIDs_)
@@ -267,7 +273,9 @@ bool Foam::balanceModels::distributed::balance(const scalarField& procWeights)
     if (isA<dynamicMotionSolverFvMesh>(mesh()))
     {
         auto& dmsMesh = dynamicCast<dynamicMotionSolverFvMesh>(mesh());
+        DebugInFunction<< "balance: dynMotion: prior to distribute" << endl;
         dmsMesh.distribute(map());
+        DebugInFunction<< "balance: dynMotion: after distribute" << endl;
     }
 
 
