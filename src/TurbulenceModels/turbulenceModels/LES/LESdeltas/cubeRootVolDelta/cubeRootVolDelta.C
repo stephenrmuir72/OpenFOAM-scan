@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2016-2020 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -127,10 +128,7 @@ void Foam::LESModels::cubeRootVolDelta::read(const dictionary& dict)
 
 void Foam::LESModels::cubeRootVolDelta::correct()
 {
-    if (turbulenceModel_.mesh().changing())
-    {
-        calcDelta();
-    }
+    calcDelta();
 }
 
 
