@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017,2022 OpenFOAM Foundation
     Copyright (C) 2020-2024 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -433,6 +434,29 @@ const Foam::surfaceScalarField& Foam::fvMesh::phi() const
     phiPtr_->setOriented();
 
     return *phiPtr_;
+}
+
+
+void Foam::fvMesh::createMeshPhi()
+{
+    if (!phiPtr_)
+    {
+        // Create mesh motion flux
+        phiPtr_ = std::make_unique<surfaceScalarField>
+        (
+            IOobject
+            (
+                "meshPhi",
+                this->time().timeName(),
+                *this,
+                IOobject::NO_READ,
+                IOobject::NO_WRITE,
+                IOobject::NO_REGISTER
+            ),
+            *this,
+            dimensionedScalar(dimVolume/dimTime, Foam::zero{})
+        );
+    }
 }
 
 
