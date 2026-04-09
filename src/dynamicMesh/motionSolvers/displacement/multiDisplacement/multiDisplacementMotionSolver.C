@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2024 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -27,6 +28,7 @@ License
 
 #include "multiDisplacementMotionSolver.H"
 #include "addToRunTimeSelectionTable.H"
+#include "mapDistributePolyMesh.H"
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -178,6 +180,12 @@ multiDisplacementMotionSolver
 }
 
 
+// * * * * * * * * * * * * * * * * Destructor  * * * * * * * * * * * * * * * //
+
+Foam::multiDisplacementMotionSolver::~multiDisplacementMotionSolver()
+{}  // Forward declarations exist
+
+
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
 
 Foam::tmp<Foam::pointField>
@@ -264,6 +272,22 @@ void Foam::multiDisplacementMotionSolver::updateMesh(const mapPolyMesh& mpm)
     for (auto& ms : motionSolvers_)
     {
         ms.updateMesh(mpm);
+    }
+}
+
+
+void Foam::multiDisplacementMotionSolver::distribute
+(
+    const mapDistributePolyMesh& map
+)
+{
+    displacementMotionSolver::distribute(map);
+    map.distributePointData(curPoints_);
+
+    for (auto& ms : motionSolvers_)
+    {
+        ms.distribute(map);
+        ms.pointDisplacement() == pointDisplacement();
     }
 }
 

@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016, 2020 OpenFOAM Foundation
     Copyright (C) 2020 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -78,13 +79,19 @@ void Foam::polyMesh::updateMesh(const mapPolyMesh& mpm)
         // Map the list
         if (mpm.hasMotionPoints())
         {
-            newMotionPoints.map(oldMotionPoints, mpm.pointMap());
+            const labelList& pointMap = mpm.pointMap();
 
             // Any points created out-of-nothing get set to the current
             // coordinate for lack of anything better.
-            forAll(mpm.pointMap(), newPointi)
+            forAll(pointMap, newPointi)
             {
-                if (mpm.pointMap()[newPointi] == -1)
+                const label oldPointi = pointMap[newPointi];
+
+                if (oldPointi >= 0 && oldPointi < oldMotionPoints.size())
+                {
+                    newMotionPoints[newPointi] = oldMotionPoints[oldPointi];
+                }
+                else
                 {
                     newMotionPoints[newPointi] = points_[newPointi];
                 }
@@ -100,7 +107,12 @@ void Foam::polyMesh::updateMesh(const mapPolyMesh& mpm)
                 label oldPointi = pointMap[newPointi];
                 if (oldPointi >= 0)
                 {
-                    if (revPointMap[oldPointi] == newPointi) // master point
+                    if
+                    (
+                        oldPointi < revPointMap.size()
+                     && oldPointi < oldMotionPoints.size()
+                     && revPointMap[oldPointi] == newPointi
+                    ) // master point
                     {
                         newMotionPoints[newPointi] = oldMotionPoints[oldPointi];
                     }
@@ -128,14 +140,19 @@ void Foam::polyMesh::updateMesh(const mapPolyMesh& mpm)
         // Resize the list to new size
         newMotionCellCentres.resize(cellCentres().size());
 
-        // Map the list
-        newMotionCellCentres.map(oldMotionCellCentres, mpm.cellMap());
-
         // Any points created out-of-nothing get set to the current coordinate
         // for lack of anything better.
-        forAll(mpm.cellMap(), newCelli)
+        const labelList& cellMap = mpm.cellMap();
+        forAll(cellMap, newCelli)
         {
-            if (mpm.cellMap()[newCelli] == -1)
+            const label oldCelli = cellMap[newCelli];
+
+            if (oldCelli >= 0 && oldCelli < oldMotionCellCentres.size())
+            {
+                newMotionCellCentres[newCelli] =
+                    oldMotionCellCentres[oldCelli];
+            }
+            else
             {
                 newMotionCellCentres[newCelli] = cellCentres()[newCelli];
             }
