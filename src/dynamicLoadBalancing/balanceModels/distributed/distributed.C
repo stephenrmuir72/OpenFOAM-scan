@@ -191,8 +191,11 @@ bool Foam::balanceModels::distributed::read(const dictionary& dict)
 
 bool Foam::balanceModels::distributed::balance(const scalarField& procWeights)
 {
-    DebugInFunction
-        << "Number of cells (before balance): " << mesh().nCells() << endl;
+    if (debug)
+    {
+        Pout
+            << "Number of cells (before balance): " << mesh().nCells() << endl;
+    }
 
     // Check if the size of procWeights matches nProcs
     if (procWeights.size() != UPstream::nProcs())
@@ -313,8 +316,11 @@ bool Foam::balanceModels::distributed::balance(const scalarField& procWeights)
         syncCoupled(m.lookupClass<volTensorField>());
     }
 
-    DebugInFunction
-        << "Number of cells (after balance): " << mesh().nCells() << endl;
+    if (debug)
+    {
+        Pout
+            << "Number of cells (after balance): " << mesh().nCells() << endl;
+    }
 
     // What am I going to do with the 'map'?
     return true;
