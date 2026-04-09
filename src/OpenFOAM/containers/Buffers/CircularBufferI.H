@@ -33,8 +33,6 @@ inline Foam::label Foam::CircularBuffer<T>::toGlobal(const label start) const
     const label len = this->size();
     label i = start;
 
-    label i = start;
-
     if (!len)
     {
         // Bounds error
