@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016, 2020 OpenFOAM Foundation
     Copyright (C) 2020 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -100,7 +101,11 @@ void Foam::polyMesh::updateMesh(const mapPolyMesh& mpm)
                 label oldPointi = pointMap[newPointi];
                 if (oldPointi >= 0)
                 {
-                    if (revPointMap[oldPointi] == newPointi) // master point
+                    if
+                    (
+                        oldPointi < revPointMap.size()
+                     && revPointMap[oldPointi] == newPointi
+                    ) // master point
                     {
                         newMotionPoints[newPointi] = oldMotionPoints[oldPointi];
                     }
