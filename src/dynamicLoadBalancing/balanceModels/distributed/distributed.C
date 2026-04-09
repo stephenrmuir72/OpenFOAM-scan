@@ -270,6 +270,41 @@ bool Foam::balanceModels::distributed::balance(const scalarField& procWeights)
         dmsMesh.distribute(map());
     }
 
+
+    // Synchronize processor patch neighbour values for all registered fields.
+    // Only coupled patches (processor/processorCyclic) need MPI exchange after
+    // redistribution. Non-coupled patches must NOT be re-evaluated here as
+    // some (e.g. fixedFluxPressure) require solver state not yet available.
+    {
+        fvMesh& m = mesh();
+
+        auto syncCoupled = [](auto fieldPtrs)
+        {
+            for (auto* fPtr : fieldPtrs)
+            {
+                auto& bf = fPtr->boundaryFieldRef();
+                const label startReq = Pstream::nRequests();
+                forAll(bf, patchi)
+                {
+                    if (bf[patchi].coupled())
+                        bf[patchi].initEvaluate(Pstream::defaultCommsType);
+                }
+                Pstream::waitRequests(startReq);
+                forAll(bf, patchi)
+                {
+                    if (bf[patchi].coupled())
+                        bf[patchi].evaluate(Pstream::defaultCommsType);
+                }
+            }
+        };
+
+        syncCoupled(m.lookupClass<volScalarField>());
+        syncCoupled(m.lookupClass<volVectorField>());
+        syncCoupled(m.lookupClass<volSphericalTensorField>());
+        syncCoupled(m.lookupClass<volSymmTensorField>());
+        syncCoupled(m.lookupClass<volTensorField>());
+    }
+
     DebugInFunction
         << "Number of cells (after balance): " << mesh().nCells() << endl;
 
