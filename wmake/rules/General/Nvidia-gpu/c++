@@ -3,7 +3,7 @@
 #------------------------------------------------------------------------------
 SUFFIXES   += .C .cc .cpp .cxx
 
-CC         := nvc++$(COMPILER_VERSION) -std=c++17 -stdpar=gpu  -gpu=cc90,mem:managed -DFOAM_OFFLOAD
+CC         := nvc++$(COMPILER_VERSION) -std=c++17 -stdpar=gpu  -gpu=cc90,mem:unified,managed -DFOAM_OFFLOAD
 
 c++ARCH    :=
 c++DBUG    :=
