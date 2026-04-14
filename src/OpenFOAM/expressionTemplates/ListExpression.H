@@ -54,7 +54,7 @@ SourceFiles
 #elif __has_include(<execution>) && defined(Foam_Expression_execution)
     #include <execution>
 #endif
-#if defined(FOAM_OFFLOAD) \
+#if defined(FOAM_OFFLOAD_NEXT) \
     && defined(__cpp_lib_execution) && (__cpp_lib_execution >= 201902L)
 #endif
 
@@ -105,7 +105,7 @@ public:
             lst[i] = *src;
         }
 #else
-    #if defined(FOAM_OFFLOAD) \
+    #if defined(FOAM_OFFLOAD_NEXT) \
         && defined(__cpp_lib_execution) && (__cpp_lib_execution >= 201902L)
         // //- Using iterators
         // std::copy
@@ -2720,7 +2720,7 @@ public:
     void evaluate(ListsRefWrap<E>& exprWarp)
     {
         const label loop_len = this->size();
-#if defined(FOAM_OFFLOAD) \
+#if defined(FOAM_OFFLOAD_NEXT) \
     && defined(__cpp_lib_execution) && (__cpp_lib_execution >= 201902L)
         #if (__cplusplus >= 202002L)
         auto idx = std::views::iota(label(0), loop_len);

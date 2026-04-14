@@ -67,10 +67,8 @@ namespace Foam
 {
 
 // Forward Declarations
-#ifdef FOAM_OFFLOAD
 template <typename Func>
 void apply_policy(size_t loop_length, Func&& f);
-#endif
 
 class labelRange;
 

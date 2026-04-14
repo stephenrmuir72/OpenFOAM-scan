@@ -27,22 +27,25 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "error.H"
+#include "ListPolicy.H"
+
 // <algorithm> already included by stdFoam.H
 
-#ifdef FOAM_OFFLOAD
 template <typename Func>
 void Foam::apply_policy(size_t loop_length, Func&& f)
 {
-    if (loop_length > 128)
+    #ifdef FOAM_OFFLOAD
+    if (ListPolicy::use_offload(loop_length))
     {
         f(std::execution::par_unseq);
     }
     else
+    #endif
     {
         f(std::execution::seq);
     }
 }
-#endif
+
 
 // * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * //
 
