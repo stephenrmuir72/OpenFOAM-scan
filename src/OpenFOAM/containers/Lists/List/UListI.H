@@ -29,6 +29,11 @@ License
 #include "error.H"
 #include "ListPolicy.H"
 
+#ifdef FOAM_OFFLOAD
+#include <algorithm>
+#include <execution>
+#endif
+
 // <algorithm> already included by stdFoam.H
 
 template <typename Func>

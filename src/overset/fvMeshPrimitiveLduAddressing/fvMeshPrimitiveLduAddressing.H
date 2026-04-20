@@ -103,12 +103,17 @@ public:
             const lduSchedule& ps
         );
 
+        #ifdef FOAM_OFFLOAD
+        virtual label nPatches() const noexcept
+        {
+            return patchAddr_.size();
+        }
 
-    //- Destructor
-    virtual ~fvMeshPrimitiveLduAddressing() = default;
-
-
-    // Member Functions
+        virtual bool patchAvailable(const label patchNo) const noexcept
+        {
+            return patchAddr_.set(patchNo);
+        }
+        #endif
 
         //- Return lower addressing (i.e. lower label = upper triangle)
         virtual const labelUList& lowerAddr() const noexcept

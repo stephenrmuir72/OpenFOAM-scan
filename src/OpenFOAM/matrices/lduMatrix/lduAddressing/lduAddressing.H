@@ -107,6 +107,12 @@ SourceFiles
 #include "lduSchedule.H"
 #include "Tuple2.H"
 
+#ifdef FOAM_OFFLOAD
+#include "boolList.H"
+#include <algorithm>
+#include <execution>
+#include <atomic>
+#endif
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 namespace Foam
@@ -138,8 +144,13 @@ class lduAddressing
         //- Lower addressing
         mutable std::unique_ptr<labelList> lowerCSRAddrPtr_;
 
+        #ifdef FOAM_OFFLOAD
+        mutable PtrList<const labelList> patchSortCells_;
 
-    // Private Member Functions
+        mutable PtrList<const labelList> patchSortAddr_;
+
+        mutable PtrList<const labelList> patchSortStartAddr_;
+        #endif
 
         //- Calculate losort
         void calcLosort() const;
@@ -153,6 +164,13 @@ class lduAddressing
         //- Calculate CSR lower addressing
         void calcLoCSR() const;
 
+        #ifdef FOAM_OFFLOAD
+        //- Calculate patch sort
+        void calcPatchSort() const;
+
+        //- Calculate patch sort
+        void calcPatchSortStart() const;
+        #endif
 
 public:
 
@@ -197,6 +215,30 @@ public:
         (
             const label patchNo
         ) const = 0;
+
+        #ifdef FOAM_OFFLOAD
+        virtual label nPatches() const = 0;
+
+        virtual bool patchAvailable
+        (
+            const label patchNo
+        ) const = 0;
+
+        const labelUList& patchSortCells
+        (
+            const label patchNo
+        ) const;
+
+        const labelUList& patchSortAddr
+        (
+            const label patchNo
+        ) const;
+
+        const labelUList& patchSortStartAddr
+        (
+            const label patchNo
+        ) const;
+        #endif
 
         //- Return patch field evaluation schedule
         virtual const lduSchedule& patchSchedule() const = 0;
