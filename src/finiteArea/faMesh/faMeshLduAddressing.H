@@ -133,6 +133,13 @@ public:
         {
             return patchAddr_[patchi];
         }
+        
+        #ifdef FOAM_OFFLOAD
+        virtual bool patchAvailable(const label i) const
+        {
+            return patchAddr_.set(i);
+        }
+        #endif
 
         //- Return patch field evaluation schedule
         virtual const lduSchedule& patchSchedule() const noexcept
