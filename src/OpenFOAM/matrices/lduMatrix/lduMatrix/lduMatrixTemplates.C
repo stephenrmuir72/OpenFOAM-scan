@@ -30,6 +30,10 @@ Description
 
 #include "lduMatrix.H"
 
+#ifdef FOAM_OFFLOAD
+#include "lduMatrixFunctors.H"
+#include "lduAddressingFunctors.H"
+#endif
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 template<class Type>
@@ -39,6 +43,31 @@ Foam::tmp<Foam::Field<Type>> Foam::lduMatrix::H(const Field<Type>& psi) const
 
     if (lowerPtr_ || upperPtr_)
     {
+        #ifdef FOAM_OFFLOAD
+        labelRange indices(tHpsi.ref().size());
+        matrixOperation
+        (
+            tHpsi.ref().begin(),
+            tHpsi.ref(),
+            lduAddr(),
+            matrixCoeffsMultiplyFunctor<Type, scalar,
+            negateUnaryOperatorFunctor<Type,Type>>
+            (
+                psi,
+                upper(),
+                lduAddr().upperAddr(),
+                negateUnaryOperatorFunctor<Type,Type>()
+            ),
+            matrixCoeffsMultiplyFunctor<Type, scalar,
+            negateUnaryOperatorFunctor<Type,Type>>
+            (
+                psi,
+                lower(),
+                lduAddr().lowerAddr(),
+                negateUnaryOperatorFunctor<Type,Type>()
+            )
+        );
+        #else
         Type* __restrict__ HpsiPtr = tHpsi.ref().begin();
 
         const Type* __restrict__ psiPtr = psi.begin();
@@ -56,6 +85,7 @@ Foam::tmp<Foam::Field<Type>> Foam::lduMatrix::H(const Field<Type>& psi) const
             HpsiPtr[uPtr[face]] -= lowerPtr[face]*psiPtr[lPtr[face]];
             HpsiPtr[lPtr[face]] -= upperPtr[face]*psiPtr[uPtr[face]];
         }
+        #endif
     }
 
     return tHpsi;
@@ -86,12 +116,24 @@ Foam::lduMatrix::faceH(const Field<Type>& psi) const
         auto tfaceHpsi = tmp<Field<Type>>::New(Lower.size());
         auto& faceHpsi = tfaceHpsi.ref();
 
-        for (label face=0; face<l.size(); face++)
+        const label nFaces = Lower.size();
+        const labelRange faceIndices(nFaces);
+
+        apply_policy(static_cast<std::size_t>(nFaces), [&](auto policy)
         {
-            faceHpsi[face] =
-                Upper[face]*psi[u[face]]
-              - Lower[face]*psi[l[face]];
-        }
+            std::transform
+            (
+                policy,
+                faceIndices.begin(),
+                faceIndices.end(),
+                faceHpsi.begin(),
+                [&](const label face)
+                {
+                    return Upper[face]*psi[u[face]]
+                         - Lower[face]*psi[l[face]];
+                }
+            );
+        });
 
         return tfaceHpsi;
     }

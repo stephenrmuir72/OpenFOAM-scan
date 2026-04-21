@@ -31,6 +31,11 @@ Description
 
 #include "lduMatrix.H"
 
+#ifdef FOAM_OFFLOAD
+#include "lduMatrixFunctors.H"
+#endif
+
+
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 void Foam::lduMatrix::sumDiag()
@@ -39,6 +44,24 @@ void Foam::lduMatrix::sumDiag()
     const scalarField& Upper = const_cast<const lduMatrix&>(*this).upper();
     scalarField& Diag = diag();
 
+    #ifdef FOAM_OFFLOAD
+    matrixOperation
+    (
+        Diag.begin(),
+        Diag,
+        lduAddr(),
+        matrixCoeffsFunctor<scalar, unityUnaryOperatorFunctor<scalar, scalar>>
+        (
+            Lower,
+            unityUnaryOperatorFunctor<scalar, scalar>()
+        ),
+        matrixCoeffsFunctor<scalar, unityUnaryOperatorFunctor<scalar, scalar>>
+        (
+            Upper,
+            unityUnaryOperatorFunctor<scalar, scalar>()
+        )
+    );
+    #else
     const labelUList& l = lduAddr().lowerAddr();
     const labelUList& u = lduAddr().upperAddr();
 
@@ -47,6 +70,7 @@ void Foam::lduMatrix::sumDiag()
         Diag[l[face]] += Lower[face];
         Diag[u[face]] += Upper[face];
     }
+    #endif
 }
 
 
@@ -55,7 +79,24 @@ void Foam::lduMatrix::negSumDiag()
     const scalarField& Lower = const_cast<const lduMatrix&>(*this).lower();
     const scalarField& Upper = const_cast<const lduMatrix&>(*this).upper();
     scalarField& Diag = diag();
-
+    #ifdef FOAM_OFFLOAD
+    matrixOperation
+    (
+        Diag.begin(),
+        Diag,
+        lduAddr(),
+        matrixCoeffsFunctor<scalar, negateUnaryOperatorFunctor<scalar, scalar>>
+        (
+            Lower,
+            negateUnaryOperatorFunctor<scalar, scalar>()
+        ),
+        matrixCoeffsFunctor<scalar, negateUnaryOperatorFunctor<scalar, scalar>>
+        (
+            Upper,
+            negateUnaryOperatorFunctor<scalar, scalar>()
+        )
+    );
+    #else
     const labelUList& l = lduAddr().lowerAddr();
     const labelUList& u = lduAddr().upperAddr();
 
@@ -64,6 +105,7 @@ void Foam::lduMatrix::negSumDiag()
         Diag[l[face]] -= Lower[face];
         Diag[u[face]] -= Upper[face];
     }
+    #endif
 }
 
 
@@ -72,6 +114,24 @@ void Foam::lduMatrix::sumMagOffDiag
     scalarField& sumOff
 ) const
 {
+    #ifdef FOAM_OFFLOAD
+    matrixOperation
+    (
+        sumOff.begin(),
+        sumOff,
+        lduAddr(),
+        matrixCoeffsFunctor<scalar, magUnaryFunctionFunctor<scalar, scalar>>
+        (
+            upper(),
+            magUnaryFunctionFunctor<scalar,scalar>()
+        ),
+        matrixCoeffsFunctor<scalar, magUnaryFunctionFunctor<scalar, scalar>>
+        (
+            lower(),
+            magUnaryFunctionFunctor<scalar, scalar>()
+        )
+    );
+    #else
     const scalarField& Lower = const_cast<const lduMatrix&>(*this).lower();
     const scalarField& Upper = const_cast<const lduMatrix&>(*this).upper();
 
@@ -83,6 +143,7 @@ void Foam::lduMatrix::sumMagOffDiag
         sumOff[u[face]] += mag(Lower[face]);
         sumOff[l[face]] += mag(Upper[face]);
     }
+    #endif
 }
 
 
@@ -313,15 +374,38 @@ void Foam::lduMatrix::operator*=(const scalarField& sf)
         const labelUList& l = lduAddr().lowerAddr();
         const labelUList& u = lduAddr().upperAddr();
 
-        for (label face=0; face<upper.size(); face++)
-        {
-            upper[face] *= sf[l[face]];
-        }
+        const labelRange upperFaces(upper.size());
 
-        for (label face=0; face<lower.size(); face++)
+        apply_policy(static_cast<std::size_t>(upper.size()), [&](auto policy)
         {
-            lower[face] *= sf[u[face]];
-        }
+            std::for_each
+            (
+                policy,
+                upperFaces.begin(),
+                upperFaces.end(),
+                [&](const label face)
+                {
+                    upper[face] *= sf[l[face]];
+                }
+            );
+        });
+
+        const labelRange lowerFaces(lower.size());
+
+        apply_policy(static_cast<std::size_t>(lower.size()), [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                lowerFaces.begin(),
+                lowerFaces.end(),
+                [&](const label face)
+                {
+                    lower[face] *= sf[u[face]];
+                }
+            );
+        });
+    
     }
 }
 
