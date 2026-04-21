@@ -36,13 +36,71 @@ Application
 #include "ListExpression.H"
 #include "GeometricFieldExpression.H"
 #include "fvCFD.H"
+#include "EulerDdtScheme.H"
 #include "fvOptions.H"
 #include <ratio>
 #include <chrono>
+#include "gaussLaplacianScheme.H"
 
 using namespace Foam;
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+/*
+- fvMatrixExpression expr = Expr::ddt(p) - Expr::div(phi, U) == Expr::Su;
+    -> ddt : fvMatrixInternal
+    -> templated as min<<ddtU,divU>,Su>
+- fvMatrix<scalar>(p, expr);
+    - calls expr.evaluate(m)
+        - calls InitExpr(m)?
+            - calls virtual ddtScheme to in-place populate and add to m
+            - so how do we include the negation of the divU contribution?
+                - cannot do it as a template instantiation
+                - could do it at constructor time - start off with 1.0 and then
+                  multiply by -1.0 for divU contribution
+                - could do it as a lambda or scalar passed to the InitExpr, but then we
+                  lose the ability to use the expression templates for the divU contribution
+*/
+
+template<class T>
+void print(const std::string& msg, const fvMatrix<T>& m)
+{
+    Pout<< msg << " psi: " << m.psi().name() << nl
+        << "    size:" << m.lduAddr().size()
+        << " dimensions:" << m.dimensions()
+        << " diag:" << m.hasDiag()
+        << " uppper:" << m.hasUpper()
+        << " lower:" << m.hasLower()
+        << nl;
+    if (m.hasDiag())
+    {
+        Pout<< "    diag:" << flatOutput(m.diag()) << nl;
+    }
+    Pout<< "    src :" << flatOutput(m.source()) << nl;
+    if (m.hasUpper())
+    {
+        Pout<< "    upper:" << flatOutput(m.upper()) << nl;
+    }
+    if (m.hasLower())
+    {
+        Pout<< "    lower:" << flatOutput(m.lower()) << nl;
+    }
+    forAll(m.internalCoeffs(), i)
+    {
+        if (m.internalCoeffs().set(i))
+        {
+            Pout<< "    i:" << i
+                << " internal:" << m.internalCoeffs()[i]
+                << endl;
+        }
+        if (m.boundaryCoeffs().set(i))
+        {
+            Pout<< "    i:" << i
+                << " boundary:" << m.boundaryCoeffs()[i]
+                << endl;
+        }
+    }
+}
 
 tmp<volScalarField> someFunction(const volScalarField& fld)
 {
@@ -84,9 +142,27 @@ int main(int argc, char *argv[])
         ),
         mesh
     );
-    DebugVar(U);
-    #include "createPhi.H"
-    DebugVar(phi);
+
+    // Fill with random value
+    for (label i=0; i<p.internalField().size(); ++i)
+    {
+        const_cast<DynamicField<scalar>&>(p.primitiveField())[i] = scalar(i);
+    }
+
+    // fvm expression
+    {
+        const fvMatrix<scalar> m3(-fvm::ddt(p));
+        // fvMatrix<scalar> m3(p, p.dimensions()*dimVol/dimTime);
+        // fvm::ddt<scalar>(m3, 1.0, p);
+        print("-fvm::ddt", m3);
+        auto expr = -Expression::ddt(p);
+        DebugVar(expr.dimensions());
+        DebugVar(expr.hasDiag());
+        DebugVar(expr.source().size());
+        const fvMatrix<scalar> m2(p, expr);
+        print("-Expression::ddt", m2);
+    }
+
 
     if (false)
     {
@@ -265,6 +341,9 @@ int main(int argc, char *argv[])
     }
     */
 
+    const auto tsomeField = fvc::laplacian(p);
+    const auto& someField = tsomeField();
+    if (false)
     {
         // Expressions of fvMatrix
 
@@ -273,22 +352,7 @@ int main(int argc, char *argv[])
         // // Print a bit
         // {
         //     const fvMatrix<scalar>& m0 = tm0();
-        //     DebugVar(m0.dimensions());
-        //     DebugVar(m0.hasDiag());
-        //     DebugVar(m0.hasUpper());
-        //     DebugVar(m0.hasLower());
-        //     forAll(m0.internalCoeffs(), i)
-        //     {
-        //         DebugVar(i);
-        //         if (m0.internalCoeffs().set(i))
-        //         {
-        //             DebugVar(m0.internalCoeffs()[i]);
-        //         }
-        //         if (m0.boundaryCoeffs().set(i))
-        //         {
-        //             DebugVar(m0.boundaryCoeffs()[i]);
-        //         }
-        //     }
+        //     print("fvm::laplacian", m0);
         // }
 
         // if (false)
@@ -311,35 +375,10 @@ int main(int argc, char *argv[])
         (
             // fvm::ddt(p)
             fvm::laplacian(p)
-         == fvc::Su(fvc::laplacian(p), p)
+         == fvc::Su(someField, p)
           // + opts.expr()
         );
-
-        // Do some expression in fvMatrixExpression syntax
-        // const auto tlaplacian = fvc::laplacian(p);
-        // const UList<scalar>& tl = tlaplacian().internalField();
-        // const auto expr =
-        // (
-        //     // fvm::ddt(p).expr()
-        //     fvm::laplacian(p).expr()
-        //  == Expression::Su<(fvc::laplacian(p), p)
-        // //  + opts.expr()
-        // );
-// {
-//     DebugVar(expr.hasDiag());
-//     DebugVar(typeid(expr.diag()).name());
-//     DebugVar(expr.diag().size());
-//     scalarField diag;
-//     expr.diag().evaluate(diag);
-//     Pout<< "Expression diag: " << flatOutput(diag) << nl;
-// }
-// {
-//     DebugVar(typeid(expr.source()).name());
-//     DebugVar(expr.source().size());
-//     scalarField source;
-//     expr.source().evaluate(source);
-//     Pout<< "Expression source: " << flatOutput(source) << nl;
-// }
+DebugVar("here");
 
         // Evaluate expression
         const fvMatrix<scalar> m2
@@ -347,51 +386,66 @@ int main(int argc, char *argv[])
             p2,
             (
                 fvm::laplacian(p).expr()
-             == Expression::Su(fvc::laplacian(p), p)
+             == Expression::Su(someField, p)
             )
         );
 
-DebugVar("here");
-
-// Print a bit
-        {
-            const fvMatrix<scalar>& m1 = tm1();
-            DebugVar(m1.dimensions());
-            DebugVar(m1.hasDiag());
-            DebugVar(m1.hasUpper());
-            DebugVar(m1.hasLower());
-            forAll(m1.internalCoeffs(), i)
-            {
-                DebugVar(i);
-                if (m1.internalCoeffs().set(i))
-                {
-                    DebugVar(m1.internalCoeffs()[i]);
-                }
-                if (m1.boundaryCoeffs().set(i))
-                {
-                    DebugVar(m1.boundaryCoeffs()[i]);
-                }
-            }
-        }
         // Print a bit
-        {
-            DebugVar(m2.dimensions());
-            DebugVar(m2.hasDiag());
-            DebugVar(m2.hasUpper());
-            DebugVar(m2.hasLower());
-            forAll(m2.internalCoeffs(), i)
-            {
-                DebugVar(i);
-                if (m2.internalCoeffs().set(i))
-                {
-                    DebugVar(m2.internalCoeffs()[i]);
-                }
-                if (m2.boundaryCoeffs().set(i))
-                {
-                    DebugVar(m2.boundaryCoeffs()[i]);
-                }
-            }
-        }
+        print("fvm::laplacian,fvc::Su", tm1());
+        print("fvm::laplacian,Expression::Su", m2);
+    }
+
+
+DebugVar("----------------------------");
+    {
+        const fvMatrix<scalar> m3(fvm::ddt(p) - fvm::laplacian(p) == fvc::Su(someField, p));
+        // fv::gaussLaplacianScheme<scalar, scalar> scheme(mesh);
+        // const fvMatrix<scalar> m3
+        // (
+        //     scheme.fvmLaplacian(fvc::interpolate(one), p)
+        // );
+        print("** fv::ddt,fvm::laplacian,fvc::Su", m3);
+    }
+    {
+        fvMatrix<scalar> m2(p2, Expression::ddt(p) - Expression::laplacian(p) == Expression::Su(someField, p));
+        //fvm::laplacian<scalar, scalar>(m2, -1.0, p);
+        print("**Expression::ddt,laplacian,Su", m2);
+    }
+
+Pout<< "*** fvm::div ***" << nl;
+    {
+        // volVectorField U2
+        // (
+        //     IOobject
+        //     (
+        //         "U",
+        //         runTime.timeName(),
+        //         mesh.thisDb(),
+        //         IOobject::MUST_READ,
+        //         IOobject::AUTO_WRITE,
+        //         IOobject::NO_REGISTER
+        //     ),
+        //     mesh
+        // );
+        surfaceScalarField phi
+        (
+            IOobject
+            (
+                "phi",
+                runTime.timeName(),
+                mesh.thisDb(),
+                IOobject::READ_IF_PRESENT,
+                IOobject::AUTO_WRITE,
+                IOobject::NO_REGISTER
+            ),
+            fvc::flux(U)
+        );
+
+        const fvMatrix<vector> m3(fvm::ddt(U) - fvm::div(phi, U));
+        print("** fv::ddt,fvm::div", m3);
+
+        fvMatrix<vector> m2(U, Expression::ddt(U) - Expression::div(phi, U));
+        print("**Expression::ddt,div", m2);
     }
 
     return 0;

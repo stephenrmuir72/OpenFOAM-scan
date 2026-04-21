@@ -188,7 +188,7 @@ inline void Foam::SubField<Type>::operator-=(const Type& val)
 
 
 template<class Type>
-inline void Foam::SubField<Type>::operator*=(const scalar& s)
+inline void Foam::SubField<Type>::operator*=(const scalar s)
 {
     for (Type& lhs : *this)
     {
@@ -198,11 +198,31 @@ inline void Foam::SubField<Type>::operator*=(const scalar& s)
 
 
 template<class Type>
-inline void Foam::SubField<Type>::operator/=(const scalar& s)
+inline void Foam::SubField<Type>::operator*=(const UList<scalar>& s)
+{
+    forAll(s, i)
+    {
+        (*this)[i] *= s[i];
+    }
+}
+
+
+template<class Type>
+inline void Foam::SubField<Type>::operator/=(const scalar s)
 {
     for (Type& lhs : *this)
     {
         lhs /= s;
+    }
+}
+
+
+template<class Type>
+inline void Foam::SubField<Type>::operator/=(const UList<scalar>& s)
+{
+    forAll(s, i)
+    {
+        (*this)[i] /= s[i];
     }
 }
 

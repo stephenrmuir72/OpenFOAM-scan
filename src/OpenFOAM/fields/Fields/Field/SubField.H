@@ -167,10 +167,12 @@ public:
         inline void operator-=(const Type& val);
 
         //- Multiply each entry by value
-        inline void operator*=(const scalar& s);
+        inline void operator*=(const scalar s);
+        inline void operator*=(const UList<scalar>&);
 
         //- Divide each entry by value
-        inline void operator/=(const scalar& s);
+        inline void operator/=(const scalar s);
+        inline void operator/=(const UList<scalar>&);
 };
 
 
