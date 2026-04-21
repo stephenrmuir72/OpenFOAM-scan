@@ -32,7 +32,111 @@ Description
 
 #include "lduMatrix.H"
 
+#ifdef FOAM_OFFLOAD
+#include "lduMatrixFunctors.H"
+#include "lduAddressingFunctors.H"
+#endif
+
+
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+#ifdef FOAM_OFFLOAD
+
+namespace Foam
+{
+
+template<int nUnroll>
+struct matrixMultiplyFunctor
+{
+    const scalarField& psi;       // Use vector for host-side memory management
+    const scalarField& diag;
+    const scalarField& lower;
+    const scalarField& upper;
+    const labelUList& own;
+    const labelUList& nei;
+    const labelUList& ownStart;
+    const labelUList& losortStart;
+    const labelUList& losort;
+
+    matrixMultiplyFunctor
+    (
+        const scalarField& _psi,
+        const scalarField& _diag,
+        const scalarField& _lower,
+        const scalarField& _upper,
+        const labelUList& _own,
+        const labelUList& _nei,
+        const labelUList& _ownStart,
+        const labelUList& _losortStart,
+        const labelUList& _losort
+    )
+    :
+        psi(_psi),
+        diag(_diag),
+        lower(_lower),
+        upper(_upper),
+        own(_own),
+        nei(_nei),
+        ownStart(_ownStart),
+        losortStart(_losortStart),
+        losort(_losort)
+    {}
+
+    scalar operator()(const label& id) const
+    {
+        scalar tmpSum[2*nUnroll] = {0.0};
+        scalar nExtra = 0;
+
+        label oStart = ownStart[id];
+        label oSize = ownStart[id+1] - oStart;
+
+        label nStart = losortStart[id];
+        label nSize = losortStart[id+1] - nStart;
+
+        scalar out = diag[id]*psi[id];
+
+        for (label i=0; i<nUnroll; i++)
+        {
+            if (i < oSize)
+            {
+                label face = oStart+i;
+                tmpSum[i] = upper[face]*psi[nei[face]];
+            }
+        }
+
+        for (label i=0; i<nUnroll; i++)
+        {
+            if (i<nSize)
+            {
+                label face = nStart + i;
+                face = losort[face];
+                tmpSum[i+nUnroll] = lower[face]*psi[own[face]];
+            }
+        }
+
+        for (label i=0; i<2*nUnroll; i++)
+        {
+            out += tmpSum[i];
+        }
+
+        for (label i=nUnroll; i<oSize; i++)
+        {
+            label face = oStart+i;
+            out += upper[face]*psi[nei[face]];
+        }
+
+        for (label i=nUnroll; i<nSize; i++)
+        {
+            label face = nStart+i;
+            face = losort[face];
+            nExtra += lower[face]*psi[own[face]];
+        }
+
+        return out + nExtra;
+    }
+};
+
+} // namespace Foam
+#endif
 
 void Foam::lduMatrix::Amul
 (
@@ -89,38 +193,75 @@ void Foam::lduMatrix::Amul
         //       so is handling symmetric()
         const scalar* const __restrict__ lowercsrPtr = lowerCSR().begin();
 
-        for (label cell=0; cell<nCells; cell++)
+        labelRange cellIndices(nCells);
+
+        apply_policy(static_cast<std::size_t>(nCells), [&](auto policy)
         {
-            auto& val = ApsiPtr[cell];
-
-            val = diagPtr[cell]*psiPtr[cell];
-
-            // Add lower contributions
-            {
-                const label start = loStartPtr[cell];
-                const label end = loStartPtr[cell+1];
-
-                for (label i = start; i < end; i++)
+            std::for_each
+            (
+                policy,
+                cellIndices.begin(),
+                cellIndices.end(),
+                [&](const label cell)
                 {
-                    const label nbrCell = lcsrPtr[i];
-                    val += lowercsrPtr[i]*psiPtr[nbrCell];
-                }
-            }
-            // Add upper contributions
-            {
-                const label start = oStartPtr[cell];
-                const label end = oStartPtr[cell+1];
+                    auto& val = ApsiPtr[cell];
 
-                for (label i = start; i < end; i++)
-                {
-                    const label nbrCell = uPtr[i];
-                    val += upperPtr[i]*psiPtr[nbrCell];
+                    val = diagPtr[cell]*psiPtr[cell];
+
+                    // Add lower contributions
+                    {
+                        const label start = loStartPtr[cell];
+                        const label end = loStartPtr[cell+1];
+
+                        for (label i = start; i < end; i++)
+                        {
+                            const label nbrCell = lcsrPtr[i];
+                            val += lowercsrPtr[i]*psiPtr[nbrCell];
+                        }
+                    }
+                    // Add upper contributions
+                    {
+                        const label start = oStartPtr[cell];
+                        const label end = oStartPtr[cell+1];
+
+                        for (label i = start; i < end; i++)
+                        {
+                            const label nbrCell = uPtr[i];
+                            val += upperPtr[i]*psiPtr[nbrCell];
+                        }
+                    }
                 }
-            }
-        }
+            );
+        });
     }
     else
     {
+        #ifdef FOAM_OFFLOAD
+        labelRange indices(psi.size());
+
+        apply_policy(static_cast<std::size_t>(psi.size()), [&](auto policy)
+        {
+            std::transform
+            (
+                policy,
+                indices.begin(),
+                indices.end(),
+                Apsi.begin(),
+                matrixMultiplyFunctor<3>
+                (
+                    tpsi,
+                    diag(),
+                    lower(),
+                    upper(),
+                    lduAddr().lowerAddr(),
+                    lduAddr().upperAddr(),
+                    lduAddr().ownerStartAddr(),
+                    lduAddr().losortStartAddr(),
+                    lduAddr().losortAddr()
+                )
+            );
+        });
+        #else
         for (label cell=0; cell<nCells; cell++)
         {
             ApsiPtr[cell] = diagPtr[cell]*psiPtr[cell];
@@ -134,6 +275,7 @@ void Foam::lduMatrix::Amul
             ApsiPtr[uPtr[face]] += lowerPtr[face]*psiPtr[lPtr[face]];
             ApsiPtr[lPtr[face]] += upperPtr[face]*psiPtr[uPtr[face]];
         }
+        #endif       
     }
 
     // Update interface interfaces
@@ -236,6 +378,24 @@ void Foam::lduMatrix::sumA
     const label nCells = diag().size();
     const label nFaces = upper().size();
 
+    #ifdef FOAM_OFFLOAD
+    matrixOperation
+    (
+        diag().begin(),
+        sumA,
+        lduAddr(),
+        matrixCoeffsFunctor<scalar, unityOp<scalar>>
+        (
+            upper(),
+            unityOp<scalar>()
+        ),
+        matrixCoeffsFunctor<scalar, unityOp<scalar>>
+        (
+            lower(),
+            unityOp<scalar>()
+        )
+    );
+    #else
     for (label cell=0; cell<nCells; cell++)
     {
         sumAPtr[cell] = diagPtr[cell];
@@ -246,6 +406,7 @@ void Foam::lduMatrix::sumA
         sumAPtr[uPtr[face]] += lowerPtr[face];
         sumAPtr[lPtr[face]] += upperPtr[face];
     }
+    #endif    
 
     // Add the interface internal coefficients to diagonal
     // and the interface boundary coefficients to the sum-off-diagonal
@@ -255,11 +416,20 @@ void Foam::lduMatrix::sumA
         {
             const labelUList& pa = lduAddr().patchAddr(patchi);
             const scalarField& pCoeffs = interfaceBouCoeffs[patchi];
-
-            forAll(pa, face)
+           
+            apply_policy(static_cast<std::size_t>(pa.size()), [&](auto policy)
             {
-                sumAPtr[pa[face]] -= pCoeffs[face];
-            }
+                std::for_each
+                (
+                    policy,
+                    pa.begin(),
+                    pa.end(),
+                    [&](const auto& face)
+                    {
+                        sumAPtr[pa[face]] -= pCoeffs[face];
+                    }
+                );
+            });
         }
     }
 }
@@ -312,6 +482,49 @@ void Foam::lduMatrix::residual
     );
 
     const label nCells = diag().size();
+
+    #ifdef FOAM_OFFLOAD
+    labelRange cellIndices(psi.size());
+
+    apply_policy(static_cast<std::size_t>(nCells), [&](auto policy)
+    {
+        std::transform
+        (
+            policy,
+            cellIndices.begin(),
+            cellIndices.end(),
+            rAPtr,
+            [&](const label i)
+            {
+                return source[i] - diagPtr[i]*psi[i];
+            }
+        );
+    });
+
+    //const label nFaces = upper().size();
+    matrixOperation
+    (
+        rA.begin(),
+        rA,
+        lduAddr(),
+        matrixCoeffsMultiplyFunctor<scalar, scalar,
+        negateUnaryOperatorFunctor<scalar, scalar>>
+        (
+            psi,
+            upper(),
+            lduAddr().upperAddr(),
+            negateUnaryOperatorFunctor<scalar,scalar>()
+        ),
+        matrixCoeffsMultiplyFunctor<scalar, scalar,
+        negateUnaryOperatorFunctor<scalar, scalar>>
+        (
+            psi,
+            lower(),
+            lduAddr().upperAddr(),
+            negateUnaryOperatorFunctor<scalar,scalar>()
+        )
+    );
+    #else
     for (label cell=0; cell<nCells; cell++)
     {
         rAPtr[cell] = sourcePtr[cell] - diagPtr[cell]*psiPtr[cell];
@@ -325,6 +538,7 @@ void Foam::lduMatrix::residual
         rAPtr[uPtr[face]] -= lowerPtr[face]*psiPtr[lPtr[face]];
         rAPtr[lPtr[face]] -= upperPtr[face]*psiPtr[uPtr[face]];
     }
+    #endif
 
     // Update interface interfaces
     updateMatrixInterfaces
@@ -371,11 +585,32 @@ Foam::tmp<Foam::scalarField> Foam::lduMatrix::H1() const
 
         const label nFaces = upper().size();
 
+        #ifdef FOAM_OFFLOAD
+        matrixOperation
+        (
+            H1Ptr,
+            tH1.ref(),
+            lduAddr(),
+            matrixCoeffsFunctor<scalar, negateUnaryOperatorFunctor<scalar,
+            scalar>>
+            (
+                upper(),
+                negateUnaryOperatorFunctor<scalar, scalar>()
+            ),
+            matrixCoeffsFunctor<scalar, negateUnaryOperatorFunctor<scalar,
+            scalar>>
+            (
+                lower(),
+                negateUnaryOperatorFunctor<scalar, scalar>()
+            )
+        );
+        #else
         for (label face=0; face<nFaces; face++)
         {
             H1Ptr[uPtr[face]] -= lowerPtr[face];
             H1Ptr[lPtr[face]] -= upperPtr[face];
         }
+        #endif
     }
 
     return tH1;

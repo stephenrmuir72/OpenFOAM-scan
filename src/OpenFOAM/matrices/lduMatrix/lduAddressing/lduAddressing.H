@@ -107,12 +107,6 @@ SourceFiles
 #include "lduSchedule.H"
 #include "Tuple2.H"
 
-#ifdef FOAM_OFFLOAD
-#include "boolList.H"
-#include <algorithm>
-#include <execution>
-#include <atomic>
-#endif
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 namespace Foam
