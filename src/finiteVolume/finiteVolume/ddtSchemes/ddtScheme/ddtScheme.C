@@ -113,6 +113,48 @@ tmp<fvMatrix<Type>> ddtScheme<Type>::fvmDdt
 }
 
 
+// In-place. Slow default implementations - to be overridden by derived classes
+// where possible.
+
+template<class Type>
+void ddtScheme<Type>::fvmDdt
+(
+    fvMatrix<Type>& fvm,
+    const scalar scale,
+    const GeometricField<Type, fvPatchField, volMesh>& vf
+)
+{
+    fvm += scale*fvmDdt(vf);
+}
+
+
+template<class Type>
+void ddtScheme<Type>::fvmDdt
+(
+    fvMatrix<Type>& fvm,
+    const scalar scale,
+    const volScalarField& rho,
+    const GeometricField<Type, fvPatchField, volMesh>& vf
+)
+{
+    fvm += scale*fvmDdt(rho, vf);
+}
+
+
+template<class Type>
+void ddtScheme<Type>::fvmDdt
+(
+    fvMatrix<Type>& fvm,
+    const scalar scale,
+    const volScalarField& alpha,
+    const volScalarField& rho,
+    const GeometricField<Type, fvPatchField, volMesh>& vf
+)
+{
+    fvm += scale*fvmDdt(alpha, rho, vf);
+}
+
+
 template<class Type>
 tmp<GeometricField<Type, fvsPatchField, surfaceMesh>> ddtScheme<Type>::fvcDdt
 (

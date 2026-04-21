@@ -214,6 +214,26 @@ Foam::slicedFvPatchField<Type>::gradientBoundaryCoeffs() const
 
 
 template<class Type>
+void Foam::slicedFvPatchField<Type>::gradientInternalCoeffs
+(
+    UList<Type>&
+) const
+{
+    NotImplemented;
+}
+
+
+template<class Type>
+void Foam::slicedFvPatchField<Type>::gradientBoundaryCoeffs
+(
+    UList<Type>&
+) const
+{
+    NotImplemented;
+}
+
+
+template<class Type>
 void Foam::slicedFvPatchField<Type>::write(Ostream& os) const
 {
     this->parent_bctype::write(os);

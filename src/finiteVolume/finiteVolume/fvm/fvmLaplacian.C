@@ -333,6 +333,26 @@ laplacian
 }
 
 
+// In-place variants
+
+template<class Type, class GType>
+void laplacian
+(
+    fvMatrix<Type>& fvm,
+    const scalar scale,
+    const GeometricField<Type, fvPatchField, volMesh>& vf
+)
+{
+    const word name("laplacian(" + vf.name() + ')');
+
+    fv::laplacianScheme<Type, GType>::New
+    (
+        vf.mesh(),
+        vf.mesh().laplacianScheme(name)
+    ).ref().fvmLaplacian(fvm, scale, vf);
+}
+
+
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 } // End namespace fvm

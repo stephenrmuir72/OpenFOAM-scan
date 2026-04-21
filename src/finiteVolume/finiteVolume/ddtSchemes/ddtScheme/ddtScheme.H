@@ -223,6 +223,33 @@ public:
             const GeometricField<Type, fvPatchField, volMesh>& vf
         ) = 0;
 
+        // In-place variants
+
+        virtual void fvmDdt
+        (
+            fvMatrix<Type>& fvm,
+            const scalar scale,
+            const GeometricField<Type, fvPatchField, volMesh>& vf
+        );
+
+        virtual void fvmDdt
+        (
+            fvMatrix<Type>& fvm,
+            const scalar scale,
+            const volScalarField& rho,
+            const GeometricField<Type, fvPatchField, volMesh>& vf
+        );
+
+        virtual void fvmDdt
+        (
+            fvMatrix<Type>& fvm,
+            const scalar scale,
+            const volScalarField& alpha,
+            const volScalarField& rho,
+            const GeometricField<Type, fvPatchField, volMesh>& vf
+        );
+
+
         typedef GeometricField
         <
             typename flux<Type>::type,

@@ -133,4 +133,24 @@ Foam::zeroGradientFvPatchField<Type>::gradientBoundaryCoeffs() const
 }
 
 
+template<class Type>
+void Foam::zeroGradientFvPatchField<Type>::gradientInternalCoeffs
+(
+    UList<Type>& result
+) const
+{
+    result = Foam::zero{};
+}
+
+
+template<class Type>
+void Foam::zeroGradientFvPatchField<Type>::gradientBoundaryCoeffs
+(
+    UList<Type>& result
+) const
+{
+    result = Foam::zero{};
+}
+
+
 // ************************************************************************* //

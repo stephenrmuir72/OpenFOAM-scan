@@ -71,6 +71,7 @@ class fusedGaussLaplacianScheme
         static void fvmCorrection
         (
             fvMatrix<Type>& fvm,
+            const scalar scale,
             const dimensionSet& gammaDim,
             const E1& gammaMagSf,
             const E2& corr
@@ -136,6 +137,15 @@ public:
             const GeometricField<Type, fvPatchField, volMesh>&
         );
 
+        template<class E1>
+        static void fvmLaplacianUncorrected
+        (
+            fvMatrix<Type>& fvm,
+            const scalar scale,
+            const E1& gammaMagSf,
+            const surfaceScalarField& deltaCoeffs,
+            const GeometricField<Type, fvPatchField, volMesh>& vf
+        );
         ////- Helper: grad on component. Move to GaussGrad? Template on
         ////  - cell-access operator?
         ////  - cell-to-face operator?
@@ -180,6 +190,13 @@ public:
             const GeometricField<GType, fvPatchField, volMesh>&,
             const GeometricField<Type, fvPatchField, volMesh>&
         );
+
+        virtual void fvmLaplacian
+        (
+            fvMatrix<Type>& fvm,
+            const scalar scale,
+            const GeometricField<Type, fvPatchField, volMesh>&
+        );
 };
 
 
@@ -201,6 +218,14 @@ fusedGaussLaplacianScheme<Type, scalar>::fvcLaplacian                          \
 (                                                                              \
     const GeometricField<scalar, fvsPatchField, surfaceMesh>&,                 \
     const GeometricField<Type, fvPatchField, volMesh>&                         \
+);                                                                             \
+                                                                               \
+template<>                                                                     \
+void fusedGaussLaplacianScheme<scalar, scalar>::fvmLaplacian                   \
+(                                                                              \
+    fvMatrix<scalar>& fvm,                                                     \
+    const scalar scale,                                                        \
+    const GeometricField<scalar, fvPatchField, volMesh>& vf                    \
 );
 
 defineFvmLaplacianScalarGamma(scalar);

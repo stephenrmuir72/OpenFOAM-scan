@@ -56,8 +56,10 @@ fvmLaplacian                                                                   \
       * mesh.magSf().expr();                                                   \
     /* For compatibility with linearInterpolate : avoid orientation. TBD. */   \
     const_cast<orientedType&>(gammaMagSf.oriented()).setOriented(false);       \
-    const auto deltaCoeffs = this->tsnGradScheme_().deltaCoeffs(vf).expr();    \
+    const auto tdc(this->tsnGradScheme_().deltaCoeffs(vf));                    \
                                                                                \
+    /* For compatibility with linearInterpolate : avoid orientation. TBD. */   \
+    const_cast<orientedType&>(gammaMagSf.oriented()).setOriented(false);       \
     tmp<fvMatrix<Type>> tfvm                                                   \
     (                                                                          \
         new fvMatrix<Type>                                                     \
@@ -68,12 +70,13 @@ fvmLaplacian                                                                   \
     );                                                                         \
     fvMatrix<Type>& fvm = tfvm.ref();                                          \
                                                                                \
-    Expression::fvmLaplacianUncorrected(fvm, gammaMagSf, deltaCoeffs);         \
+    fvmLaplacianUncorrected(fvm, scalar(1.0), gammaMagSf, tdc(), vf);          \
                                                                                \
     if (this->tsnGradScheme_().corrected())                                    \
     {                                                                          \
-        const auto corr(this->tsnGradScheme_().correction(vf).expr());         \
-        fvmCorrection(fvm, gamma.dimensions(), gammaMagSf, corr);              \
+        const auto tcorr(this->tsnGradScheme_().correction(vf));               \
+        const auto corr(tcorr().expr());                                       \
+        fvmCorrection(fvm, scalar(1.0), gamma.dimensions(), gammaMagSf, corr); \
     }                                                                          \
                                                                                \
     return tfvm;                                                               \
@@ -94,7 +97,7 @@ fvmLaplacian                                                                   \
     const fvMesh& mesh = this->mesh();                                         \
                                                                                \
     const auto gammaMagSf = gamma.expr()* mesh.magSf().expr();                 \
-    const auto deltaCoeffs = this->tsnGradScheme_().deltaCoeffs(vf).expr();    \
+    const auto tdc(this->tsnGradScheme_().deltaCoeffs(vf));                    \
                                                                                \
     tmp<fvMatrix<Type>> tfvm                                                   \
     (                                                                          \
@@ -106,12 +109,13 @@ fvmLaplacian                                                                   \
     );                                                                         \
     fvMatrix<Type>& fvm = tfvm.ref();                                          \
                                                                                \
-    Expression::fvmLaplacianUncorrected(fvm, gammaMagSf, deltaCoeffs);         \
+    fvmLaplacianUncorrected(fvm, scalar(1.0), gammaMagSf, tdc(), vf);          \
                                                                                \
     if (this->tsnGradScheme_().corrected())                                    \
     {                                                                          \
-        const auto corr(this->tsnGradScheme_().correction(vf).expr());         \
-        fvmCorrection(fvm, gamma.dimensions(), gammaMagSf, corr);              \
+        const auto tcorr(this->tsnGradScheme_().correction(vf));               \
+        const auto corr(tcorr().expr());                                       \
+        fvmCorrection(fvm, scalar(1.0), gamma.dimensions(), gammaMagSf, corr); \
     }                                                                          \
                                                                                \
     return tfvm;                                                               \
@@ -142,7 +146,7 @@ fvcLaplacian                                                                   \
     );                                                                         \
                                                                                \
     return tLaplacian;                                                         \
-}
+}                                                                              \
 
 
 template<>
@@ -842,6 +846,38 @@ Foam::fv::fusedGaussLaplacianScheme<Foam::vector, Foam::scalar>::fvcLaplacian
     result.correctBoundaryConditions();
 
     return tresult;
+}
+
+
+//- Specialisation for scalar field
+template<>
+void Foam::fv::fusedGaussLaplacianScheme<Foam::scalar, Foam::scalar>::
+fvmLaplacian
+(
+    fvMatrix<scalar>& fvm,
+    const scalar scale,
+    const GeometricField<scalar, fvPatchField, volMesh>& vf
+)
+{
+    DebugPout<< "fusedGaussLaplacianScheme::fvmLaplacian on " << vf.name()     \
+        << " with scale " << scale << " and ET" << endl;                       \
+                                                                               \
+    const fvMesh& mesh = this->mesh();                                         \
+                                                                               \
+    const scalar weights = scalar(1.0);                                        \
+    const auto gammaMagSf = weights * mesh.magSf().expr();                     \
+    /* For compatibility with linearInterpolate : avoid orientation. TBD. */   \
+    const_cast<orientedType&>(gammaMagSf.oriented()).setOriented(false);       \
+    const auto deltaCoeffs(this->tsnGradScheme_().deltaCoeffs(vf));            \
+                                                                               \
+    fvmLaplacianUncorrected(fvm, scale, gammaMagSf, deltaCoeffs, vf);          \
+                                                                               \
+    if (this->tsnGradScheme_().corrected())                                    \
+    {                                                                          \
+        const auto tcorr(this->tsnGradScheme_().correction(vf));               \
+        const auto corr(tcorr().expr());                                       \
+        fvmCorrection(fvm, scale, dimless, gammaMagSf, corr);                  \
+    }                                                                          \
 }
 
 

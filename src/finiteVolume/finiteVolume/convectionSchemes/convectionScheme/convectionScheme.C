@@ -152,6 +152,37 @@ convectionScheme<Type>::~convectionScheme()
 {}
 
 
+// * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
+
+template<class Type>
+void convectionScheme<Type>::fvmDiv
+(
+    fvMatrix<Type>& m,
+    const scalar scale,
+    const surfaceScalarField& faceFlux,
+    const GeometricField<Type, fvPatchField, volMesh>& vf
+) const
+{
+    tmp<fvMatrix<Type>> tfvm(scale*this->fvmDiv(faceFlux, vf));
+
+    m += tfvm;
+}
+
+
+// template<class Type>
+// void convectionScheme<Type>::fvcDiv
+// (
+//     GeometricField<Type, fvPatchField, volMesh>& result,
+//     const scalar scale,
+//     const surfaceScalarField& faceFlux,
+//     const GeometricField<Type, fvPatchField, volMesh>& vf
+// ) const
+// {
+//     DebugVar("SLOW");
+//     result += scale*fvcDiv(faceFlux, vf);
+// }
+
+
 // * * * * * * * * * * * * * * * Member Operators  * * * * * * * * * * * * * //
 
 template<class Type>

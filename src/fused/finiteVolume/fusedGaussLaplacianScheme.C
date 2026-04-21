@@ -50,6 +50,7 @@ template<class E1, class E2>
 void fusedGaussLaplacianScheme<Type, GType>::fvmCorrection
 (
     fvMatrix<Type>& fvm,
+    const scalar scale,
     const dimensionSet& gammaDim,
     const E1& gammaMagSf,
     const E2& corr
@@ -81,11 +82,12 @@ void fusedGaussLaplacianScheme<Type, GType>::fvmCorrection
         );
         auto& faceFluxCorr = *fvm.faceFluxCorrectionPtr();
 
-        faceFluxCorr = corr*gammaMagSf;
+        faceFluxCorr = gammaMagSf*corr;
 
         fvm.source() =
             fvm.source().expr()
-          - (
+          - scale
+          * (
                 fvc::div
                 (
                     faceFluxCorr
@@ -111,11 +113,13 @@ void fusedGaussLaplacianScheme<Type, GType>::fvmCorrection
            *mesh.magSf().dimensions()
            *corr.data().dimensions()
         );
+
         faceFluxCorr = corr*gammaMagSf;
 
         fvm.source() =
             fvm.source().expr()
-          - (
+          - scale
+          * (
                 fvc::div
                 (
                     faceFluxCorr
@@ -123,6 +127,135 @@ void fusedGaussLaplacianScheme<Type, GType>::fvmCorrection
                *V
             );
     }
+}
+
+
+template<class Type, class GType>
+template<class E1>
+void fusedGaussLaplacianScheme<Type, GType>::fvmLaplacianUncorrected
+(
+    fvMatrix<Type>& fvm,
+    const scalar scale,
+    const E1& gammaMagSf,
+    const surfaceScalarField& deltaCoeffs,
+    const GeometricField<Type, fvPatchField, volMesh>& vf
+)
+{
+    DebugPout
+        << "fusedGaussLaplacianScheme<Type, GType>::fvmLaplacianUncorrected on "
+        << vf.name()
+        << " dimensions " << vf.dimensions()
+        << " scale:" << scale << nl
+        << " with gammaMagSf " << error::demangle<decltype(gammaMagSf)>()
+        << " with deltaCoeffs " << deltaCoeffs.name()
+        << endl;
+
+    const_cast<dimensionSet&>(fvm.dimensions()).reset
+    (
+        deltaCoeffs.dimensions()*gammaMagSf.dimensions()*vf.dimensions()
+    );
+
+    //fvm.upper() = deltaCoeffs.primitiveField()*gammaMagSf.primitiveField();
+    auto upper_expr =
+        deltaCoeffs.primitiveField().expr()
+       *gammaMagSf.internalField();
+
+    if (fvm.hasUpper())
+    {
+        fvm.upper() = fvm.upper().expr() + scale*upper_expr;
+    }
+    else
+    {
+        fvm.upper() = scale*upper_expr;
+    }
+
+    //fvm.negSumDiag();
+    // TBD as expression-template surface-sum
+    const labelUList& l = fvm.lduAddr().lowerAddr();
+    const labelUList& u = fvm.lduAddr().upperAddr();
+    auto& diag = fvm.diag();
+    {
+        for (label face=0; face<l.size(); face++)
+        {
+            diag[l[face]] -= scale*upper_expr[face];
+            diag[u[face]] -= scale*upper_expr[face];
+        }
+    }
+
+    // Extract gradientInternalCoeffs at end of internal field
+    const label oldSize = vf.constCast().boundaryEvaluate
+    (
+        [&](const auto& pfld, UList<Type>& slice)
+        {
+            if (pfld.coupled())
+            {
+                const auto& pdc =
+                    deltaCoeffs.boundaryField()[pfld.patch().index()];
+                pfld.gradientInternalCoeffs(pdc, slice);
+            }
+            else
+            {
+                pfld.gradientInternalCoeffs(slice);
+            }
+        }
+    );
+    const auto& bf = vf.boundaryField();
+    forAll(bf, patchi)
+    {
+        const fvPatchField<Type>& pvf = bf[patchi];
+        const label offset = vf.mesh().nCells()+pvf.patch().offset();
+        const SubList<Type> pic(vf, pvf.size(), offset);
+
+        const auto int_expr = scale*gammaMagSf.patchField(patchi)*pic.expr();
+
+        if (fvm.internalCoeffs().set(patchi))
+        {
+            auto& intCoeffs = fvm.internalCoeffs()[patchi];
+            intCoeffs = intCoeffs.expr() + int_expr;
+        }
+        else
+        {
+            fvm.internalCoeffs().set(patchi, new Field<Type>(int_expr));
+        }
+    }
+    // Extract gradientBoundaryCoeffs at end of internal field
+    vf.constCast().boundaryEvaluate
+    (
+        [&](const auto& pfld, UList<Type>& slice)
+        {
+            if (pfld.coupled())
+            {
+                const auto& pdc =
+                    deltaCoeffs.boundaryField()[pfld.patch().index()];
+                pfld.gradientBoundaryCoeffs(pdc, slice);
+            }
+            else
+            {
+                pfld.gradientBoundaryCoeffs(slice);
+            }
+        }
+    );
+    forAll(bf, patchi)
+    {
+        const fvPatchField<Type>& pvf = bf[patchi];
+        const label offset = vf.mesh().nCells()+pvf.patch().offset();
+        const SubList<Type> pic(vf, pvf.size(), offset);
+
+        const auto bou_expr = -scale*gammaMagSf.patchField(patchi)*pic.expr();
+
+        if (fvm.boundaryCoeffs().set(patchi))
+        {
+            auto& bouCoeffs = fvm.boundaryCoeffs()[patchi];
+            bouCoeffs = bouCoeffs.expr() + bou_expr;
+        }
+        else
+        {
+            fvm.boundaryCoeffs().set(patchi, new Field<Type>(bou_expr));
+        }
+    }
+
+    // Restore original size
+    vf.constCast().resize(oldSize);
 }
 
 
@@ -152,6 +285,7 @@ fusedGaussLaplacianScheme<Type, GType>::fvmLaplacianUncorrected
     );
     fvMatrix<Type>& fvm = tfvm.ref();
 
+/*
     //fvm.upper() = deltaCoeffs.primitiveField()*gammaMagSf.primitiveField();
     multiply
     (
@@ -208,6 +342,15 @@ fusedGaussLaplacianScheme<Type, GType>::fvmLaplacianUncorrected
             bouCoeffs.negate();
         }
     }
+*/
+    fvmLaplacianUncorrected
+    (
+        fvm,
+        scalar(1.0),
+        gammaMagSf.expr(),
+        deltaCoeffs,
+        vf
+    );
 
     return tfvm;
 }
@@ -648,6 +791,23 @@ fusedGaussLaplacianScheme<Type, GType>::fvcLaplacian
     );
 
     return tLaplacian;
+}
+
+
+template<class Type, class GType>
+void fusedGaussLaplacianScheme<Type, GType>::fvmLaplacian
+(
+    fvMatrix<Type>& fvm,
+    const scalar scale,
+    const GeometricField<Type, fvPatchField, volMesh>& vf
+)
+{
+    DebugPout<< "fusedGaussLaplacianScheme<Type, GType>::fvmLaplacian on "
+        << vf.name() << " with scale " << scale << endl;
+
+    // Ping up to use (slow) default. The interesting work is done in the
+    // specialisation for scalar gamma in fusedGaussLaplacianSchemes.C
+    laplacianScheme<Type, GType>::fvmLaplacian(fvm, scale, vf);
 }
 
 

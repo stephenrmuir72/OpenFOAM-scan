@@ -1606,8 +1606,47 @@ void Foam::fvMatrix<Type>::operator+=(const fvMatrix<Type>& fvmv)
     dimensions_ += fvmv.dimensions_;
     lduMatrix::operator+=(fvmv);
     source_ += fvmv.source_;
-    internalCoeffs_ += fvmv.internalCoeffs_;
-    boundaryCoeffs_ += fvmv.boundaryCoeffs_;
+
+    // TBD. FieldField::operator+= should be implemented to avoid this loop
+    // internalCoeffs_ += fvmv.internalCoeffs_;
+    // boundaryCoeffs_ += fvmv.boundaryCoeffs_;
+    forAll(internalCoeffs_, patchi)
+    {
+        if (fvmv.internalCoeffs().set(patchi))
+        {
+            if (!internalCoeffs_.set(patchi))
+            {
+                internalCoeffs_.set
+                (
+                    patchi,
+                    new Field<Type>(fvmv.internalCoeffs()[patchi])
+                );
+            }
+            else
+            {
+                internalCoeffs_[patchi] += fvmv.internalCoeffs()[patchi];
+            }
+        }
+    }
+    forAll(boundaryCoeffs_, patchi)
+    {
+        if (fvmv.boundaryCoeffs().set(patchi))
+        {
+            if (!boundaryCoeffs_.set(patchi))
+            {
+                boundaryCoeffs_.set
+                (
+                    patchi,
+                    new Field<Type>(fvmv.boundaryCoeffs()[patchi])
+                );
+            }
+            else
+            {
+                boundaryCoeffs_[patchi] += fvmv.boundaryCoeffs()[patchi];
+            }
+        }
+    }
+
 
     useImplicit_ = fvmv.useImplicit_;
     lduAssemblyName_ = fvmv.lduAssemblyName_;

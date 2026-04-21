@@ -83,6 +83,18 @@ namespace fvm
         const tmp<surfaceScalarField>&,
         const GeometricField<Type, fvPatchField, volMesh>&
     );
+
+
+    // In-place variants
+
+    template<class Type>
+    void div
+    (
+        fvMatrix<Type>& fvm,
+        const scalar scale,
+        const surfaceScalarField&,
+        const GeometricField<Type, fvPatchField, volMesh>&
+    );
 }
 
 

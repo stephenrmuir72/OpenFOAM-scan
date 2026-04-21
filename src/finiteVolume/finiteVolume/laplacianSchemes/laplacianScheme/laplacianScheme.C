@@ -106,6 +106,33 @@ laplacianScheme<Type, GType>::fvcLaplacian
 }
 
 
+//- Default (slow) implementation of in-place fvmLaplacian
+template<class Type, class GType>
+void laplacianScheme<Type, GType>::fvmLaplacian
+(
+    fvMatrix<Type>& fvm,
+    const scalar scale,
+    const GeometricField<Type, fvPatchField, volMesh>& vf
+)
+{
+    // For vector gamma, default to non-weighted laplacian
+    const GeometricField<GType, fvsPatchField, surfaceMesh> Gamma
+    (
+        IOobject
+        (
+            "1",
+            vf.time().constant(),
+            vf.mesh(),
+            IOobject::NO_READ
+        ),
+        vf.mesh(),
+        dimensioned<GType>("1", dimless, pTraits<GType>::one)
+    );
+
+    fvm += scale*fvmLaplacian(Gamma, vf);
+}
+
+
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 } // End namespace fv

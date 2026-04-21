@@ -110,6 +110,35 @@ namespace fvm
         const Foam::one,
         const GeometricField<Type, fvPatchField, volMesh>&
     );
+
+    // In-place variants
+
+        template<class Type>
+        void ddt
+        (
+            fvMatrix<Type>& fvm,
+            const scalar scale,
+            const GeometricField<Type, fvPatchField, volMesh>& vf
+        );
+
+        template<class Type>
+        void ddt
+        (
+            fvMatrix<Type>& fvm,
+            const scalar scale,
+            const volScalarField& rho,
+            const GeometricField<Type, fvPatchField, volMesh>& vf
+        );
+
+        template<class Type>
+        void ddt
+        (
+            fvMatrix<Type>& fvm,
+            const scalar scale,
+            const volScalarField& alpha,
+            const volScalarField& rho,
+            const GeometricField<Type, fvPatchField, volMesh>& vf
+        );
 }
 
 

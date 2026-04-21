@@ -163,6 +163,63 @@ ddt
 }
 
 
+// In-place variants
+
+template<class Type>
+void ddt
+(
+    fvMatrix<Type>& fvm,
+    const scalar scale,
+    const GeometricField<Type, fvPatchField, volMesh>& vf
+)
+{
+    return fv::ddtScheme<Type>::New
+    (
+        vf.mesh(),
+        vf.mesh().ddtScheme("ddt(" + vf.name() + ')')
+    ).ref().fvmDdt(fvm, scale, vf);
+}
+
+template<class Type>
+void ddt
+(
+    fvMatrix<Type>& fvm,
+    const scalar scale,
+    const volScalarField& rho,
+    const GeometricField<Type, fvPatchField, volMesh>& vf
+)
+{
+    return fv::ddtScheme<Type>::New
+    (
+        vf.mesh(),
+        vf.mesh().ddtScheme("ddt(" + rho.name() + ',' + vf.name() + ')')
+    ).ref().fvmDdt(fvm, scale, rho, vf);
+}
+
+template<class Type>
+void ddt
+(
+    fvMatrix<Type>& fvm,
+    const scalar scale,
+    const volScalarField& alpha,
+    const volScalarField& rho,
+    const GeometricField<Type, fvPatchField, volMesh>& vf
+)
+{
+    return fv::ddtScheme<Type>::New
+    (
+        vf.mesh(),
+        vf.mesh().ddtScheme
+        (
+            "ddt("
+          + alpha.name() + ','
+          + rho.name() + ','
+          + vf.name() + ')'
+        )
+    ).ref().fvmDdt(fvm, scale, alpha, rho, vf);
+}
+
+
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 } // End namespace fvm

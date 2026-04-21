@@ -2791,16 +2791,18 @@ public:
 };
 
 
+// Helper for Gauss Laplacian without correction
 template<class Type, class E1, class E2>
 void fvmLaplacianUncorrected
 (
     fvMatrix<Type>& fvm,
+    const scalar scale,
     const E1& gammaMagSf,
     const E2& deltaCoeffs
 )
 {
-    typedef Expression::ListConstRefWrap<Type> expr;
-    typedef Expression::ListRefWrap<Type> evaluator;
+    // typedef Expression::ListConstRefWrap<Type> expr;
+    // typedef Expression::ListRefWrap<Type> evaluator;
 
     const auto& vf = fvm.psi();
 
@@ -2812,12 +2814,30 @@ void fvmLaplacianUncorrected
       * vf.dimensions()
     );
 
-    Expression::ListRefWrap<scalar>
-    (
-        fvm.upper(),
-        deltaCoeffs.internalField()*gammaMagSf.internalField()
-    );
-    fvm.negSumDiag();
+    // fvm.upper() = deltaCoeffs.primitiveField()*gammaMagSf.primitiveField();
+    // Expression::ListRefWrap<scalar>
+    // (
+    //     fvm.upper(),
+    //     deltaCoeffs.internalField()*gammaMagSf.internalField()
+    // );
+    auto upper_expr =
+        deltaCoeffs.internalField()
+       *gammaMagSf.internalField();
+    fvm.upper() = fvm.upper().expr() + scale*upper_expr;
+
+    // fvm.negSumDiag();
+    {
+        // TBD as expression-template surface-sum
+        const labelUList& l = fvm.lduAddr().lowerAddr();
+        const labelUList& u = fvm.lduAddr().upperAddr();
+        auto& diag = fvm.diag();
+        for (label face=0; face<l.size(); face++)
+        {
+            const auto val = -scale*upper_expr[face];
+            diag[l[face]] += val;
+            diag[u[face]] += val;
+        }
+    }
 
     forAll(vf.boundaryField(), patchi)
     {
@@ -2828,55 +2848,85 @@ void fvmLaplacianUncorrected
         if (pvf.coupled())
         {
             // Evaluate deltaCoeffs
-            scalarField pDeltaCoeffs;
-            ListRefWrap<scalar>(pDeltaCoeffs, deltaCoeffs.patchField(patchi));
+            scalarField pDeltaCoeffs(deltaCoeffs.patchField(patchi));
 
-            //intCoeffs = pGamma*pvf.gradientInternalCoeffs(pDeltaCoeffs);
-            evaluator
-            (
-                intCoeffs,
-                expr(pvf.gradientInternalCoeffs(pDeltaCoeffs)())
-               *gammaMagSf.patchField(patchi)
-            );
-            //bouCoeffs = -pGamma*pvf.gradientBoundaryCoeffs(pDeltaCoeffs);
-            evaluator
-            (
-                bouCoeffs,
-               -expr(pvf.gradientBoundaryCoeffs(pDeltaCoeffs)())
-               *gammaMagSf.patchField(patchi)
-            );
+            // //intCoeffs = pGamma*pvf.gradientInternalCoeffs(pDeltaCoeffs);
+            // evaluator
+            // (
+            //     intCoeffs,
+            //     expr(pvf.gradientInternalCoeffs(pDeltaCoeffs)())
+            //    *gammaMagSf.patchField(patchi)
+            // );
+            // //bouCoeffs = -pGamma*pvf.gradientBoundaryCoeffs(pDeltaCoeffs);
+            // evaluator
+            // (
+            //     bouCoeffs,
+            //    -expr(pvf.gradientBoundaryCoeffs(pDeltaCoeffs)())
+            //    *gammaMagSf.patchField(patchi)
+            // );
+
+            intCoeffs =
+                intCoeffs.expr()
+              + (
+                    scale
+                   *gammaMagSf.patchField(patchi)
+                   *pvf.gradientInternalCoeffs(pDeltaCoeffs)().expr()
+                );
+            bouCoeffs =
+                bouCoeffs.expr()
+              + (
+                    -scale
+                   *gammaMagSf.patchField(patchi)
+                   *pvf.gradientBoundaryCoeffs(pDeltaCoeffs)().expr()
+                );
         }
         else
         {
-            //intCoeffs = pGamma*pvf.gradientInternalCoeffs();
-            evaluator
-            (
-                intCoeffs,
-                expr(pvf.gradientInternalCoeffs()())
-               *gammaMagSf.patchField(patchi)
-            );
-            //bouCoeffs = -pGamma*pvf.gradientBoundaryCoeffs();
-            evaluator
-            (
-                bouCoeffs,
-               -expr(pvf.gradientBoundaryCoeffs()())
-               *gammaMagSf.patchField(patchi)
-            );
+            // //intCoeffs = pGamma*pvf.gradientInternalCoeffs();
+            // evaluator
+            // (
+            //     intCoeffs,
+            //     expr(pvf.gradientInternalCoeffs()())
+            //    *gammaMagSf.patchField(patchi)
+            // );
+            // //bouCoeffs = -pGamma*pvf.gradientBoundaryCoeffs();
+            // evaluator
+            // (
+            //     bouCoeffs,
+            //    -expr(pvf.gradientBoundaryCoeffs()())
+            //    *gammaMagSf.patchField(patchi)
+            // );
+            intCoeffs =
+                intCoeffs.expr()
+              + (
+                    scale
+                   *gammaMagSf.patchField(patchi)
+                   *pvf.gradientInternalCoeffs()().expr()
+                );
+            bouCoeffs =
+                bouCoeffs.expr()
+              + (
+                    -scale
+                   *gammaMagSf.patchField(patchi)
+                   *pvf.gradientBoundaryCoeffs()().expr()
+                );
         }
     }
 }
 
-//XXXXXXXX
+
+//- Direct evaluation of matrix for given operator. Used to handle in-place
+//  matrix manipulation. Returns dummy values for upper/lower/boundaryCoeffs etc
 template<class Type, class EvalOp>
 class DirectOp
 :
     public fvMatrixExpression
     <
         DirectOp<Type, EvalOp>,
-        UniformListWrap<scalar>, // Diag
-        UniformListWrap<scalar>, // Upper
-        UniformListWrap<scalar>, // Lower
-        UniformListWrap<Type>, // Boundary, Not used
+        UniformListWrap<scalar>,    // Diag
+        UniformListWrap<scalar>,    // Upper
+        UniformListWrap<scalar>,    // Lower
+        UniformListWrap<Type>,      // Boundary, Not used
         UniformGeometricFieldWrap2<Type>,  // FFlux, Not used
         UniformListWrap<Type>
     >
@@ -2909,7 +2959,7 @@ public:
     DirectOp
     (
         const GeometricField<value_type, fvPatchField, volMesh>& psi,
-        const EvalOp& evalOp,
+        EvalOp&& evalOp,
         const dimensionSet& dimensions
     )
     :
@@ -2931,7 +2981,7 @@ public:
             dimensions  //elems.dimensions()
         ),
         psi_(psi),
-        evalOp_(evalOp)
+        evalOp_(std::move(evalOp))
     {}
 
 
@@ -2991,9 +3041,21 @@ public:
             return m;
         }
 };
+template<class Type>
 struct ddtOp
 {
-    template<class Type>
+    tmp<fv::ddtScheme<Type>> scheme_;
+    ddtOp(const GeometricField<Type, fvPatchField, volMesh>& vf)
+    :
+        scheme_
+        (
+            fv::ddtScheme<Type>::New
+            (
+                vf.mesh(),
+                vf.mesh().ddtScheme("ddt(" + vf.name() + ')')
+            )
+        )
+    {}
     void operator()
     (
         fvMatrix<Type>& fvm,
@@ -3001,29 +3063,43 @@ struct ddtOp
         const GeometricField<Type, fvPatchField, volMesh>& vf
     ) const
     {
-        fvm::ddt<Type>(fvm, scale, vf);
+        // fvm::ddt<Type>(fvm, scale, vf);
+        scheme_.ref().fvmDdt(fvm, scale, vf);
     }
 };
 template<class Type>
 class ddt
 :
-    public DirectOp<Type, ddtOp>
+    public DirectOp<Type, ddtOp<Type>>
 {
 public:
 
     ddt(const GeometricField<Type, fvPatchField, volMesh>& psi)
     :
-        DirectOp<Type, ddtOp>
+        DirectOp<Type, ddtOp<Type>>
         (
             psi,
-            ddtOp(),
+            ddtOp<Type>(psi),
             psi.dimensions()*dimVol/dimTime
         )
     {}
 };
+template<class Type, class GType>
 struct laplacianOp
 {
-    template<class Type>
+    tmp<fv::laplacianScheme<Type, GType>> scheme_;
+    laplacianOp(const GeometricField<Type, fvPatchField, volMesh>& vf)
+    :
+        scheme_
+        (
+            fv::laplacianScheme<Type, GType>::New
+            (
+                vf.mesh(),
+                vf.mesh().laplacianScheme("laplacian(" + vf.name() + ')')
+            )
+        )
+    {}
+    // template<class Type>
     void operator()
     (
         fvMatrix<Type>& fvm,
@@ -3031,26 +3107,82 @@ struct laplacianOp
         const GeometricField<Type, fvPatchField, volMesh>& vf
     ) const
     {
-        fvm = scale*fvm::laplacian(vf);
+        // fvm::laplacian<Type, scalar>(fvm, scale, vf);
+        scheme_.ref().fvmLaplacian(fvm, scale, vf);
     }
 };
 template<class Type>
 class laplacian
 :
-    public DirectOp<Type, laplacianOp>
+    public DirectOp<Type, laplacianOp<Type, scalar>>
 {
 public:
 
     laplacian(const GeometricField<Type, fvPatchField, volMesh>& psi)
     :
-        DirectOp<Type, laplacianOp>
+        DirectOp<Type, laplacianOp<Type, scalar>>
         (
             psi,
-            laplacianOp(),
-            psi.dimensions()*dimLength*dimLength/dimTime
+            laplacianOp<Type, scalar>(psi),
+            psi.dimensions()*dimLength
         )
     {}
-};//XXXXXXXX
+};
+
+
+template<class Type>
+struct divOp
+{
+    const surfaceScalarField& flux_;
+    tmp<fv::convectionScheme<Type>> scheme_;
+    divOp
+    (
+        const surfaceScalarField& flux,
+        const GeometricField<Type, fvPatchField, volMesh>& vf
+    )
+    :
+        flux_(flux),
+        scheme_
+        (
+            fv::convectionScheme<Type>::New
+            (
+                vf.mesh(),
+                flux,
+                vf.mesh().divScheme("div("+flux.name()+','+vf.name()+')')
+            )
+        )
+    {}
+    void operator()
+    (
+        fvMatrix<Type>& fvm,
+        const scalar scale,
+        const GeometricField<Type, fvPatchField, volMesh>& vf
+    ) const
+    {
+        scheme_().fvmDiv(fvm, scale, flux_, vf);
+    }
+};
+template<class Type>
+class div
+:
+    public DirectOp<Type, divOp<Type>>
+{
+public:
+
+    div
+    (
+        const surfaceScalarField& flux,
+        const GeometricField<Type, fvPatchField, volMesh>& psi
+    )
+    :
+        DirectOp<Type, divOp<Type>>
+        (
+            psi,
+            divOp<Type>(flux, psi),
+            flux.dimensions()*psi.dimensions()*dimLength
+        )
+    {}
+};
 
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //

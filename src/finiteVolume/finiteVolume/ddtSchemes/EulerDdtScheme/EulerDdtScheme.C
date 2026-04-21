@@ -765,6 +765,113 @@ tmp<surfaceScalarField> EulerDdtScheme<Type>::meshPhi
 }
 
 
+// In-place
+
+template<class Type>
+void EulerDdtScheme<Type>::fvmDdt
+(
+    fvMatrix<Type>& fvm,
+    const scalar scale,
+    const GeometricField<Type, fvPatchField, volMesh>& vf
+)
+{
+    // Check dimensions
+    const_cast<dimensionSet&>(fvm.dimensions()).reset
+    (
+        vf.dimensions()*dimVol/dimTime
+    );
+
+    scalar rDeltaT = 1.0/mesh().time().deltaTValue();
+
+    fvm.diag() += scale*rDeltaT*mesh().Vsc();
+
+    const auto& vf0 = vf.oldTime().primitiveField();
+
+    if (mesh().moving())
+    {
+        fvm.source() += scale*rDeltaT*vf0*mesh().Vsc0();
+    }
+    else
+    {
+        fvm.source() += scale*rDeltaT*vf0*mesh().Vsc();
+    }
+}
+
+
+template<class Type>
+void EulerDdtScheme<Type>::fvmDdt
+(
+    fvMatrix<Type>& fvm,
+    const scalar scale,
+    const volScalarField& rho,
+    const GeometricField<Type, fvPatchField, volMesh>& vf
+)
+{
+    // Check dimensions
+    const_cast<dimensionSet&>(fvm.dimensions()).reset
+    (
+        rho.dimensions()*vf.dimensions()*dimVol/dimTime
+    );
+
+    scalar rDeltaT = 1.0/mesh().time().deltaTValue();
+
+    fvm.diag() += scale*rDeltaT*rho.primitiveField()*mesh().Vsc();
+
+    if (mesh().moving())
+    {
+        fvm.source() += scale*rDeltaT
+            *rho.oldTime().primitiveField()
+            *vf.oldTime().primitiveField()*mesh().Vsc0();
+    }
+    else
+    {
+        fvm.source() += scale*rDeltaT
+            *rho.oldTime().primitiveField()
+            *vf.oldTime().primitiveField()*mesh().Vsc();
+    }
+}
+
+
+template<class Type>
+void EulerDdtScheme<Type>::fvmDdt
+(
+    fvMatrix<Type>& fvm,
+    const scalar scale,
+    const volScalarField& alpha,
+    const volScalarField& rho,
+    const GeometricField<Type, fvPatchField, volMesh>& vf
+)
+{
+    // Check dimensions
+    const_cast<dimensionSet&>(fvm.dimensions()).reset
+    (
+        alpha.dimensions()*rho.dimensions()*vf.dimensions()*dimVol/dimTime
+    );
+
+    scalar rDeltaT = 1.0/mesh().time().deltaTValue();
+
+    fvm.diag() += scale*rDeltaT
+       *alpha.primitiveField()
+       *rho.primitiveField()
+       *mesh().Vsc();
+
+    if (mesh().moving())
+    {
+        fvm.source() += scale*rDeltaT
+            *alpha.oldTime().primitiveField()
+            *rho.oldTime().primitiveField()
+            *vf.oldTime().primitiveField()*mesh().Vsc0();
+    }
+    else
+    {
+        fvm.source() += scale*rDeltaT*rDeltaT
+            *alpha.oldTime().primitiveField()
+            *rho.oldTime().primitiveField()
+            *vf.oldTime().primitiveField()*mesh().Vsc();
+    }
+}
+
+
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 } // End namespace fv

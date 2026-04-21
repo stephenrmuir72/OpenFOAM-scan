@@ -143,6 +143,36 @@ Foam::transformFvPatchField<Type>::gradientBoundaryCoeffs() const
 }
 
 
+template<class Type>
+void Foam::transformFvPatchField<Type>::gradientInternalCoeffs
+(
+    UList<Type>& result
+) const
+{
+    if constexpr (!is_rotational_vectorspace_v<Type>)
+    {
+        // Rotational-invariant type
+        result = Foam::zero{};
+    }
+    else
+    {
+        // TBD.
+        result.deepCopy(-this->patch().deltaCoeffs()*snGradTransformDiag());
+    }
+}
+
+
+template<class Type>
+void Foam::transformFvPatchField<Type>::gradientBoundaryCoeffs
+(
+    UList<Type>& result
+) const
+{
+    // TBD.
+    result.deepCopy(gradientBoundaryCoeffs());
+}
+
+
 // * * * * * * * * * * * * * * * Member Operators  * * * * * * * * * * * * * //
 
 template<class Type>

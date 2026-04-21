@@ -190,6 +190,27 @@ public:
         ) const = 0;
 
 
+    // In-place variants
+
+        //- (slow) in-place variant of fvm/fvcDiv. Specialised versions may
+        //  choose to implement a more efficient version.
+        virtual void fvmDiv
+        (
+            fvMatrix<Type>&,
+            const scalar,
+            const surfaceScalarField&,
+            const GeometricField<Type, fvPatchField, volMesh>&
+        ) const;    // = 0;
+
+        // virtual void fvcDiv
+        // (
+        //     GeometricField<Type, fvPatchField, volMesh>&,
+        //     const scalar,
+        //     const surfaceScalarField&,
+        //     const GeometricField<Type, fvPatchField, volMesh>&
+        // ) const;    // = 0;
+
+
     // Member operators
 
         void operator=(const convectionScheme<Type>&);

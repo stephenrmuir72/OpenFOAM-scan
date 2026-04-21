@@ -206,6 +206,33 @@ public:
             virtual tmp<Field<Type>> gradientBoundaryCoeffs() const;
 
 
+        // Contiguous storage
+
+            //- Retrieve the matrix diagonal coefficients corresponding to the
+            //- evaluation of the value of this patchField with given weights
+            virtual void valueInternalCoeffs
+            (
+                const tmp<Field<scalar>>&,
+                UList<Type>&
+            ) const;
+
+            //- Retrieve the matrix source coefficients corresponding to the
+            //- evaluation of the value of this patchField with given weights
+            virtual void valueBoundaryCoeffs
+            (
+                const tmp<Field<scalar>>&,
+                UList<Type>&
+            ) const;
+
+            //- Retrieve the matrix diagonal coefficients corresponding to the
+            //- evaluation of the gradient of this patchField
+            virtual void gradientInternalCoeffs(UList<Type>&) const;
+
+            //- Retrieve the matrix source coefficients corresponding to the
+            //- evaluation of the gradient of this patchField
+            virtual void gradientBoundaryCoeffs(UList<Type>&) const;
+
+
     // Member Operators
 
         // Disable assignment operators

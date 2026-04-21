@@ -99,6 +99,24 @@ div
 }
 
 
+template<class Type>
+void div
+(
+    fvMatrix<Type>& fvm,
+    const scalar scale,
+    const surfaceScalarField& flux,
+    const GeometricField<Type, fvPatchField, volMesh>& vf
+)
+{
+    fv::convectionScheme<Type>::New
+    (
+        vf.mesh(),
+        flux,
+        vf.mesh().divScheme(name)
+    )().fvmDiv(fvm, scale, flux, vf);
+}
+
+
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 } // End namespace fvm

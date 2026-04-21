@@ -201,6 +201,20 @@ public:
             result = Foam::zero{};
         }
 
+        //- Retrieve the matrix diagonal coefficients corresponding to the
+        //- evaluation of the gradient of this patchField
+        virtual void gradientInternalCoeffs(UList<Type>& result) const
+        {
+            result = Foam::zero{};
+        }
+
+        //- Retrieve the matrix source coefficients corresponding to the
+        //- evaluation of the gradient of this patchField
+        virtual void gradientBoundaryCoeffs(UList<Type>& result) const
+        {
+            result = Foam::zero{};
+        }
+
 
     // Member Functions
 

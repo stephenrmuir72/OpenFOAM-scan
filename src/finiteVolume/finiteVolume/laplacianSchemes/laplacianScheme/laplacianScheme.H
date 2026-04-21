@@ -205,6 +205,17 @@ public:
             const GeometricField<GType, fvPatchField, volMesh>&,
             const GeometricField<Type, fvPatchField, volMesh>&
         );
+
+        // In-place variants
+
+        //- (slow) in-place variant of fvmLaplacian. Specialised versions
+        //  may choose to implement a more efficient version.
+        virtual void fvmLaplacian
+        (
+            fvMatrix<Type>& fvm,
+            const scalar scale,
+            const GeometricField<Type, fvPatchField, volMesh>&
+        );
 };
 
 

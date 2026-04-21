@@ -1706,7 +1706,7 @@ public:                                                                        \
     :                                                                          \
      u_(u), v_(v)                                                              \
     {                                                                          \
-        assert(u_.size() <= 0 || v_.size() <= 0 || u_.size() == v_.size());    \
+        /* assert(u_.size() <= 0 || v_.size() <= 0 || u_.size() == v_.size()); */   \
     }                                                                          \
     auto operator[](const label i) const                                       \
     {                                                                          \

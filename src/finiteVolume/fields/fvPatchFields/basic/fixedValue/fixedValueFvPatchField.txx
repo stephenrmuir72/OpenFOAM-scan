@@ -155,6 +155,53 @@ Foam::fixedValueFvPatchField<Type>::gradientBoundaryCoeffs() const
 
 
 template<class Type>
+void Foam::fixedValueFvPatchField<Type>::valueInternalCoeffs
+(
+    const tmp<scalarField>&,
+    UList<Type>& result
+) const
+{
+    // No contribution from internal values
+    result = Foam::Zero;
+}
+
+
+template<class Type>
+void Foam::fixedValueFvPatchField<Type>::valueBoundaryCoeffs
+(
+    const tmp<scalarField>&,
+    UList<Type>& result
+) const
+{
+    result.deepCopy(*this);
+}
+
+
+template<class Type>
+void Foam::fixedValueFvPatchField<Type>::gradientInternalCoeffs
+(
+    UList<Type>& result
+) const
+{
+    SubField<Type> fld(result);
+    fld = -pTraits<Type>::one;
+    fld *= this->patch().deltaCoeffs();
+}
+
+
+template<class Type>
+void Foam::fixedValueFvPatchField<Type>::gradientBoundaryCoeffs
+(
+    UList<Type>& result
+) const
+{
+    result.deepCopy(*this);
+    SubField<Type> fld(result);
+    fld *= this->patch().deltaCoeffs();
+}
+
+
+template<class Type>
 void Foam::fixedValueFvPatchField<Type>::write(Ostream& os) const
 {
     this->parent_bctype::write(os);

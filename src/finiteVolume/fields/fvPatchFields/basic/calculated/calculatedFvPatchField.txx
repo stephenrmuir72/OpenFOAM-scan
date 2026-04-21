@@ -199,6 +199,26 @@ Foam::calculatedFvPatchField<Type>::gradientBoundaryCoeffs() const
 
 
 template<class Type>
+void Foam::calculatedFvPatchField<Type>::gradientInternalCoeffs
+(
+    UList<Type>&
+) const
+{
+    (void) gradientInternalCoeffs();
+}
+
+
+template<class Type>
+void Foam::calculatedFvPatchField<Type>::gradientBoundaryCoeffs
+(
+    UList<Type>&
+) const
+{
+    (void) gradientBoundaryCoeffs();
+}
+
+
+template<class Type>
 void Foam::calculatedFvPatchField<Type>::write(Ostream& os) const
 {
     this->parent_bctype::write(os);

@@ -176,6 +176,17 @@ namespace fvm
         const tmp<GeometricField<GType, fvsPatchField, surfaceMesh>>&,
         const GeometricField<Type, fvPatchField, volMesh>&
     );
+
+
+    // In-place variants
+
+    template<class Type, class GType>
+    void laplacian
+    (
+        fvMatrix<Type>& fvm,
+        const scalar scale,
+        const GeometricField<Type, fvPatchField, volMesh>& vf
+    );
 }
 
 

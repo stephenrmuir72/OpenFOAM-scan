@@ -182,6 +182,14 @@ public:
             //  evaluation of the gradient of this patchField
             tmp<Field<Type>> gradientBoundaryCoeffs() const;
 
+            //- Retrieve the matrix diagonal coefficients corresponding to the
+            //  evaluation of the gradient of this patchField
+            void gradientInternalCoeffs(UList<Type>&) const;
+
+            //- Retrieve the matrix source coefficients corresponding to the
+            //  evaluation of the gradient of this patchField
+            void gradientBoundaryCoeffs(UList<Type>&) const;
+
 
         //- Write includes "value" entry
         virtual void write(Ostream&) const;

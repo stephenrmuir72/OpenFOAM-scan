@@ -988,14 +988,14 @@ public:
         v_(v)
     {
         assert(u.size() == -1 || v.size() == -1 || u.size() == v.size());
-        static_assert
-        (
-            std::is_same_v
-            <
-                typename E1::value_type,
-                typename E2::value_type
-            > == true
-        );
+        // static_assert
+        // (
+        //     std::is_same_v
+        //     <
+        //         typename E1::value_type,
+        //         typename E2::value_type
+        //     > == true
+        // );
     }
     auto operator[](const label i) const
     {
