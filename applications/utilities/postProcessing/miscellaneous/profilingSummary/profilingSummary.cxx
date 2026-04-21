@@ -5,7 +5,7 @@
     \\  /    A nd           | www.openfoam.com
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
-    Copyright (C) 2017-2022 OpenCFD Ltd.
+    Copyright (C) 2017-2026 OpenCFD Ltd.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -61,7 +61,7 @@ static const word blockNameProfiling("profiling");
 const HashTable<wordList> processing
 {
     { "profiling", { "calls", "totalTime", "childTime", "maxMem" } },
-    { "memInfo", { "size", "free" } },
+    { "memInfo", { "hwm", "size", "free" } },
 };
 
 
@@ -101,8 +101,8 @@ int main(int argc, char *argv[])
                 Time::controlDictName,
                 args.rootPath(),
                 args.caseName()/("processor" + Foam::name(proci)),
-                args.allowFunctionObjects(),
-                args.allowLibs()
+                false,   // enableFunctionObjects = false
+                false    // enableLibs = false
             )
         );
     }
@@ -158,7 +158,9 @@ int main(int argc, char *argv[])
         // Set time for all databases
         forAll(databases, proci)
         {
-            profiles[proci].clear();
+            auto& dict = profiles[proci];
+            dict.clear();
+
             databases[proci].setTime(timeDirs[timei], timei);
 
             // Look for "uniform/profiling" in each processor directory
@@ -169,18 +171,13 @@ int main(int argc, char *argv[])
                 "uniform"
             );
 
-            const IOobject* ioptr = objects.findObject(profilingFileName);
-            if (ioptr)
+            if (const auto* ioptr = objects.findObject(profilingFileName))
             {
-                IOdictionary dict(*ioptr);
-
-                // Full copy
-                profiles[proci] = dict;
+                // Copy contents
+                dict = IOdictionary::readContents(*ioptr);
 
                 // Assumed to be good if it has 'profiling' sub-dict
-
-                const dictionary* ptr = dict.findDict(blockNameProfiling);
-                if (ptr)
+                if (const auto* ptr = dict.findDict(blockNameProfiling))
                 {
                     ++nDict;
                 }
@@ -209,9 +206,9 @@ int main(int argc, char *argv[])
             (
                 runTime.path()/outputName,
                 runTime,
-                IOobject::NO_READ,
-                IOobject::NO_WRITE,
-                IOobject::NO_REGISTER,
+                IOobjectOption::NO_READ,
+                IOobjectOption::NO_WRITE,
+                IOobjectOption::NO_REGISTER,
                 true   // global-like
             )
         );
@@ -222,31 +219,34 @@ int main(int argc, char *argv[])
           + Foam::name(nProcs) + " processors"
         );
 
+        summary.set("memInfo", dictionary());
+        summary.set("profiling", dictionary());
 
         // Accumulator for each tag
         HashTable<DynamicList<scalar>> stats;
 
-        // Use first as 'master' to decide what others have
-        forAllConstIters(profiles.first(), mainIter)
-        {
-            const entry& mainEntry = mainIter();
+        // HashTable<DynamicList<scalar>> stats;
 
+        // Use first (processor0) as 'master' to decide what others have
+        for (const entry& mainEntry : profiles.front())
+        {
             // level1: eg, profiling {} or memInfo {}
             const word& level1Name = mainEntry.keyword();
 
+            const wordList& tags =
+                processing.lookup(level1Name, wordList::null());
+
             if
             (
-                !processing.found(level1Name)
+                tags.empty()
              || !mainEntry.isDict()
              || mainEntry.dict().empty()
             )
             {
                 continue;  // Only process known types
             }
-
-            const wordList& tags = processing[level1Name];
-
             const dictionary& level1Dict = mainEntry.dict();
+
 
             // We need to handle sub-dicts with other dicts
             //     Eg, trigger0 { .. } trigger1 { .. }
@@ -261,8 +261,10 @@ int main(int argc, char *argv[])
 
             wordList level2Names;
 
-            const bool hasDictEntries
-                = mainEntry.dict().first()->isDict();
+            const bool hasDictEntries =
+            (
+                mainEntry.dict().first()->isDict()
+            );
 
             if (hasDictEntries)
             {
@@ -271,12 +273,10 @@ int main(int argc, char *argv[])
             }
             else
             {
-                level2Names = {level1Name};
+                level2Names.resize(1, level1Name);
             }
 
-            summary.set(level1Name, dictionary());
-
-            dictionary& outputDict = summary.subDict(level1Name);
+            dictionary& outputDict = summary.subDictOrAdd(level1Name);
 
             for (const word& level2Name : level2Names)
             {
@@ -291,7 +291,7 @@ int main(int argc, char *argv[])
 
                 for (const dictionary& procDict : profiles)
                 {
-                    const dictionary* inDictPtr = procDict.findDict(level1Name);
+                    const auto* inDictPtr = procDict.findDict(level1Name);
 
                     if (inDictPtr && hasDictEntries)
                     {
@@ -308,14 +308,13 @@ int main(int argc, char *argv[])
 
                     for (const word& tag : tags)
                     {
-                        scalar val;
-
                         if
                         (
+                            scalar val;
                             inDictPtr->readIfPresent(tag, val, keyType::LITERAL)
                         )
                         {
-                            stats(tag).append(val);
+                            stats(tag).push_back(val);
                         }
                     }
                 }
@@ -346,9 +345,8 @@ int main(int argc, char *argv[])
                 // (looks nicer)
                 {
                     const word key("description");
-                    string val;
 
-                    if (outSubDict.readIfPresent(key, val))
+                    if (string val; outSubDict.readIfPresent(key, val))
                     {
                         if (val.removeEnd("processor0"))
                         {
@@ -364,17 +362,17 @@ int main(int argc, char *argv[])
 
                     if (lst.size() == nProcs)
                     {
-                        sort(lst);
+                        Foam::sort(lst);
                         const scalar avg = sum(lst) / nProcs;
 
-                        if (lst.first() != lst.last())
+                        if (lst.front() != lst.back())
                         {
                             outSubDict.set
                             (
                                 tag,
                                 FixedList<scalar, 3>
                                 {
-                                    lst.last(), avg, lst.first()
+                                    lst.back(), avg, lst.front()
                                 }
                             );
                         }
@@ -383,10 +381,61 @@ int main(int argc, char *argv[])
             }
         }
 
+        // Extract high-water mark (or peak) per-host information
+        {
+            // Per-host accumulator
+            HashTable<DynamicList<scalar>> hwm_stats;
+
+            for (const dictionary& procDict : profiles)
+            {
+                int64_t mem_hwm(-1);
+
+                if (const auto* memDict = procDict.findDict("memInfo"))
+                {
+                    const auto& d = *memDict;
+                    if (!d.readIfPresent("hwm", mem_hwm))
+                    {
+                        d.readIfPresent("peak", mem_hwm);
+                    }
+                }
+
+                if (mem_hwm < 0)
+                {
+                    continue;
+                }
+
+                string host;
+                if (!procDict.readIfPresent("host", host))
+                {
+                    if (const auto* dictptr = procDict.findDict("sysInfo"))
+                    {
+                        dictptr->readIfPresent("host", host);
+                    }
+                }
+
+                if (!host.empty())
+                {
+                    hwm_stats(host).push_back(mem_hwm);
+                }
+            }
+
+            dictionary& outputDict =
+                summary.subDictOrAdd("memInfo").subDictOrAdd("hwm_total");
+
+            for (const auto& iter : hwm_stats.csorted())
+            {
+                scalar total = 0;
+                for (auto val : iter.val())
+                {
+                    total += val;
+                }
+                outputDict.add(word(iter.key()), total);
+            }
+        }
 
         // Now write the summary
         {
-            mkDir(summary.path());
+            Foam::mkDir(summary.path());
 
             OFstream os(summary.objectPath());
 
