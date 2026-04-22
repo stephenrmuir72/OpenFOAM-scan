@@ -32,6 +32,7 @@ Description
 #include "fv.H"
 #include "HashTable.H"
 #include "linear.H"
+#include "fvMatrix.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -163,9 +164,7 @@ void convectionScheme<Type>::fvmDiv
     const GeometricField<Type, fvPatchField, volMesh>& vf
 ) const
 {
-    tmp<fvMatrix<Type>> tfvm(scale*this->fvmDiv(faceFlux, vf));
-
-    m += tfvm;
+    m += scale * this->fvmDiv(faceFlux, vf);
 }
 
 

@@ -1,5 +1,5 @@
 EXE_INC = \
-    -D__STDPAR__ \
+    /* -D__STDPAR__ */  \
     -DDEBUG_ET \
     -I$(FOAM_SRC)/meshTools/lnInclude \
     -I$(FOAM_SRC)/finiteVolume/lnInclude \
