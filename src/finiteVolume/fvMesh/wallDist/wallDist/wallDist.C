@@ -90,6 +90,7 @@ Foam::wallDist::wallDist
 )
 :
     MeshObject<fvMesh, Foam::UpdateableMeshObject, wallDist>(mesh),
+    mesh_(mesh),
     patchIDs_(patchIDs),
     patchTypeName_(patchTypeName),
     dict_
@@ -121,6 +122,18 @@ Foam::wallDist::wallDist
         dimensionedScalar("y" & patchTypeName_, dimLength, SMALL),
         patchDistMethod::patchTypes<scalar>(mesh, patchIDs_)
     ),
+    yIb_
+    (
+        IOobject
+        (
+            "yIb" & patchTypeName_,
+            mesh.time().timeName(),
+            mesh
+        ),
+        mesh,
+        dimensionedScalar("yIb" & patchTypeName_, dimLength, SMALL),
+        patchDistMethod::patchTypes<scalar>(mesh, patchIDs_)
+    ),
     n_(volVectorField::null()),
     updateInterval_(dict_.getOrDefault<label>("updateInterval", 1)),
     nRequired_(dict_.getOrDefault("nRequired", false)),
@@ -137,10 +150,10 @@ Foam::wallDist::wallDist
 
 Foam::wallDist::wallDist(const fvMesh& mesh, const word& patchTypeName)
 :
-    wallDist
+	wallDist
     (
         mesh,
-        mesh.boundaryMesh().findPatchIDs<wallPolyPatch>(),
+        mesh.boundaryMesh().findPatchIDsWallIb<wallPolyPatch>(),//sajad
         patchTypeName
     )
 {}
@@ -206,7 +219,7 @@ bool Foam::wallDist::movePoints()
 void Foam::wallDist::updateMesh(const mapPolyMesh& mpm)
 {
     pdm_->updateMesh(mpm);
-
+ 
     // Force update if performing topology change
     // Note: needed?
     // - field would have been mapped, so if using updateInterval option (!= 1)
@@ -214,6 +227,11 @@ void Foam::wallDist::updateMesh(const mapPolyMesh& mpm)
     requireUpdate_ = true;
     movePoints();
 }
-
+Foam::volScalarField& Foam::wallDist::yIb()//sajad
+{
+     pdm_->correct(y_);
+     return y_;
+            
+}
 
 // ************************************************************************* //

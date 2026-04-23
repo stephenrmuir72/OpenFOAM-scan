@@ -336,6 +336,9 @@ public:
         //- Update for changes in topology
         virtual void updateMesh(const mapPolyMesh& mpm);
 
+        //- Update for changes in topology  //sajad
+        virtual void updateMesh();
+
         //- Write
         virtual void write(Ostream& os) const;
 

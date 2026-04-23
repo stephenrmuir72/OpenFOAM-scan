@@ -125,6 +125,11 @@ Foam::cellZone::cellZone
 
 
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
+void Foam::cellZone::updateMesh()//sajad
+{
+    clearAddressing();
+}
+
 
 Foam::label Foam::cellZone::whichCell(const label globalCellID) const
 {

@@ -42,13 +42,18 @@ SourceFiles
 #include "polyPatch.H"
 #include "labelList.H"
 #include "SubList.H"
-#include "SubField.H"
-#include "PtrList.H"
 #include "typeInfo.H"
-#include "autoPtr.H"
 #include "tmp.H"
 #include "primitiveFields.H"
+ #include "SubField.H"
+#include "DimensionedField.H"
 #include "fvPatchFieldsFwd.H"
+#include "fvsPatchFieldsFwd.H"
+#include "surfaceFieldsFwd.H"
+#include "slicedVolFieldsFwd.H"
+#include "slicedSurfaceFieldsFwd.H"
+#include "PtrList.H"
+#include "autoPtr.H"
 #include "runTimeSelectionTables.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -89,8 +94,35 @@ class fvPatch
 
 
 public:
+        // Geometry correction functions
 
-    // Protected Member Functions
+            //- Make mesh face centres
+            virtual void makeCf(slicedSurfaceVectorField&) const//sajad
+            {}
+
+            //- Make mesh face areas
+            virtual void makeSf(slicedSurfaceVectorField&) const//sajad
+            {}
+
+            //- Make mesh cell centres
+            virtual void makeC(slicedVolVectorField&) const//sajad
+            {}
+
+            //- Make mesh cell volumes
+            virtual void makeV(scalarField&) const//sajad
+            {}
+
+            //- Update mesh motion fluxes
+            virtual void updatePhi//sajad
+            (
+                DimensionedField<scalar, volMesh>& V,
+                DimensionedField<scalar, volMesh>& V0,
+                surfaceScalarField& phi
+            ) const
+            {}
+
+
+
 
         //- Make patch weighting factors
         virtual void makeWeights(scalarField&) const;
@@ -188,10 +220,21 @@ public:
                 return polyPatch_.size();
             }
 
+            //- Return patch slice size.  Immersed boundary support
+            virtual label sliceSize() const//sajad
+            {
+                return size();
+            }
+
             //- Return true if this patch is coupled
             virtual bool coupled() const
             {
                 return polyPatch_.coupled();
+            }
+            //- Return true if this patch is wall
+            bool isWall() const
+            {
+                return polyPatch_.isWall();
             }
 
             //- Return true if the given type is a constraint type
@@ -216,7 +259,7 @@ public:
             template<class T>
             const typename List<T>::subList patchSlice(const List<T>& l) const
             {
-                return typename List<T>::subList(l, size(), start());
+                return typename List<T>::subList(l, sliceSize(), start());//sajad
             }
 
             //- Return faceCells

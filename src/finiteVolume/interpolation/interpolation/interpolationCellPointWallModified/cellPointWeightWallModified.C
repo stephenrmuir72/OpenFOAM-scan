@@ -43,8 +43,12 @@ bool Foam::cellPointWeightWallModified::onWall
     {
         const polyBoundaryMesh& bm = mesh.boundaryMesh();
         const label patchi = bm.whichPatch(facei);
-
-        if (patchi != -1 && isA<wallPolyPatch>(bm[patchi]))
+        bool bol=false;
+        if(isA<wallPolyPatch>(bm[patchi])||bm[patchi].isWall())//sajad   also for wallPolyPatch isWall is true ;
+        {
+			bol=true;
+		}
+        if (patchi != -1 && bol)
         {
             return true;
         }

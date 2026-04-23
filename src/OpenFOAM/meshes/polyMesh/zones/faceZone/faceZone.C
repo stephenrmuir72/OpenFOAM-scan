@@ -506,6 +506,11 @@ void Foam::faceZone::updateMesh(const mapPolyMesh& mpm)
     flipMap_.transfer(newFlipMap);
 }
 
+void Foam::faceZone::updateMesh()//sajad
+{
+    clearAddressing();
+}
+
 
 bool Foam::faceZone::checkDefinition(const bool report) const
 {

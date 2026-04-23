@@ -89,10 +89,10 @@ class triSurfaceSearch
 
         //- No copy construct
         triSurfaceSearch(const triSurfaceSearch&) = delete;
-
+        //triSurfaceSearch(const triSurfaceSearch&);//sajad
         //- No copy assignment
         void operator=(const triSurfaceSearch&) = delete;
-
+       // void operator=(const triSurfaceSearch&);//sajad
 
 public:
 
@@ -100,7 +100,7 @@ public:
 
         //- Construct from surface. Holds reference to surface!
         explicit triSurfaceSearch(const triSurface& surface);
-
+        explicit triSurfaceSearch(const triSurface& surface,bool ss);
         //- Construct from surface and dictionary.
         triSurfaceSearch(const triSurface& surface, const dictionary& dict);
 
@@ -143,6 +143,10 @@ public:
         {
             return maxTreeDepth_;
         }
+
+
+        //- Calculate for each searchPoint inside/outside status.
+        bool calcInside(const point& p) const;
 
         //- Calculate for each searchPoint inside/outside status.
         boolList calcInside(const pointField& searchPoints) const;

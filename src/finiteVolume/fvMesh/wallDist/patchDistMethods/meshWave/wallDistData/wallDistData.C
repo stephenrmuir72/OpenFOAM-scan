@@ -80,8 +80,19 @@ void Foam::wallDistData<TransferType>::correct()
     //
 
     // Get patchids of walls
-    labelHashSet wallPatchIDs(getPatchIDs<wallPolyPatch>());
-
+   //labelHashSet wallPatchIDs(getPatchIDs<wallPolyPatch>());
+                 //changed by sajad
+//------------------------------------------------------------   
+    const polyBoundaryMesh& bMesh = mesh.boundaryMesh();
+    labelHashSet wallPatchIDs(bMesh.size());
+    forAll(bMesh, patchI)
+    {
+        if(isA<wallPolyPatch>(bMesh[patchI])||bMesh[patchI].isWall())
+        {
+            wallPatchIDs.insert(patchI);
+        }
+    }
+//------------------------------------------------------------    
     // Collect pointers to data on patches
     UPtrList<Field<Type>> patchData(mesh.boundaryMesh().size());
 

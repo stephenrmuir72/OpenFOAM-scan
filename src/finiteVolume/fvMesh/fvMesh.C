@@ -938,6 +938,9 @@ void Foam::fvMesh::movePoints(const pointField& p)
     }
 
     polyMesh::movePoints(p);
+    tmp<scalarField> tsweptVols = polyMesh::movePointsIb(p);//sajad
+
+    updatePhi(tsweptVols());//sajad
 
     // Update or delete the local geometric properties as early as possible so
     // they can be used if necessary. These get recreated here instead of
@@ -1051,6 +1054,30 @@ void Foam::fvMesh::updateMesh(const mapPolyMesh& mpm)
     meshObject::updateMesh<lduMesh>(*this, mpm);
 }
 
+
+void Foam::fvMesh::syncUpdateMesh()
+{
+    // Update polyMesh. This needs to keep cell volumes
+    polyMesh::syncUpdateMesh();
+
+    surfaceInterpolation::clearOut();
+    clearGeomNotOldVol();
+
+    clearAddressing();
+
+    // handleMorph() should also clear out the surfaceInterpolation.
+    // This is a temporary solution
+    surfaceInterpolation::movePoints();
+
+    // Note:
+    // Not allowed to call deltaCoeffs here because the faces and cells may be
+    // at zero area/volume.  It will be called in movePoints after the
+    // topo change.
+    // HJ, VV and IG, 25/Oct/2016
+
+    // Function object update moved to polyMesh
+    // HJ, 29/Aug/2010
+}
 
 bool Foam::fvMesh::writeObject
 (

@@ -161,6 +161,12 @@ protected:
             void makeSf() const;
             void makeMagSf() const;
 
+            //- Make mesh motion fluxes
+            void makePhi() const; //sajad
+
+            //- Update mesh motion fluxes given swept volumes
+            void updatePhi(const scalarField& sweptVols) const;
+
             void makeC() const;
             void makeCf() const;
 
@@ -473,6 +479,10 @@ public:
 
             //- Update mesh corresponding to the given map
             virtual void updateMesh(const mapPolyMesh& mpm);
+
+            //- Sync mesh update for topo change on other processors
+            //  Locally, there is no topological change
+            virtual void syncUpdateMesh();
 
             //- Avoid masking surfaceInterpolation method
             using surfaceInterpolation::movePoints;

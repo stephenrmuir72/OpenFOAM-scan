@@ -78,9 +78,9 @@ class wallDist
     public MeshObject<fvMesh, UpdateableMeshObject, wallDist>
 {
     // Private data
-
+        const fvMesh& mesh_;
         //- Set of patch IDs
-        const labelHashSet patchIDs_;
+        labelHashSet patchIDs_;
 
         //- Name for the patch set, e.g. "wall"
         const word patchTypeName_;
@@ -93,6 +93,9 @@ class wallDist
 
         //- Distance-to-wall field
         mutable volScalarField y_;
+
+        //- Distance-to-wall field
+        mutable volScalarField yIb_;
 
         //- Normal-to-wall field
         mutable tmp<volVectorField> n_;
@@ -170,7 +173,8 @@ public:
         {
             return y_;
         }
-
+        //- Return reference to cached distance-to-wall field
+        volScalarField& yIb();//sajad
         //- Return reference to cached normal-to-wall field
         const volVectorField& n() const;
 

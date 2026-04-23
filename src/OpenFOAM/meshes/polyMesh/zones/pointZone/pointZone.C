@@ -131,6 +131,11 @@ Foam::label Foam::pointZone::whichPoint(const label globalPointID) const
     return zone::localID(globalPointID);
 }
 
+void Foam::pointZone::updateMesh() //sajad
+{
+    clearAddressing();
+}
+
 
 bool Foam::pointZone::checkDefinition(const bool report) const
 {

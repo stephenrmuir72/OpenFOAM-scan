@@ -44,5 +44,22 @@ Foam::labelHashSet Foam::polyBoundaryMesh::findPatchIDs() const
     return patchIDs;
 }
 
+template<class Type>
+Foam::labelHashSet Foam::polyBoundaryMesh::findPatchIDsWallIb() const   //sajad
+{
+    const polyBoundaryMesh& patches = *this;
+
+    labelHashSet patchIDs(patches.size());
+
+    forAll(patches, patchi)
+    {
+        if (isA<Type>(patches[patchi])||patches[patchi].isWall())
+        {
+            patchIDs.insert(patchi);
+        }
+    }
+    return patchIDs;
+}
+
 
 // ************************************************************************* //

@@ -87,13 +87,17 @@ bool Foam::patchDistMethods::directionalMeshWave::correct(volScalarField& y)
 
     const fvPatchList& patches = mesh_.boundary();
 
-    volVectorField::Boundary& nbf = n.boundaryFieldRef();
-
-    for (const label patchi : patchIDs_)
+    for (const label patchI : patchIDs_)//sajad
     {
-        nbf[patchi] == patches[patchi].nf();
-    }
-
+		if (patches[patchI].isWall())
+		{
+			n.boundaryFieldRef()[patchI] = patches[patchI].nf();
+		}
+        else
+        {
+			n.boundaryFieldRef()[patchI] == patches[patchI].nf();
+        }
+	}
     return correct(y, n);
 }
 
@@ -132,24 +136,26 @@ bool Foam::patchDistMethods::directionalMeshWave::correct
     y.transfer(wave.distance());
 
     n.transfer(wave.cellData());
+     
+    // Transfer values on patches into boundaryField of y
+	const fvPatchList& patches =mesh_.boundary();// volScalarField::mesh().boundary();
 
-    // Transfer values on patches into boundaryField of y and n
-    volScalarField::Boundary& ybf = y.boundaryFieldRef();
-
-    forAll(ybf, patchi)
+    for (const label patchI : patchIDs_)//sajad
     {
-        scalarField& waveFld = wave.patchDistance()[patchi];
-
-        if (!isA<emptyFvPatchScalarField>(ybf[patchi]))
+		if (patches[patchI].isWall())
+		{
+			y.boundaryFieldRef()[patchI] = 1/patches[patchI].deltaCoeffs();
+			n.boundaryFieldRef()[patchI] = patches[patchI].nf();
+		}
+        else if (!isA<emptyFvPatchScalarField>(y.boundaryFieldRef()[patchI]))
         {
-            ybf[patchi].transfer(waveFld);
+            scalarField& waveFld = wave.patchDistance()[patchI];
 
-            vectorField& wavePatchData = wave.patchData()[patchi];
-
-            nbf[patchi].transfer(wavePatchData);
+            y.boundaryFieldRef()[patchI].transfer(waveFld);
+            vectorField& wavePatchData = wave.patchData()[patchI];
+            n.boundaryFieldRef()[patchI].transfer(wavePatchData);
         }
-    }
-
+	}
     // Transfer number of unset values
     this->nUnset_ = wave.nUnset();
 
