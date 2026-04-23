@@ -75,7 +75,6 @@ Foam::patchDistMethods::meshWave::meshWave
 
 
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
-
 bool Foam::patchDistMethods::meshWave::correct(volScalarField& y)
 {
     y = dimensionedScalar("yWall", dimLength, GREAT);
@@ -87,18 +86,21 @@ bool Foam::patchDistMethods::meshWave::correct(volScalarField& y)
     y.transfer(wave.distance());
 
     // Transfer values on patches into boundaryField of y
-    volScalarField::Boundary& ybf = y.boundaryFieldRef();
+	const fvPatchList& patches =mesh_.boundary();// volScalarField::mesh().boundary();
 
-    forAll(ybf, patchi)
+    for (const label patchI : patchIDs_)//sajad
     {
-        if (!isA<emptyFvPatchScalarField>(ybf[patchi]))
+		if (patches[patchI].isWall())
+		{
+			y.boundaryFieldRef()[patchI] = 1/patches[patchI].deltaCoeffs();
+		}
+        else if (!isA<emptyFvPatchScalarField>(y.boundaryFieldRef()[patchI]))
         {
-            scalarField& waveFld = wave.patchDistance()[patchi];
+            scalarField& waveFld = wave.patchDistance()[patchI];
 
-            ybf[patchi].transfer(waveFld);
+            y.boundaryFieldRef()[patchI].transfer(waveFld);
         }
-    }
-
+	}
     // Transfer number of unset values
     nUnset_ = wave.nUnset();
 
@@ -138,23 +140,25 @@ bool Foam::patchDistMethods::meshWave::correct
 
     n.transfer(wave.cellData());
 
-    // Transfer values on patches into boundaryField of y and n
-    volScalarField::Boundary& ybf = y.boundaryFieldRef();
+    // Transfer values on patches into boundaryField of y
+	const fvPatchList& patches =mesh_.boundary();// volScalarField::mesh().boundary();
 
-    forAll(ybf, patchi)
+    for (const label patchI : patchIDs_)//sajad
     {
-        scalarField& waveFld = wave.patchDistance()[patchi];
-
-        if (!isA<emptyFvPatchScalarField>(ybf[patchi]))
+		if (patches[patchI].isWall())
+		{
+			y.boundaryFieldRef()[patchI] = 1/patches[patchI].deltaCoeffs();
+			n.boundaryFieldRef()[patchI] = patches[patchI].nf();
+		}
+        else if (!isA<emptyFvPatchScalarField>(y.boundaryFieldRef()[patchI]))
         {
-            ybf[patchi].transfer(waveFld);
+            scalarField& waveFld = wave.patchDistance()[patchI];
 
-            vectorField& wavePatchData = wave.patchData()[patchi];
-
-            nbf[patchi].transfer(wavePatchData);
+            y.boundaryFieldRef()[patchI].transfer(waveFld);
+            vectorField& wavePatchData = wave.patchData()[patchI];
+            n.boundaryFieldRef()[patchI].transfer(wavePatchData);
         }
-    }
-
+	}
     // Transfer number of unset values
     nUnset_ = wave.nUnset();
 

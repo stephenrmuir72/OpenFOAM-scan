@@ -32,7 +32,8 @@ Description
 #include "PrimitivePatch.H"
 #include "Map.H"
 #include "ListOps.H"
-
+#include "OSstream.H"
+#include "OFstream.H"
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
 template<class FaceList, class PointField>
@@ -274,5 +275,186 @@ Foam::PrimitivePatch<FaceList, PointField>::checkPointManifold
     return foundError;
 }
 
+//---------------------------------------------------------------------------sajad
+
+template<class FaceList, class PointField>
+void Foam::PrimitivePatch<FaceList, PointField>::
+writeVTK
+(
+    const fileName& name,
+    const FaceListType& faces,
+    const Field<point_type>& points
+)
+{
+    // Write patch and points into VTK
+    OFstream mps(name + ".vtk");
+
+    mps << "# vtk DataFile Version 2.0" << nl
+        << name << ".vtk" << nl
+        << "ASCII" << nl
+        << "DATASET POLYDATA" << nl
+        << "POINTS " << points.size() << " float" << nl;
+
+    // Write points
+    List<float> mlpBuffer(3*points.size());
+
+    label counter = 0;
+    forAll (points, i)
+    {
+        mlpBuffer[counter++] = float(points[i].x());
+        mlpBuffer[counter++] = float(points[i].y());
+        mlpBuffer[counter++] = float(points[i].z());
+    }
+
+    forAll (mlpBuffer, i)
+    {
+        mps << mlpBuffer[i] << ' ';
+
+        if (i > 0 && (i % 10) == 0)
+        {
+            mps << nl;
+        }
+    }
+
+    // Write faces
+    label nFaceVerts = 0;
+
+    forAll (faces, faceI)
+    {
+        nFaceVerts += faces[faceI].size() + 1;
+    }
+    labelList mlfBuffer(nFaceVerts);
+
+    counter = 0;
+    forAll (faces, faceI)
+    {
+     //   const face& f = faces[faceI];sajad
+
+        mlfBuffer[counter++] = faces[faceI].size();
+
+        forAll (faces[faceI], fpI)
+        {
+            mlfBuffer[counter++] = faces[faceI][fpI];
+        }
+    }
+    mps << nl;
+
+    mps << "POLYGONS " << faces.size() << ' ' << nFaceVerts << endl;
+
+    forAll (mlfBuffer, i)
+    {
+        mps << mlfBuffer[i] << ' ';
+
+        if (i > 0 && (i % 10) == 0)
+        {
+            mps << nl;
+        }
+    }
+    mps << nl;
+}
+
+
+template<class FaceList, class PointField>
+void Foam::PrimitivePatch<FaceList, PointField>::
+writeVTKNormals
+(
+    const fileName& name,
+    const FaceListType& faces,
+    const Field<point_type>& points
+)
+{
+    // Write patch and points into VTK
+    OFstream mps(name + ".vtk");
+
+    mps << "# vtk DataFile Version 2.0" << nl
+        << name << ".vtk" << nl
+        << "ASCII" << nl
+        << "DATASET POLYDATA" << nl
+        << "POINTS " << faces.size() << " float" << nl;
+
+    // Write points
+    List<float> mlPointBuffer(3*faces.size());
+
+    label counter = 0;
+    forAll (faces, i)
+    {
+        const vector c = faces[i].centre(points);
+
+        mlPointBuffer[counter++] = float(c.x());
+        mlPointBuffer[counter++] = float(c.y());
+        mlPointBuffer[counter++] = float(c.z());
+    }
+
+    forAll (mlPointBuffer, i)
+    {
+        mps << mlPointBuffer[i] << ' ';
+
+        if (i > 0 && (i % 10) == 0)
+        {
+            mps << nl;
+        }
+    }
+    mps << nl;
+
+    // Write normals
+    mps << "POINT_DATA " << faces.size() << nl
+        << "FIELD attributes " << 1 << nl
+        << "normals" << " 3 "
+        << faces.size() << " float" << nl;
+
+    List<float> mlNormalBuffer(3*faces.size());
+
+    counter = 0;
+    forAll (faces, i)
+    {
+        const vector n = faces[i].normal(points);
+
+        mlNormalBuffer[counter++] = float(n.x());
+        mlNormalBuffer[counter++] = float(n.y());
+        mlNormalBuffer[counter++] = float(n.z());
+    }
+
+    forAll (mlNormalBuffer, i)
+    {
+        mps << mlNormalBuffer[i] << ' ';
+
+        if (i > 0 && (i % 10) == 0)
+        {
+            mps << nl;
+        }
+    }
+    mps << nl;
+}
+
+
+template<class FaceList, class PointField>
+void Foam::PrimitivePatch<FaceList, PointField>::
+writeVTK
+(
+    const fileName& name
+) const
+{
+    PrimitivePatch<FaceList, PointField>::writeVTK
+    (
+        name,
+        this->localFaces(),
+        this->localPoints()
+    );
+}
+
+template<class FaceList, class PointField>
+void Foam::PrimitivePatch<FaceList, PointField>::
+writeVTKNormals
+(
+    const fileName& name
+) const
+{
+    PrimitivePatch<FaceList, PointField>::writeVTKNormals
+    (
+        name,
+        this->localFaces(),
+        this->localPoints()
+    );
+}
 
 // ************************************************************************* //

@@ -222,6 +222,10 @@ public:
             return false;
         }
 
+        //- Correct after topology update  Note: Zone has been rebuilt
+        //  and no mapping is required.  HJ, 1/Mar/2009 //sajad
+        void updateMesh(); //sajad
+
         //- Write dictionary
         virtual void writeDict(Ostream& os) const;
 

@@ -1299,6 +1299,142 @@ void Foam::polyMesh::movePoints(const pointField& newPoints)
 }
 
 
+Foam::tmp<Foam::scalarField> Foam::polyMesh::movePointsIb(const pointField& newPoints)//sajad
+{
+    DebugInFunction
+        << "Moving points for time " << time().value()
+        << " index " << time().timeIndex() << endl;
+
+    if (newPoints.size() != points_.size())
+    {
+        FatalErrorInFunction
+            << "Size of newPoints " << newPoints.size()
+            << " does not correspond to current mesh points size "
+            << points_.size()
+            << exit(FatalError);
+    }
+
+
+    moving(true);
+
+    // Pick up old points
+    if (curMotionTimeIndex_ != time().timeIndex())
+    {
+        if (debug)
+        {
+            Info<< "tmp<scalarField> polyMesh::movePoints(const pointField&) : "
+                << " Storing current points for time " << time().value()
+                << " index " << time().timeIndex() << endl;
+        }
+
+        if (storeOldCellCentres_)
+        {
+            oldCellCentresPtr_.clear();
+            oldCellCentresPtr_.reset(new pointField(cellCentres()));
+        }
+
+        // Mesh motion in the new time step
+        oldPointsPtr_.clear();
+        oldPointsPtr_.reset(new pointField(points_));
+        curMotionTimeIndex_ = time().timeIndex();
+    }
+
+    points_ = newPoints;
+
+    bool moveError = false;
+    if (debug)
+    {
+        // Check mesh motion
+        if (checkMeshMotion(points_, true))
+        {
+            moveError = true;
+
+            InfoInFunction
+                << "Moving the mesh with given points will "
+                << "invalidate the mesh." << nl
+                << "Mesh motion should not be executed." << endl;
+        }
+    }
+
+    points_.writeOpt(IOobject::AUTO_WRITE);
+    points_.instance() = time().timeName();
+    points_.eventNo() = getEvent();
+
+    if (tetBasePtIsPtr_)
+    {
+        tetBasePtIsPtr_->writeOpt(IOobject::AUTO_WRITE);
+        tetBasePtIsPtr_->instance() = time().timeName();
+        tetBasePtIsPtr_->eventNo() = getEvent();
+    }
+
+    // Currently a no-op; earlier versions set meshPhi and call
+    // primitiveMesh::clearGeom
+    tmp<scalarField> sweptVols = primitiveMesh::movePointsIb
+    (
+        points_,
+        oldPoints()
+    );
+
+
+    // Update the mesh geometry (via fvGeometryScheme)
+    // - updateGeom is virtual -> calls fvMesh::updateGeom (or higher)
+    // - fvMesh::updateGeom defers to surfaceInterpolation::updateGeom(),
+    //   which defers to fvGeometryScheme::movePoints()
+    // - set the mesh flux
+    // - clear out/recalculate stale geometry
+    updateGeom();
+
+    // Adjust parallel shared points
+    if (globalMeshDataPtr_)
+    {
+        globalMeshDataPtr_->movePoints(points_);
+    }
+
+    // Force recalculation of all geometric data with new points
+
+    bounds_ = boundBox(points_);
+    boundary_.movePoints(points_);
+
+    pointZones_.movePoints(points_);
+    faceZones_.movePoints(points_);
+    cellZones_.movePoints(points_);
+
+    // Reset cell tree - it gets built from mesh geometry so might have
+    // wrong boxes. It is correct as long as none of the cells leaves
+    // the boxes it is in which most likely is almost never the case except
+    // for tiny displacements. An alternative is to check the displacements
+    // to see if they are tiny - imagine a big windtunnel with a small rotating
+    // object. In this case the processors without the rotating object wouldn't
+    // have to clear any geometry. However your critical path still stays the
+    // same so no time would be gained (unless the decomposition gets weighted).
+    // Small benefit for lots of scope for problems so not done.
+    cellTreePtr_.clear();
+
+    // Reset valid directions (could change with rotation)
+    geometricD_ = Zero;
+    solutionD_ = Zero;
+
+    // Note: tet-base decomposition does not get cleared. Ideally your face
+    // decomposition should not change during mesh motion ...
+
+
+    meshObject::movePoints<polyMesh>(*this);
+    meshObject::movePoints<pointMesh>(*this);
+
+    const_cast<Time&>(time()).functionObjects().movePoints(*this);
+
+
+    if (debug && moveError)
+    {
+        // Write mesh to ease debugging. Note we want to avoid calling
+        // e.g. fvMesh::write since meshPhi not yet complete.
+        polyMesh::write();
+    }
+    return sweptVols;
+}
+
+
+
 void Foam::polyMesh::resetMotion() const
 {
     curMotionTimeIndex_ = 0;

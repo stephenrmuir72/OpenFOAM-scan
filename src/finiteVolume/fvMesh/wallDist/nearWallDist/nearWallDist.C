@@ -39,8 +39,18 @@ void Foam::nearWallDist::calculate()
     cellDistFuncs wallUtils(mesh_);
 
     // Get patch ids of walls
-    labelHashSet wallPatchIDs(wallUtils.getPatchIDs<wallPolyPatch>());
-
+//    labelHashSet wallPatchIDs(wallUtils.getPatchIDs<wallPolyPatch>());
+//------------------------------------------------------------   
+    const polyBoundaryMesh& bMesh = mesh_.boundaryMesh();
+    labelHashSet wallPatchIDs(bMesh.size());
+    forAll(bMesh, patchI)
+    {
+        if(isA<wallPolyPatch>(bMesh[patchI])||bMesh[patchI].isWall())
+        {
+            wallPatchIDs.insert(patchI);
+        }
+    }
+//------------------------------------------------------------   
     // Size neighbours array for maximum possible
 
     DynamicList<label> neighbours(wallUtils.maxPatchSize(wallPatchIDs));
@@ -56,7 +66,7 @@ void Foam::nearWallDist::calculate()
 
         const fvPatch& patch = mesh_.boundary()[patchi];
 
-        if (isA<wallFvPatch>(patch))
+        if (isA<wallFvPatch>(patch))//  sajad
         {
             const polyPatch& pPatch = patch.patch();
 
@@ -77,6 +87,10 @@ void Foam::nearWallDist::calculate()
                     minFacei
                 );
             }
+        }
+        else if(mesh_.boundary()[patchi].isWall())//sajad
+        {
+            ypatch = 1/mesh_.boundary()[patchi].deltaCoeffs();
         }
         else
         {

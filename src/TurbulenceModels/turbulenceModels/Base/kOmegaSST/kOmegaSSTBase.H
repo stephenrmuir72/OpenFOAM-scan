@@ -112,6 +112,7 @@ SourceFiles
     kOmegaSSTBase.C
 
 \*---------------------------------------------------------------------------*/
+#include "wallDist.H"
 
 #ifndef kOmegaSSTBase_H
 #define kOmegaSSTBase_H
@@ -172,8 +173,8 @@ protected:
             //- Wall distance
             //  Note: different to wall distance in parent RASModel
             //  which is for near-wall cells only
-            const volScalarField& y_;
-
+            volScalarField y_;//sajad
+            wallDist ysIb_;//sajad
             volScalarField k_;
             volScalarField omega_;
 

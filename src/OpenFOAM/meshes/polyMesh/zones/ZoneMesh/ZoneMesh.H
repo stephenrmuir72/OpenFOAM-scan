@@ -262,6 +262,9 @@ public:
         //- Correct zone mesh after moving points
         void movePoints(const pointField& pts);
 
+        //- Correct after topology update //sajad
+        void updateMesh();
+
 
     // Storage Management
 

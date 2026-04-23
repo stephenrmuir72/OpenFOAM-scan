@@ -578,6 +578,32 @@ Foam::fileName Foam::IOobject::objectRelPath() const
 }
 
 
+Foam::fileName Foam::IOobject::filePath() const//sajad
+{
+    return localFilePath(type());
+}
+
+
+bool Foam::IOobject::headerOk()//sajad
+{
+    // Note: Should be consistent with IOobject::typeHeaderOk(false)
+
+    bool ok = true;
+
+    fileName fName(filePath());
+
+    ok = Foam::fileHandler().readHeader(*this, fName, type());
+
+    if (!ok && IOobject::debug)
+    {
+        IOWarningInFunction(fName)
+            << "failed to read header of file " << objectPath()
+            << endl;
+    }
+
+    return ok;
+}
+
 Foam::fileName Foam::IOobject::localFilePath
 (
     const word& typeName,

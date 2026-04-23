@@ -140,6 +140,13 @@ Foam::triSurfaceSearch::triSurfaceSearch(const triSurface& surface)
     maxTreeDepth_(10),
     treePtr_(nullptr)
 {}
+Foam::triSurfaceSearch::triSurfaceSearch(const triSurface& surface,bool ss)
+:
+    surface_(surface),
+    tolerance_(indexedOctree<treeDataTriSurface>::perturbTol()),
+    maxTreeDepth_(10),
+    treePtr_(nullptr)
+{}
 
 
 Foam::triSurfaceSearch::triSurfaceSearch
@@ -255,8 +262,26 @@ Foam::triSurfaceSearch::tree() const
 
     return *treePtr_;
 }
-
-
+//-------------------------sajad------------------------------
+bool Foam::triSurfaceSearch::calcInside(const point& p) const
+{
+    if (!tree().bb().contains(p))
+    {
+        return false;
+    }
+    else if
+    (
+        tree().getVolumeType(p) == volumeType::INSIDE
+    )
+    {
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+//-----------------------------------------------------------
 // Determine inside/outside for samples
 Foam::boolList Foam::triSurfaceSearch::calcInside
 (

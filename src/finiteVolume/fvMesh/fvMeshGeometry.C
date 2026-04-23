@@ -35,7 +35,7 @@ License
 #include "SubField.H"
 #include "cyclicFvPatchFields.H"
 #include "cyclicAMIFvPatchFields.H"
-
+#include "demandDrivenData.H"
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
 void Foam::fvMesh::makeSf() const
@@ -69,6 +69,15 @@ void Foam::fvMesh::makeSf() const
     );
 
     SfPtr_->setOriented();
+
+    // Boundary update.  Used in complex geometries, eg. immersed boundary
+    // HJ, 29/Nov/2017
+    slicedSurfaceVectorField& S = *SfPtr_;
+
+    forAll (S.boundaryField(), patchI)
+    {
+        boundary()[patchI].makeSf(S);
+    }
 }
 
 
@@ -139,6 +148,18 @@ void Foam::fvMesh::makeC() const
         true,               //preserveCouples
         true                //preserveProcOnly
     );
+    // Boundary update.  Used in complex geometries, eg. immersed boundary
+    // HJ, 29/Nov/2017
+    slicedVolVectorField& C = *CPtr_;
+
+    forAll (C.boundaryField(), patchI)
+    {
+        boundary()[patchI].makeC(C);
+    }
+    // Note:
+    // Functionality for cyclic and cyclicGgiFvPatch, which used to be here
+    // with RTTI is moved into respective patched under virtual functions
+    // HJ, 29/Nov/2017
 }
 
 
@@ -171,7 +192,144 @@ void Foam::fvMesh::makeCf() const
         dimLength,
         faceCentres()
     );
+     // Boundary update.  Used in complex geometries, eg. immersed boundary// sajad
+     // HJ, 29/Nov/2017
+    slicedSurfaceVectorField& Cf = *CfPtr_;
+
+    forAll (Cf.boundaryField(), patchI)
+    {
+        boundary()[patchI].makeCf(Cf);
+    }
 }
+
+
+void Foam::fvMesh::makePhi() const
+{
+    if (debug)
+    {
+        InfoIn("void fvMesh::makePhi() const")
+            << "Preparing mesh flux field"
+            << endl;
+    }
+
+    // It is an error to attempt to recalculate
+    // if the pointer is already set
+    if (phiPtr_)
+    {
+        FatalErrorIn("fvMesh::makePhi() const")
+            << "flux field already exists"
+            << abort(FatalError);
+    }
+
+    // Reading old time mesh motion flux if it exists and
+    // creating zero current time mesh motion flux
+
+    scalar t0 = time().value() - time().deltaT().value();
+
+    IOobject meshPhiHeader
+    (
+        "meshPhi",
+        time().timeName(t0),
+        *this,
+        IOobject::NO_READ
+    );
+    if(meshPhiHeader.headerOk())
+    {
+        if (debug)
+        {
+            InfoIn("void fvMesh::makePhi()")
+                << "Reading mesh fluxes" << endl;
+        }
+
+        phiPtr_ = new surfaceScalarField
+        (
+            IOobject
+            (
+                "meshPhi",
+                time().timeName(t0),
+                *this,
+                IOobject::MUST_READ,
+                IOobject::AUTO_WRITE
+            ),
+            *this
+        );
+
+        phiPtr_->oldTime();
+
+        (*phiPtr_) = dimensionedScalar("0", dimVolume/dimTime, 0.0);
+
+        // This mesh is moving: set the motion to true
+    }
+    else
+    {
+        if (debug)
+        {
+            InfoIn("void fvMesh::makePhi()")
+                << "Creating null mesh motion fluxes" << endl;
+        }
+
+        phiPtr_ = new surfaceScalarField
+        (
+            IOobject
+            (
+                "meshPhi",
+                time().timeName(),
+                *this,
+                IOobject::NO_READ,
+                IOobject::AUTO_WRITE
+            ),
+            *this,
+            dimensionedScalar("0", dimVolume/dimTime, 0.0)
+        );
+    }
+}
+
+void Foam::fvMesh::updatePhi(const scalarField& sweptVols) const
+{
+    // Fill in mesh motion fluxes given swept volumes for all faces
+
+    // Make sure V and V0 are constructed before the correction
+    // HJ, 22/Dec/2017
+    V();
+    if (!V0Ptr_)
+    {
+        const_cast<fvMesh&>(*this).setV0();
+    }
+
+    if (!phiPtr_)
+    {
+        makePhi();
+    }
+
+    scalar rDeltaT = 1.0/time().deltaT().value();
+
+    surfaceScalarField& phi = *phiPtr_;
+    phi.primitiveFieldRef() = scalarField::subField(sweptVols, nInternalFaces());
+    phi.primitiveFieldRef() *= rDeltaT;
+
+    const fvPatchList& patches = boundary();
+
+    // Calculate regular values first and then allow patches to update them
+    // HJ, 15/Dec/2017
+    forAll (patches, patchI)
+    {
+        phi.boundaryFieldRef()[patchI] = patches[patchI].patchSlice(sweptVols);
+        phi.boundaryFieldRef()[patchI] *= rDeltaT;
+    }
+
+    // Boundary update.  Used in complex geometry updates, eg. immersed boundary
+    // HJ, 29/Nov/2017
+    forAll (phi.boundaryField(), patchI)
+    {
+        boundary()[patchI].updatePhi
+        (
+            *VPtr_,
+            *V0Ptr_,
+            phi
+        );
+    }
+}
+
 
 
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
@@ -198,6 +356,14 @@ const Foam::volScalarField::Internal& Foam::fvMesh::V() const
             dimVolume,
             cellVolumes()
         );
+        // Boundary update.  Used in complex geometries, eg. immersed boundary
+        // HJ, 29/Nov/2017 //sajad 
+        scalarField& V = *VPtr_;
+
+        forAll (boundary(), patchI)
+        {
+            boundary()[patchI].makeV(V);
+        }
     }
 
     return *VPtr_;
@@ -219,12 +385,30 @@ const Foam::volScalarField::Internal& Foam::fvMesh::V0() const
 
 Foam::volScalarField::Internal& Foam::fvMesh::setV0()
 {
-    if (!V0Ptr_)
+    deleteDemandDrivenData(phiPtr_);
+    deleteDemandDrivenData(V0Ptr_);
+
+    if (debug)
     {
-        FatalErrorInFunction
-            << "V0 is not available"
-            << abort(FatalError);
+        InfoIn("DimensionedField<scalar, volMesh>& fvMesh::setV0()")
+            << "Setting old cell volumes" << endl;
     }
+
+    // Update time index
+    curTimeIndex_ = time().timeIndex();
+
+    V0Ptr_ = new DimensionedField<scalar, volMesh>
+    (
+        IOobject
+        (
+            "V0",
+            time().timeName(),
+            *this,
+            IOobject::NO_READ,
+            IOobject::NO_WRITE
+        ),
+        V()
+    );
 
     return *V0Ptr_;
 }
@@ -397,9 +581,11 @@ const Foam::surfaceScalarField& Foam::fvMesh::phi() const
 {
     if (!phiPtr_)
     {
-        FatalErrorInFunction
-            << "mesh flux field does not exist, is the mesh actually moving?"
-            << abort(FatalError);
+        //FatalErrorInFunction
+         //   << "mesh flux field does not exist, is the mesh actually moving?"
+         //   << abort(FatalError);
+        const_cast<fvMesh&>(*this).setV0();//sajad
+        makePhi();
     }
 
     // Set zero current time
@@ -420,6 +606,8 @@ Foam::refPtr<Foam::surfaceScalarField> Foam::fvMesh::setPhi()
     if (!phiPtr_)
     {
         return nullptr;
+       // makePhi();//sajad
+        //return *phiPtr_;
     }
     else
     {

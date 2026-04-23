@@ -66,6 +66,10 @@ void Foam::nearWallDistNoSearch::doAll()
                 )/magApatch[facei];
             }
         }
+        else if(patches[patchi].isWall())//sajad
+        {
+            ypatch = 1/patches[patchi].deltaCoeffs();
+        }
         else
         {
             ypatch = 0.0;

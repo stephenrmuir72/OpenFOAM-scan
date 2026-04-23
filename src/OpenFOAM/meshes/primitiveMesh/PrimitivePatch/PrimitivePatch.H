@@ -542,7 +542,29 @@ public:
             const bool report = false,
             labelHashSet* setPtr = nullptr
         ) const;
+//-------------------------------sajad----------------------------------------
+            //- Write generic VTK patch, HJ, 14/Jan/2009
+            static void writeVTK
+            (
+                const fileName& name,
+                const FaceListType& faces,
+                const Field<point_type>& points
+            );
 
+            //- Write generic VTK patch normals, HJ, 14/Jan/2009
+            static void writeVTKNormals
+            (
+                const fileName& name,
+                const FaceListType& faces,
+                const Field<point_type>& points
+            );
+
+            //- Write VTK patch
+            void writeVTK(const fileName& name) const;
+
+            //- Write VTK patch normals
+            void writeVTKNormals(const fileName& name) const;
+//---------------------------------------------------------------------------
 
     // Edit
 
