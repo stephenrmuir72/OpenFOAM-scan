@@ -47,91 +47,90 @@ namespace Foam
 template<int nUnroll>
 struct matrixMultiplyFunctor
 {
-    const scalarField& psi;       // Use vector for host-side memory management
-    const scalarField& diag;
-    const scalarField& lower;
-    const scalarField& upper;
-    const labelUList& own;
-    const labelUList& nei;
-    const labelUList& ownStart;
-    const labelUList& losortStart;
-    const labelUList& losort;
+    const scalarField& psi_;
+    const scalarField& diag_;
+    const scalarField& lower_;
+    const scalarField& upper_;
+
+    const labelUList& own_;
+    const labelUList& nei_;
+    const labelUList& ownStart_;
+    const labelUList& losortStart_;
+    const labelUList& losort_;
 
     matrixMultiplyFunctor
     (
-        const scalarField& _psi,
-        const scalarField& _diag,
-        const scalarField& _lower,
-        const scalarField& _upper,
-        const labelUList& _own,
-        const labelUList& _nei,
-        const labelUList& _ownStart,
-        const labelUList& _losortStart,
-        const labelUList& _losort
+        const scalarField& psi,
+        const scalarField& diag,
+        const scalarField& lower,
+        const scalarField& upper,
+        const labelUList& own,
+        const labelUList& nei,
+        const labelUList& ownStart,
+        const labelUList& losortStart,
+        const labelUList& losort
     )
     :
-        psi(_psi),
-        diag(_diag),
-        lower(_lower),
-        upper(_upper),
-        own(_own),
-        nei(_nei),
-        ownStart(_ownStart),
-        losortStart(_losortStart),
-        losort(_losort)
+        psi_(psi),
+        diag_(diag),
+        lower_(lower),
+        upper_(upper),
+        own_(own),
+        nei_(nei),
+        ownStart_(ownStart),
+        losortStart_(losortStart),
+        losort_(losort)
     {}
 
-    scalar operator()(const label& id) const
+    scalar operator()(const label celli) const
     {
-        scalar tmpSum[2*nUnroll] = {0.0};
-        scalar nExtra = 0;
+        scalar tmpSum[2*nUnroll] = {Zero};
+        scalar nbrSum = Zero;
 
-        label oStart = ownStart[id];
-        label oSize = ownStart[id+1] - oStart;
+        const label ownStart = ownStart_[celli];
+        const label ownSize = ownStart_[celli + 1] - ownStart;
 
-        label nStart = losortStart[id];
-        label nSize = losortStart[id+1] - nStart;
+        const label neiStart = losortStart_[celli];
+        const label neiSize = losortStart_[celli + 1] - neiStart;
 
-        scalar out = diag[id]*psi[id];
+        scalar result = diag_[celli]*psi_[celli];
 
-        for (label i=0; i<nUnroll; i++)
+        for (label i = 0; i < nUnroll; ++i)
         {
-            if (i < oSize)
+            if (i < ownSize)
             {
-                label face = oStart+i;
-                tmpSum[i] = upper[face]*psi[nei[face]];
+                const label facei = ownStart + i;
+                tmpSum[i] = upper_[facei]*psi_[nei_[facei]];
             }
         }
 
-        for (label i=0; i<nUnroll; i++)
+        for (label i = 0; i < nUnroll; ++i)
         {
-            if (i<nSize)
+            if (i < neiSize)
             {
-                label face = nStart + i;
-                face = losort[face];
-                tmpSum[i+nUnroll] = lower[face]*psi[own[face]];
+                const label facei = losort_[neiStart + i];
+                tmpSum[i + nUnroll] = lower_[facei]*psi_[own_[facei]];
             }
         }
 
-        for (label i=0; i<2*nUnroll; i++)
+        for (label i = 0; i < 2*nUnroll; ++i)
         {
-            out += tmpSum[i];
+            result += tmpSum[i];
         }
 
-        for (label i=nUnroll; i<oSize; i++)
+        for (label i = nUnroll; i < ownSize; ++i)
         {
-            label face = oStart+i;
-            out += upper[face]*psi[nei[face]];
+            const label facei = ownStart + i;
+            result += upper_[facei]*psi_[nei_[facei]];
         }
 
-        for (label i=nUnroll; i<nSize; i++)
+        for (label i = nUnroll; i < neiSize; ++i)
         {
-            label face = nStart+i;
-            face = losort[face];
-            nExtra += lower[face]*psi[own[face]];
+            const label facei = losort_[neiStart + i];
+            nbrSum += lower_[facei]*psi_[own_[facei]];
         }
 
-        return out + nExtra;
+        return result + nbrSum;
     }
 };
 
@@ -275,7 +274,7 @@ void Foam::lduMatrix::Amul
             ApsiPtr[uPtr[face]] += lowerPtr[face]*psiPtr[lPtr[face]];
             ApsiPtr[lPtr[face]] += upperPtr[face]*psiPtr[uPtr[face]];
         }
-        #endif       
+        #endif
     }
 
     // Update interface interfaces
@@ -406,7 +405,7 @@ void Foam::lduMatrix::sumA
         sumAPtr[uPtr[face]] += lowerPtr[face];
         sumAPtr[lPtr[face]] += upperPtr[face];
     }
-    #endif    
+    #endif
 
     // Add the interface internal coefficients to diagonal
     // and the interface boundary coefficients to the sum-off-diagonal
@@ -416,7 +415,7 @@ void Foam::lduMatrix::sumA
         {
             const labelUList& pa = lduAddr().patchAddr(patchi);
             const scalarField& pCoeffs = interfaceBouCoeffs[patchi];
-           
+
             apply_policy(static_cast<std::size_t>(pa.size()), [&](auto policy)
             {
                 std::for_each
@@ -592,13 +591,13 @@ Foam::tmp<Foam::scalarField> Foam::lduMatrix::H1() const
             tH1.ref(),
             lduAddr(),
             matrixCoeffsFunctor<scalar, negateUnaryOperatorFunctor<scalar,
-            scalar>>
+                scalar>>
             (
                 upper(),
                 negateUnaryOperatorFunctor<scalar, scalar>()
             ),
             matrixCoeffsFunctor<scalar, negateUnaryOperatorFunctor<scalar,
-            scalar>>
+                scalar>>
             (
                 lower(),
                 negateUnaryOperatorFunctor<scalar, scalar>()
