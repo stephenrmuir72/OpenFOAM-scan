@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2013-2016 OpenFOAM Foundation
+    Copyright (C) 2026 UKRI-STFC.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -23,6 +24,9 @@ License
     You should have received a copy of the GNU General Public License
     along with OpenFOAM.  If not, see <http://www.gnu.org/licenses/>.
 
+    Some parts here added have been inspired by the work done at the following
+    repository https://github.com/SimFlowCFD/RapidCFD-dev
+
 \*---------------------------------------------------------------------------*/
 
 #include "fvcReconstruct.H"
@@ -31,6 +35,9 @@ License
 #include "surfaceFields.H"
 #include "extrapolatedCalculatedFvPatchFields.H"
 
+#ifdef FOAM_OFFLOAD
+#include "lduAddressingFunctors.H"
+#endif
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 namespace Foam
@@ -42,6 +49,42 @@ namespace fvc
 {
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+#ifdef FOAM_OFFLOAD
+struct reconstructMagFunctor
+{
+    const surfaceVectorField& Sf_;
+    const surfaceVectorField& Cf_;
+    const volVectorField& C_;
+    const surfaceScalarField& ssf_;
+    const surfaceScalarField& magSf_;
+
+
+    reconstructMagFunctor
+    (
+        const surfaceVectorField& Sf,
+        const surfaceVectorField& Cf,
+        const volVectorField& C,
+        const surfaceScalarField& ssf,
+        const surfaceScalarField& magSf
+    )
+    :
+        Sf_(Sf),
+        Cf_(Cf),
+        C_(C),
+        ssf_(ssf),
+        magSf_(magSf)
+    {}
+
+
+    scalar operator()(const label celli, const label facei) const
+    {
+        return
+        (
+            Sf_[facei] & (Cf_[facei] - C_[celli])
+        )*ssf_[facei]/magSf_[facei];
+    }
+};
+#endif
 
 tmp<volScalarField> reconstructMag(const surfaceScalarField& ssf)
 {
@@ -73,7 +116,29 @@ tmp<volScalarField> reconstructMag(const surfaceScalarField& ssf)
         )
     );
     scalarField& rf = treconField.ref();
+    #ifdef FOAM_OFFLOAD
+    reconstructMagFunctor fun
+    (
+        Sf,
+        Cf,
+        C,
+        ssf,
+        magSf
+    );
 
+     // v is a random-access sequence of size n, all zeros
+    std::vector<int> v(owner.size(), 0);
+    matrixOperation
+    (
+        v.begin(),
+        rf,
+        mesh.lduAddr(),
+        fun,
+        fun,
+        sumOp<scalar>(),
+        minusOp<scalar>()
+    );
+    #else
     forAll(owner, facei)
     {
         label own = owner[facei];
@@ -82,6 +147,7 @@ tmp<volScalarField> reconstructMag(const surfaceScalarField& ssf)
         rf[own] += (Sf[facei] & (Cf[facei] - C[own]))*ssf[facei]/magSf[facei];
         rf[nei] -= (Sf[facei] & (Cf[facei] - C[nei]))*ssf[facei]/magSf[facei];
     }
+    #endif
 
     const surfaceScalarField::Boundary& bsf = ssf.boundaryField();
 
@@ -94,6 +160,38 @@ tmp<volScalarField> reconstructMag(const surfaceScalarField& ssf)
         const vectorField& pSf = Sf.boundaryField()[patchi];
         const scalarField& pMagSf = magSf.boundaryField()[patchi];
 
+        #ifdef FOAM_OFFLOAD
+        const labelList& pcells = mesh.lduAddr().patchSortCells(patchi);
+
+        const labelList& losort = mesh.lduAddr().patchSortAddr(patchi);
+        const labelList& losortStart = 
+            mesh.lduAddr().patchSortStartAddr(patchi);
+
+        labelRange index(pcells.size());
+        apply_policy(pcells.size(), [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                index.begin(),
+                index.end(),
+                [&](size_t i)
+                {
+                    label celli = pcells[i];
+                    scalar out = rf[celli];
+                    label nStart = losortStart[i];
+                    label nSize = losortStart[i+1] - nStart;
+                    for (label j = 0; j < nSize; ++j)
+                    {
+                        label facei = losort[nStart + j];
+                        out += (Sf[facei] & (Cf[facei] - C[celli]))
+                            *ssf[facei]/magSf[facei];
+                    }
+                    rf[celli] = out;
+                }
+            );
+        });
+        #else
         forAll(pOwner, pFacei)
         {
             label own = pOwner[pFacei];
@@ -101,6 +199,7 @@ tmp<volScalarField> reconstructMag(const surfaceScalarField& ssf)
                 (pSf[pFacei] & (pCf[pFacei] - C[own]))
                *psf[pFacei]/pMagSf[pFacei];
         }
+        #endif
     }
 
     rf /= mesh.V();
