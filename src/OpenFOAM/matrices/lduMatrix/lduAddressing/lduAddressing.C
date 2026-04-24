@@ -30,7 +30,6 @@ License
 #include "scalarField.H"
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
-#ifdef FOAM_OFFLOAD
 void Foam::lduAddressing::calcPatchSort() const
 {
     if (patchSortAddr_.size() == nPatches())
@@ -104,11 +103,11 @@ void Foam::lduAddressing::calcPatchSort() const
             );
         });
 
-        auto new_end = std::unique(cellsSort.begin(),cellsSort.end());
+        auto new_end = std::unique(cellsSort.begin(), cellsSort.end());
         cellsSort.resize(std::distance(cellsSort.begin(), new_end));
-        
     }
 }
+
 
 void Foam::lduAddressing::calcPatchSortStart() const
 {
@@ -122,7 +121,7 @@ void Foam::lduAddressing::calcPatchSortStart() const
 
     for (label i=0; i<nPatches(); i++)
     {
-        if(!patchAvailable(i))
+        if (!patchAvailable(i))
         {
             continue;
         }
@@ -190,7 +189,7 @@ void Foam::lduAddressing::calcPatchSortStart() const
         // (exclusive scan of group sizes)
     }
 }
-#endif
+
 
 void Foam::lduAddressing::calcLosort() const
 {
@@ -377,7 +376,7 @@ const Foam::labelUList& Foam::lduAddressing::losortStartAddr() const
     return *losortStartPtr_;
 }
 
-#ifdef FOAM_OFFLOAD
+
 const Foam::labelUList&
 Foam::lduAddressing::patchSortCells(const label i) const
 {
@@ -387,6 +386,7 @@ Foam::lduAddressing::patchSortCells(const label i) const
     }
     return patchSortCells_[i];
 }
+
 
 const Foam::labelUList&
 Foam::lduAddressing::patchSortAddr(const label i) const
@@ -399,6 +399,7 @@ Foam::lduAddressing::patchSortAddr(const label i) const
     return patchSortAddr_[i];
 }
 
+
 const Foam::labelUList&
 Foam::lduAddressing::patchSortStartAddr(const label i) const
 {
@@ -409,7 +410,7 @@ Foam::lduAddressing::patchSortStartAddr(const label i) const
 
     return patchSortStartAddr_[i];
 }
-#endif
+
 
 const Foam::labelUList& Foam::lduAddressing::lowerCSRAddr() const
 {
@@ -428,11 +429,9 @@ void Foam::lduAddressing::clearOut()
     ownerStartPtr_.reset(nullptr);
     losortStartPtr_.reset(nullptr);
     lowerCSRAddrPtr_.reset(nullptr);
-#ifdef FOAM_OFFLOAD
     patchSortCells_.clear();
     patchSortAddr_.clear();
     patchSortStartAddr_.clear();
-#endif
 }
 
 
