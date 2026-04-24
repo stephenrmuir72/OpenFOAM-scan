@@ -1,3 +1,33 @@
+/*---------------------------------------------------------------------------*\
+  =========                 |
+  \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox
+   \\    /   O peration     |
+    \\  /    A nd           | www.openfoam.com
+     \\/     M anipulation  |
+-------------------------------------------------------------------------------
+    Copyright (C) 2026 UKRI-STFC.
+-------------------------------------------------------------------------------
+License
+    This file is part of OpenFOAM.
+
+    OpenFOAM is free software: you can redistribute it and/or modify it
+    under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    OpenFOAM is distributed in the hope that it will be useful, but WITHOUT
+    ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+    FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+    for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with OpenFOAM.  If not, see <http://www.gnu.org/licenses/>.
+
+Description
+    functors for LDU-level offloading
+
+\*---------------------------------------------------------------------------*/
+
 #ifdef FOAM_OFFLOAD
 
 #ifndef lduAddressingFunctors_H
@@ -11,103 +41,108 @@ namespace Foam
     template<class Type, class OwnFun, class NeiFun, class OwnOp, class NeiOp>
     struct lduAddressingFunctor
     {
-        const labelUList& ownStart;
-        const labelUList& neiStart;
-        const labelUList& losort;
-        OwnFun oFun;
-        NeiFun nFun;
-        OwnOp oOp;
-        NeiOp nOp;
-    
+        const labelUList& ownStart_;
+        const labelUList& neiStart_;
+        const labelUList& losort_;
+
+        OwnFun ownFun_;
+        NeiFun neiFun_;
+        OwnOp ownOp_;
+        NeiOp neiOp_;
+
         lduAddressingFunctor
         (
-            const labelUList& _ownStart,
-            const labelUList& _neiStart,
-            const labelUList& _losort,
-            const OwnFun _oFun,
-            const NeiFun _nFun,
-            const OwnOp _oOp,
-            const NeiOp _nOp
+            const labelUList& ownStart,
+            const labelUList& neiStart,
+            const labelUList& losort,
+            const OwnFun ownFun,
+            const NeiFun neiFun,
+            const OwnOp ownOp,
+            const NeiOp neiOp
         )
         :
-            ownStart(_ownStart),
-            neiStart(_neiStart),
-            losort(_losort),
-            oFun(_oFun),
-            nFun(_nFun),
-            oOp(_oOp),
-            nOp(_nOp)
+            ownStart_(ownStart),
+            neiStart_(neiStart),
+            losort_(losort),
+            ownFun_(ownFun),
+            neiFun_(neiFun),
+            ownOp_(ownOp),
+            neiOp_(neiOp)
         {}
-    
+
         Type operator()(const label& id,const Type& d)
         {
             Type out = d;
-            label oStart = ownStart[id];
-            label oSize = ownStart[id+1] - oStart;
+            label oStart = ownStart_[id];
+            label oSize = ownStart_[id+1] - oStart;
     
-            label nStart = neiStart[id];
-            label nSize = neiStart[id+1] - nStart;
+            label nStart = neiStart_[id];
+            label nSize = neiStart_[id+1] - nStart;
     
             for(label i = 0; i<oSize; i++)
             {
                 label face = oStart + i;
-                out = oOp(out, oFun(id, face));
+                out = ownOp_(out, ownFun_(id, face));
             }
     
             for(label i = 0; i<nSize; i++)
             {
-                label face = losort[nStart + i];
-                out = nOp(out,nFun(id,face));
+                label face = losort_[nStart + i];
+                out = neiOp_(out, neiFun_(id, face));
             }
             return out;
         }
     };
-    
-    template<class Type,class Fun,class Op>
+
+
+    template<class Type, class Fun, class Op>
     struct lduAddressingPatchFunctor
     {
-        Field<Type>& field;
-        const labelUList& neiStart;
-        const labelUList& losort;
-        const labelUList& pcells;
-        Fun fun;
-        Op op;
-    
+        Field<Type>& field_;
+        const labelUList& neiStart_;
+        const labelUList& losort_;
+        const labelUList& patchCells_;
+
+        Fun fun_;
+        Op op_;
+
         lduAddressingPatchFunctor
         (
-            Field<Type>& _field,
-            const labelUList& _neiStart,
-            const labelUList& _losort,
-            const labelUList& _pcells,
-            const Fun _fun,
-            const Op _op
+            Field<Type>& field,
+            const labelUList& neiStart,
+            const labelUList& losort,
+            const labelUList& patchCells,
+            const Fun fun,
+            const Op op
         )
         :
-            field(_field),
-            neiStart(_neiStart),
-            losort(_losort),
-            pcells(_pcells),
-            fun(_fun),
-            op(_op)
+            field_(field),
+            neiStart_(neiStart),
+            losort_(losort),
+            patchCells_(patchCells),
+            fun_(fun),
+            op_(op)
         {}
+
         void operator()(const label& id)
         {
-            Type out = field[pcells[id]];
+            Type out = field_[patchCells_[id]];
     
-            label nStart = neiStart[id];
-            label nSize = neiStart[id+1] - nStart;
-            label cellI = pcells[id];
+            label nStart = neiStart_[id];
+            label nSize = neiStart_[id+1] - nStart;
+            label cellI = patchCells_[id];
     
             for(label i = 0; i<nSize; i++)
             {
-                label face = losort[nStart + i];
-                out = op(out,fun(cellI,face));
+                label face = losort_[nStart + i];
+                out = op_(out, fun_(cellI, face));
             }
 
             field[pcells[id]] = out;
         }
     };
-    
+
+
     template<class Type, class LUType, class Op>
     struct matrixCoeffsMultiplyFunctor
     {
@@ -135,7 +170,8 @@ namespace Foam
             return op_(coeffs_[face]*psi_[addr_[face]]);
         }
     };
-    
+
+
     template<class Type, class Op>
     struct matrixCoeffsFunctor
     {
@@ -157,8 +193,10 @@ namespace Foam
             return op_(coeffs_[face]);
         }
     };
-    
-    template<class Type,class Input, class OwnFun,class NeiFun,class OwnOp,class NeiOp>
+
+
+    template<class Type, class Input, class OwnFun, class NeiFun, class OwnOp, 
+        class NeiOp>
     inline void matrixOperation
     (
         Input in,
@@ -178,7 +216,7 @@ namespace Foam
             indices.end(),
             in,
             out.begin(),
-            lduAddressingFunctor<Type,OwnFun,NeiFun,OwnOp,NeiOp>
+            lduAddressingFunctor<Type, OwnFun, NeiFun, OwnOp, NeiOp>
             (
                 addr.ownerStartAddr(),
                 addr.losortStartAddr(),
@@ -190,8 +228,9 @@ namespace Foam
             )
         );
     }
-    
-    template<class Type,class Input, class OwnFun,class NeiFun>
+
+
+    template<class Type, class Input, class OwnFun, class NeiFun>
     inline void matrixOperation
     (
         Input in,
