@@ -441,6 +441,7 @@ $(lduMatrix)/smoothers/FDIC/FDICSmoother.C
 $(lduMatrix)/smoothers/DICGaussSeidel/DICGaussSeidelSmoother.C
 $(lduMatrix)/smoothers/DILU/DILUSmoother.C
 $(lduMatrix)/smoothers/DILUGaussSeidel/DILUGaussSeidelSmoother.C
+$(lduMatrix)/smoothers/twoStageGaussSeidel/twoStageGaussSeidelSmoother.C
 
 $(lduMatrix)/preconditioners/noPreconditioner/noPreconditioner.C
 $(lduMatrix)/preconditioners/diagonalPreconditioner/diagonalPreconditioner.C
