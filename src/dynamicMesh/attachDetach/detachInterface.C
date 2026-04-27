@@ -185,14 +185,7 @@ void Foam::attachDetach::detachInterface
         const label curFaceID = mf[facei];
 
         // Build the face for the slave patch by renumbering
-        const face oldFace = zoneFaces[facei].reverseFace();
-
-        face newFace(oldFace.size());
-
-        forAll(oldFace, pointi)
-        {
-            newFace[pointi] = addedPoints[oldFace[pointi]];
-        }
+        face newFace(addedPoints, zoneFaces[facei], face::flipType::FLIP);
 
         if (mfFlip[facei])
         {

@@ -193,7 +193,7 @@ private:
             Ostream& os,
             const meshedSurf& surf,
             labelList& decompOffsets,
-            DynamicList<face>& decompFaces
+            DynamicList<triFace>& decompFaces
         ) const;
 
         //- Write the formatted keyword to the output stream

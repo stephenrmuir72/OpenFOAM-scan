@@ -2146,7 +2146,7 @@ void Foam::addPatchCellLayer::setRefinement
                             nei = addedCells[patchFacei][i];
                             if (!ppFlip[patchFacei])
                             {
-                                newFace = newFace.reverseFace();
+                                newFace.flip();
                                 if (zonei != -1)
                                 {
                                     zoneFlip = !zoneFlip;
@@ -2178,7 +2178,7 @@ void Foam::addPatchCellLayer::setRefinement
                             if (ppFlip[patchFacei])
                             {
                                 // Since neighbour now owns the face flip it
-                                newFace = newFace.reverseFace();
+                                newFace.flip();
                                 if (zonei != -1)
                                 {
                                     zoneFlip = !zoneFlip;
@@ -2197,7 +2197,7 @@ void Foam::addPatchCellLayer::setRefinement
                     if (ppFlip[patchFacei])
                     {
                         // Since neighbour now owns the face flip it
-                        newFace = newFace.reverseFace();
+                        newFace.flip();
                         fluxFlip = true;
                     }
                 }
@@ -2369,11 +2369,12 @@ void Foam::addPatchCellLayer::setRefinement
                 }
 
                 // Reverse and renumber old patch face.
-                face f(pp.localFaces()[patchFacei].reverseFace());
-                forAll(f, fp)
-                {
-                    f[fp] = copiedPatchPoints[f[fp]];
-                }
+                face f
+                (
+                    copiedPatchPoints,
+                    pp.localFaces()[patchFacei],
+                    face::flipType::FLIP
+                );
 
                 layerFaces_[patchFacei][0] = meshMod.setAction
                 (
@@ -2688,7 +2689,7 @@ void Foam::addPatchCellLayer::setRefinement
                         // for neighbour face extrusion.
                         if (extrude_ == ppFlip[patchFacei])
                         {
-                            newFace = newFace.reverseFace();
+                            newFace.flip();
                         }
 
                         if (debug)

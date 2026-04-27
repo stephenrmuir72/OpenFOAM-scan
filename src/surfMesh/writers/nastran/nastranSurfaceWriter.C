@@ -159,7 +159,7 @@ void Foam::surfaceWriters::nastranWriter::writeGeometry
     Ostream& os,
     const meshedSurf& surf,
     labelList& decompOffsets,
-    DynamicList<face>& decompFaces
+    DynamicList<triFace>& decompFaces
 ) const
 {
     const pointField& points = surf.points();
@@ -242,11 +242,14 @@ void Foam::surfaceWriters::nastranWriter::writeGeometry
                 ++decompi
             )
             {
+                // FixedList -> UList
+                SubList<label> tri(decompFaces[decompi]);
+
                 writeFace
                 (
                     os,
                     "CTRIA3",
-                    decompFaces[decompi],
+                    tri,
                     ++elemId,
                     propId
                 );
@@ -431,7 +434,7 @@ Foam::fileName Foam::surfaceWriters::nastranWriter::write()
             << "BEGIN BULK" << nl;
 
         labelList decompOffsets;
-        DynamicList<face> decompFaces;
+        DynamicList<triFace> decompFaces;
 
         writeGeometry(os, surf, decompOffsets, decompFaces);
 

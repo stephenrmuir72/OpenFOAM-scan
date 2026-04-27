@@ -94,24 +94,15 @@ void Foam::patchInjectionBase::updateMesh(const polyMesh& mesh)
             nTris += f.nTriangles();
         }
 
-        DynamicList<labelledTri> dynTriFace(nTris);
-        DynamicList<face> tris(8);  // work array
+        triFace_.resize_nocopy(nTris);
 
-        forAll(patch, facei)
+        nTris = 0;
+        label patchFacei = 0;
+        for (const face& f : patch)
         {
-            const face& f = patch[facei];
-
-            tris.clear();
-            f.triangles(points, tris);
-
-            for (const auto& t : tris)
-            {
-                dynTriFace.emplace_back(t[0], t[1], t[2], facei);
-            }
+            f.triangles(points, nTris, triFace_, patchFacei);
+            ++patchFacei;
         }
-
-        // Transfer to persistent storage
-        triFace_.transfer(dynTriFace);
     }
 
 

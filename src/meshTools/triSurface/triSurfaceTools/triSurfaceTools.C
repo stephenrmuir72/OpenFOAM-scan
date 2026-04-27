@@ -2196,36 +2196,27 @@ Foam::triSurface Foam::triSurfaceTools::triangulate
         }
     }
 
-    triangles.setSize(nTris);
-    faceMap.setSize(nTris);
-    label newPatchi = 0;
+    triangles.resize_nocopy(nTris);
+    faceMap.resize_nocopy(nTris);
 
     nTris = 0;
+    label newPatchi = 0;
+
     for (const label patchi : includePatches)
     {
         const polyPatch& patch = bMesh[patchi];
         const pointField& points = patch.points();
 
         label nTriTotal = 0;
-
-        label faceI = 0;
+        label patchFacei = 0;
         for (const face& f : patch)
         {
-            faceList triFaces(f.nTriangles(points));
+            label start = nTris;
+            label count = f.triangles(points, nTris, triangles, newPatchi);
 
-            label nTri = 0;
-
-            f.triangles(points, nTri, triFaces);
-
-            for (const face& f :  triFaces)
-            {
-                faceMap[nTris] = patch.start() + faceI;
-                triangles[nTris++] = labelledTri(f[0], f[1], f[2], newPatchi);
-
-                ++nTriTotal;
-            }
-
-            faceI++;
+            faceMap.slice(start, count) = (patch.start() + patchFacei);
+            ++patchFacei;
+            nTriTotal += count;  // for reporting
         }
 
         if (verbose)
@@ -2237,7 +2228,6 @@ Foam::triSurface Foam::triSurfaceTools::triangulate
 
         newPatchi++;
     }
-    //triangles.shrink();
 
     // Create globally numbered tri surface
     triSurface rawSurface(triangles, mesh.points());
@@ -2290,26 +2280,12 @@ Foam::triSurface Foam::triSurfaceTools::triangulate
 
         label nTriTotal = 0;
 
-        forAll(patch, patchFacei)
+        for (const face& f : patch)
         {
-            const face& f = patch[patchFacei];
-
             if (bBox.containsAny(points, f))
             {
-                faceList triFaces(f.nTriangles(points));
-
-                label nTri = 0;
-
-                f.triangles(points, nTri, triFaces);
-
-                forAll(triFaces, triFacei)
-                {
-                    const face& f = triFaces[triFacei];
-
-                    triangles.append(labelledTri(f[0], f[1], f[2], newPatchi));
-
-                    nTriTotal++;
-                }
+                label count = f.triangles(points, triangles, newPatchi);
+                nTriTotal += count;  // for reporting
             }
         }
 
@@ -2404,9 +2380,9 @@ Foam::triSurface Foam::triSurfaceTools::triangulateFaceCentre
             {
                 label fp1 = f.fcIndex(fp);
 
-                triangles.append(labelledTri(f[fp], f[fp1], fc, newPatchi));
+                triangles.emplace_back(f[fp], f[fp1], fc, newPatchi);
 
-                nTriTotal++;
+                ++nTriTotal;  // for reporting
             }
         }
 
@@ -2459,8 +2435,8 @@ Foam::triSurface Foam::triSurfaceTools::delaunay2D(const List<vector2D>& pts)
     label doubleI = 0;
     for (const vector2D& pt : pts)
     {
-        geompackVertices[doubleI++] = pt[0];
-        geompackVertices[doubleI++] = pt[1];
+        geompackVertices[doubleI++] = pt.x();
+        geompackVertices[doubleI++] = pt.y();
     }
 
     // Storage for triangles
@@ -2487,8 +2463,9 @@ Foam::triSurface Foam::triSurfaceTools::delaunay2D(const List<vector2D>& pts)
     }
 
     // Trim
-    triangle_node.setSize(3*nTris);
-    triangle_neighbor.setSize(3*nTris);
+    triangle_node.resize(3*nTris);
+    triangle_neighbor.clear();
+    // triangle_neighbor.resize(3*nTris);
 
     // Convert to triSurface.
     List<labelledTri> faces(nTris);
@@ -2507,9 +2484,9 @@ Foam::triSurface Foam::triSurfaceTools::delaunay2D(const List<vector2D>& pts)
     pointField points(pts.size());
     forAll(pts, i)
     {
-        points[i][0] = pts[i][0];
-        points[i][1] = pts[i][1];
-        points[i][2] = 0.0;
+        points[i].x() = pts[i].x();
+        points[i].y() = pts[i].y();
+        points[i].z() = 0;
     }
 
     return triSurface(faces, points);

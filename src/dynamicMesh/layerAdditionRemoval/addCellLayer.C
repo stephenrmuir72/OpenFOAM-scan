@@ -199,26 +199,14 @@ void Foam::layerAdditionRemoval::addCellLayer
 
     forAll(zoneFaces, facei)
     {
-        const face oldFace = zoneFaces[facei].reverseFace();
+        face newFace(addedPoints, zoneFaces[facei], face::flipType::FLIP);
 
-        face newFace(oldFace.size());
-
-        forAll(oldFace, pointi)
-        {
-            newFace[pointi] = addedPoints[oldFace[pointi]];
-        }
-
-        bool flipFaceFlux = false;
-
-        // Flip the face as necessary
-        if
+        // Flip the face flux as necessary
+        bool flipFaceFlux =
         (
-           !mesh.isInternalFace(mf[facei])
+            !mesh.isInternalFace(mf[facei])
          || mc[facei] == nei[mf[facei]]
-        )
-        {
-            flipFaceFlux = true;
-        }
+        );
 
         // Add the face
         ref.setAction

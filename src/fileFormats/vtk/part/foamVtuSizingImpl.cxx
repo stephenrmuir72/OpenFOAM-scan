@@ -5,7 +5,8 @@
     \\  /    A nd           | www.openfoam.com
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
-    Copyright (C) 2016-2026 OpenCFD Ltd.
+    Copyright (C) 2016-2025 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -29,6 +30,8 @@ License
 #include "foamVtkCore.H"
 #include "cellShape.H"
 #include "polyMesh.H"
+#include "triFace.H"
+#include "quadFace.H"
 #include "processorPolyPatch.H"
 #include "manifoldCellsMeshObject.H"
 
@@ -357,6 +360,10 @@ void Foam::vtk::vtuSizing::populateArrays
     labelHashSet hashUniqId;
     if (!sizing.decompose()) { hashUniqId.reserve(256); }
 
+    // Work arrays for polyhedral decomposition
+    DynamicList<triFace> faces3;
+    DynamicList<quadFace> faces4;
+
     // For polyhedral decomposition, ensure that the face tri/quad splits
     // on the neighbour side of a processor patch follow that of the owner side.
     bitSet flipBoundaryFace;
@@ -536,10 +543,6 @@ void Foam::vtk::vtuSizing::populateArrays
             // Whether to insert cell in place of original or not.
             bool firstCell = true;
 
-            // Count triangles/quads in decomposition
-            label nTria = 0, nQuad = 0;
-            DynamicList<face> faces3, faces4;
-
             for (const label facei : meshCells[celli])
             {
                 // Face decomposed into triangles and quads
@@ -547,49 +550,20 @@ void Foam::vtk::vtuSizing::populateArrays
                 const face& f = meshFaces[facei];
                 bool isOwner = (owner[facei] == celli);
 
-                // Need to use a flipped face on the boundary?
-                if
-                (
-                    (f.size() > 4)
-                 && flipBoundaryFace.test(facei - mesh.nInternalFaces())
-                )
+                face::flipType flipping(face::flipType::NONE);
+
+                // Need flipped face on the boundary
+                if (flipBoundaryFace.test(facei - mesh.nInternalFaces()))
                 {
+                    flipping = face::flipType::FLIP;
                     isOwner = !isOwner;
-
-                    const face flipped(f.reverseFace());
-
-                    // Count triangles/quads in decomposition
-                    nTria = nQuad = 0;
-                    flipped.nTrianglesQuads(mesh.points(), nTria, nQuad);
-
-                    // Do actual decomposition
-                    faces3.resize_nocopy(nTria);
-                    faces4.resize_nocopy(nQuad);
-                    nTria = nQuad = 0;
-
-                    flipped.trianglesQuads
-                    (
-                        mesh.points(), nTria, nQuad, faces3, faces4
-                    );
-                }
-                else
-                {
-                    // Count triangles/quads in decomposition
-                    nTria = nQuad = 0;
-                    f.nTrianglesQuads(mesh.points(), nTria, nQuad);
-
-                    // Do actual decomposition
-                    faces3.resize_nocopy(nTria);
-                    faces4.resize_nocopy(nQuad);
-                    nTria = nQuad = 0;
-
-                    f.trianglesQuads
-                    (
-                        mesh.points(), nTria, nQuad, faces3, faces4
-                    );
                 }
 
-                for (const face& quad : faces4)
+                faces3.clear();
+                faces4.clear();
+                f.trianglesQuads(mesh.points(), faces3, faces4, flipping);
+
+                for (const auto& quad : faces4)
                 {
                     // Quad becomes a pyramid
 
@@ -641,7 +615,7 @@ void Foam::vtk::vtuSizing::populateArrays
                     vertLabels[vrtLoc++] = apexVertLabel;
                 }
 
-                for (const face& tria : faces3)
+                for (const auto& tria : faces3)
                 {
                     // Triangle becomes a tetrahedral
 

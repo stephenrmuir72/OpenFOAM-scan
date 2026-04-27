@@ -54,26 +54,19 @@ void Foam::VF::voxel::setTriangulation(const fvMesh& mesh)
 
     const auto& pbm = mesh.boundaryMesh();
 
-    forAll(patchIDs_, i)
+    for (const label patchi : patchIDs_)
     {
-        const label patchi = patchIDs_[i];
         const polyPatch& patch = pbm[patchi];
         const pointField& points = patch.points();
 
         for (const face& f : patch)
         {
-            label nTri = 0;
-            faceList triFaces(f.nTriangles(points));
-            f.triangles(points, nTri, triFaces);
-
             const label globalFacei =
-                globalNumbering_.toGlobal(Pstream::myProcNo(), nFace++);
+                globalNumbering_.toGlobal(UPstream::myProcNo(), nFace++);
 
-            for (const face& f : triFaces)
-            {
-                triangles.push_back(labelledTri(f[0], f[1], f[2], i));
-                globalFaces.push_back(globalFacei);
-            }
+            const label nTris = f.triangles(points, triangles, patchi);
+
+            globalFaces.resize(globalFaces.size()+nTris, globalFacei);
         }
     }
 
@@ -169,6 +162,8 @@ void Foam::VF::voxel::setCoarseTriangulation(const fvMesh& mesh)
 
     const auto& pbm = mesh.boundaryMesh();
 
+    DynamicList<label> faceVerts;
+
     for (const label patchi : patchIDs_)
     {
         const polyPatch& patch = pbm[patchi];
@@ -176,7 +171,7 @@ void Foam::VF::voxel::setCoarseTriangulation(const fvMesh& mesh)
 
         for (const face& f : patch)
         {
-            DynamicList<label> faceVerts;
+            faceVerts.clear();
             for (const label fpi : f)
             {
                 if (vertHits[fpi] > nVertMin)
@@ -191,19 +186,14 @@ void Foam::VF::voxel::setCoarseTriangulation(const fvMesh& mesh)
                 continue;
             }
 
-            label nTri = 0;
-            const face reducedFace(faceVerts);
-            faceList triFaces(reducedFace.nTriangles(points));
-            reducedFace.triangles(points, nTri, triFaces);
-
             const label globalFacei =
-                globalNumbering_.toGlobal(Pstream::myProcNo(), nFace++);
+                globalNumbering_.toGlobal(UPstream::myProcNo(), nFace++);
 
-            for (const face& f : triFaces)
-            {
-                triangles.push_back(labelledTri(f[0], f[1], f[2], patchi));
-                globalFaces.push_back(globalFacei);
-            }
+            const face reducedFace(faceVerts);
+            const label nTris =
+                reducedFace.triangles(points, triangles, patchi);
+
+            globalFaces.resize(globalFaces.size()+nTris, globalFacei);
         }
     }
 

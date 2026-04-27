@@ -62,14 +62,14 @@ namespace Foam
 
         // Write out triangulated surfaces as OBJ files
         OBJstream srcTriObj("srcTris_" + Foam::name(nAMI) + ".obj");
-        const pointField& srcPts = src.points();
+        const auto& srcPts = src.points();
         for (const auto& faces : srcTris_)
         {
-            for (const face& f : faces)
+            for (const auto& f : faces)
             {
                 srcTriObj.write
                 (
-                    triPointRef(srcPts[f[0]], srcPts[f[1]], srcPts[f[2]])
+                    triPointRef(srcPts, f[0], f[1], f[2])
                 );
             }
         }
@@ -78,11 +78,11 @@ namespace Foam
         const pointField& tgtPts = tgt.points();
         for (const auto& faces : tgtTris_)
         {
-            for (const face& f : faces)
+            for (const auto& f : faces)
             {
                 tgtTriObj.write
                 (
-                    triPointRef(tgtPts[f[0]], tgtPts[f[1]], tgtPts[f[2]])
+                    triPointRef(tgtPts, f[0], f[1], f[2])
                 );
             }
         }

@@ -148,7 +148,7 @@ class abaqusWriter
             Ostream& os,
             const meshedSurf& surf,
             labelList& decompOffsets,
-            DynamicList<face>& decompFaces
+            DynamicList<triFace>& decompFaces
         ) const;
 
         //- Write a face-based value

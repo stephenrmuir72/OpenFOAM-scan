@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2017-2024 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -299,12 +300,13 @@ void Foam::fileFormats::NASCore::writeCoord
 }
 
 
-Foam::label Foam::fileFormats::NASCore::faceDecomposition
+template<class TriFaceT>
+Foam::label Foam::fileFormats::NASCore::faceDecomposition_impl
 (
     const UList<point>& points,
     const UList<face>& faces,
     labelList& decompOffsets,
-    DynamicList<face>& decompFaces
+    DynamicList<TriFaceT>& decompFaces
 )
 {
     // On-demand face decomposition (triangulation)
@@ -317,9 +319,7 @@ Foam::label Foam::fileFormats::NASCore::faceDecomposition
 
     for (const face& f : faces)
     {
-        const label n = f.size();
-
-        if (n != 3 && n != 4)
+        if (const auto n = f.size(); n > 4)
         {
             // Decompose non-tri/quad into tris
             f.triangles(points, decompFaces);
@@ -330,6 +330,30 @@ Foam::label Foam::fileFormats::NASCore::faceDecomposition
     }
 
     return decompFaces.size();
+}
+
+
+Foam::label Foam::fileFormats::NASCore::faceDecomposition
+(
+    const UList<point>& points,
+    const UList<face>& faces,
+    labelList& decompOffsets,
+    DynamicList<face>& decompFaces
+)
+{
+    return faceDecomposition_impl(points, faces, decompOffsets, decompFaces);
+}
+
+
+Foam::label Foam::fileFormats::NASCore::faceDecomposition
+(
+    const UList<point>& points,
+    const UList<face>& faces,
+    labelList& decompOffsets,
+    DynamicList<triFace>& decompFaces
+)
+{
+    return faceDecomposition_impl(points, faces, decompOffsets, decompFaces);
 }
 
 

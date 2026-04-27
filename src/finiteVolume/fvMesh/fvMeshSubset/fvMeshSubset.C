@@ -985,41 +985,32 @@ void Foam::fvMeshSubset::reset
             const face& oldItem = oldFaces[faceMap_[facei]];
 
             // Copy relabelled
-            newItem.resize(oldItem.size());
-
-            forAll(oldItem, i)
-            {
-                newItem[i] = renumbering[oldItem[i]];
-            }
+            newItem = face(renumbering, oldItem);
         }
 
         // Boundary faces - may need to be flipped
         for (label facei = nInternalFaces; facei < faceMap_.size(); ++facei)
         {
             const label oldFacei = faceMap_[facei];
+            const labelUList& oldItem = oldFaces[oldFacei];
 
             face& newItem = *iter;
             ++iter;
 
-            const face oldItem =
+            const face::flipType flipping =
             (
+                // Face flipped to point outwards
                 (
                     baseMesh().isInternalFace(oldFacei)
                  && selectedCells.test(oldNeighbour[oldFacei])
                  && !selectedCells.test(oldOwner[oldFacei])
                 )
-                // Face flipped to point outwards
-              ? oldFaces[oldFacei].reverseFace()
-              : oldFaces[oldFacei]
+              ? face::flipType::FLIP
+              : face::flipType::NONE
             );
 
             // Copy relabelled
-            newItem.resize(oldItem.size());
-
-            forAll(oldItem, i)
-            {
-                newItem[i] = renumbering[oldItem[i]];
-            }
+            newItem = face(renumbering, oldItem, flipping);
         }
     }
 
@@ -1035,18 +1026,13 @@ void Foam::fvMeshSubset::reset
 
         for (const label oldCelli : cellMap_)
         {
-            cell& newItem = *iter;
+            const labelUList& oldItem = oldCells[oldCelli];
+
+            auto& newItem = static_cast<labelList&>(*iter);
             ++iter;
 
-            const labelList& oldItem = oldCells[oldCelli];
-
             // Copy relabelled
-            newItem.resize(oldItem.size());
-
-            forAll(oldItem, i)
-            {
-                newItem[i] = renumbering[oldItem[i]];
-            }
+            newItem = labelList(renumbering, oldItem);
         }
     }
 

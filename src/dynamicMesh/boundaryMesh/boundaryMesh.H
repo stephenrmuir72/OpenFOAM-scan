@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2020-2022 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -337,19 +338,6 @@ public:
 
         // Faces
 
-            //- Simple triangulation of face subset. Returns number of triangles
-            //  needed.
-            label getNTris(const label facei) const;
-
-            //- Simple triangulation of face subset. TotalNTris is total number
-            //  of triangles, nTris is per face number of triangles.
-            label getNTris
-            (
-                const label startFacei,
-                const label nFaces,
-                labelList& nTris
-            ) const;
-
             //- Simple triangulation of face subset. TotalNTris is total number
             //  of triangles (from call to getNTris)
             //  triVerts is triangle vertices, three per triangle.
@@ -357,8 +345,7 @@ public:
             (
                 const label startFacei,
                 const label nFaces,
-                const label totalNTris,
-                labelList& triVerts
+                List<triFace>& triFaces
             ) const;
 
             //- Number of points used in face subset.
@@ -370,8 +357,7 @@ public:
             (
                 const label startFacei,
                 const label nFaces,
-                const label totalNTris,
-                labelList& triVerts,
+                List<triFace>& triFaces,
                 labelList& localToGlobal
             ) const;
 

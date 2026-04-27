@@ -36,17 +36,8 @@ inline void Foam::faceAreaIntersect::triangleFan
 {
     if (f.size() > 2)
     {
-        const label v0 = 0;
-
-        face indices(3);
-
-        for (label i = 1; i < f.size() - 1; ++i)
-        {
-            indices[0] = f[v0];
-            indices[1] = f[i];
-            indices[2] = f[i + 1];
-            faces.append(indices);
-        }
+        // The points are unused (irrelevant) for fan triangulation
+        f.trianglesFan(UList<point>::null(), faces);
     }
 }
 
@@ -60,10 +51,10 @@ inline void Foam::faceAreaIntersect::setTriPoints
     FixedList<triPoints, 10>& tris
 ) const
 {
-    triPoints& tp = tris[count++];
-    tp[0] = a;
-    tp[1] = b;
-    tp[2] = c;
+    auto& tp = tris[count++];
+    tp.a() = a;
+    tp.b() = b;
+    tp.c() = c;
 }
 
 
@@ -74,22 +65,32 @@ inline Foam::triPoints Foam::faceAreaIntersect::getTriPoints
     const bool reverse
 ) const
 {
-    triPoints result;
-
     if (reverse)
     {
-        result[2] = points[f[0]];
-        result[1] = points[f[1]];
-        result[0] = points[f[2]];
+        return triPoints(points, f[2], f[1], f[0]);
     }
     else
     {
-        result[0] = points[f[0]];
-        result[1] = points[f[1]];
-        result[2] = points[f[2]];
+        return triPoints(points, f[0], f[1], f[2]);
     }
+}
 
-    return result;
+
+inline Foam::triPoints Foam::faceAreaIntersect::getTriPoints
+(
+    const pointField& points,
+    const triFace& f,
+    const bool reverse
+) const
+{
+    if (reverse)
+    {
+        return triPoints(points, f[2], f[1], f[0]);
+    }
+    else
+    {
+        return triPoints(points, f[0], f[1], f[2]);
+    }
 }
 
 

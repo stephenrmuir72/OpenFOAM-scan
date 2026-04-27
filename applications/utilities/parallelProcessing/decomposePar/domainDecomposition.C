@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2019-2025 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -257,10 +258,22 @@ bool Foam::domainDecomposition::writeDecomposition(const bool decomposeSets)
         {
             // Mark the original face as used
             // Remember to decrement the index by one (turning index)
-            label curF = mag(curFaceLabels[facei]) - 1;
+            const label curF = Foam::mag(curFaceLabels[facei]) - 1;
 
             faceLookup[curF] = facei;
 
+            const face::flipType flipping =
+            (
+                (curFaceLabels[facei] < 0)  // face turned
+              ? face::flipType::FLIP
+              : face::flipType::NONE
+            );
+
+            // Face labels in local point list
+            procFaces[facei] = face(pointLookup, meshFaces[curF], flipping);
+
+            // OLD CODE (before face construct with flip worked: APR-2026)
+            #if 0
             // get the original face
             labelList origFaceLabels;
 
@@ -278,11 +291,11 @@ bool Foam::domainDecomposition::writeDecomposition(const bool decomposeSets)
             face& procFaceLabels = procFaces[facei];
 
             procFaceLabels.setSize(origFaceLabels.size());
-
             forAll(origFaceLabels, pointi)
             {
                 procFaceLabels[pointi] = pointLookup[origFaceLabels[pointi]];
             }
+            #endif
         }
 
         // Create processor cells
@@ -296,14 +309,9 @@ bool Foam::domainDecomposition::writeDecomposition(const bool decomposeSets)
         {
             const labelList& origCellLabels = meshCells[curCellLabels[celli]];
 
-            cell& curCell = procCells[celli];
-
-            curCell.setSize(origCellLabels.size());
-
-            forAll(origCellLabels, cellFacei)
-            {
-                curCell[cellFacei] = faceLookup[origCellLabels[cellFacei]];
-            }
+            // Cells defined with local face lookups
+            labelList& curCell = procCells[celli];
+            curCell = labelList(faceLookup, origCellLabels);
         }
 
         // Create processor mesh without a boundary

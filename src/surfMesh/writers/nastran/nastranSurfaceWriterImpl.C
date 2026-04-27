@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2012-2016 OpenFOAM Foundation
     Copyright (C) 2015-2025 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -231,7 +232,7 @@ Foam::fileName Foam::surfaceWriters::nastranWriter::writeTemplate
 
         // Additional bookkeeping for decomposing non tri/quad
         labelList decompOffsets;
-        DynamicList<face> decompFaces;
+        DynamicList<triFace> decompFaces;
 
 
         OFstream os(IOstreamOption::ATOMIC, outputFile);

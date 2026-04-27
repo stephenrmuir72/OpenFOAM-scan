@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2020-2022 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -771,55 +772,30 @@ void Foam::boundaryMesh::writeTriSurface(const fileName& fName) const
     }
 
     //
-    // Simple triangulation.
+    // Simple triangulation
     //
 
-    // Get number of triangles per face
-    labelList nTris(mesh().size());
-
-    label totalNTris = getNTris(0, mesh().size(), nTris);
-
-    // Determine per face the starting triangle.
-    labelList startTri(mesh().size());
-
-    label triI = 0;
-
-    forAll(mesh(), facei)
+    label nTris = 0;
+    for (const auto& f : mesh())
     {
-        startTri[facei] = triI;
-
-        triI += nTris[facei];
+        nTris += f.nTriangles();
     }
 
-    // Triangulate
-    labelList triVerts(3*totalNTris);
+    List<labelledTri> tris(nTris);
 
-    triangulate(0, mesh().size(), totalNTris, triVerts);
-
-    // Convert to labelledTri
-
-    List<labelledTri> tris(totalNTris);
-
-    triI = 0;
+    nTris = 0;
 
     forAll(patches_, patchi)
     {
         const boundaryPatch& bp = patches_[patchi];
 
-        forAll(bp, patchFacei)
+        const auto endFacei = (bp.start() + bp.size());
+
+        for (label facei = bp.start(); facei < endFacei; ++facei)
         {
-            label facei = bp.start() + patchFacei;
+            const face& f = mesh()[facei];
 
-            label triVertI = 3*startTri[facei];
-
-            for (label faceTriI = 0; faceTriI < nTris[facei]; faceTriI++)
-            {
-                label v0 = triVerts[triVertI++];
-                label v1 = triVerts[triVertI++];
-                label v2 = triVerts[triVertI++];
-
-                tris[triI++] = labelledTri(v0, v1, v2, patchi);
-            }
+            f.triangles(mesh().points(), nTris, tris, patchi);
         }
     }
 
@@ -1817,75 +1793,35 @@ void Foam::boundaryMesh::changeFaces
 }
 
 
-Foam::label Foam::boundaryMesh::getNTris(const label facei) const
-{
-    const face& f = mesh()[facei];
-
-    return f.nTriangles(mesh().points());
-}
-
-
-Foam::label Foam::boundaryMesh::getNTris
-(
-    const label startFacei,
-    const label nFaces,
-    labelList& nTris
-) const
-{
-    label totalNTris = 0;
-
-    nTris.setSize(nFaces);
-
-    for (label i = 0; i < nFaces; i++)
-    {
-        label faceNTris = getNTris(startFacei + i);
-
-        nTris[i] = faceNTris;
-
-        totalNTris += faceNTris;
-    }
-    return totalNTris;
-}
-
-
 // Simple triangulation of face subset. Stores vertices in tris[] as three
 // consecutive vertices per triangle.
 void Foam::boundaryMesh::triangulate
 (
     const label startFacei,
     const label nFaces,
-    const label totalNTris,
-    labelList& triVerts
+    List<triFace>& triFaces
 ) const
 {
-    // Triangulate faces.
-    triVerts.setSize(3*totalNTris);
+    const auto endFacei = (startFacei + nFaces);
 
-    label vertI = 0;
+    label nTris = 0;
 
-    for (label i = 0; i < nFaces; i++)
+    for (label facei = startFacei; facei < endFacei; ++facei)
     {
-        label facei = startFacei + i;
+        const face& f = mesh()[facei];
+        nTris += f.nTriangles();
+    }
 
+    // Triangulate faces
+    triFaces.resize_nocopy(nTris);
+
+    nTris = 0;
+
+    for (label facei = startFacei; facei < endFacei; ++facei)
+    {
         const face& f = mesh()[facei];
 
-        // Have face triangulate itself (results in faceList)
-        faceList triFaces(f.nTriangles(mesh().points()));
-
-        label nTri = 0;
-
-        f.triangles(mesh().points(), nTri, triFaces);
-
-        // Copy into triVerts
-
-        forAll(triFaces, triFacei)
-        {
-            const face& triF = triFaces[triFacei];
-
-            triVerts[vertI++] = triF[0];
-            triVerts[vertI++] = triF[1];
-            triVerts[vertI++] = triF[2];
-        }
+        f.triangles(mesh().points(), nTris, triFaces);
     }
 }
 
@@ -1912,8 +1848,7 @@ void Foam::boundaryMesh::triangulateLocal
 (
     const label startFacei,
     const label nFaces,
-    const label totalNTris,
-    labelList& triVerts,
+    List<triFace>& triFaces,
     labelList& localToGlobal
 ) const
 {
@@ -1927,32 +1862,24 @@ void Foam::boundaryMesh::triangulateLocal
     localToGlobal = patch.meshPoints();
 
     // Triangulate patch faces.
-    triVerts.setSize(3*totalNTris);
 
-    label vertI = 0;
-
-    for (label i = 0; i < nFaces; i++)
+    label nTris = 0;
+    for (const auto& f : patch)
     {
-        // Local face
-        const face& f = patch.localFaces()[i];
+        nTris += f.nTriangles();
+    }
 
-        // Have face triangulate itself (results in faceList)
-        faceList triFaces(f.nTriangles(patch.localPoints()));
+    triFaces.resize_nocopy(nTris);
 
-        label nTri = 0;
+    nTris = 0;
 
-        f.triangles(patch.localPoints(), nTri, triFaces);
+    // Local faces
+    const auto& pts = patch.localPoints();
+    const auto& faces = patch.localFaces();
 
-        // Copy into triVerts
-
-        forAll(triFaces, triFacei)
-        {
-            const face& triF = triFaces[triFacei];
-
-            triVerts[vertI++] = triF[0];
-            triVerts[vertI++] = triF[1];
-            triVerts[vertI++] = triF[2];
-        }
+    for (const auto& f : faces)
+    {
+        f.triangles(pts, nTris, triFaces);
     }
 }
 

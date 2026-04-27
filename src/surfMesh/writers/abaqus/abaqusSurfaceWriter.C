@@ -114,7 +114,7 @@ void Foam::surfaceWriters::abaqusWriter::writeGeometry
     Ostream& os,
     const meshedSurf& surf,
     labelList& decompOffsets,
-    DynamicList<face>& decompFaces
+    DynamicList<triFace>& decompFaces
 ) const
 {
     const pointField& points = surf.points();
@@ -210,10 +210,13 @@ void Foam::surfaceWriters::abaqusWriter::writeGeometry
                 ++decompi
             )
             {
+                // FixedList -> UList
+                SubList<label> tri(decompFaces[decompi]);
+
                 writeFace
                 (
                     os,
-                    decompFaces[decompi],
+                    tri,
                     ++elemId,
                     propId,
                     header
@@ -339,7 +342,7 @@ Foam::fileName Foam::surfaceWriters::abaqusWriter::write()
         OFstream os(outputFile);
 
         labelList decompOffsets;
-        DynamicList<face> decompFaces;
+        DynamicList<triFace> decompFaces;
 
         writeGeometry(os, surf, decompOffsets, decompFaces);
     }
