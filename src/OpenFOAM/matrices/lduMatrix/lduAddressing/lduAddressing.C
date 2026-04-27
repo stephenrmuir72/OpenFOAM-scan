@@ -30,6 +30,7 @@ License
 #include "scalarField.H"
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
+#ifdef FOAM_OFFLOAD
 void Foam::lduAddressing::calcPatchSort() const
 {
     if (patchSortAddr_.size() == nPatches())
@@ -189,7 +190,7 @@ void Foam::lduAddressing::calcPatchSortStart() const
         // (exclusive scan of group sizes)
     }
 }
-
+#endif
 
 void Foam::lduAddressing::calcLosort() const
 {
@@ -376,7 +377,7 @@ const Foam::labelUList& Foam::lduAddressing::losortStartAddr() const
     return *losortStartPtr_;
 }
 
-
+#ifdef FOAM_OFFLOAD
 const Foam::labelUList&
 Foam::lduAddressing::patchSortCells(const label i) const
 {
@@ -410,7 +411,7 @@ Foam::lduAddressing::patchSortStartAddr(const label i) const
 
     return patchSortStartAddr_[i];
 }
-
+#endif
 
 const Foam::labelUList& Foam::lduAddressing::lowerCSRAddr() const
 {
@@ -429,9 +430,11 @@ void Foam::lduAddressing::clearOut()
     ownerStartPtr_.reset(nullptr);
     losortStartPtr_.reset(nullptr);
     lowerCSRAddrPtr_.reset(nullptr);
+    #ifdef FOAM_OFFLOA
     patchSortCells_.clear();
     patchSortAddr_.clear();
     patchSortStartAddr_.clear();
+    #endif
 }
 
 
