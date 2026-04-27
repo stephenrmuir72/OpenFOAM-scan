@@ -155,13 +155,15 @@ template<class Type2>
 void Foam::fvMatrix<Type>::addToInternalField
 (
     const labelUList& addr,
+    #ifdef FOAM_OFFLOAD
     const labelUList& sort,
     const labelUList& sortStart,
+    #endif
     const Field<Type2>& pf,
     Field<Type2>& intf
 ) const
 {
-    if (sort.size() != pf.size())
+    if (addr.size() != pf.size())
     {
         FatalErrorInFunction
             << "addressing (" << addr.size()
@@ -198,6 +200,7 @@ void Foam::fvMatrix<Type>::addToInternalField
 }
 
 
+#ifdef FOAM_OFFLOAD
 template<class Type>
 template<class Type2>
 void Foam::fvMatrix<Type>::addToInternalField
@@ -212,20 +215,35 @@ void Foam::fvMatrix<Type>::addToInternalField
     addToInternalField(addr, sort, sortStart, tpf(), intf);
     tpf.clear();
 }
-
+#else
+template<class Type>
+template<class Type2>
+void Foam::fvMatrix<Type>::addToInternalField
+(
+    const labelUList& addr,
+    const tmp<Field<Type2>>& tpf,
+    Field<Type2>& intf
+) const
+{
+    addToInternalField(addr, tpf(), intf);
+    tpf.clear();
+}
+#endif
 
 template<class Type>
 template<class Type2>
 void Foam::fvMatrix<Type>::subtractFromInternalField
 (
     const labelUList& addr,
+    #ifdef FOAM_OFFLOAD
     const labelUList& sort,
     const labelUList& sortStart,
+    #endif
     const Field<Type2>& pf,
     Field<Type2>& intf
 ) const
 {
-    if (sort.size() != pf.size())
+    if (addr.size() != pf.size())
     {
         FatalErrorInFunction
             << "addressing (" << addr.size()
@@ -262,6 +280,7 @@ void Foam::fvMatrix<Type>::subtractFromInternalField
 }
 
 
+#ifdef FOAM_OFFLOAD
 template<class Type>
 template<class Type2>
 void Foam::fvMatrix<Type>::subtractFromInternalField
@@ -276,7 +295,20 @@ void Foam::fvMatrix<Type>::subtractFromInternalField
     subtractFromInternalField(addr, sort, sortStart, tpf(), intf);
     tpf.clear();
 }
-
+#else
+template<class Type>
+template<class Type2>
+void Foam::fvMatrix<Type>::subtractFromInternalField
+(
+    const labelUList& addr,
+    const tmp<Field<Type2>>& tpf,
+    Field<Type2>& intf
+) const
+{
+    subtractFromInternalField(addr, tpf(), intf);
+    tpf.clear();
+}
+#endif
 
 template<class Type>
 void Foam::fvMatrix<Type>::addBoundaryDiag
@@ -1912,10 +1944,10 @@ Foam::tmp<Foam::volScalarField> Foam::fvMatrix<Type>::H1() const
                 #ifdef FOAM_OFFLOAD
                 lduAddr().patchSortCells(patchi),
                 lduAddr().patchSortAddr(patchi),
+                lduAddr().patchSortStartAddr(patchi),
                 #else
                 lduAddr().patchAddr(patchi),
                 #endif
-                lduAddr().patchSortStartAddr(patchi),
                 boundaryCoeffs_[patchi].component(0),
                 H1_
             );
