@@ -112,7 +112,15 @@ Foam::fv::jouleHeatingSource::jouleHeatingSource
         IOobject
         (
             IOobject::scopedName(typeName, "V"),
-            mesh.time().timeName(),
+            // Search backwards from the current time so that the field
+            // is found in 0/ or constant/ when the option is created
+            // after the time loop has advanced (e.g. multi-region cht
+            // solvers that instantiate fvOptions lazily).
+            mesh.time().findInstance
+            (
+                mesh.dbDir(),
+                IOobject::scopedName(typeName, "V")
+            ),
             mesh,
             IOobject::MUST_READ,
             IOobject::AUTO_WRITE,

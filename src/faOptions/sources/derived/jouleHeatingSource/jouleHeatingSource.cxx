@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2019-2025 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -66,7 +67,14 @@ Foam::fa::jouleHeatingSource::jouleHeatingSource
         IOobject
         (
             suffixed(IOobject::scopedName(typeName, "V")),
-            regionMesh().thisDb().time().timeName(),
+            // Search backwards from the current time so that the field
+            // is found in 0/ or constant/ when the option is created
+            // after the time loop has advanced.
+            regionMesh().thisDb().time().findInstance
+            (
+                regionMesh().thisDb().dbDir(),
+                suffixed(IOobject::scopedName(typeName, "V"))
+            ),
             regionMesh().thisDb(),
             IOobject::MUST_READ,
             IOobject::AUTO_WRITE,

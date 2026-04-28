@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2019-2025 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -48,7 +49,11 @@ void Foam::fa::jouleHeatingSource::initialiseSigma
     IOobject io
     (
         sigmaName,
-        obr.time().timeName(),
+        obr.time().findInstance
+        (
+            obr.dbDir(),
+            sigmaName
+        ),
         obr,
         IOobject::NO_READ,
         IOobject::AUTO_WRITE,
