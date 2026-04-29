@@ -1,0 +1,3 @@
+fireDyMFoam.C
+
+EXE = $(FOAM_APPBIN)/fireDyMFoam
