@@ -168,9 +168,11 @@ Foam::balanceModels::distributed::distributed
 {
     const labelList defaultWeights(UPstream::nProcs(), 1);
 
-    dictionary coeffs;
-    coeffs.add("processorWeights", defaultWeights);
-    distributionDictPtr_->set("coeffs", coeffs);
+    // Non-destructive update: preserve any pre-existing entries in
+    // decomposeParDict (top-level keys and other sibling entries inside
+    // "coeffs"). Only insert/overwrite the "processorWeights" entry.
+    dictionary& coeffsDict = distributionDictPtr_->subDictOrAdd("coeffs");
+    coeffsDict.set("processorWeights", defaultWeights);
 
     read(dict);
 }
@@ -219,14 +221,12 @@ bool Foam::balanceModels::distributed::balance(const scalarField& procWeights)
     }
 
 
-    // Update the internal decomposition dictionary with processor weights
-    dictionary coeffs;
-    coeffs.set
-    (
-        "processorWeights",
-        transformToIntegers(procWeights)
-    );
-    distributionDictPtr_->set("coeffs", coeffs);
+    // Update the internal decomposition dictionary with processor weights.
+    // Non-destructive: preserve any pre-existing entries in decomposeParDict
+    // (top-level keys and other sibling entries inside "coeffs"). Only
+    // insert/overwrite the "processorWeights" entry.
+    dictionary& coeffsDict = distributionDictPtr_->subDictOrAdd("coeffs");
+    coeffsDict.set("processorWeights", transformToIntegers(procWeights));
     DebugInFunction<< "distributionPtr: " << *distributionDictPtr_ << endl;
 
 
