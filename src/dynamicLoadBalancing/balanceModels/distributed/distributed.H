@@ -84,15 +84,10 @@ class distributed
 
     // Private Member Functions
 
-        //- Return a labelList which is a transformation of a scalarList
-        //- approximating the original scalar ratios as closely as possible.
-        //  The 'processorWeights' entry only accepts label weights; therefore,
-        //  the scalar CPU-load weights need to be transformed into labels.
-        labelList transformToIntegers
-        (
-            const scalarField& w,
-            const label targetSum = 1000000  // larger it is, smaller rel error
-        );
+        //- (See file-static helper transformToIntegers in distributed.C.)
+        //  The 'processorWeights' entry only accepts integer weights;
+        //  scalar CPU-load weights are transformed into label weights
+        //  via that helper.
 
 
 public:

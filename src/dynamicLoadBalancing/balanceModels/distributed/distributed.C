@@ -32,6 +32,7 @@ License
 #include "dynamicMotionSolverFvMesh.H"
 #include "decompositionMethod.H"
 #include "decompositionModel.H"
+#include "ListOps.H"
 #include "addToRunTimeSelectionTable.H"
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
@@ -46,14 +47,24 @@ namespace balanceModels
 }
 
 
-// * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
+// * * * * * * * * * * * File-static Helpers  * * * * * * * * * * * * * * * //
 
-Foam::labelList Foam::balanceModels::distributed::transformToIntegers
+namespace
+{
+
+//- Largest-remainder transformation of scalar weights into integer
+//  weights summing to 'targetSum', preserving the relative ratios of
+//  positive entries as closely as possible. Non-positive entries map
+//  to zero. Tie-breaking on equal remainders is by ascending index
+//  (stable sort by Foam::sortedOrder).
+Foam::labelList transformToIntegers
 (
-    const scalarField& w,
-    const label targetSum
+    const Foam::scalarField& w,
+    const Foam::label targetSum = 1000000   // larger -> smaller rel. error
 )
 {
+    using namespace Foam;
+
     const label n = w.size();
     labelList out(n, 0);
 
@@ -63,7 +74,7 @@ Foam::labelList Foam::balanceModels::distributed::transformToIntegers
     }
 
     // Sum of positive weights
-    scalar sumW = 0.0;
+    scalar sumW = 0;
     for (label i = 0; i < n; ++i)
     {
         if (w[i] > SMALL)
@@ -77,68 +88,33 @@ Foam::labelList Foam::balanceModels::distributed::transformToIntegers
         return out;
     }
 
-
-    // Normalise the weights
-    scalarField wn(n, Foam::zero{});
-    for (label i = 0; i < n; ++i)
-    {
-        if (w[i] > SMALL)
-        {
-            wn[i] = w[i]/sumW;
-        }
-        else
-        {
-            wn[i] = 0.0;
-        }
-    }
-
-
-    // Base allocation by floor
-    scalarList raw(n, Foam::zero{});
-    for (label i = 0; i < n; ++i)
-    {
-        raw[i] = wn[i]*targetSum;
-        out[i] = static_cast<label>(std::floor(raw[i]));
-    }
-
-
-    // Compute remainders (fractional parts) with indices
-    std::vector<std::pair<scalar,label>> rem;
-    rem.reserve(n);
-    for (label i = 0; i < n; ++i)
-    {
-        const scalar ri = raw[i] - scalar(out[i]);
-        rem.emplace_back(ri, i);
-    }
-
-
-    // Seats left to distribute
+    // Base allocation by floor; fractional remainders kept for top-up
+    scalarField rem(n, Foam::zero{});
     label assigned = 0;
     for (label i = 0; i < n; ++i)
     {
+        const scalar wn = (w[i] > SMALL) ? w[i]/sumW : scalar(0);
+        const scalar raw = wn*scalar(targetSum);
+        out[i] = label(std::floor(raw));
+        rem[i] = raw - scalar(out[i]);
         assigned += out[i];
     }
-    label left = targetSum - assigned;
 
+    // Distribute remaining seats to the largest remainders.
+    // Foam::sortedOrder is stable; tie-break is ascending index.
+    labelList order;
+    Foam::sortedOrder(rem, order, typename UList<scalar>::greater(rem));
 
-    // Distribute by largest remainders (stable tie-break by smaller index)
-    std::stable_sort
-    (
-        rem.begin(), rem.end(),
-        [](const std::pair<scalar,label>& a, const std::pair<scalar,label>& b)
-        {
-            if (a.first == b.first) return a.second < b.second;
-            return a.first > b.first; // descending
-        }
-    );
-
+    const label left = targetSum - assigned;
     for (label k = 0; k < left; ++k)
     {
-        ++out[rem[k].second];
+        ++out[order[k]];
     }
 
     return out;
 }
+
+}  // End anonymous namespace
 
 
 // * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * //
