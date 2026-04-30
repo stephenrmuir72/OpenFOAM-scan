@@ -208,6 +208,9 @@ bool Foam::dynamicLoadBalancer::balance()
     if (!anyDueImbalanced)
     {
         DebugInFunction << "Dynamic load balancing is not active." << endl;
+
+        // Snapshot current imbalance for the next-step chronic check.
+        performanceMetricPtr_->updatePrevImbalanceValue();
         return false;
     }
 
@@ -222,6 +225,11 @@ bool Foam::dynamicLoadBalancer::balance()
     DebugInFunction << "Dynamic load balancing is performed." << endl;
 
     performanceMetricPtr_->resetTimeCounters();
+
+    // Snapshot current imbalance for the next-step chronic check, after
+    // the chronic comparison in isBalancingDue() has already consumed the
+    // previous value.
+    performanceMetricPtr_->updatePrevImbalanceValue();
 
     return balanced;
 }

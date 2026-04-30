@@ -195,6 +195,18 @@ public:
         virtual bool resetTimeCounters() = 0;
 
 
+    // Bookkeeping
+
+        //- Snapshot the current imbalance value as the previous one.
+        //  Must be called by the orchestrator *after* any chronic-imbalance
+        //  comparison that reads prevImbalanceValue() so the next time-step
+        //  observes a one-step-delayed shadow.
+        void updatePrevImbalanceValue() const noexcept
+        {
+            prevImbalanceValue_ = imbalanceValue_;
+        }
+
+
     // I-O
 
         //- Read the top-level dictionary

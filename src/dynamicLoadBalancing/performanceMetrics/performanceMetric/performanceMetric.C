@@ -130,8 +130,10 @@ bool Foam::performanceMetric::isImbalanced() const
 
     bool isImbalanced = (imbalanceValue_ > imbalanceThreshold);
 
-    // Already reduced imbalance values - MOVED?
-    prevImbalanceValue_ = imbalanceValue_;
+    // Note: prevImbalanceValue_ is intentionally NOT updated here.
+    // The chronic-imbalance check in dynamicLoadBalancer reads it as a
+    // one-step-delayed shadow; the orchestrator calls
+    // updatePrevImbalanceValue() at the end of balance() instead.
 
     return isImbalanced;
 }
