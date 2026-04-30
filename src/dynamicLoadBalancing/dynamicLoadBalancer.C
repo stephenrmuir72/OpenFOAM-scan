@@ -175,10 +175,27 @@ bool Foam::dynamicLoadBalancer::read(const dictionary& dict)
        !chronic.empty()
     )
     {
-        recomputeImbalanceTolerance_ =
-            chronic.getScalar("recomputeImbalanceTolerance");
-        backoffPeriod_ = chronic.getScalar("backoffPeriod");
-        checkChronicImbalance_ = true;
+        const bool hasTol  = chronic.found("recomputeImbalanceTolerance");
+        const bool hasBack = chronic.found("backoffPeriod");
+
+        if (hasTol && hasBack)
+        {
+            recomputeImbalanceTolerance_ =
+                chronic.getScalar("recomputeImbalanceTolerance");
+            backoffPeriod_ = chronic.getScalar("backoffPeriod");
+            checkChronicImbalance_ = true;
+        }
+        else
+        {
+            WarningInFunction
+                << "chronicImbalanceSettings is partially populated; both "
+                << "'recomputeImbalanceTolerance' and 'backoffPeriod' must be "
+                << "supplied. Disabling chronic-imbalance checking." << nl
+                << "    recomputeImbalanceTolerance present: " << hasTol << nl
+                << "    backoffPeriod present:               " << hasBack
+                << endl;
+            checkChronicImbalance_ = false;
+        }
     }
 
     frequencyPtr_ = Function1<label>::New("frequency", dict, &mesh_);
