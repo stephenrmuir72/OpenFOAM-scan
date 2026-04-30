@@ -138,14 +138,12 @@ class lduAddressing
         //- Lower addressing
         mutable std::unique_ptr<labelList> lowerCSRAddrPtr_;
 
-        #ifdef FOAM_OFFLOAD
         //- cell-based addressing for patches
         mutable PtrList<const labelList> patchSortCells_;
 
         mutable PtrList<const labelList> patchSortAddr_;
 
         mutable PtrList<const labelList> patchSortStartAddr_;
-        #endif
 
     // Private Member Functions
 
@@ -161,13 +159,11 @@ class lduAddressing
         //- Calculate CSR lower addressing
         void calcLoCSR() const;
 
-        #ifdef FOAM_OFFLOAD
         //- Calculate patch sort
         void calcPatchSort() const;
 
         //- Calculate patch sort
         void calcPatchSortStart() const;
-        #endif
 
 
 public:
@@ -214,7 +210,6 @@ public:
             const label patchNo
         ) const = 0;
 
-        #ifdef FOAM_OFFLOAD
         //- Additional addressing on patches
         virtual label nPatches() const = 0;
 
@@ -237,7 +232,6 @@ public:
         (
             const label patchNo
         ) const;
-        #endif
 
         //- Return patch field evaluation schedule
         virtual const lduSchedule& patchSchedule() const = 0;
