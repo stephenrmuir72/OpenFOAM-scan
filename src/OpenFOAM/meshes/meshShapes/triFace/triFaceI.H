@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2013 OpenFOAM Foundation
     Copyright (C) 2017-2025 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -209,12 +210,6 @@ Foam::triFace::box(const UList<point>& points) const
 }
 
 
-inline Foam::label Foam::triFace::nTriangles() const noexcept
-{
-    return 1;
-}
-
-
 inline Foam::triFace Foam::triFace::reverseFace() const
 {
     // The starting points of the original and reverse face are identical.
@@ -225,24 +220,6 @@ inline Foam::triFace Foam::triFace::reverseFace() const
 inline Foam::label Foam::triFace::which(const label vertex) const
 {
     return FixedList<label, 3>::find(vertex);
-}
-
-
-inline Foam::label Foam::triFace::thisLabel(const label i) const
-{
-    return operator[](i);
-}
-
-
-inline Foam::label Foam::triFace::nextLabel(const label i) const
-{
-    return operator[]((i == 2 ? 0 : i+1));
-}
-
-
-inline Foam::label Foam::triFace::prevLabel(const label i) const
-{
-    return operator[]((i ? i-1 : 2));
 }
 
 
@@ -362,12 +339,6 @@ inline int Foam::triFace::sign
 ) const
 {
     return this->tri(points).sign(p, tol);
-}
-
-
-inline Foam::label Foam::triFace::nEdges() const noexcept
-{
-    return 3;
 }
 
 
@@ -500,9 +471,9 @@ inline void Foam::triFace::operator+=(label vertexOffset)
 {
     if (vertexOffset)
     {
-        (*this)[0] += vertexOffset;
-        (*this)[1] += vertexOffset;
-        (*this)[2] += vertexOffset;
+        a() += vertexOffset;
+        b() += vertexOffset;
+        c() += vertexOffset;
     }
 }
 

@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011 OpenFOAM Foundation
     Copyright (C) 2016-2023 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -36,22 +37,23 @@ inline void Foam::labelledTri::assignList(const ListType& list)
     const label len = list.size();
 
     // checkSize
-    if (len < 3 || len > 4)
+    if (len < triFace::size() || len > triFace::size()+1)
     {
          FatalErrorInFunction
-            << "size " << len << " != (3 or 4)"
-            << abort(FatalError);
+            << "size " << len << " != ("
+            << triFace::size() << " or " << (triFace::size()+1) << ")"
+            << Foam::abort(Foam::FatalError);
     }
 
     auto iter = list.begin();
 
-    for (label i=0; i<3; ++i)
+    for (label i = 0; i < triFace::size(); ++i)
     {
-        this->operator[](i) = *iter;
+        (*this)[i] = *iter;
         ++iter;
     }
 
-    index_ = (len == 4) ? *iter : 0;
+    if (len > triFace::size()) { index_ = *iter; }
 }
 
 
@@ -64,27 +66,23 @@ inline Foam::labelledTri::labelledTri()
 {}
 
 
-inline Foam::labelledTri::labelledTri
-(
-    const triFace& tri,
-    const label region
-)
+inline Foam::labelledTri::labelledTri(const triFace& f, label idx)
 :
-    triFace(tri),
-    index_(region)
+    triFace(f),
+    index_(idx)
 {}
 
 
 inline Foam::labelledTri::labelledTri
 (
-    const label p0,
-    const label p1,
-    const label p2,
-    const label region
+    label p0,
+    label p1,
+    label p2,
+    label idx
 )
 :
     triFace(p0, p1, p2),
-    index_(region)
+    index_(idx)
 {}
 
 
@@ -109,23 +107,23 @@ inline Foam::labelledTri::labelledTri(std::initializer_list<label> list)
 inline Foam::labelledTri::labelledTri
 (
     const labelUList& list,
-    const FixedList<label, 3>& triIndices,
-    const label region
+    const FixedList<label, 3>& indices,
+    label idx
 )
 :
-    triFace(list, triIndices),
-    index_(region)
+    triFace(list, indices),
+    index_(idx)
 {}
 
 
 inline Foam::labelledTri::labelledTri
 (
     const labelUList& list,
-    const labelledTri& triIndices
+    const labelledTri& indices
 )
 :
-    triFace(list, triIndices),
-    index_(triIndices.region())
+    triFace(list, indices),
+    index_(indices.index())
 {}
 
 
@@ -137,23 +135,21 @@ inline Foam::labelledTri::labelledTri(Istream& is)
 
 // * * * * * * * * * * * * * * * Ostream Operator  * * * * * * * * * * * * * //
 
-inline Foam::Istream& Foam::operator>>(Istream& is, labelledTri& t)
+inline Foam::Istream& Foam::operator>>(Istream& is, labelledTri& f)
 {
     if (is.format() == IOstreamOption::BINARY)
     {
         Detail::readContiguous<labelledTri>
         (
             is,
-            reinterpret_cast<char*>(&t),
+            reinterpret_cast<char*>(&f),
             sizeof(labelledTri)
         );
     }
     else
     {
         is.readBegin("labelledTri");
-
-        is  >> static_cast<triFace&>(t) >> t.index();
-
+        is >> static_cast<triFace&>(f) >> f.index();
         is.readEnd("labelledTri");
     }
 
@@ -162,20 +158,20 @@ inline Foam::Istream& Foam::operator>>(Istream& is, labelledTri& t)
 }
 
 
-inline Foam::Ostream& Foam::operator<<(Ostream& os, const labelledTri& t)
+inline Foam::Ostream& Foam::operator<<(Ostream& os, const labelledTri& f)
 {
     if (os.format() == IOstreamOption::BINARY)
     {
         os.write
         (
-            reinterpret_cast<const char*>(&t),
+            reinterpret_cast<const char*>(&f),
             sizeof(labelledTri)
         );
     }
     else
     {
         os  << token::BEGIN_LIST
-            << static_cast<const triFace&>(t) << token::SPACE << t.index()
+            << static_cast<const triFace&>(f) << token::SPACE << f.index()
             << token::END_LIST;
     }
 
