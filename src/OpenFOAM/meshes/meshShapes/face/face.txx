@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -26,6 +27,9 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "face.H"
+#include "triFace.H"
+#include "quadFace.H"
+#include "labelledTri.H"
 #include "DynamicList.H"
 
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
@@ -34,17 +38,177 @@ template<int SizeMin>
 Foam::label Foam::face::triangles
 (
     const UList<point>& points,
-    DynamicList<face, SizeMin>& triFaces
+    DynamicList<face, SizeMin>& tris,
+    const flipType flipping
 ) const
 {
-    label triI = triFaces.size();
-    label quadI = 0;
-    faceList quadFaces;
+    label triI = tris.size();
 
-    // adjust the addressable size (and allocate space if needed)
-    triFaces.setSize(triI + nTriangles());
+    tris.resize(triI + nTriangles());
+    auto total = triangles(points, triI, tris, flipping);
+    tris.resize(triI);  // safety
+    return total;
+}
 
-    return split(SPLITTRIANGLE, points, triI, quadI, triFaces, quadFaces);
+
+template<int SizeMin>
+Foam::label Foam::face::triangles
+(
+    const UList<point>& points,
+    DynamicList<triFace, SizeMin>& tris,
+    const flipType flipping
+) const
+{
+    label triI = tris.size();
+
+    tris.resize(triI + nTriangles());
+    auto total = triangles(points, triI, tris, flipping);
+    tris.resize(triI);  // safety
+    return total;
+}
+
+
+template<int SizeMin>
+Foam::label Foam::face::triangles
+(
+    const UList<point>& points,
+    DynamicList<labelledTri, SizeMin>& tris,
+    const label region,
+    const flipType flipping
+) const
+{
+    label triI = tris.size();
+
+    tris.resize(triI + nTriangles());
+    auto total = triangles(points, triI, tris, region, flipping);
+    tris.resize(triI);  // safety
+    return total;
+}
+
+
+template<int SizeMin>
+Foam::label Foam::face::trianglesFan
+(
+    const UList<point>& points,
+    DynamicList<face, SizeMin>& tris,
+    const flipType flipping
+) const
+{
+    label triI = tris.size();
+
+    tris.resize(triI + nTriangles());
+    auto total = trianglesFan(points, triI, tris, flipping);
+    tris.resize(triI);  // safety
+    return total;
+}
+
+
+template<int SizeMin>
+Foam::label Foam::face::trianglesFan
+(
+    const UList<point>& points,
+    DynamicList<triFace, SizeMin>& tris,
+    const flipType flipping
+) const
+{
+    label triI = tris.size();
+
+    tris.resize(triI + nTriangles());
+    auto total = trianglesFan(points, triI, tris, flipping);
+    tris.resize(triI);  // safety
+    return total;
+}
+
+
+template<int SizeMin>
+Foam::label Foam::face::trianglesFan
+(
+    const UList<point>& points,
+    DynamicList<labelledTri, SizeMin>& tris,
+    const label region,
+    const flipType flipping
+) const
+{
+    label triI = tris.size();
+
+    tris.resize(triI + nTriangles());
+    auto total = trianglesFan(points, triI, tris, region, flipping);
+    tris.resize(triI);  // safety
+    return total;
+}
+
+
+template<int SizeMin1, int SizeMin2>
+Foam::label Foam::face::trianglesQuads
+(
+    const UList<point>& points,
+    DynamicList<face, SizeMin1>& tris,
+    DynamicList<face, SizeMin2>& quads,
+    const flipType flipping
+) const
+{
+    label triI = tris.size();
+    label quadI = quads.size();
+
+    // Upper bound on number of possible split faces
+    tris.resize(triI + nTriangles());
+    quads.resize(quadI + nTriangles());
+
+    auto total = trianglesQuads(points, triI, quadI, tris, quads, flipping);
+
+    // The actual size used
+    tris.resize(triI);
+    quads.resize(quadI);
+
+    return total;
+}
+
+
+template<int SizeMin>
+Foam::label Foam::face::trianglesQuads
+(
+    const UList<point>& points,
+    DynamicList<face, SizeMin>& splitFaces,
+    const flipType flipping
+) const
+{
+    label faceI = splitFaces.size();
+
+    // Upper bound on number of possible split faces
+    splitFaces.resize(faceI + nTriangles());
+
+    auto total = trianglesQuads(points, faceI, splitFaces, flipping);
+
+    // The actual size used
+    splitFaces.resize(faceI);
+
+    return total;
+}
+
+
+template<int SizeMin1, int SizeMin2>
+Foam::label Foam::face::trianglesQuads
+(
+    const UList<point>& points,
+    DynamicList<triFace, SizeMin1>& tris,
+    DynamicList<quadFace, SizeMin2>& quads,
+    const flipType flipping
+) const
+{
+    label triI = tris.size();
+    label quadI = quads.size();
+
+    // Upper bound on number of possible split faces
+    tris.resize(triI + nTriangles());
+    quads.resize(quadI + nTriangles());
+
+    auto total = trianglesQuads(points, triI, quadI, tris, quads, flipping);
+
+    // The actual size used
+    tris.resize(triI);
+    quads.resize(quadI);
+
+    return total;
 }
 
 
@@ -64,44 +228,37 @@ Type Foam::face::average
     if (nPoints == 3)
     {
         return
-            (1.0/3.0)
-           *(
-               fld[operator[](0)]
-             + fld[operator[](1)]
-             + fld[operator[](2)]
-            );
+        (
+            (1.0/3.0) *
+            (fld[(*this)[0]] + fld[(*this)[1]] + fld[(*this)[2]])
+        );
     }
-
-    const point centrePoint(this->average(meshPoints));
 
     Type cf = Zero;
-    for (label pI=0; pI<nPoints; pI++)
+    for (label pointi = 0; pointi < nPoints; ++pointi)
     {
-        cf += fld[operator[](pI)];
+        cf += fld[(*this)[pointi]];
     }
-
     cf /= nPoints;
+
+    const point centrePoint(this->average(meshPoints));
 
     scalar sumA = 0;
     Type sumAf = Zero;
 
-    for (label pI=0; pI<nPoints; pI++)
+    for (label pointi = 0; pointi < nPoints; ++pointi)
     {
-        const label nextPti(pI == nPoints-1 ? 0 : pI+1);
+        const auto curr = thisLabel(pointi);
+        const auto next = nextLabel(pointi);
 
         // Calculate 3*triangle centre field value
-        Type ttcf  =
-        (
-            fld[operator[](pI)]
-          + fld[operator[](nextPti)]
-          + cf
-        );
+        Type ttcf = (fld[curr] + fld[next] + cf);
 
         // Calculate 2*triangle area
         const scalar ta = Foam::mag
         (
-            (meshPoints[operator[](pI)] - centrePoint)
-          ^ (meshPoints[operator[](nextPti)] - centrePoint)
+            (meshPoints[curr] - centrePoint)
+          ^ (meshPoints[next] - centrePoint)
         );
 
         sumA += ta;

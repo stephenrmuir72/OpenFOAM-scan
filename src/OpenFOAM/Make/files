@@ -542,11 +542,11 @@ $(meshShapes)/edge/edge.C
 $(meshShapes)/edge/edgeIOList.C
 
 face = $(meshShapes)/face
-$(face)/face.C
-$(face)/faceIntersection.C
-$(face)/faceContactSphere.C
-$(face)/faceAreaInContact.C
-$(face)/faceIOList.C
+$(face)/face.cxx
+$(face)/faceContactSphere.cxx
+$(face)/faceContactArea.cxx
+$(face)/faceIntersection.cxx
+$(face)/faceIOList.cxx
 
 quadFace = $(meshShapes)/quadFace
 $(quadFace)/quadFace.cxx

@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011 OpenFOAM Foundation
     Copyright (C) 2017-2025 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -26,11 +27,32 @@ License
 
 \*---------------------------------------------------------------------------*/
 
+// * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
+
+inline Foam::vector
+Foam::face::approxNormal(const UList<point>& pts) const
+{
+    // Take three points [0, 1/3, 2/3] from the face
+    // - assumes the face is not severely warped
+    const auto& p0 = pts[(*this)[0]];
+    const auto& p1 = pts[(*this)[size()/3]];
+    const auto& p2 = pts[(*this)[(2*size())/3]];
+
+    return (p1 - p0) ^ (p2 - p0);
+}
+
+
 // * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * //
 
-inline Foam::face::face(const label sz)
+inline Foam::face::face(label len)
 :
-    labelList(sz, -1)
+    labelList(len, -1)
+{}
+
+
+inline Foam::face::face(labelList&& list)
+:
+    labelList(std::move(list))
 {}
 
 
@@ -40,10 +62,15 @@ inline Foam::face::face(const labelUList& list)
 {}
 
 
-inline Foam::face::face(labelList&& list)
+inline Foam::face::face(const labelUList& list, flipType flipping)
 :
-    labelList(std::move(list))
-{}
+    labelList(list)
+{
+    if (flipping == flipType::FLIP)
+    {
+        flip();
+    }
+}
 
 
 inline Foam::face::face(std::initializer_list<label> list)
@@ -59,21 +86,49 @@ inline Foam::face::face(const FixedList<label, N>& list)
 {}
 
 
-inline Foam::face::face(const labelUList& list, const labelUList& indices)
+template<unsigned N>
+inline Foam::face::face(const FixedList<label, N>& list, flipType flipping)
+:
+    labelList(list)
+{
+    if (flipping == flipType::FLIP)
+    {
+        flip();
+    }
+}
+
+
+inline Foam::face::face
+(
+    const labelUList& list,
+    const labelUList& indices,
+    flipType flipping
+)
 :
     labelList(list, indices)
-{}
+{
+    if (flipping == flipType::FLIP)
+    {
+        flip();
+    }
+}
 
 
 template<unsigned N>
 inline Foam::face::face
 (
     const labelUList& list,
-    const FixedList<label, N>& indices
+    const FixedList<label, N>& indices,
+    flipType flipping
 )
 :
     labelList(list, indices)
-{}
+{
+    if (flipping == flipType::FLIP)
+    {
+        flip();
+    }
+}
 
 
 inline Foam::face::face(Istream& is)
@@ -87,23 +142,13 @@ inline Foam::face::face(Istream& is)
 inline Foam::pointField Foam::face::points(const UList<point>& pts) const
 {
     // There are as many points as there are labels for them
-    pointField p(size());
-
-    auto iter = p.begin();
-
-    for (const label pointi : *this)
-    {
-        *iter = pts[pointi];
-        ++iter;
-    }
-
-    return p;
+    return pointField(pts, static_cast<const labelUList&>(*this));
 }
 
 
 inline Foam::vector Foam::face::unitNormal(const UList<point>& p) const
 {
-    vector n(areaNormal(p));
+    vector n(this->areaNormal(p));
     (void) n.normalise(ROOTVSMALL);
     return n;
 }
@@ -128,8 +173,8 @@ Foam::face::box(const UList<point>& pts) const
 
     for (const label pointi : *this)
     {
-        bb.first()  = min(bb.first(),  pts[pointi]);
-        bb.second() = max(bb.second(), pts[pointi]);
+        bb.first()  = Foam::min(bb.first(),  pts[pointi]);
+        bb.second() = Foam::max(bb.second(), pts[pointi]);
     }
 
     return bb;
@@ -162,7 +207,7 @@ inline Foam::label Foam::face::nEdges() const noexcept
 }
 
 
-inline Foam::edge Foam::face::edge(const label edgei) const
+inline Foam::edge Foam::face::edge(label edgei) const
 {
     return Foam::edge(thisLabel(edgei), nextLabel(edgei));
 }
@@ -170,7 +215,7 @@ inline Foam::edge Foam::face::edge(const label edgei) const
 
 inline Foam::vector Foam::face::edge
 (
-    const label edgei,
+    label edgei,
     const UList<point>& pts
 ) const
 {
@@ -178,7 +223,7 @@ inline Foam::vector Foam::face::edge
 }
 
 
-inline Foam::edge Foam::face::rcEdge(const label edgei) const
+inline Foam::edge Foam::face::rcEdge(label edgei) const
 {
     // Edge 0 (forward and reverse) always starts at [0]
     // for consistency with face flipping
@@ -189,7 +234,7 @@ inline Foam::edge Foam::face::rcEdge(const label edgei) const
 
 inline Foam::vector Foam::face::rcEdge
 (
-    const label edgei,
+    label edgei,
     const UList<point>& pts
 ) const
 {
@@ -200,27 +245,9 @@ inline Foam::vector Foam::face::rcEdge
 }
 
 
-inline Foam::label Foam::face::which(const label vertex) const
+inline Foam::label Foam::face::which(label vertex) const
 {
     return labelList::find(vertex);
-}
-
-
-inline Foam::label Foam::face::thisLabel(const label i) const
-{
-    return labelList::operator[](i);
-}
-
-
-inline Foam::label Foam::face::nextLabel(const label i) const
-{
-    return labelList::fcValue(i);
-}
-
-
-inline Foam::label Foam::face::prevLabel(const label i) const
-{
-    return labelList::rcValue(i);
 }
 
 
@@ -266,7 +293,7 @@ inline bool Foam::face::contains(const Foam::edge& e) const
 
 // * * * * * * * * * * * * * * * Member Operators  * * * * * * * * * * * * * //
 
-inline void Foam::face::operator+=(const label vertexOffset)
+inline void Foam::face::operator+=(label vertexOffset)
 {
     if (vertexOffset)
     {
@@ -275,19 +302,6 @@ inline void Foam::face::operator+=(const label vertexOffset)
             vrt += vertexOffset;
         }
     }
-}
-
-
-// * * * * * * * * * * * * * * * Global Operators   * * * * * * * * * * * * * //
-
-inline bool Foam::operator==(const face& a, const face& b)
-{
-    return face::compare(a,b) != 0;
-}
-
-inline bool Foam::operator!=(const face& a, const face& b)
-{
-    return face::compare(a,b) == 0;
 }
 
 
