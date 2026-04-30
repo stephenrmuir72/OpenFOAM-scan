@@ -194,7 +194,6 @@ protected:
             Field<Type2>& intf
         ) const;
 
-        #ifdef FOAM_OFFLOAD
         template<class Type2>
         void addToInternalField
         (
@@ -204,7 +203,6 @@ protected:
             const Field<Type2>& pf,
             Field<Type2>& intf
         ) const;
-        #endif
 
         template<class Type2>
         void addToInternalField
@@ -214,7 +212,6 @@ protected:
             Field<Type2>& intf
         ) const;
 
-        #ifdef FOAM_OFFLOAD
         template<class Type2>
         void addToInternalField
         (
@@ -224,7 +221,6 @@ protected:
             const tmp<Field<Type2>>& tpf,
             Field<Type2>& intf
         ) const;
-        #endif
 
         //- Subtract patch contribution from internal field
         template<class Type2>
@@ -235,7 +231,6 @@ protected:
             Field<Type2>& intf
         ) const;
 
-        #ifdef FOAM_OFFLOAD
         template<class Type2>
         void subtractFromInternalField
         (
@@ -245,7 +240,6 @@ protected:
             const Field<Type2>& pf,
             Field<Type2>& intf
         ) const;
-        #endif
 
         template<class Type2>
         void subtractFromInternalField
@@ -255,7 +249,6 @@ protected:
             Field<Type2>& intf
         ) const;
 
-        #ifdef FOAM_OFFLOAD
         template<class Type2>
         void subtractFromInternalField
         (
@@ -265,7 +258,6 @@ protected:
             const tmp<Field<Type2>>& tpf,
             Field<Type2>& intf
         ) const;
-        #endif
 
 
         // Implicit helper functions

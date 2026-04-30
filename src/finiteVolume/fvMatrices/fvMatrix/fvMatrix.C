@@ -45,35 +45,38 @@ License
 
 // * * * * * * * * * * * * Protected Member Functions  * * * * * * * * * * * //
 
-#ifdef FOAM_OFFLOAD
 namespace Foam
 {
-    template<class Type,bool add>
-    struct fvMatrixPatchAddFunctor
+    template<class Type, class Op>
+    struct SurfaceSumFunctor_2
     {
         Field<Type>& intf;
         const Field<Type>& issf;
         const labelUList& neiStart;
         const labelUList& losort;
         const labelUList& addr;
+        const Op& op_;
 
-        fvMatrixPatchAddFunctor
+        SurfaceSumFunctor_2
         (
             Field<Type>& _intf,
             const Field<Type>& _issf,
             const labelUList& _neiStart,
             const labelUList& _losort,
-            const labelUList& _addr
+            const labelUList& _addr,
+            const Op& op
         ):
              intf(_intf),   
              issf(_issf),
              neiStart(_neiStart),
              losort(_losort),
-             addr(_addr)
+             addr(_addr),
+             op_(op)
         {}
+
         void operator()(const label& id)
         {
-            Type out = intf[addr[id]];
+            auto out = intf[addr[id]];
 
             label nStart = neiStart[id];
             label nSize = neiStart[id+1] - nStart;
@@ -81,10 +84,7 @@ namespace Foam
             for(label i = 0; i<nSize; i++)
             {
                 label face = losort[nStart + i];
-                if(add)
-                    out += issf[face];
-                else
-                    out -= issf[face];
+                op_(out, issf[face]);
             }
 
             intf[addr[id]] = out;
@@ -92,7 +92,7 @@ namespace Foam
     };
 
     template<class Type>
-    struct fvMatrixAddBoundarySourceFunctor
+    struct SurfaceSumBoundarySourceFunctor
     {
         Field<Type>& source;
         const Field<Type>& pbc;
@@ -101,7 +101,7 @@ namespace Foam
         const labelUList& losort;
         const labelUList& addr;
 
-        fvMatrixAddBoundarySourceFunctor
+        SurfaceSumBoundarySourceFunctor
         (
             Field<Type>& _source,
             const Field<Type>& _pbc,
@@ -134,31 +134,14 @@ namespace Foam
         }
     };
 
-    template<class Type>
-    struct fvMatrixSetValuesClearFacesFunctor
-    {
-        const Type zero;
-        fvMatrixSetValuesClearFacesFunctor(Type _zero): zero(_zero) {}
-        Type operator()(const Type& val,const bool& set)
-        {
-            if(set)
-                return zero;
-            else
-                return val;
-        }
-    };
 }
-#endif
+
 
 template<class Type>
 template<class Type2>
 void Foam::fvMatrix<Type>::addToInternalField
 (
     const labelUList& addr,
-    #ifdef FOAM_OFFLOAD
-    const labelUList& sort,
-    const labelUList& sortStart,
-    #endif
     const Field<Type2>& pf,
     Field<Type2>& intf
 ) const
@@ -171,8 +154,38 @@ void Foam::fvMatrix<Type>::addToInternalField
             << abort(FatalError);
     }
 
-    #ifdef FOAM_OFFLOAD
+    forAll(addr, facei)
+    {
+        intf[addr[facei]] += pf[facei];
+    }
+}
+
+
+template<class Type>
+template<class Type2>
+void Foam::fvMatrix<Type>::addToInternalField
+(
+    const labelUList& addr,
+    const labelUList& sort,
+    const labelUList& sortStart,
+    const Field<Type2>& pf,
+    Field<Type2>& intf
+) const
+{
+    if (sortStart.size()-1 != pf.size())
+    {
+        FatalErrorInFunction
+            << "sortStart.size()-1 (" << sortStart.size()-1
+            << ") and field (" << pf.size() << ") are different sizes" << endl
+            << abort(FatalError);
+    }
+
     labelRange indices(addr.size());
+
+    auto op = [](Type2& out, const Type2& in)
+    {
+        out += in;
+    };
 
     apply_policy(addr.size(), [&](auto policy)
     {
@@ -181,26 +194,34 @@ void Foam::fvMatrix<Type>::addToInternalField
             policy,
             indices.begin(),
             indices.end(),
-            fvMatrixPatchAddFunctor<Type2, true>
+            SurfaceSumFunctor_2<Type2, decltype(op)>
             (
                 intf,
                 pf,
                 sortStart,
                 sort,
-                addr
+                addr,
+                op
             )
         );
     });    
-    #else
-    forAll(addr, facei)
-    {
-        intf[addr[facei]] += pf[facei];
-    }
-    #endif
 }
 
 
-#ifdef FOAM_OFFLOAD
+template<class Type>
+template<class Type2>
+void Foam::fvMatrix<Type>::addToInternalField
+(
+    const labelUList& addr,
+    const tmp<Field<Type2>>& tpf,
+    Field<Type2>& intf
+) const
+{
+    addToInternalField(addr, tpf(), intf);
+    tpf.clear();
+}
+
+
 template<class Type>
 template<class Type2>
 void Foam::fvMatrix<Type>::addToInternalField
@@ -215,30 +236,13 @@ void Foam::fvMatrix<Type>::addToInternalField
     addToInternalField(addr, sort, sortStart, tpf(), intf);
     tpf.clear();
 }
-#else
-template<class Type>
-template<class Type2>
-void Foam::fvMatrix<Type>::addToInternalField
-(
-    const labelUList& addr,
-    const tmp<Field<Type2>>& tpf,
-    Field<Type2>& intf
-) const
-{
-    addToInternalField(addr, tpf(), intf);
-    tpf.clear();
-}
-#endif
+
 
 template<class Type>
 template<class Type2>
 void Foam::fvMatrix<Type>::subtractFromInternalField
 (
     const labelUList& addr,
-    #ifdef FOAM_OFFLOAD
-    const labelUList& sort,
-    const labelUList& sortStart,
-    #endif
     const Field<Type2>& pf,
     Field<Type2>& intf
 ) const
@@ -251,8 +255,38 @@ void Foam::fvMatrix<Type>::subtractFromInternalField
             << abort(FatalError);
     }
 
-    #ifdef FOAM_OFFLOAD
+    forAll(addr, facei)
+    {
+        intf[addr[facei]] -= pf[facei];
+    }
+}
+
+
+template<class Type>
+template<class Type2>
+void Foam::fvMatrix<Type>::subtractFromInternalField
+(
+    const labelUList& addr,
+    const labelUList& sort,
+    const labelUList& sortStart,
+    const Field<Type2>& pf,
+    Field<Type2>& intf
+) const
+{
+    if (sortStart.size()-1 != pf.size())
+    {
+        FatalErrorInFunction
+            << "sortStart.size()-1 (" << sortStart.size()-1
+            << ") and field (" << pf.size() << ") are different sizes" << endl
+            << abort(FatalError);
+    }
+
     labelRange indices(addr.size());
+
+    auto op = [](Type2& out, const Type2& in)
+    {
+        out -= in;
+    };
 
     apply_policy(addr.size(), [&](auto policy)
     {
@@ -261,26 +295,34 @@ void Foam::fvMatrix<Type>::subtractFromInternalField
             policy,
             indices.begin(),
             indices.end(),
-            fvMatrixPatchAddFunctor<Type2, false>
+            SurfaceSumFunctor_2<Type2, decltype(op)>
             (
                 intf,
                 pf,
                 sortStart,
                 sort,
-                addr
+                addr,
+                op
             )
         );
     });
-    #else
-    forAll(addr, facei)
-    {
-        intf[addr[facei]] -= pf[facei];
-    }
-    #endif
 }
 
 
-#ifdef FOAM_OFFLOAD
+template<class Type>
+template<class Type2>
+void Foam::fvMatrix<Type>::subtractFromInternalField
+(
+    const labelUList& addr,
+    const tmp<Field<Type2>>& tpf,
+    Field<Type2>& intf
+) const
+{
+    subtractFromInternalField(addr, tpf(), intf);
+    tpf.clear();
+}
+
+
 template<class Type>
 template<class Type2>
 void Foam::fvMatrix<Type>::subtractFromInternalField
@@ -295,20 +337,7 @@ void Foam::fvMatrix<Type>::subtractFromInternalField
     subtractFromInternalField(addr, sort, sortStart, tpf(), intf);
     tpf.clear();
 }
-#else
-template<class Type>
-template<class Type2>
-void Foam::fvMatrix<Type>::subtractFromInternalField
-(
-    const labelUList& addr,
-    const tmp<Field<Type2>>& tpf,
-    Field<Type2>& intf
-) const
-{
-    subtractFromInternalField(addr, tpf(), intf);
-    tpf.clear();
-}
-#endif
+
 
 template<class Type>
 void Foam::fvMatrix<Type>::addBoundaryDiag
@@ -416,7 +445,7 @@ void Foam::fvMatrix<Type>::addBoundarySource
                     const tmp<Field<Type>> tpnf = ptf.patchNeighbourField();
                     const Field<Type>& pnf = tpnf();
 
-                    #ifdef FOAM_OFFLAOD
+                    #ifdef FOAM_OFFLOAD
                     const labelUList& addr = lduAddr().patchSortCells(patchi);
                     const labelUList& sort = lduAddr().patchSortAddr(patchi);
                     const labelUList& sortStart = lduAddr().patchSortStartAddr(patchi);
@@ -430,7 +459,7 @@ void Foam::fvMatrix<Type>::addBoundarySource
                             policy,
                             indices.begin(),
                             indices.end(),
-                            fvMatrixAddBoundarySourceFunctor<Type>
+                            SurfaceSumBoundarySourceFunctor<Type>
                             (
                                 source,
                                 pbc,
@@ -1299,7 +1328,6 @@ void Foam::fvMatrix<Type>::setReferences
                 [=, &cellLabels](const label celli)
                 {
                     const label cellId = cellLabels[celli];
-
                     if (cellId >= 0)
                     {
                         srcPtr[cellId] += dPtr[cellId]*value;
@@ -1395,8 +1423,10 @@ namespace Foam
         }
     };
 
-    template<class Type,class Fun>
-    struct fvMatrixRelaxAddToDiagonalFunctor : public std::binary_function<label,scalar,scalar>
+    template<class Type, class Fun>
+    struct fvMatrixRelaxAddToDiagonalFunctor
+    :
+        public std::binary_function<label, scalar, scalar>
     {
         const Fun f_;
         Foam::scalarField& diag_;
@@ -1415,69 +1445,87 @@ namespace Foam
             const labelUList& cells
         )
         :
-             f_(f),
-             diag_(diag),
-             iCoeffs_(iCoeffs),
-             neiStart_(neiStart),
-             losort_(losort),
-             cells_(cells)
+            f_(f),
+            diag_(diag),
+            iCoeffs_(iCoeffs),
+            neiStart_(neiStart),
+            losort_(losort),
+            cells_(cells)
         {}
+
+        // void operator()(const label& id)
+        // {
+        //     scalar out = diag_[cells_[id]];
+
+        //     label nStart = neiStart_[id];
+        //     label nSize = neiStart_[id+1] - nStart;
+
+        //     for(label i=0; i<nSize; i++)
+        //     {
+        //         label face = losort_[nStart + i];
+        //         out += f_(iCoeffs_[face]);
+        //     }
+
+        //     diag_[cells_[id]] = out;
+        // }
 
         void operator()(const label& id)
         {
-            scalar out = diag_[cells_[id]];
+            auto out = intf[addr[id]];
 
-            label nStart = neiStart_[id];
-            label nSize = neiStart_[id+1] - nStart;
+            label nStart = neiStart[id];
+            label nSize = neiStart[id+1] - nStart;
 
-            for(label i=0; i<nSize; i++)
+            for(label i = 0; i<nSize; i++)
             {
-                label face = losort_[nStart + i];
-                out += f_(iCoeffs_[face]);
+                label face = losort[nStart + i];
+                op_(out, issf[face]);
             }
 
-            diag_[cells_[id]] = out;
+            intf[addr[id]] = out;
         }
+
+
     };
-    
+
     template<class Type>
-    struct componetZeroFunctor
+    struct componentZeroFunctor
     {
         scalar operator ()(const Type& t) const
         {
             return component(t, 0);
         }
     };
-	
+
     template<class Type>
-    struct negativeComponetZeroFunctor
+    struct negativeComponentZeroFunctor
     {
         scalar operator ()(const Type& t) const
         {
             return -component(t, 0);
         }
     };
-	
+
     template<class Type>
-    struct magComponetZeroFunctor
+    struct magComponentZeroFunctor
     {
         scalar operator ()(const Type& t) const
         {
             return mag(component(t, 0));
         }
     };
-	
+
     template<class Type>
-    struct maxComponentMagComponetFunctor
+    struct maxComponentMagComponentFunctor
     {
         scalar operator ()(const Type& t) const
         {
             return cmptMax(cmptMag(t));
         }
     };
-	
+
     template<class Type>
-    struct negativeComponetMinFunctor
+    struct negativeComponentMinFunctor
     {
         scalar operator ()(const Type& t) const
         {
@@ -1527,7 +1575,8 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                 #ifdef FOAM_OFFLOAD
                 const labelUList& pcells = lduAddr().patchSortCells(patchi);
                 const labelUList& plosort = lduAddr().patchSortAddr(patchi);
-                const labelUList& plosortStart = lduAddr().patchSortStartAddr(patchi);
+                const labelUList& plosortStart =
+                    lduAddr().patchSortStartAddr(patchi);
 
                 labelRange indices(pcells.size());
 
@@ -1538,9 +1587,13 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                         policy,
                         indices.begin(),
                         indices.end(),
-                        fvMatrixRelaxAddToDiagonalFunctor<Type,componetZeroFunctor<Type> >
+                        fvMatrixRelaxAddToDiagonalFunctor
+                        <
+                            Type,
+                            ComponentZeroFunctor<Type>
+                        >
                         (
-                            componetZeroFunctor<Type>(),
+                            ComponentZeroFunctor<Type>(),
                             D,
                             iCoeffs,
                             plosortStart,
@@ -1557,9 +1610,13 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                         policy,
                         indices.begin(),
                         indices.end(),
-                        fvMatrixRelaxAddToDiagonalFunctor<Type,magComponetZeroFunctor<Type> >
+                        fvMatrixRelaxAddToDiagonalFunctor
+                        <
+                            Type,
+                            magComponentZeroFunctor<Type>
+                        >
                         (
-                            magComponetZeroFunctor<Type>(),
+                            magComponentZeroFunctor<Type>(),
                             sumOff,
                             pCoeffs,
                             plosortStart,
@@ -1594,9 +1651,12 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                         policy,
                         indices.begin(),
                         indices.end(),
-                        fvMatrixRelaxAddToDiagonalFunctor<Type,maxComponentMagComponetFunctor<Type> >
+                        fvMatrixRelaxAddToDiagonalFunctor
+                        <
+                            Type, maxComponentMagComponentFunctor<Type>
+                        >
                         (
-                            maxComponentMagComponetFunctor<Type>(),
+                            maxComponentMagComponentFunctor<Type>(),
                             D,
                             iCoeffs,
                             plosortStart,
@@ -1717,9 +1777,12 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                         policy,
                         indices.begin(),
                         indices.end(),
-                        fvMatrixRelaxAddToDiagonalFunctor<Type,negativeComponetZeroFunctor<Type> >
+                        fvMatrixRelaxAddToDiagonalFunctor
+                        <
+                            Type, negativeComponentZeroFunctor<Type>
+                        >
                         (
-                            negativeComponetZeroFunctor<Type>(),
+                            negativeComponentZeroFunctor<Type>(),
                             D,
                             iCoeffs,
                             plosortStart,
@@ -1752,9 +1815,9 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                         policy,
                         indices.begin(),
                         indices.end(),
-                        fvMatrixRelaxAddToDiagonalFunctor<Type,negativeComponetMinFunctor<Type> >
+                        fvMatrixRelaxAddToDiagonalFunctor<Type,negativeComponentMinFunctor<Type> >
                         (
-                            negativeComponetMinFunctor<Type>(),
+                            negativeComponentMinFunctor<Type>(),
                             D,
                             iCoeffs,
                             plosortStart,

@@ -124,18 +124,16 @@ public:
             return patchAddr_[patchi];
         }
 
-        #ifdef FOAM_OFFLOAD
         //- Return number of patches
         virtual label nPatches() const
         {
-                return patchAddr_.size();
+            return patchAddr_.size();
         }
 
         virtual bool patchAvailable(const label i) const
         {
             return patchAddr_.set(i);
         }
-        #endif
 
         //- Return patch field evaluation schedule
         const lduSchedule& patchSchedule() const noexcept

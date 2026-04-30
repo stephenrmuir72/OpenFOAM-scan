@@ -206,12 +206,11 @@ public:
             {
                 return *this;
             }
-            #ifdef FOAM_OFFLOAD
+
             virtual label nPatches() const
             {
                 return interfaces_.size();
             }
-            #endif
 
             //- Return a list of pointers for each patch
             //- with only those pointing to interfaces being set
@@ -277,12 +276,10 @@ public:
                 return interfaces_[i].faceCells();
             }
 
-            #ifdef FOAM_OFFLOAD
             virtual bool patchAvailable(const label i) const
             {
                 return interfaces_.set(i);
             }
-            #endif
 
             //- Return patch evaluation schedule
             virtual const lduSchedule& patchSchedule() const
