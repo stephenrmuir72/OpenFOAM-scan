@@ -233,7 +233,15 @@ bool Foam::balanceModels::distributed::balance(const scalarField& procWeights)
     DebugInFunction<< "distributionPtr: " << *distributionDictPtr_ << endl;
 
 
-    // Create decomposition model
+    // Create decomposition model.
+    //
+    // Note: a fresh decompositionMethod is constructed on every balance()
+    // call by design. Some derived methods (notably ptscotchDecomp) keep
+    // a value-copy of the coefficients dictionary internally, so a cached
+    // instance would freeze the processorWeights at first construction and
+    // miss all subsequent updates from the imbalance metric. If a future
+    // method is known to hold coeffsDict_ by const-reference only, this
+    // could be cached as a member of distributed.
     auto decomposerPtr_ = decompositionMethod::New
     (
         *distributionDictPtr_,

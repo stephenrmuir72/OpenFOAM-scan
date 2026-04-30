@@ -26,8 +26,6 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "balanceModel.H"
-#include "decompositionMethod.H"
-#include "decompositionModel.H"
 #include "fvMesh.H"
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
@@ -47,33 +45,14 @@ Foam::balanceModel::balanceModel
     const dictionary& dict
 )
 :
-    mesh_(mesh)/*,
-    decomposerPtr_
-    (
-        decompositionModel::New
-        (
-            mesh,
-            IOdictionary
-            (
-                IOobject
-                (
-                    "decomposeParDict",
-                    mesh_.time().system(),
-                    mesh_.time(),
-                    IOobject::MUST_READ,
-                    IOobject::NO_WRITE,
-                    IOobject::NO_REGISTER
-                )
-            )
-        ).decomposer()
-    )*/
+    mesh_(mesh)
 {}
 
 
 // * * * * * * * * * * * * * * * * Destructor  * * * * * * * * * * * * * * * //
 
 Foam::balanceModel::~balanceModel()
-{}  // fvMesh is forward declared
+{}
 
 
 // * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * * //

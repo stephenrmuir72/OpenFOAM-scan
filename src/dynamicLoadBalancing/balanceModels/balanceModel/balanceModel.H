@@ -72,8 +72,11 @@ protected:
 
     // Protected Data
 
-        //- Decomposition model that partitions the mesh and fields
-        // decompositionMethod& decomposerPtr_;
+        //- Reference to derived-class data is intentionally absent here.
+        //  decompositionMethod ownership is left to derived balance models
+        //  because some methods (e.g. ptscotchDecomp) value-copy their
+        //  coefficients dictionary at construction; the right caching
+        //  granularity therefore depends on the derived class.
 
 
 public:
