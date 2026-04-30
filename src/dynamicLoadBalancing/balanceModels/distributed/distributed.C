@@ -317,6 +317,16 @@ bool Foam::balanceModels::distributed::balance(const scalarField& procWeights)
         syncCoupled(m.lookupClass<volSphericalTensorField>());
         syncCoupled(m.lookupClass<volSymmTensorField>());
         syncCoupled(m.lookupClass<volTensorField>());
+
+        // Surface fields (notably phi) carry processor-patch face values
+        // that must also be exchanged after redistribution; otherwise the
+        // first pressure-correction step sees stale fluxes on processor
+        // patches.
+        syncCoupled(m.lookupClass<surfaceScalarField>());
+        syncCoupled(m.lookupClass<surfaceVectorField>());
+        syncCoupled(m.lookupClass<surfaceSphericalTensorField>());
+        syncCoupled(m.lookupClass<surfaceSymmTensorField>());
+        syncCoupled(m.lookupClass<surfaceTensorField>());
     }
 
     if (debug)
