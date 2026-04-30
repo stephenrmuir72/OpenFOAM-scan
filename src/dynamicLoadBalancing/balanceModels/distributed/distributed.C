@@ -209,9 +209,12 @@ bool Foam::balanceModels::distributed::balance(const scalarField& procWeights)
     }
 
 
-    // Check if weights are valid
-    scalar sumW = gSum(procWeights);
-    scalar minW = gMin(procWeights);
+    // Check if weights are valid.
+    // procWeights is already a globally-replicated per-rank vector
+    // (length nProcs, identical on every rank); use Field-local sum/min
+    // here, NOT gSum/gMin which would erroneously multiply by nProcs.
+    scalar sumW = sum(procWeights);
+    scalar minW = min(procWeights);
     if (!std::isfinite(sumW) || sumW <= SMALL || minW <= SMALL)
     {
         FatalErrorInFunction
