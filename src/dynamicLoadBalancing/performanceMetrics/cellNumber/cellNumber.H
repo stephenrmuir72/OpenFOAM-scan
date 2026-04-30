@@ -80,6 +80,12 @@ class cellNumber
 :
     public performanceMetric
 {
+    // Private Data
+
+        //- Smoothed previous usage value (sentinel -1 = no prior sample)
+        mutable scalar prevUsage_;
+
+
 public:
 
     //- Runtime type information

@@ -58,7 +58,8 @@ Foam::performanceMetrics::cpuLoad::cpuLoad
 :
     performanceMetric(mesh, dict),
     clock_(),
-    cpuTime_()
+    cpuTime_(),
+    prevUsage_(-1)
 {
     read(dict);
 }
@@ -126,13 +127,14 @@ Foam::scalar Foam::performanceMetrics::cpuLoad::sampleLocalUsage() const
     scalar usage = dCpu/dWall;
 
 
-    // Smooth usage to avoid large jumps
-    if (smoothing() > SMALL && smoothing() <= 1)
+    // Smooth usage to avoid large jumps. prevUsage_ < 0 is the sentinel
+    // for "no prior sample yet" (first call, or just after
+    // resetTimeCounters()).
+    if (smoothing() > SMALL && smoothing() <= 1 && prevUsage_ >= 0)
     {
-        static scalar prevUsage = usage;
-        usage = smoothing()*usage + (1 - smoothing())*prevUsage;
-        prevUsage = usage;
+        usage = smoothing()*usage + (1 - smoothing())*prevUsage_;
     }
+    prevUsage_ = usage;
 
     DebugInFunction
         << "Clock time increment: " << dLocalWall << nl
@@ -155,6 +157,9 @@ bool Foam::performanceMetrics::cpuLoad::resetTimeCounters()
     cpuTime_.resetCpuTimeIncrement();
 
     profilingPstream::reset();
+
+    // Drop the smoothing history so a new "case epoch" starts clean.
+    prevUsage_ = -1;
 
     return true;
 }

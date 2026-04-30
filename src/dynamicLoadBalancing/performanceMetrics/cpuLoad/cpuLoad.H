@@ -91,6 +91,9 @@ class cpuLoad
         //  Local resets are required, hence no use of Time object
         mutable cpuTime cpuTime_;
 
+        //- Smoothed previous usage value (sentinel -1 = no prior sample)
+        mutable scalar prevUsage_;
+
 
 public:
 

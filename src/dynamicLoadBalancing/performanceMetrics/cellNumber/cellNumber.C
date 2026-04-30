@@ -54,7 +54,8 @@ Foam::performanceMetrics::cellNumber::cellNumber
     const dictionary& dict
 )
 :
-    performanceMetric(mesh, dict)
+    performanceMetric(mesh, dict),
+    prevUsage_(-1)
 {
     read(dict);
 }
@@ -77,13 +78,14 @@ Foam::scalar Foam::performanceMetrics::cellNumber::sampleLocalUsage() const
     // Raw usage is the local number of cells
     scalar usage = scalar(mesh().nCells());
 
-    // Smooth usage to avoid large jumps
-    if (smoothing() > SMALL && smoothing() <= 1)
+    // Smooth usage to avoid large jumps. prevUsage_ < 0 is the sentinel
+    // for "no prior sample yet" (first call, or just after
+    // resetTimeCounters()).
+    if (smoothing() > SMALL && smoothing() <= 1 && prevUsage_ >= 0)
     {
-        static scalar prevUsage = usage;
-        usage = smoothing()*usage + (1 - smoothing())*prevUsage;
-        prevUsage = usage;
+        usage = smoothing()*usage + (1 - smoothing())*prevUsage_;
     }
+    prevUsage_ = usage;
 
     // Clamp to at least one cell
     usage = max(usage, scalar(1));
@@ -94,6 +96,9 @@ Foam::scalar Foam::performanceMetrics::cellNumber::sampleLocalUsage() const
 bool Foam::performanceMetrics::cellNumber::resetTimeCounters()
 {
     profilingPstream::reset();
+
+    // Drop the smoothing history so a new "case epoch" starts clean.
+    prevUsage_ = -1;
 
     return true;
 }
