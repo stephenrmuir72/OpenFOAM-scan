@@ -56,8 +56,8 @@ SourceFiles
 
 \*---------------------------------------------------------------------------*/
 
-#ifndef balanceModels_distributed_H
-#define balanceModels_distributed_H
+#ifndef Foam_balanceModels_distributed_H
+#define Foam_balanceModels_distributed_H
 
 #include "balanceModel.H"
 

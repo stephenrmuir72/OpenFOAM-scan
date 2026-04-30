@@ -60,8 +60,8 @@ SourceFiles
 
 \*---------------------------------------------------------------------------*/
 
-#ifndef performanceMetrics_cellNumber_H
-#define performanceMetrics_cellNumber_H
+#ifndef Foam_performanceMetrics_cellNumber_H
+#define Foam_performanceMetrics_cellNumber_H
 
 #include "performanceMetric.H"
 

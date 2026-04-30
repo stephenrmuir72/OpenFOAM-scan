@@ -57,8 +57,8 @@ SourceFiles
 
 \*---------------------------------------------------------------------------*/
 
-#ifndef performanceMetrics_cpuLoad_H
-#define performanceMetrics_cpuLoad_H
+#ifndef Foam_performanceMetrics_cpuLoad_H
+#define Foam_performanceMetrics_cpuLoad_H
 
 #include "performanceMetric.H"
 #include "cpuTime.H"
