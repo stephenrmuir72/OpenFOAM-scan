@@ -75,8 +75,8 @@ bool Foam::dynamicLoadBalancer::isBalancingDue() const
     {
         if (checkChronicImbalance_)
         {
-            const scalar tol = recomputeImbalanceTolerancePtr_();
-            const scalar backoffPeriod = backoffPeriodPtr_();
+            const scalar tol = recomputeImbalanceTolerance_;
+            const scalar backoffPeriod = backoffPeriod_;
 
             // Already reduced across processors
             const scalar currImbl = performanceMetricPtr_->imbalanceValue();
@@ -126,8 +126,8 @@ Foam::dynamicLoadBalancer::dynamicLoadBalancer
     performanceMetricPtr_(performanceMetric::New(mesh, dict_)),
     frequencyPtr_(nullptr),
     skipBalancePtr_(nullptr),
-    recomputeImbalanceTolerancePtr_(nullptr),
-    backoffPeriodPtr_(nullptr),
+    recomputeImbalanceTolerance_(0),
+    backoffPeriod_(0),
     checkChronicImbalance_(false),
     lastBalanceTime_(0.0),
     curTimeIndex_(-1)
@@ -175,19 +175,10 @@ bool Foam::dynamicLoadBalancer::read(const dictionary& dict)
        !chronic.empty()
     )
     {
-        recomputeImbalanceTolerancePtr_ = autoPtr<scalar>::New
-        (
-            chronic.getScalar("recomputeImbalanceTolerance")
-        );
-        backoffPeriodPtr_ = autoPtr<scalar>::New
-        (
-            chronic.getScalar("backoffPeriod")
-        );
-
-        if (recomputeImbalanceTolerancePtr_ && backoffPeriodPtr_)
-        {
-            checkChronicImbalance_ = true;
-        }
+        recomputeImbalanceTolerance_ =
+            chronic.getScalar("recomputeImbalanceTolerance");
+        backoffPeriod_ = chronic.getScalar("backoffPeriod");
+        checkChronicImbalance_ = true;
     }
 
     frequencyPtr_ = Function1<label>::New("frequency", dict, &mesh_);

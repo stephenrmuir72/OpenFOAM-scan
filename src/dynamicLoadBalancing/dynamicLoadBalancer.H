@@ -132,10 +132,12 @@ class dynamicLoadBalancer
         autoPtr<Function1<label>> skipBalancePtr_;
 
         //- Tolerance for recomputing imbalance for chronic imbalance
-        autoPtr<scalar> recomputeImbalanceTolerancePtr_;
+        //  Only consulted when checkChronicImbalance_ is true.
+        scalar recomputeImbalanceTolerance_;
 
         //- Backoff period for load balancing attempts for chronic imbalance [s]
-        autoPtr<scalar> backoffPeriodPtr_;
+        //  Only consulted when checkChronicImbalance_ is true.
+        scalar backoffPeriod_;
 
         //- Flag to indicate if chronic imbalance checking is enabled
         bool checkChronicImbalance_;
