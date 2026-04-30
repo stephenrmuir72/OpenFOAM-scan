@@ -58,7 +58,7 @@ Foam::performanceMetric::performanceMetric
 // * * * * * * * * * * * * * * * * Destructor  * * * * * * * * * * * * * * * //
 
 Foam::performanceMetric::~performanceMetric()
-{}  // fvMesh is forward declared
+{}
 
 
 // * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * * //

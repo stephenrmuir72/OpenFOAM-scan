@@ -149,7 +149,7 @@ Foam::dynamicLoadBalancer::dynamicLoadBalancer
 Foam::dynamicLoadBalancer::~dynamicLoadBalancer()
 {
     profilingPstream::disable();
-}  // Various models were forward declared
+}
 
 
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
