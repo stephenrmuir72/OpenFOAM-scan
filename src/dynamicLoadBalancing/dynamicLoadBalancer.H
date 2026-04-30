@@ -31,7 +31,7 @@ Description
     specified performance-metric, load and balance models.
 
 Usage
-    Minimal example by using \c constant/dynamicMeshDict:
+    Minimal example by using \c constant/dynamicLoadBalanceDict:
     \verbatim
     dynamicLoadBalancerCoeffs
     {
