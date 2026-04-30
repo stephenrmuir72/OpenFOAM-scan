@@ -141,18 +141,10 @@ bool Foam::performanceMetric::isImbalanced() const
 
 Foam::tmp<Foam::scalarField> Foam::performanceMetric::processorWeights() const
 {
-    const label nProcs = UPstream::nProcs();
-    scalarField usage(nProcs, 0);
+    const List<scalar> usage =
+        UPstream::allGatherValues<scalar>(localUsage_);
 
-    for (label i = 0; i < nProcs; ++i)
-    {
-        if (UPstream::myProcNo() == i)
-        {
-            usage[i] = localUsage_;
-        }
-    }
-    Pstream::listReduce(usage, maxOp<scalar>());
-
+    const label nProcs = usage.size();
 
     // Inverse-usage capacity and normalise
     auto tweights = tmp<scalarField>::New(nProcs, scalar(0));
