@@ -7,9 +7,9 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2015 OpenFOAM Foundation
     Copyright (C) 2017-2019 OpenCFD Ltd.
-    Copyright (C) 2024----  Advanced Micro Devices, Inc. All rights reserved.
-    Copyright (C) 2025----  Science and Technology Facility Council. All rights
-                            reserved.
+    Copyright (C) 2024 Advanced Micro Devices, Inc. All rights reserved.
+    Copyright (C) 2025 Science and Technology Facility Council. All rights
+                       reserved.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -273,7 +273,8 @@ void Foam::twoStageGaussSeidelSmoother::smooth
 
                             scalar tmp = 0.0;
                             #pragma unroll 4
-                            for (label facei = start; facei < end; ++facei) {
+                            for (label facei = start; facei < end; ++facei)
+                            {
                                 tmp += upperPtr[facei] * z_ptr[uPtr[facei]];
                             }
 
