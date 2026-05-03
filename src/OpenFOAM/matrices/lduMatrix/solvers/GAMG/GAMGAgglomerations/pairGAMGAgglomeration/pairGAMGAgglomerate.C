@@ -320,31 +320,33 @@ Foam::tmp<Foam::labelField> Foam::pairGAMGAgglomeration::agglomerate
     // Determine cell visit order. This will lower the effect of having
     // one cell clustering with a neighbouring one whereas it would be better
     // if that neighbour clustered with another one of its neighbours. So
-    // instead make sure to start with the cells with highest face weights first
+    // instead make sure to start with the cells with highest face weights
+    // first. This causes larger clusters to be formed first, but might
+    // leave some smaller clusters at the end.
 
     labelList visitOrder;
-    if (renumber)
-    {
-        scalarField maxCellWeight(nFineCells, -GREAT);
-        forAll(upperAddr, facei)
-        {
-            scalar& cWeight = maxCellWeight[upperAddr[facei]];
-            cWeight = max(cWeight, faceWeights[facei]);
-        }
-        forAll(lowerAddr, facei)
-        {
-            scalar& cWeight = maxCellWeight[lowerAddr[facei]];
-            cWeight = max(cWeight, faceWeights[facei]);
-        }
+    // if (renumber)
+    // {
+    //     scalarField maxCellWeight(nFineCells, -GREAT);
+    //     forAll(upperAddr, facei)
+    //     {
+    //         scalar& cWeight = maxCellWeight[upperAddr[facei]];
+    //         cWeight = max(cWeight, faceWeights[facei]);
+    //     }
+    //     forAll(lowerAddr, facei)
+    //     {
+    //         scalar& cWeight = maxCellWeight[lowerAddr[facei]];
+    //         cWeight = max(cWeight, faceWeights[facei]);
+    //     }
 
-        visitOrder.resize_nocopy(nFineCells);
-        sortedOrder
-        (
-            maxCellWeight,
-            visitOrder,
-            typename UList<scalar>::greater(maxCellWeight)
-        );
-    }
+    //     sortedOrder
+    //     (
+    //         maxCellWeight,
+    //         visitOrder,
+    //         typename UList<scalar>::greater(maxCellWeight)
+    //     );
+    // }
+
 
 
     // Go through the faces and create clusters
@@ -370,7 +372,7 @@ Foam::tmp<Foam::labelField> Foam::pairGAMGAgglomeration::agglomerate
         // Change cell ordering depending on direction for this level
         const label celli =
         (
-            renumber
+            visitOrder.size()
           ? visitOrder[cellfi]
           : forward_ ? cellfi : nFineCells - cellfi - 1
         );
@@ -455,7 +457,7 @@ Foam::tmp<Foam::labelField> Foam::pairGAMGAgglomeration::agglomerate
         // Change cell ordering depending on direction for this level
         const label celli =
         (
-            renumber
+            visitOrder.size()
           ? visitOrder[cellfi]
           : forward_ ? cellfi : nFineCells - cellfi - 1
         );
