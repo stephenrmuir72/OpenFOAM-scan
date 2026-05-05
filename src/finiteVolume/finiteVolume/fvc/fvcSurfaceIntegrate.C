@@ -43,73 +43,22 @@ namespace Foam
 namespace fvc
 {
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
-template<class Type, bool integrate>
-struct SurfaceIntegrateFunctor
+#ifdef FOAM_OFFLOAD
+template<class Type>
+struct SurfaceSumContribution
 {
-    const Type zero_;
-
     const Field<Type>& issf_;
-    const labelUList& ownStart_;
-    const labelUList& neiStart_;
-    const labelUList& own_;
-    const labelUList& nei_;
-    const labelUList& losort_;
 
-
-    SurfaceIntegrateFunctor
-    (
-        const Field<Type>& issf,
-        const labelUList& ownStart,
-        const labelUList& neiStart,
-        const labelUList& own,
-        const labelUList& nei,
-        const labelUList& losort
-    )
+    SurfaceSumContribution(const Field<Type>& issf)
     :
-        zero_(pTraits<Type>::zero),
-        issf_(issf),
-        ownStart_(ownStart),
-        neiStart_(neiStart),
-        own_(own),
-        nei_(nei),
-        losort_(losort)
+        issf_(issf)
     {}
 
-
-    Type operator()(const label celli) const
+    Type operator()(const label, const label facei) const
     {
-        Type result(zero_);
-
-        const label ownStart = ownStart_[celli];
-        const label ownSize = ownStart_[celli + 1] - ownStart;
-
-        for (label i = 0; i < ownSize; ++i)
-        {
-            const label facei = ownStart + i;
-            result += issf_[facei];
-        }
-
-        const label neiStart = neiStart_[celli];
-        const label neiSize = neiStart_[celli + 1] - neiStart;
-
-        for (label i = 0; i < neiSize; ++i)
-        {
-            const label facei = losort_[neiStart + i];
-
-            if (integrate)
-            {
-                result -= issf_[facei];
-            }
-            else
-            {
-                result += issf_[facei];
-            }
-        }
-
-        return result;
+        return issf_[facei];
     }
 };
-
 
 template<class Type>
 struct surfaceIntegratePatchFunctor
@@ -159,6 +108,7 @@ struct surfaceIntegratePatchFunctor
     }
 };
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+#endif
 
 template<class Type>
 void surfaceIntegrate
@@ -169,33 +119,49 @@ void surfaceIntegrate
 {
     const fvMesh& mesh = ssf.mesh();
 
-    const labelUList& owner = mesh.owner();
-    const labelUList& neighbour = mesh.neighbour();
-
     const Field<Type>& issf = ssf;
 
     #ifdef FOAM_OFFLOAD
-    labelRange indices(ivf.size());
-    apply_policy(ivf.size(), [&](auto policy)
+    const lduAddressing& addr = mesh.lduAddr();
+
+    const labelUList& ownStart = addr.ownerStartAddr();
+    const labelUList& neiStart = addr.losortStartAddr();
+    const labelUList& losort = addr.losortAddr();
+
+    labelRange cellRange(0, ivf.size());
+
+    apply_policy(cellRange.size(), [&](auto policy)
     {
         std::transform
-        (   
-            policy, 
-            indices.begin(), 
-            indices.end(),
+        (
+            policy,
+            cellRange.begin(),
+            cellRange.end(),
             ivf.begin(),
-            SurfaceIntegrateFunctor<Type,true>
-            (   
-                issf,
-                mesh.lduAddr().ownerStartAddr(),
-                mesh.lduAddr().losortStartAddr(),
-                mesh.lduAddr().lowerAddr(),
-                mesh.lduAddr().upperAddr(),
-                mesh.lduAddr().losortAddr()
+            lduCellReduceFunctor
+            <
+                Type,
+                SurfaceSumContribution<Type>,
+                SurfaceSumContribution<Type>,
+                plusEqOp<Type>,
+                minusEqOp<Type>
+            >
+            (
+                pTraits<Type>::zero,
+                ownStart,
+                neiStart,
+                losort,
+                SurfaceSumContribution<Type>(issf),
+                SurfaceSumContribution<Type>(issf),
+                plusEqOp<Type>(),
+                minusEqOp<Type>()
             )
         );
     });
     #else
+    const labelUList& owner = mesh.owner();
+    const labelUList& neighbour = mesh.neighbour();
+
     forAll(owner, facei)
     {
         ivf[owner[facei]] += issf[facei];
@@ -325,24 +291,39 @@ surfaceSum
     GeometricField<Type, fvPatchField, volMesh>& vf = tvf.ref();
 
     #ifdef FOAM_OFFLOAD
-    labelRange indices(vf.size());
+    const lduAddressing& addr = mesh.lduAddr();
 
-    apply_policy(vf.size(), [&](auto policy)
+    const labelUList& ownStart = addr.ownerStartAddr();
+    const labelUList& neiStart = addr.losortStartAddr();
+    const labelUList& losort = addr.losortAddr();
+
+    labelRange cellRange(0, vf.size());
+
+    apply_policy(cellRange.size(), [&](auto policy)
     {
         std::transform
-        (   
-            policy, 
-            indices.begin(), 
-            indices.end(),
+        (
+            policy,
+            cellRange.begin(),
+            cellRange.end(),
             vf.begin(),
-            SurfaceIntegrateFunctor<Type,false>
-            (   
-                ssf,
-                mesh.lduAddr().ownerStartAddr(),
-                mesh.lduAddr().losortStartAddr(),
-                mesh.lduAddr().lowerAddr(),
-                mesh.lduAddr().upperAddr(),
-                mesh.lduAddr().losortAddr()
+            lduCellReduceFunctor
+            <
+                Type,
+                SurfaceSumContribution<Type>,
+                SurfaceSumContribution<Type>,
+                plusEqOp<Type>,
+                plusEqOp<Type>
+            >
+            (
+                pTraits<Type>::zero,
+                ownStart,
+                neiStart,
+                losort,
+                SurfaceSumContribution<Type>(ssf),
+                SurfaceSumContribution<Type>(ssf),
+                plusEqOp<Type>(),
+                plusEqOp<Type>()
             )
         );
     });
