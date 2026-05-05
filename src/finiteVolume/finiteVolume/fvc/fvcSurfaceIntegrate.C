@@ -177,25 +177,43 @@ void surfaceIntegrate
         const fvsPatchField<Type>& pssf = ssf.boundaryField()[patchi];
 
         #ifdef FOAM_OFFLOAD
-        const labelUList& pcells = mesh.lduAddr().patchSortCells(patchi);
-        const labelUList& plosort = mesh.lduAddr().patchSortAddr(patchi);
-        const labelUList& plosortStart = mesh.lduAddr().patchSortStartAddr(patchi);
+        const labelUList& patchCells = mesh.lduAddr().patchSortCells(patchi);
+        const labelUList& neiStart = mesh.lduAddr().patchSortStartAddr(patchi);
+        const labelUList& losort = mesh.lduAddr().patchSortAddr(patchi);
 
-        labelRange indices(pcells.size());
-        apply_policy(pcells.size(), [&](auto policy)
+        labelRange indices(patchCells.size());
+
+        auto neiFun =
+        [
+            &pssf
+        ]
+        (const label, const label facei)
+        {
+            return pssf[facei];
+        };
+
+        auto neiOp =
+        []
+        (Type& result, const Type& value)
+        {
+            result += value;
+        };
+
+        apply_policy(indices.size(), [&](auto policy)
         {
             std::for_each
             (
                 policy,
                 indices.begin(),
                 indices.end(),
-                surfaceIntegratePatchFunctor<Type>
-                (   
-                    pssf,
+                lduPatchCellReduceFunctor<Type, decltype(neiFun), decltype(neiOp)>
+                (
                     ivf,
-                    plosortStart,
-                    plosort,
-                    pcells
+                    neiStart,
+                    losort,
+                    patchCells,
+                    neiFun,
+                    neiOp
                 )
             );
         });
@@ -346,27 +364,48 @@ surfaceSum
         const fvsPatchField<Type>& pssf = ssf.boundaryField()[patchi];
 
         #ifdef FOAM_OFFLOAD
-        const labelUList& pcells = mesh.lduAddr().patchSortCells(patchi);
-        const labelUList& plosort = mesh.lduAddr().patchSortAddr(patchi);
-        const labelUList& plosortStart = mesh.lduAddr().patchSortStartAddr(patchi);
-        
-        labelRange indices(pcells.size());
+        const labelUList& patchCells =
+            mesh.lduAddr().patchSortCells(patchi);
 
-        apply_policy(pcells.size(),
-        [&](auto policy)
+        const labelUList& neiStart =
+            mesh.lduAddr().patchSortStartAddr(patchi);
+
+        const labelUList& losort =
+            mesh.lduAddr().patchSortAddr(patchi);
+
+        auto neiFun =
+        [
+            &pssf
+        ]
+        (const label, const label facei)
+        {
+            return pssf[facei];
+        };
+
+        auto neiOp =
+        []
+        (Type& result, const Type& value)
+        {
+            result += value;
+        };
+
+        labelRange indices(patchCells.size());
+
+        apply_policy(indices.size(), [&](auto policy)
         {
             std::for_each
             (
                 policy,
                 indices.begin(),
                 indices.end(),
-                surfaceIntegratePatchFunctor<Type>
-                (   
-                    pssf,
-                    vf.primitiveFieldRef(),
-                    plosortStart,
-                    plosort,
-                    pcells
+                lduPatchCellReduceFunctor<Type, decltype(neiFun), decltype(neiOp)>
+                (
+                    vf,
+                    neiStart,
+                    losort,
+                    patchCells,
+                    neiFun,
+                    neiOp
                 )
             );
         });
