@@ -95,54 +95,6 @@ namespace Foam
     };
 
 
-    template<class Type, class Fun, class Op>
-    struct lduAddressingPatchFunctor
-    {
-        Field<Type>& field_;
-        const labelUList& neiStart_;
-        const labelUList& losort_;
-        const labelUList& patchCells_;
-
-        Fun fun_;
-        Op op_;
-
-        lduAddressingPatchFunctor
-        (
-            Field<Type>& field,
-            const labelUList& neiStart,
-            const labelUList& losort,
-            const labelUList& patchCells,
-            const Fun fun,
-            const Op op
-        )
-        :
-            field_(field),
-            neiStart_(neiStart),
-            losort_(losort),
-            patchCells_(patchCells),
-            fun_(fun),
-            op_(op)
-        {}
-
-        void operator()(const label& id)
-        {
-            Type out = field_[patchCells_[id]];
-    
-            label nStart = neiStart_[id];
-            label nSize = neiStart_[id+1] - nStart;
-            label cellI = patchCells_[id];
-    
-            for(label i = 0; i<nSize; i++)
-            {
-                label face = losort_[nStart + i];
-                out = op_(out, fun_(cellI, face));
-            }
-
-            field[pcells[id]] = out;
-        }
-    };
-
-
     template<class Type, class LUType, class Op>
     struct matrixCoeffsMultiplyFunctor
     {
