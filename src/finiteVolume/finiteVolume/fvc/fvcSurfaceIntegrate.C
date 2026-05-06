@@ -42,73 +42,6 @@ namespace Foam
 
 namespace fvc
 {
-// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
-#ifdef FOAM_OFFLOAD
-template<class Type>
-struct SurfaceSumContribution
-{
-    const Field<Type>& issf_;
-
-    SurfaceSumContribution(const Field<Type>& issf)
-    :
-        issf_(issf)
-    {}
-
-    Type operator()(const label, const label facei) const
-    {
-        return issf_[facei];
-    }
-};
-
-template<class Type>
-struct surfaceIntegratePatchFunctor
-{
-    const Field<Type>& issf_;
-    Field<Type>& igInterpolate_;
-
-    const labelUList& neiStart_;
-    const labelUList& losort_;
-    const labelUList& patchCells_;
-
-    surfaceIntegratePatchFunctor
-    (
-        const Field<Type>& issf,
-        Field<Type>& igInterpolate,
-        const labelUList& neiStart,
-        const labelUList& losort,
-        const labelUList& patchCells
-    )
-    :
-        issf_(issf),
-        igInterpolate_(igInterpolate),
-        neiStart_(neiStart),
-        losort_(losort),
-        patchCells_(patchCells)
-    {}
-
-
-    bool operator()(const label id) const
-    {
-        const label celli = patchCells_[id];
-
-        Type result(igInterpolate_[celli]);
-
-        const label neiStart = neiStart_[id];
-        const label neiSize = neiStart_[id + 1] - neiStart;
-
-        for (label i = 0; i < neiSize; ++i)
-        {
-            const label facei = losort_[neiStart + i];
-            result += issf_[facei];
-        }
-
-        igInterpolate_[celli] = result;
-
-        return true;
-    }
-};
-// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
-#endif
 
 template<class Type>
 void surfaceIntegrate
@@ -128,6 +61,11 @@ void surfaceIntegrate
     const labelUList& neiStart = addr.losortStartAddr();
     const labelUList& losort = addr.losortAddr();
 
+    auto faceOp = [&](const label, const label facei)
+    {
+        return issf[facei];
+    };
+
     labelRange cellRange(0, ivf.size());
 
     apply_policy(cellRange.size(), [&](auto policy)
@@ -141,8 +79,8 @@ void surfaceIntegrate
             lduCellReduceFunctor
             <
                 Type,
-                SurfaceSumContribution<Type>,
-                SurfaceSumContribution<Type>,
+                decltype(faceOp),
+                decltype(faceOp),
                 plusEqOp<Type>,
                 minusEqOp<Type>
             >
@@ -151,8 +89,8 @@ void surfaceIntegrate
                 ownStart,
                 neiStart,
                 losort,
-                SurfaceSumContribution<Type>(issf),
-                SurfaceSumContribution<Type>(issf),
+                faceOp,
+                faceOp,
                 plusEqOp<Type>(),
                 minusEqOp<Type>()
             )
@@ -183,18 +121,12 @@ void surfaceIntegrate
 
         labelRange indices(patchCells.size());
 
-        auto neiFun =
-        [
-            &pssf
-        ]
-        (const label, const label facei)
+        auto neiFun = [&pssf](const label, const label facei)
         {
             return pssf[facei];
         };
 
-        auto neiOp =
-        []
-        (Type& result, const Type& value)
+        auto neiOp = [](Type& result, const Type& value)
         {
             result += value;
         };
@@ -206,7 +138,8 @@ void surfaceIntegrate
                 policy,
                 indices.begin(),
                 indices.end(),
-                lduPatchCellReduceFunctor<Type, decltype(neiFun), decltype(neiOp)>
+                lduPatchCellReduceFunctor<Type, decltype(neiFun),
+                    decltype(neiOp)>
                 (
                     ivf,
                     neiStart,
@@ -315,6 +248,11 @@ surfaceSum
     const labelUList& neiStart = addr.losortStartAddr();
     const labelUList& losort = addr.losortAddr();
 
+    auto faceOp = [&](const label, const label facei)
+    {
+        return ssf[facei];
+    };
+
     labelRange cellRange(0, vf.size());
 
     apply_policy(cellRange.size(), [&](auto policy)
@@ -328,8 +266,8 @@ surfaceSum
             lduCellReduceFunctor
             <
                 Type,
-                SurfaceSumContribution<Type>,
-                SurfaceSumContribution<Type>,
+                decltype(faceOp),
+                decltype(faceOp),
                 plusEqOp<Type>,
                 plusEqOp<Type>
             >
@@ -338,8 +276,8 @@ surfaceSum
                 ownStart,
                 neiStart,
                 losort,
-                SurfaceSumContribution<Type>(ssf),
-                SurfaceSumContribution<Type>(ssf),
+                faceOp,
+                faceOp,
                 plusEqOp<Type>(),
                 plusEqOp<Type>()
             )
@@ -373,18 +311,12 @@ surfaceSum
         const labelUList& losort =
             mesh.lduAddr().patchSortAddr(patchi);
 
-        auto neiFun =
-        [
-            &pssf
-        ]
-        (const label, const label facei)
+        auto neiFun = [&pssf](const label, const label facei)
         {
             return pssf[facei];
         };
 
-        auto neiOp =
-        []
-        (Type& result, const Type& value)
+        auto neiOp = [](Type& result, const Type& value)
         {
             result += value;
         };
@@ -398,7 +330,8 @@ surfaceSum
                 policy,
                 indices.begin(),
                 indices.end(),
-                lduPatchCellReduceFunctor<Type, decltype(neiFun), decltype(neiOp)>
+                lduPatchCellReduceFunctor<Type, decltype(neiFun),
+                    decltype(neiOp)>
                 (
                     vf,
                     neiStart,
