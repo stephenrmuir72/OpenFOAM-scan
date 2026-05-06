@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2016-2023 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -81,6 +82,7 @@ Usage
 
         // Optional entries (runtime modifiable)
         T       <Tname>;
+        phase   <word>;
 
         // Conditional mandatory entries (runtime modifiable)
 
@@ -127,6 +129,7 @@ Usage
       sigma     | Electrical conductivity as a function of temperature <!--
                 -->                                 | table | no   | -
       coordinateSystem | User-specified coordinate system | coordSystem | no | -
+      phase     | Name of phase | word | no | -
     \endtable
 
     The inherited entries are elaborated in:
@@ -184,6 +187,9 @@ class jouleHeatingSource
 
         //- Name of temperature field
         word TName_;
+
+        //- Name of phase (used for looking up thermo properties)
+        word phaseName_;
 
         //- Electrical potential field / [V]
         volScalarField V_;

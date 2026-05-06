@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2016-2024 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -107,6 +108,7 @@ Foam::fv::jouleHeatingSource::jouleHeatingSource
 :
     fv::option(sourceName, modelType, dict, mesh),
     TName_("T"),
+    phaseName_(),
     V_
     (
         IOobject
@@ -131,16 +133,20 @@ Foam::fv::jouleHeatingSource::jouleHeatingSource
     curTimeIndex_(-1),
     anisotropicElectricalConductivity_(false)
 {
+    read(dict);
+
     // Set the field name to that of the energy
     // field from which the temperature is obtained
 
-    const auto& thermo = mesh_.lookupObject<basicThermo>(basicThermo::dictName);
+    const auto& thermo =
+        mesh_.lookupObject<basicThermo>
+        (
+            IOobject::groupName(basicThermo::dictName, phaseName_)
+        );
 
     fieldNames_.resize(1, thermo.he().name());
 
     fv::option::resetApplied();
-
-    read(dict);
 }
 
 
@@ -212,6 +218,7 @@ bool Foam::fv::jouleHeatingSource::read(const dictionary& dict)
     if (fv::option::read(dict))
     {
         coeffs_.readIfPresent("T", TName_);
+        coeffs_.readIfPresent("phase", phaseName_);
 
         anisotropicElectricalConductivity_ =
             coeffs_.get<bool>("anisotropicElectricalConductivity");
