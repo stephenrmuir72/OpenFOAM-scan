@@ -30,6 +30,7 @@ License
 #include "mathematicalConstants.H"
 #include "surfaceFilmRegionModel.H"
 #include "liquidFilmBase.H"
+#include "areaFields.H"
 
 using namespace Foam::constant;
 
@@ -421,8 +422,20 @@ void Foam::SurfaceFilmModel<CloudType>::cacheFilmFields
     diameterParcelPatch_.resize(nFaces, Zero);
     map.mapToSurface(film.cloudDiameterTrans(), diameterParcelPatch_);
 
-    // Direct copy (one-to-one mapping)
-    UFilmPatch_ = film.Uf().primitiveField();
+    // Use buffered injection velocity if available (from filmSeparation
+    // accumulation), otherwise fall back to instantaneous film velocity
+    const auto* UfInjPtr =
+        film.regionMesh().thisDb().findObject<areaVectorField>("UfInjection");
+
+    if (UfInjPtr)
+    {
+        UFilmPatch_ = UfInjPtr->primitiveField();
+    }
+    else
+    {
+        // Direct copy (one-to-one mapping)
+        UFilmPatch_ = film.Uf().primitiveField();
+    }
 
     // Direct copy (one-to-one mapping)
     rhoFilmPatch_ = film.rho().primitiveField();
