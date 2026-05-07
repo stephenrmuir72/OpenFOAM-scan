@@ -234,7 +234,7 @@ protected:
         template<class Type2>
         void subtractFromInternalField
         (
-            const labelUList& sortAddr,
+            const labelUList& addr,
             const labelUList& sort,
             const labelUList& sortStart,
             const Field<Type2>& pf,
