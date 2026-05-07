@@ -212,7 +212,8 @@ void Foam::SurfaceFilmModel<CloudType>::injectParticles
             }
             else
             {
-                // TODO: cache mass and re-distribute?
+                // Zero mass so addSources does not subtract from film
+                massParcelPatch_[facei] = 0;
                 delete pPtr;
             }
         }
@@ -280,7 +281,8 @@ void Foam::SurfaceFilmModel<CloudType>::injectParticles
             }
             else
             {
-                // TODO: cache mass and re-distribute?
+                // Zero mass so addSources does not subtract from film
+                massParcelPatch_[filmFacei] = 0;
                 delete pPtr;
             }
         }
