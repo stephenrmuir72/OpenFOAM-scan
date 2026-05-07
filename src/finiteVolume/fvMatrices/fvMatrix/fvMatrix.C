@@ -176,9 +176,9 @@ void Foam::fvMatrix<Type>::subtractFromInternalField
         result -= value;
     };
 
-    labelRange indices(patchCells.size());
+    labelRange indices(pf.size());
 
-    apply_policy(indices.size(), [&](auto policy)
+    apply_policy(pf.size(), [&](auto policy)
     {
         std::for_each
         (
@@ -190,7 +190,7 @@ void Foam::fvMatrix<Type>::subtractFromInternalField
                 intf,
                 sortStart,
                 sort,
-                patchCells,
+                addr,
                 neiFun,
                 neiOp
             )
@@ -499,9 +499,9 @@ void Foam::fvMatrix<Type>::setValuesFromList
         std::for_each
         (
             policy,
-            indices.begin(), 
+            indices.begin(),
             indices.end(),
-            [&](const auto& i) 
+            [&](const auto& i)
             {
                 // Find the index of celli in cellLabels
                 const label celli = cellLabels[i];
@@ -1361,7 +1361,6 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
 
         if (ptf.size())
         {
-            const labelUList& pa = lduAddr().patchAddr(patchi);
             const Field<Type>& iCoeffs = internalCoeffs_[patchi];
 
             if (ptf.coupled())
@@ -1437,6 +1436,8 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                     );
                 });
                 #else
+                const labelUList& pa = lduAddr().patchAddr(patchi);
+
                 forAll(pa, face)
                 {
                     D[pa[face]] += component(iCoeffs[face], 0);
@@ -1489,6 +1490,8 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                     );
                 });
                 #else
+                const labelUList& pa = lduAddr().patchAddr(patchi);
+
                 forAll(pa, face)
                 {
                     D[pa[face]] += cmptMax(cmptMag(iCoeffs[face]));
@@ -1577,7 +1580,6 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
 
         if (ptf.size())
         {
-            const labelUList& pa = lduAddr().patchAddr(patchi);
             const Field<Type>& iCoeffs = internalCoeffs_[patchi];
 
             if (ptf.coupled())
@@ -1623,6 +1625,8 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                     );
                 });
                 #else
+                const labelUList& pa = lduAddr().patchAddr(patchi);
+
                 forAll(pa, face)
                 {
                     D[pa[face]] -= component(iCoeffs[face], 0);
@@ -1672,6 +1676,8 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                     );
                 });
                 #else
+                const labelUList& pa = lduAddr().patchAddr(patchi);
+
                 forAll(pa, face)
                 {
                     D[pa[face]] -= cmptMin(iCoeffs[face]);
