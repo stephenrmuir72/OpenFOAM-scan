@@ -67,7 +67,7 @@ inline T deviceZero()
 #ifdef FOAM_OFFLOAD
 
 template<class Type, class OwnFun, class NeiFun, class OwnOp, class NeiOp>
-struct lduCellReduceFunctor
+struct cellReduceFunctor
 {
     Type zero_;
 
@@ -80,7 +80,7 @@ struct lduCellReduceFunctor
     OwnOp ownOp_;
     NeiOp neiOp_;
 
-    lduCellReduceFunctor
+    cellReduceFunctor
     (
         const Type& zero,
         const labelUList& ownStart,
@@ -129,7 +129,7 @@ struct lduCellReduceFunctor
 };
 
 template<class Type, class NeiFun, class NeiOp>
-struct lduPatchCellReduceFunctor
+struct patchCellReduceFunctor
 {
     Field<Type>& field_;
 
@@ -140,7 +140,7 @@ struct lduPatchCellReduceFunctor
     NeiFun neiFun_;
     NeiOp neiOp_;
 
-    lduPatchCellReduceFunctor
+    patchCellReduceFunctor
     (
         Field<Type>& field,
         const labelUList& neiStart,

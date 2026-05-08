@@ -83,20 +83,10 @@ inline void Foam::UList<T>::fill_uniform(const T& val)
     {
         // For arithmetic types, we can use a more efficient fill
         // operation that avoids the overhead of the generic algorithm.
-        if (this->size_ > 1024) // Arbitrary threshold for parallel execution
+        apply_policy(this->size_, [&](auto policy)
         {
-            apply_policy(this->size_, [&](auto policy)
-            {
-                std::fill_n(policy, this->v_, this->size_, val);
-            });
-        }
-        else
-        {
-            std::fill_n
-            (
-                this->v_, this->size_, val
-            );
-        }
+            std::fill_n(policy, this->v_, this->size_, val);
+        });
     }
     else
     #endif

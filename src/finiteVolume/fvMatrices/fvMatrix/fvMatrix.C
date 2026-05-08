@@ -86,7 +86,7 @@ void Foam::fvMatrix<Type>::addToInternalField
             policy,
             indices.begin(),
             indices.end(),
-            lduPatchCellReduceFunctor<Type2, decltype(neiFun), decltype(neiOp)>
+            patchCellReduceFunctor<Type2, decltype(neiFun), decltype(neiOp)>
             (
                 intf,
                 sortStart,
@@ -185,7 +185,7 @@ void Foam::fvMatrix<Type>::subtractFromInternalField
             policy,
             indices.begin(),
             indices.end(),
-            lduPatchCellReduceFunctor<Type2, decltype(neiFun), decltype(neiOp)>
+            patchCellReduceFunctor<Type2, decltype(neiFun), decltype(neiOp)>
             (
                 intf,
                 sortStart,
@@ -378,7 +378,7 @@ void Foam::fvMatrix<Type>::addBoundarySource
                             policy,
                             indices.begin(),
                             indices.end(),
-                            lduPatchCellReduceFunctor<Type, decltype(neiFun),
+                            patchCellReduceFunctor<Type, decltype(neiFun),
                                 decltype(neiOp)>
                             (
                                 source,
@@ -1398,7 +1398,7 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                         policy,
                         cells.begin(),
                         cells.end(),
-                        lduPatchCellReduceFunctor
+                        patchCellReduceFunctor
                         <
                             scalar,
                             decltype(dFun),
@@ -1419,7 +1419,7 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                         policy,
                         cells.begin(),
                         cells.end(),
-                        lduPatchCellReduceFunctor
+                        patchCellReduceFunctor
                         <
                             scalar,
                             decltype(sumOffFun),
@@ -1473,7 +1473,7 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                         policy,
                         cells.begin(),
                         cells.end(),
-                        lduPatchCellReduceFunctor
+                        patchCellReduceFunctor
                         <
                             scalar,
                             decltype(faceOp),
@@ -1608,7 +1608,7 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                         policy,
                         cells.begin(),
                         cells.end(),
-                        lduPatchCellReduceFunctor
+                        patchCellReduceFunctor
                         <
                             scalar,
                             decltype(faceOp),
@@ -1659,7 +1659,7 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                         policy,
                         cells.begin(),
                         cells.end(),
-                        lduPatchCellReduceFunctor
+                        patchCellReduceFunctor
                         <
                             scalar,
                             decltype(faceOp),
