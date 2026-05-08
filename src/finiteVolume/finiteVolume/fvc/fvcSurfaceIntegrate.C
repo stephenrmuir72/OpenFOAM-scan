@@ -76,7 +76,7 @@ void surfaceIntegrate
             cellRange.begin(),
             cellRange.end(),
             ivf.begin(),
-            lduCellReduceFunctor
+            cellReduceFunctor
             <
                 Type,
                 decltype(faceOp),
@@ -138,7 +138,7 @@ void surfaceIntegrate
                 policy,
                 indices.begin(),
                 indices.end(),
-                lduPatchCellReduceFunctor<Type, decltype(neiFun),
+                patchCellReduceFunctor<Type, decltype(neiFun),
                     decltype(neiOp)>
                 (
                     ivf,
@@ -263,7 +263,7 @@ surfaceSum
             cellRange.begin(),
             cellRange.end(),
             vf.begin(),
-            lduCellReduceFunctor
+            cellReduceFunctor
             <
                 Type,
                 decltype(faceOp),
@@ -330,7 +330,7 @@ surfaceSum
                 policy,
                 indices.begin(),
                 indices.end(),
-                lduPatchCellReduceFunctor<Type, decltype(neiFun),
+                patchCellReduceFunctor<Type, decltype(neiFun),
                     decltype(neiOp)>
                 (
                     vf,

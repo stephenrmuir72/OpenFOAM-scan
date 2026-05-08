@@ -35,36 +35,6 @@ License
 
 // * * * * * * * * * * * * * * * Global Functions  * * * * * * * * * * * * * //
 
-#ifdef FOAM_OFFLOAD
-namespace Foam
-{
-    template<bool positive>
-    struct adjustPhiFilter : public std::unary_function<scalar,scalar>
-    {
-        scalar operator()(const scalar& s)
-        {
-            if (positive)
-                return s>0?s:0;
-            else
-                return s<0?s:0;
-        } 
-};
-
-    struct adjustPhiCorrectFunctor : public std::unary_function<scalar,scalar>
-    {
-        const scalar massCorr;
-        adjustPhiCorrectFunctor(const scalar _massCorr):massCorr(_massCorr){}
-        scalar operator()(const scalar& phi)
-        {
-            if (phi > 0.0)
-                return phi * massCorr;
-            else
-                return phi;
-        }
-    };
-}
-#endif
-
 bool Foam::adjustPhi
 (
     surfaceScalarField& phi,
@@ -88,40 +58,39 @@ bool Foam::adjustPhi
 
             if (!phip.coupled())
             {
-                #ifdef FOAM_OFFLOAD
-                apply_policy(phip.size(), [&](auto policy)                                    
-                { 
-                    massIn =  std::transform_reduce
+                if (Up.fixesValue() && !isA<inletOutletFvPatchVectorField>(Up))
+                {
+                    #ifdef FOAM_OFFLOAD
+                    apply_policy(phip.size(), [&](auto policy)
+                    { 
+                        massIn =  std::transform_reduce
                         (
                             policy,
                             phip.begin(),
                             phip.end(),
                             0.0, // initial value
-                            std::minus<scalar>(),
-                            [](const scalar& val) 
-                            { 
-                                return adjustPhiFilter<false>()(val); 
+                            std::plus<scalar>(),
+                            [](const scalar& val)
+                            {
+                                return val < 0 ? -val : 0;
                             }
-                         );
-                });
-                #endif
-                if (Up.fixesValue() && !isA<inletOutletFvPatchVectorField>(Up))
-                {
-                    #ifdef FOAM_OFFLOAD
+                        );
+                    });
+                    
                     apply_policy(phip.size(), [&](auto policy)
                     {  
                         fixedMassOut = std::transform_reduce
-                            (
-                                policy,
-                                phip.begin(),
-                                phip.end(),
-                                0.0, // initial value
-                                std::plus<scalar>(),
-                                [](const scalar& val) 
-                                {
-                                     return adjustPhiFilter<true>()(val); 
-                                } // mapping function
-                            );
+                        (
+                            policy,
+                            phip.begin(),
+                            phip.end(),
+                            0.0, // initial value
+                            std::plus<scalar>(),
+                            [](const scalar& val)
+                            {
+                                return val > 0 ? val : 0;
+                            }
+                        );
                     });
                     #else
                     forAll(phip, i)
@@ -136,11 +105,26 @@ bool Foam::adjustPhi
                         }
                     }
                     #endif
-
                 }
                 else
                 {
                     #ifdef FOAM_OFFLOAD
+                    apply_policy(phip.size(), [&](auto policy)
+                    { 
+                        massIn =  std::transform_reduce
+                        (
+                            policy,
+                            phip.begin(),
+                            phip.end(),
+                            0.0, // initial value
+                            std::plus<scalar>(),
+                            [](const scalar& val)
+                            {
+                                return val < 0 ? -val : 0;
+                            }
+                        );
+                    });
+
                     apply_policy(phip.size(), [&](auto policy)
                     {
                         adjustableMassOut = std::transform_reduce
@@ -151,8 +135,8 @@ bool Foam::adjustPhi
                             0.0, // initial value
                             std::plus<scalar>(), // sum operation
                             [](const scalar& val)
-                            { 
-                                return adjustPhiFilter<true>()(val); 
+                            {
+                                return val > 0 ? val : 0;
                             }
                         ); 
                     });
@@ -226,7 +210,10 @@ bool Foam::adjustPhi
                             phip.begin(),
                             phip.end(),
                             phip.begin(),
-                            adjustPhiCorrectFunctor(massCorr)
+                            [massCorr](const scalar& phi)
+                            {
+                                return phi > scalar(0) ? phi*massCorr : phi;
+                            }
                         );
                     });
                     #else

@@ -189,35 +189,23 @@ protected:
         template<class Type2>
         void addToInternalField
         (
-            const labelUList& addr,
-            const Field<Type2>& pf,
-            Field<Type2>& intf
-        ) const;
-
-        template<class Type2>
-        void addToInternalField
-        (
             const labelUList& sortAddr,
-            const labelUList& sort,
-            const labelUList& sortStart, 
-            const Field<Type2>& pf,
-            Field<Type2>& intf
-        ) const;
-
-        template<class Type2>
-        void addToInternalField
-        (
-            const labelUList& addr,
-            const tmp<Field<Type2>>& tpf,
-            Field<Type2>& intf
-        ) const;
-
-        template<class Type2>
-        void addToInternalField
-        (
-            const labelUList& sortAddr,
+            #ifdef FOAM_OFFLOAD
             const labelUList& sort,
             const labelUList& sortStart,
+            #endif 
+            const Field<Type2>& pf,
+            Field<Type2>& intf
+        ) const;
+
+        template<class Type2>
+        void addToInternalField
+        (
+            const labelUList& sortAddr,
+            #ifdef FOAM_OFFLOAD
+            const labelUList& sort,
+            const labelUList& sortStart,
+            #endif
             const tmp<Field<Type2>>& tpf,
             Field<Type2>& intf
         ) const;
@@ -227,6 +215,10 @@ protected:
         void subtractFromInternalField
         (
             const labelUList& addr,
+            #ifdef FOAM_OFFLOAD
+            const labelUList& sort,
+            const labelUList& sortStart,
+            #endif
             const Field<Type2>& pf,
             Field<Type2>& intf
         ) const;
@@ -235,26 +227,10 @@ protected:
         void subtractFromInternalField
         (
             const labelUList& addr,
+            #ifdef FOAM_OFFLOAD
             const labelUList& sort,
             const labelUList& sortStart,
-            const Field<Type2>& pf,
-            Field<Type2>& intf
-        ) const;
-
-        template<class Type2>
-        void subtractFromInternalField
-        (
-            const labelUList& addr,
-            const tmp<Field<Type2>>& tpf,
-            Field<Type2>& intf
-        ) const;
-
-        template<class Type2>
-        void subtractFromInternalField
-        (
-            const labelUList& addr,
-            const labelUList& sort,
-            const labelUList& sortStart,
+            #endif
             const tmp<Field<Type2>>& tpf,
             Field<Type2>& intf
         ) const;
@@ -296,6 +272,12 @@ protected:
 
 
 public:
+
+    // STL type definitions
+
+        //- The value type the matrix operates on
+        typedef Type value_type;
+
 
     //- Solver class returned by the solver function
     //- used for systems in which it is useful to cache the solver for reuse.
@@ -735,8 +717,8 @@ public:
         void operator+=(const dimensioned<Type>&);
         void operator-=(const dimensioned<Type>&);
 
-        void operator+=(const Foam::zero) {}
-        void operator-=(const Foam::zero) {}
+        void operator+=(Foam::zero) {}
+        void operator-=(Foam::zero) {}
 
         void operator*=(const volScalarField::Internal&);
         void operator*=(const tmp<volScalarField::Internal>&);
@@ -786,6 +768,9 @@ public:
 
 
     // Expression templates
+
+        //- Have unique tag
+        using is_fvMatrix = void;
 
         //- Construct given a field to solve for and expressions for
         //- all the components
