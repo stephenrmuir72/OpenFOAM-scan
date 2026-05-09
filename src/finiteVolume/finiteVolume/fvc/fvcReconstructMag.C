@@ -49,42 +49,6 @@ namespace fvc
 {
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
-#ifdef FOAM_OFFLOAD
-struct reconstructMagFunctor
-{
-    const surfaceVectorField& Sf_;
-    const surfaceVectorField& Cf_;
-    const volVectorField& C_;
-    const surfaceScalarField& ssf_;
-    const surfaceScalarField& magSf_;
-
-
-    reconstructMagFunctor
-    (
-        const surfaceVectorField& Sf,
-        const surfaceVectorField& Cf,
-        const volVectorField& C,
-        const surfaceScalarField& ssf,
-        const surfaceScalarField& magSf
-    )
-    :
-        Sf_(Sf),
-        Cf_(Cf),
-        C_(C),
-        ssf_(ssf),
-        magSf_(magSf)
-    {}
-
-
-    scalar operator()(const label celli, const label facei) const
-    {
-        return
-        (
-            Sf_[facei] & (Cf_[facei] - C_[celli])
-        )*ssf_[facei]/magSf_[facei];
-    }
-};
-#endif
 
 tmp<volScalarField> reconstructMag(const surfaceScalarField& ssf)
 {
@@ -117,27 +81,65 @@ tmp<volScalarField> reconstructMag(const surfaceScalarField& ssf)
     );
     scalarField& rf = treconField.ref();
     #ifdef FOAM_OFFLOAD
-    reconstructMagFunctor fun
-    (
-        Sf,
-        Cf,
-        C,
-        ssf,
-        magSf
-    );
+    const labelUList& ownStart = mesh.lduAddr().ownerStartAddr();
+    const labelUList& neiStart = mesh.lduAddr().losortStartAddr();
+    const labelUList& losort = mesh.lduAddr().losortAddr();
 
-     // v is a random-access sequence of size n, all zeros
-    std::vector<int> v(owner.size(), 0);
-    matrixOperation
-    (
-        v.begin(),
-        rf,
-        mesh.lduAddr(),
-        fun,
-        fun,
-        sumOp<scalar>(),
-        minusOp<scalar>()
-    );
+    auto ownFun = [&Sf, &Cf, &C, &ssf, &magSf]
+        (const label celli, const label facei)
+    {
+        return
+        (
+            (Sf[facei] & (Cf[facei] - C[celli]))
+        *ssf[facei]/magSf[facei]
+        );
+    };
+
+    auto neiFun =[&Sf, &Cf, &C, &ssf, &magSf]
+        (const label celli, const label facei)
+    {
+        return
+        (
+        -((Sf[facei] & (Cf[facei] - C[celli]))
+            *ssf[facei]/magSf[facei])
+        );
+    };
+
+    auto plusOp = [](scalar& result, const scalar value)
+    {
+        result += value;
+    };
+
+    labelRange cells(rf.size());
+
+    apply_policy(cells.size(), [&](auto policy)
+    {
+        std::transform
+        (
+            policy,
+            cells.begin(),
+            cells.end(),
+            rf.begin(),
+            cellReduceFunctor
+            <
+                scalar,
+                decltype(ownFun),
+                decltype(neiFun),
+                decltype(plusOp),
+                decltype(plusOp)
+            >
+            (
+                pTraits<scalar>::zero,
+                ownStart,
+                neiStart,
+                losort,
+                ownFun,
+                neiFun,
+                plusOp,
+                plusOp
+            )
+        );
+    });
     #else
     forAll(owner, facei)
     {
@@ -161,34 +163,41 @@ tmp<volScalarField> reconstructMag(const surfaceScalarField& ssf)
         const scalarField& pMagSf = magSf.boundaryField()[patchi];
 
         #ifdef FOAM_OFFLOAD
-        const labelList& pcells = mesh.lduAddr().patchSortCells(patchi);
+        const labelUList& patchCells = mesh.lduAddr().patchSortCells(patchi);
+        const labelUList& sort = mesh.lduAddr().patchSortAddr(patchi);
+        const labelUList& sortStart = mesh.lduAddr().patchSortStartAddr(patchi);
 
-        const labelList& losort = mesh.lduAddr().patchSortAddr(patchi);
-        const labelList& losortStart = 
-            mesh.lduAddr().patchSortStartAddr(patchi);
+        // patch-local views (avoid repeated boundaryField() inside kernel)
+        const auto& pssf = ssf.boundaryField()[patchi];
 
-        labelRange index(pcells.size());
-        apply_policy(pcells.size(), [&](auto policy)
+        labelRange indices(pOwner.size());
+
+        // device-callable lambda
+        auto neiFun = [&](const label id, const label facei) -> scalar
+        {
+            const label celli = pOwner[facei];
+
+            return (pSf[facei] & (pCf[facei] - C[celli]))
+                *pssf[facei]/pMagSf[facei];
+        };
+
+        apply_policy(pOwner.size(), [&]( auto policy )
         {
             std::for_each
             (
                 policy,
-                index.begin(),
-                index.end(),
-                [&](size_t i)
-                {
-                    label celli = pcells[i];
-                    scalar out = rf[celli];
-                    label nStart = losortStart[i];
-                    label nSize = losortStart[i+1] - nStart;
-                    for (label j = 0; j < nSize; ++j)
-                    {
-                        label facei = losort[nStart + j];
-                        out += (Sf[facei] & (Cf[facei] - C[celli]))
-                            *ssf[facei]/magSf[facei];
-                    }
-                    rf[celli] = out;
-                }
+                indices.begin(),
+                indices.end(),
+                patchCellReduceFunctor<scalar, decltype(neiFun),
+                    plusEqOp<scalar>>
+                (
+                    rf,
+                    sortStart,
+                    sort,
+                    patchCells,
+                    neiFun,
+                    plusEqOp<scalar>()
+                )
             );
         });
         #else
