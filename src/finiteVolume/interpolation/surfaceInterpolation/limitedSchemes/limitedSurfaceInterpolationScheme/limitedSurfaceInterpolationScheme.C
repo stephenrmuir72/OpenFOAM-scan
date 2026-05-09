@@ -146,12 +146,23 @@ Foam::limitedSurfaceInterpolationScheme<Type>::weights
 
     scalarField& pWeights = Weights.primitiveFieldRef();
 
-    forAll(pWeights, face)
+    labelRange faceRange(pWeights.size());
+
+    apply_policy(pWeights.size(), [&](auto policy)
     {
-        pWeights[face] =
-            pWeights[face]*CDweights[face]
-          + (1.0 - pWeights[face])*pos0(faceFlux_[face]);
-    }
+        std::for_each
+        (
+            policy,
+            faceRange.begin(),
+            faceRange.end(),
+            [&](const label face)
+            {
+                pWeights[face] =
+                    pWeights[face]*CDweights[face]
+                  + (1.0 - pWeights[face])*pos0(faceFlux_[face]);
+            }
+        );
+    });
 
     surfaceScalarField::Boundary& bWeights =
         Weights.boundaryFieldRef();
@@ -162,13 +173,25 @@ Foam::limitedSurfaceInterpolationScheme<Type>::weights
 
         const scalarField& pCDweights = CDweights.boundaryField()[patchi];
         const scalarField& pFaceFlux = faceFlux_.boundaryField()[patchi];
+        
+        labelRange faceRange(pWeights.size());
 
-        forAll(pWeights, face)
+        apply_policy(pWeights.size(),
+        [&](auto policy)
         {
-            pWeights[face] =
-                pWeights[face]*pCDweights[face]
-              + (1.0 - pWeights[face])*pos0(pFaceFlux[face]);
-        }
+            std::for_each
+            (
+                policy,
+                faceRange.begin(),
+                faceRange.end(),
+                [&](const label face)
+                {
+                    pWeights[face] =
+                        pWeights[face]*pCDweights[face]
+                    + (1.0 - pWeights[face])*pos0(pFaceFlux[face]);
+                }
+            );
+        });
     }
 
     return tLimiter;
