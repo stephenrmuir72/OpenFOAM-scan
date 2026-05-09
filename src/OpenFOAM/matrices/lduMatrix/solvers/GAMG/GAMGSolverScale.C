@@ -60,11 +60,48 @@ void Foam::GAMGSolver::scale
 
     FixedList<solveScalar, 2> scalingFactor(Zero);
 
+    #ifdef FOAM_OFFLOAD
+    auto transform_op = [&](label i) -> FixedList<solveScalar, 2>
+    {
+        solveScalar v = fieldPtr[i];
+        return FixedList<solveScalar, 2>
+        {
+            v * sourcePtr[i],
+            v * AcfPtr[i]
+        };
+    };
+
+    auto reduce_op = [](const FixedList<solveScalar, 2>& a,
+        const FixedList<solveScalar, 2>& b) -> FixedList<solveScalar, 2> 
+    {
+        return FixedList<solveScalar, 2>
+        {
+            a[0] + b[0],
+            a[1] + b[1]
+        };
+    };
+
+    const labelRange cellRange(nCells);
+
+    apply_policy(cellRange.size(), [&](auto policy)
+    {
+        scalingFactor = std::transform_reduce
+        (
+            policy,
+            cellRange.begin(),
+            cellRange.end(),
+            FixedList<solveScalar, 2>(Zero),
+            reduce_op,
+            transform_op
+        );
+    });
+    #else
     for (label i=0; i<nCells; i++)
     {
         scalingFactor[0] += fieldPtr[i]*sourcePtr[i];
         scalingFactor[1] += fieldPtr[i]*AcfPtr[i];
     }
+    #endif
 
     A.mesh().reduce(scalingFactor, sumOp<solveScalar>());
 
@@ -82,10 +119,20 @@ void Foam::GAMGSolver::scale
     const scalarField& D = A.diag();
     const scalar* const __restrict__ DPtr = D.begin();
 
-    for (label i=0; i<nCells; i++)
+    apply_policy(cellRange.size(), [&](auto policy)
     {
-        fieldPtr[i] = sf*fieldPtr[i] + (sourcePtr[i] - sf*AcfPtr[i])/DPtr[i];
-    }
+        std::for_each
+        (
+            policy,
+            cellRange.begin(),
+            cellRange.end(),
+            [&](const auto& i)
+            {
+                fieldPtr[i] =
+                    sf*fieldPtr[i] + (sourcePtr[i] - sf*AcfPtr[i])/DPtr[i];
+            }
+        );
+    });
 }
 
 

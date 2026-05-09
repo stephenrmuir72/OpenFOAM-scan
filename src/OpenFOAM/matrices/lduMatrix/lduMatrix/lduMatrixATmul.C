@@ -519,7 +519,7 @@ void Foam::lduMatrix::residual
         (
             psi,
             lower(),
-            lduAddr().upperAddr(),
+            lduAddr().lowerAddr(),
             negateUnaryOperatorFunctor<scalar,scalar>()
         )
     );
