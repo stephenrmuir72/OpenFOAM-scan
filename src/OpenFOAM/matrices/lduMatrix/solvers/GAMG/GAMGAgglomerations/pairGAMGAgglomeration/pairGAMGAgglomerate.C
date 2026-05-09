@@ -209,6 +209,13 @@ void Foam::pairGAMGAgglomeration::agglomerate
         {
             nCells_[nCreatedLevels] = nCoarseCells;
             restrictAddressing_.set(nCreatedLevels, finalAgglomPtr);
+            #ifdef FOAM_OFFLOAD
+            const labelList restrictAddressingTmp
+            (
+                restrictAddressing_[nCreatedLevels]
+            );
+            buildFullRestrictAddr(restrictAddressingTmp, nCreatedLevels);
+            #endif
         }
         else
         {
