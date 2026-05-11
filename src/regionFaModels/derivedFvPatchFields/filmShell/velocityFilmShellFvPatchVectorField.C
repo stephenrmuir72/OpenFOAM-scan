@@ -176,6 +176,11 @@ void velocityFilmShellFvPatchVectorField::updateCoeffs()
     // Execute the change only once per time-step
     if (curTimeIndex_ != this->db().time().timeIndex())
     {
+        Info<< "velocityFilmShellFvPatchVectorField: updating coefficients for patch "
+            << patch().index() 
+            << " patch size= " << patch().size() << " at time " << this->db().time().timeName()
+            << endl;
+
         vectorField& pfld = *this;
 
         auto& baffle = baffle_();
