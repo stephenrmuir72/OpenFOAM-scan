@@ -429,6 +429,10 @@ void liquidFilmBase::postEvolveRegion()
         momentumSource_.write();
     }
 
+    Info<< "[liquidFilmBase:postEvolveRegion] t="
+        << primaryMesh().time().timeOutputValue()
+        << endl;
+
     massSource_.boundaryFieldRef() = Zero;
     pnSource_.boundaryFieldRef() = Zero;
     momentumSource_.boundaryFieldRef() = Zero;
