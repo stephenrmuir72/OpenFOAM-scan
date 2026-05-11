@@ -280,11 +280,41 @@ void liquidFilmModel::preEvolveRegion()
 
     vsm().mapToSurface(pnSource_, pnSp_.primitiveFieldRef());
 
+    // Conservation debug: source terms received from Lagrangian
+    if (debug)
+    {
+        // Log raw mapped values BEFORE rate conversion
+        const scalar totalMassSource =
+            gSum(rhoSp_.primitiveField());
+        const vector totalMomSource =
+            gSum(USp_.primitiveField());
+
+        Info<< "[liquidFilmModel:preEvolve] t="
+            << primaryMesh().time().timeOutputValue()
+            << " totalMassSource(raw)=" << totalMassSource
+            << " totalMomSource(raw)=" << totalMomSource
+            << endl;
+    }
 
     // Calculate rate per area
     rhoSp_.primitiveFieldRef() *= rAreaDeltaT/rho_;
     USp_.primitiveFieldRef() *= rAreaDeltaT/rho_;
     pnSp_.primitiveFieldRef() *= rAreaDeltaT/rho_;
+
+    // Conservation debug: rate-converted source terms
+    if (debug)
+    {
+        const scalar totalRhoSp =
+            gSum(rhoSp_.primitiveField() * regionMesh().S().field());
+        const vector totalUSp =
+            gSum(USp_.primitiveField() * regionMesh().S().field());
+
+        Info<< "[liquidFilmModel:preEvolve] t="
+            << primaryMesh().time().timeOutputValue()
+            << " totalRhoSp*S=" << totalRhoSp
+            << " totalUSp*S=" << totalUSp
+            << endl;
+    }
 
     rhoSp_.relax();
     pnSp_.relax();

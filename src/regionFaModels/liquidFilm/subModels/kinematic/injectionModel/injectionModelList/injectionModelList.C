@@ -27,6 +27,7 @@ License
 
 #include "injectionModelList.H"
 #include "volFields.H"
+#include "PstreamReduceOps.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -137,6 +138,16 @@ void injectionModelList::correct
         }
 
         massInjected_ += gSum(massToInject.boundaryField()[patchi]);
+
+        // Conservation debug: single-patch mapping verification
+        if (injectionModel::debug)
+        {
+            Info<< "[injectionModelList] t="
+                << film().primaryMesh().time().timeOutputValue()
+                << " single-patch mapping: massInjected="
+                << gSum(massToInject.boundaryField()[patchi])
+                << endl;
+        }
     }
     else
     {
@@ -172,6 +183,9 @@ void injectionModelList::correct
         massInjected_ += gSum(massToInjectTmp);
 
         // Transcribe to boundary patches
+        label localSkippedFaces = 0;
+        scalar localSkippedMass = 0;
+
         forAll(patchFaces, i)
         {
             const labelPair& patchAndFace = patchFaces[i];
@@ -184,6 +198,31 @@ void injectionModelList::correct
                 diameterToInject.boundaryFieldRef()[patchAndFace]
                     = diameterToInjectTmp[i];
             }
+            else if (massToInjectTmp[i] > VSMALL)
+            {
+                // Mass lost during mapping (no valid patch mapping)
+                ++localSkippedFaces;
+                localSkippedMass += massToInjectTmp[i];
+            }
+        }
+
+        // Conservation debug: multi-patch mapping verification
+        if (injectionModel::debug)
+        {
+            Info<< "[injectionModelList] t="
+                << film().primaryMesh().time().timeOutputValue()
+                << " multi-patch mapping: massInjected="
+                << gSum(massToInjectTmp);
+
+            if (localSkippedFaces > 0)
+            {
+                Info<< " WARNING: skippedFaces="
+                    << returnReduce(localSkippedFaces, sumOp<label>())
+                    << " skippedMass="
+                    << returnReduce(localSkippedMass, sumOp<scalar>());
+            }
+
+            Info<< endl;
         }
     }
 }

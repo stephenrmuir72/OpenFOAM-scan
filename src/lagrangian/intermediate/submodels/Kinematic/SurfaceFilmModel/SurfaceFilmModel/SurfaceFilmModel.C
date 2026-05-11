@@ -31,6 +31,7 @@ License
 #include "surfaceFilmRegionModel.H"
 #include "liquidFilmBase.H"
 #include "areaFields.H"
+#include "PstreamReduceOps.H"
 
 using namespace Foam::constant;
 
@@ -236,6 +237,13 @@ void Foam::SurfaceFilmModel<CloudType>::injectParticles
     const auto& Cf = mesh.C().boundaryField();
     const auto& Sf = mesh.Sf().boundaryField();
 
+    // Conservation tracking
+    label localCreated = 0;
+    label localRejected = 0;
+    scalar localParcelMass = 0;
+    vector localParcelMom = Zero;
+    scalar localMassLost = 0;
+
     forAll(patchFaces, filmFacei)
     {
         const labelPair& patchAndFace = patchFaces[filmFacei];
@@ -279,14 +287,72 @@ void Foam::SurfaceFilmModel<CloudType>::injectParticles
                 cloud.addParticle(pPtr);
 
                 ++nParcelsInjected_;
+
+                // Conservation tracking
+                const scalar parcelMass =
+                    massParcelPatch_[filmFacei];
+                const vector parcelMom =
+                    parcelMass*UFilmPatch_[filmFacei];
+
+                ++localCreated;
+                localParcelMass += parcelMass;
+                localParcelMom += parcelMom;
+
+                if (debug >= 2)
+                {
+                    Pout<< "[SurfaceFilmModel:inject] t="
+                        << mesh.time().timeOutputValue()
+                        << " face=" << filmFacei
+                        << " CREATED"
+                        << " mass=" << parcelMass
+                        << " d=" << pPtr->d()
+                        << " nP=" << pPtr->nParticle()
+                        << " U=" << pPtr->U()
+                        << " mom=" << parcelMom
+                        << endl;
+                }
             }
             else
             {
+                // Conservation tracking: mass lost to threshold
+                const scalar lostMass = massParcelPatch_[filmFacei];
+
+                if (debug >= 2 && lostMass > VSMALL)
+                {
+                    Pout<< "[SurfaceFilmModel:inject] t="
+                        << mesh.time().timeOutputValue()
+                        << " face=" << filmFacei
+                        << " REJECTED nP=" << pPtr->nParticle()
+                        << " massLost=" << lostMass
+                        << endl;
+                }
+
+                ++localRejected;
+                localMassLost += lostMass;
+
                 // Zero mass so addSources does not subtract from film
                 massParcelPatch_[filmFacei] = 0;
                 delete pPtr;
             }
         }
+    }
+
+    // Conservation debug: per-timestep injection summary
+    if (debug)
+    {
+        Info<< "[SurfaceFilmModel:inject] t="
+            << mesh.time().timeOutputValue()
+            << " nCreated="
+            << returnReduce(localCreated, sumOp<label>())
+            << " nRejected="
+            << returnReduce(localRejected, sumOp<label>())
+            << " totalParcelMass="
+            << returnReduce(localParcelMass, sumOp<scalar>())
+            << " totalParcelMom="
+            << returnReduce(localParcelMom, sumOp<vector>())
+            << " totalMassLost="
+            << returnReduce(localMassLost, sumOp<scalar>())
+            << endl;
     }
 }
 
@@ -347,6 +413,11 @@ void Foam::SurfaceFilmModel<CloudType>::inject(TrackCloudType& cloud)
 
             injectParticles(patchFaces, cloud);
 
+            // Conservation tracking: mass & momentum fed back to film
+            label localFeedbackFaces = 0;
+            scalar localFeedbackMass = 0;
+            vector localFeedbackMom = Zero;
+
             forAll(patchFaces, filmFacei)
             {
                 const label patchi = patchFaces[filmFacei].first();
@@ -354,17 +425,54 @@ void Foam::SurfaceFilmModel<CloudType>::inject(TrackCloudType& cloud)
 
                 if (diameterParcelPatch_[filmFacei] > 0)
                 {
+                    const scalar massFB =
+                        -massParcelPatch_[filmFacei];
+                    const vector momFB =
+                        -massParcelPatch_[filmFacei]
+                       * UFilmPatch_[filmFacei];
+
                     film.addSources
                     (
                         patchi,
                         facei,
-                       -massParcelPatch_[filmFacei],    // mass
-                       -massParcelPatch_[filmFacei]*UFilmPatch_[filmFacei],
-                                                        // tangential momentum
-                        Zero,                           // impingement
-                        Zero                            // energy
+                        massFB,           // mass
+                        momFB,            // tangential momentum
+                        Zero,             // impingement
+                        Zero              // energy
                     );
+
+                    // Track non-zero feedback
+                    if (mag(massFB) > VSMALL)
+                    {
+                        ++localFeedbackFaces;
+                        localFeedbackMass += massFB;
+                        localFeedbackMom += momFB;
+
+                        if (debug >= 2)
+                        {
+                            Pout<< "[SurfaceFilmModel:feedback] t="
+                                << mesh.time().timeOutputValue()
+                                << " face=" << filmFacei
+                                << " massToFilm=" << massFB
+                                << " momToFilm=" << momFB
+                                << endl;
+                        }
+                    }
                 }
+            }
+
+            // Conservation debug: feedback summary
+            if (debug)
+            {
+                Info<< "[SurfaceFilmModel:feedback] t="
+                    << mesh.time().timeOutputValue()
+                    << " nFeedbackFaces="
+                    << returnReduce(localFeedbackFaces, sumOp<label>())
+                    << " totalMassToFilm="
+                    << returnReduce(localFeedbackMass, sumOp<scalar>())
+                    << " totalMomToFilm="
+                    << returnReduce(localFeedbackMom, sumOp<vector>())
+                    << endl;
             }
         }
     }
@@ -458,6 +566,51 @@ void Foam::SurfaceFilmModel<CloudType>::cacheFilmFields
         {
             deltaFilmPatch_[patchi][facei] = film.h()[i];
         }
+    }
+
+    // Conservation debug: cached film fields ready for injection
+    if (debug)
+    {
+        const auto& time = this->owner().mesh().time();
+
+        label localCacheFaces = 0;
+        scalar localCacheMass = 0;
+        vector localCacheMom = Zero;
+
+        forAll(massParcelPatch_, facei)
+        {
+            if (massParcelPatch_[facei] > VSMALL)
+            {
+                ++localCacheFaces;
+                localCacheMass += massParcelPatch_[facei];
+                localCacheMom +=
+                    massParcelPatch_[facei]*UFilmPatch_[facei];
+
+                if (debug >= 2)
+                {
+                    Pout<< "[SurfaceFilmModel:cache] t="
+                        << time.timeOutputValue()
+                        << " face=" << facei
+                        << " massCached=" << massParcelPatch_[facei]
+                        << " d=" << diameterParcelPatch_[facei]
+                        << " Uf=" << UFilmPatch_[facei]
+                        << " rho=" << rhoFilmPatch_[facei]
+                        << " momCached="
+                        << massParcelPatch_[facei]*UFilmPatch_[facei]
+                        << endl;
+                }
+            }
+        }
+
+        Info<< "[SurfaceFilmModel:cache] t="
+            << time.timeOutputValue()
+            << " nCacheFaces="
+            << returnReduce(localCacheFaces, sumOp<label>())
+            << " totalMassCached="
+            << returnReduce(localCacheMass, sumOp<scalar>())
+            << " totalMomCached="
+            << returnReduce(localCacheMom, sumOp<vector>())
+            << endl;
     }
 }
 

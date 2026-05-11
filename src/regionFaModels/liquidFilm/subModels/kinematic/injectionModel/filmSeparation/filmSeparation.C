@@ -29,6 +29,7 @@ License
 #include "filmSeparation.H"
 #include "filmSeparationModel.H"
 #include "addToRunTimeSelectionTable.H"
+#include "PstreamReduceOps.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -290,6 +291,110 @@ void Foam::regionModels::areaSurfaceFilmModels::filmSeparation::correct
         availableMass -= separatedMass;
 
         addToInjectedMass(totalInjectedMass);
+
+        // Conservation debug: accumulation-specific data
+        if (debug)
+        {
+            label localSepFaces = 0;
+            scalar localSepMass = 0;
+            vector localSepMom = Zero;
+            label localAccFaces = 0;
+            scalar localAccMass = 0;
+
+            forAll(separatedMass, faceI)
+            {
+                if (separatedMass[faceI] > VSMALL)
+                {
+                    ++localSepFaces;
+                    localSepMass += separatedMass[faceI];
+                    localSepMom += separatedMass[faceI]*Uf[faceI];
+
+                    if (debug >= 2)
+                    {
+                        Pout<< "[filmSeparation:accum] t="
+                            << mesh.time().timeOutputValue()
+                            << " face=" << faceI
+                            << " massSeparated=" << separatedMass[faceI]
+                            << " Uf=" << Uf[faceI]
+                            << " momSeparated="
+                            << separatedMass[faceI]*Uf[faceI]
+                            << " massBuffered="
+                            << massAccumulator_[faceI]
+                            << endl;
+                    }
+                }
+
+                if (massAccumulator_[faceI] > VSMALL)
+                {
+                    ++localAccFaces;
+                    localAccMass += massAccumulator_[faceI];
+                }
+            }
+
+            Info<< "[filmSeparation:accum] t="
+                << mesh.time().timeOutputValue()
+                << " nSepFaces="
+                << returnReduce(localSepFaces, sumOp<label>())
+                << " massSeparated="
+                << returnReduce(localSepMass, sumOp<scalar>())
+                << " momSeparated="
+                << returnReduce(localSepMom, sumOp<vector>())
+                << " nAccFaces="
+                << returnReduce(localAccFaces, sumOp<label>())
+                << " massBuffered="
+                << returnReduce(localAccMass, sumOp<scalar>())
+                << endl;
+        }
+    }
+
+    // Conservation debug: mass & momentum flagged for injection
+    if (debug)
+    {
+        // Velocity used for injection: buffered (accumulated) or
+        // instantaneous (non-accumulated)
+        const vectorField& UfInj =
+        (
+            UfInjectionPtr_
+          ? UfInjectionPtr_().primitiveField()
+          : film().Uf().primitiveField()
+        );
+
+        label localInjFaces = 0;
+        scalar localInjMass = 0;
+        vector localInjMom = Zero;
+
+        forAll(massToInject, faceI)
+        {
+            if (massToInject[faceI] > VSMALL)
+            {
+                ++localInjFaces;
+                localInjMass += massToInject[faceI];
+                localInjMom += massToInject[faceI]*UfInj[faceI];
+
+                if (debug >= 2)
+                {
+                    Pout<< "[filmSeparation] t="
+                        << mesh.time().timeOutputValue()
+                        << " face=" << faceI
+                        << " massToInject=" << massToInject[faceI]
+                        << " d=" << diameterToInject[faceI]
+                        << " UfInj=" << UfInj[faceI]
+                        << " momToInject="
+                        << massToInject[faceI]*UfInj[faceI]
+                        << endl;
+                }
+            }
+        }
+
+        Info<< "[filmSeparation] t="
+            << mesh.time().timeOutputValue()
+            << " nInjFaces="
+            << returnReduce(localInjFaces, sumOp<label>())
+            << " totalMassToInject="
+            << returnReduce(localInjMass, sumOp<scalar>())
+            << " totalMomToInject="
+            << returnReduce(localInjMom, sumOp<vector>())
+            << endl;
     }
 
     injectionModel::correct();
