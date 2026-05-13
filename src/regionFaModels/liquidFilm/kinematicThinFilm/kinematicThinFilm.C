@@ -54,6 +54,17 @@ Foam::tmp<Foam::faVectorMatrix> kinematicThinFilm::UEqn
     const areaVectorField& ns = regionMesh().faceAreaNormals();
     const areaVectorField gs(g_ - ns*(ns & g_));
 
+    if (debug)
+    {
+        const vector totalUSp =
+            gSum(USp_.primitiveField() * regionMesh().S().field());
+
+        Info<< "[kinematicThinFilm:UEqn] t="
+            << regionMesh().time().timeOutputValue()
+            << " totalUSp*S=" << totalUSp
+            << endl;
+    }
+
     return tmp<faVectorMatrix>
     (
         fam::ddt(h_, U)
@@ -143,6 +154,17 @@ void kinematicThinFilm::evolveRegion()
                     faOptions()(rho_, h_, dimVelocity)
                   + rhoSp_
                 );
+
+                if (debug)
+                {
+                    const scalar totalRhoSp =
+                        gSum(rhoSp_.primitiveField() * regionMesh().S().field());
+
+                    Info<< "[kinematicThinFilm:hEqn - post] t="
+                        << regionMesh().time().timeOutputValue()
+                        << " totalRhoSp*S=" << totalRhoSp
+                        << endl;
+                }
 
                 hEqn.relax();
                 faOptions().constrain(hEqn);
