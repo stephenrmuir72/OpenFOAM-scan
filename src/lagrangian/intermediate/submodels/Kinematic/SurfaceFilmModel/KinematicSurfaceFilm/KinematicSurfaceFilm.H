@@ -181,6 +181,21 @@ protected:
             label nParcelsSplashed_;
 
 
+        // Conservation tracking (per-step, reported in info())
+
+            //- Total tangential momentum transferred to film [kg·m/s]
+            vector totalMomTransferred_;
+
+            //- Total impingement pressure transferred to film [kg·m/s]
+            scalar totalPnTransferred_;
+
+            //- Total mass created as splash parcels [kg]
+            scalar totalSplashMassCreated_;
+
+            //- Total momentum of splash parcels created [kg·m/s]
+            vector totalSplashMomCreated_;
+
+
     // Protected Member Functions
 
         //- Return a vector tangential to input vector, v

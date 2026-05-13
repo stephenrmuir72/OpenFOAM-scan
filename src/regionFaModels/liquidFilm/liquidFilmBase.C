@@ -30,6 +30,7 @@ License
 #include "movingWallVelocityFvPatchVectorField.H"
 #include "turbulentFluidThermoModel.H"
 #include "turbulentTransportModel.H"
+#include "PstreamReduceOps.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -411,6 +412,18 @@ void liquidFilmBase::addSources
     massSource_.boundaryFieldRef()[patchi][facei] += massSource;
     pnSource_.boundaryFieldRef()[patchi][facei] += pressureSource;
     momentumSource_.boundaryFieldRef()[patchi][facei] += momentumSource;
+
+    if (debug >= 2)
+    {
+        Pout<< "[liquidFilmBase:addSources] t="
+            << primaryMesh().time().timeOutputValue()
+            << " patch=" << patchi
+            << " face=" << facei
+            << " mass=" << massSource
+            << " mom=" << momentumSource
+            << " pn=" << pressureSource
+            << endl;
+    }
 }
 
 
@@ -429,9 +442,31 @@ void liquidFilmBase::postEvolveRegion()
         momentumSource_.write();
     }
 
-    Info<< "[liquidFilmBase:postEvolveRegion] t="
-        << primaryMesh().time().timeOutputValue()
-        << endl;
+    // Conservation debug: total accumulated sources before reset
+    if (debug)
+    {
+        scalar totalMass = 0;
+        vector totalMom = Zero;
+        scalar totalPn = 0;
+
+        forAll(massSource_.boundaryField(), patchi)
+        {
+            totalMass += sum(massSource_.boundaryField()[patchi]);
+            totalMom += sum(momentumSource_.boundaryField()[patchi]);
+            totalPn += sum(pnSource_.boundaryField()[patchi]);
+        }
+
+        reduce(totalMass, sumOp<scalar>());
+        reduce(totalMom, sumOp<vector>());
+        reduce(totalPn, sumOp<scalar>());
+
+        Info<< "[liquidFilmBase:postEvolve] t="
+            << primaryMesh().time().timeOutputValue()
+            << " totalMassSource=" << totalMass
+            << " totalMomSource=" << totalMom
+            << " totalPnSource=" << totalPn
+            << endl;
+    }
 
     massSource_.boundaryFieldRef() = Zero;
     pnSource_.boundaryFieldRef() = Zero;
