@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2020-2023 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -299,7 +300,7 @@ void liquidFilmModel::preEvolveRegion()
     // Calculate rate per area
     rhoSp_.primitiveFieldRef() *= rAreaDeltaT/rho_;
     USp_.primitiveFieldRef() *= rAreaDeltaT/rho_;
-    pnSp_.primitiveFieldRef() *= rAreaDeltaT/rho_;
+    pnSp_.primitiveFieldRef() *= rAreaDeltaT;
 
     // Conservation debug: rate-converted source terms
     if (debug)
