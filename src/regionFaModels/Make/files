@@ -25,6 +25,7 @@ $(kinematic)/sourceSpreadingModel/sourceSpreadingModel/sourceSpreadingModel.C
 $(kinematic)/sourceSpreadingModel/sourceSpreadingModel/sourceSpreadingModelNew.C
 $(kinematic)/sourceSpreadingModel/noSpreading/noSpreading.C
 $(kinematic)/sourceSpreadingModel/parcelDiameterSpreading/parcelDiameterSpreading.C
+$(kinematic)/sourceSpreadingModel/gaussianSpreading/gaussianSpreading.C
 
 $(kinematic)/injectionModel/injectionModelList/injectionModelList.C
 $(kinematic)/injectionModel/injectionModel/injectionModel.C
