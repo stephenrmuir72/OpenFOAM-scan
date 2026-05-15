@@ -54,6 +54,23 @@ Foam::tmp<Foam::faVectorMatrix> kinematicThinFilm::UEqn
     const areaVectorField& ns = regionMesh().faceAreaNormals();
     const areaVectorField gs(g_ - ns*(ns & g_));
 
+    // Effective film thickness: include mass being deposited this time step
+    // so the momentum equation sees the combined inertia of existing film
+    // plus the absorbed Lagrangian mass.  Without this, USp_ is divided
+    // by the old (small) h_, producing unrealistically large velocities.
+    const dimensionedScalar deltaT
+    (
+        "deltaT",
+        dimTime,
+        regionMesh().time().deltaTValue()
+    );
+
+    const areaScalarField hEff
+    (
+        "hEff",
+        h_ + max(rhoSp_*deltaT, dimensionedScalar(dimLength, Zero))
+    );
+
     if (debug)
     {
         const vector totalUSp =
@@ -62,12 +79,13 @@ Foam::tmp<Foam::faVectorMatrix> kinematicThinFilm::UEqn
         Info<< "[kinematicThinFilm:UEqn] t="
             << regionMesh().time().timeOutputValue()
             << " totalUSp*S=" << totalUSp
+            << " max(hEff-h)=" << gMax(hEff.primitiveField() - h_.primitiveField())
             << endl;
     }
 
     return tmp<faVectorMatrix>
     (
-        fam::ddt(h_, U)
+        fam::ddt(hEff, U)
       + fam::div(phi2s_, U)
       ==
         gs*h_
