@@ -251,6 +251,9 @@ tmp<scalarField> FriedrichModel::separatedMassRatio() const
                 {
                     // (ZJD:Eq. 16)
                     separated[i] = C0_ + C1_*Foam::exp(-Fratio[i]/C2_);
+
+                    // Keep separated[i] in [0,1] against unreasonable coeffs
+                    Foam::clamp(separated[i], Foam::zero_one{});
                 }
             }
             break;
