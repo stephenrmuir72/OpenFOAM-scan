@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2019-2023 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -99,6 +100,14 @@ void Foam::ThermoSurfaceFilm<CloudType>::absorbInteraction
         mass*Ut,                          // tangential momentum
         mass*mag(Un),                     // impingement pressure
         mass*p.hs()                       // energy
+    );
+
+    film.addDiameterSource
+    (
+        pp.index(),
+        facei,
+        mass,
+        p.d()
     );
 
     this->nParcelsTransferred()++;

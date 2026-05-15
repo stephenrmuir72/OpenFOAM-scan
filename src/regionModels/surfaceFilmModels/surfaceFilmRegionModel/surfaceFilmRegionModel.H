@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -120,6 +121,15 @@ public:
                 const scalar pressureSource,
                 const scalar energySource
             ) = 0;
+
+            //- External hook to add parcel diameter source (no-op default)
+            virtual void addDiameterSource
+            (
+                const label patchi,
+                const label facei,
+                const scalar massSource,
+                const scalar diameter
+            ) {}
 
 
         // Fields

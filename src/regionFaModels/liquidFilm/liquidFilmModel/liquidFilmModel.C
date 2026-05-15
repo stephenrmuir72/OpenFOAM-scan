@@ -27,8 +27,9 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "liquidFilmModel.H"
-#include "addToRunTimeSelectionTable.H"
 #include "volFields.H"
+#include "physicalSpreading.H"
+#include "addToRunTimeSelectionTable.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -234,6 +235,7 @@ liquidFilmModel::liquidFilmModel
         dimensionedScalar(dimLength, Zero)
     ),
     turbulence_(filmTurbulenceModel::New(*this, dict)),
+    physicalSpreadingPtr_(),
     availableMass_(regionMesh().faces().size(), Zero),
     injection_(*this, dict),
     forces_(*this, dict)
@@ -245,7 +247,14 @@ liquidFilmModel::liquidFilmModel
         Tf_ = dimensionedScalar("T0", dimTemperature, dict);
     }
     correctThermoFields();
+
+    physicalSpreadingPtr_ = physicalSpreading::NewIfPresent(regionMesh(), dict);
 }
+
+// * * * * * * * * * * * * * * * * Destructor  * * * * * * * * * * * * * * * //
+
+liquidFilmModel::~liquidFilmModel()
+{}  // physicalSpreading is forward declared.
 
 
 // * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * * //
@@ -281,6 +290,48 @@ void liquidFilmModel::preEvolveRegion()
 
     vsm().mapToSurface(pnSource_, pnSp_.primitiveFieldRef());
 
+    if (physicalSpreadingPtr_)
+    {
+        // Map diameter and compute the mass-weighted mean only when required
+        auto tDiameterSp = areaScalarField::New
+        (
+            "diameterSp",
+            IOobjectOption::NO_REGISTER,
+            regionMesh(),
+            dimensionedScalar(dimLength, Zero)
+        );
+        areaScalarField& diameterSp = tDiameterSp.ref();
+
+        if (physicalSpreadingPtr_->needsDiameter())
+        {
+            vsm().mapToSurface
+            (
+                diameterSource_,
+                diameterSp.primitiveFieldRef()
+            );
+
+            forAll(diameterSp, i)
+            {
+                const scalar mass = rhoSp_[i];
+                if (mass > SMALL)
+                {
+                    diameterSp[i] /= mass;
+                }
+                else
+                {
+                    diameterSp[i] = 0;
+                }
+            }
+
+            diameterSp.correctBoundaryConditions();
+        }
+
+        // Apply identical spatial weights to every source object
+        physicalSpreadingPtr_->spread(rhoSp_, USp_, pnSp_, diameterSp);
+    }
+
+    // Always reset the diameter accumulator for the next time step
+    diameterSource_ == Zero;
 
     // Calculate rate per area
     rhoSp_.primitiveFieldRef() *= rAreaDeltaT/rho_;

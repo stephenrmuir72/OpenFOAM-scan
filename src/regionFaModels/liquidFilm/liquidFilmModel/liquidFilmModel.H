@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2020 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -39,6 +40,7 @@ Usage
 
         // Optional entries
         T0                      <scalar>;
+        physicalSpreading       <dict>;
 
         // Inherited entries
         ...
@@ -50,6 +52,8 @@ Usage
       Property   | Description                      | Type  | Reqd   | Deflt
       thermo     | Liquid thermodynamics properties | dict  | yes    | -
       T0         | Reference temperature [K]       | scalar | choice | -
+      physicalSpreading | Physical footprint spreading model <!--
+                 -->                                | dict  | no     | -
     \endtable
 
     The inherited entries are elaborated in:
@@ -82,6 +86,9 @@ namespace regionModels
 {
 namespace areaSurfaceFilmModels
 {
+
+// Forward Declarations
+class physicalSpreading;
 
 /*---------------------------------------------------------------------------*\
                         Class liquidFilmModel Declaration
@@ -149,6 +156,9 @@ protected:
         //- Turbulence model
         autoPtr<filmTurbulenceModel> turbulence_;
 
+        //- Physical footprint spreading model
+        autoPtr<physicalSpreading> physicalSpreadingPtr_;
+
 
         // Sub-models
 
@@ -186,7 +196,7 @@ public:
 
 
     //- Destructor
-    virtual ~liquidFilmModel() = default;
+    virtual ~liquidFilmModel();
 
 
     // Member Functions
