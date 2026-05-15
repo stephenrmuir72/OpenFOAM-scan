@@ -121,6 +121,16 @@ public:
                 const scalar energySource
             ) = 0;
 
+            //- External hook to add parcel diameter source (no-op default)
+            virtual void addDiameterSource
+            (
+                const label patchi,
+                const label facei,
+                const scalar massSource,
+                const scalar diameter
+            )
+            {}
+
 
         // Fields
 

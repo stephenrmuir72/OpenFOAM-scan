@@ -172,6 +172,14 @@ void Foam::KinematicSurfaceFilm<CloudType>::absorbInteraction
         0                                 // energy
     );
 
+    film.addDiameterSource
+    (
+        pp.index(),
+        facei,
+        mass,
+        p.d()
+    );
+
     // Conservation tracking
     totalMomTransferred_ += mass*Ut;
     totalPnTransferred_ += mass*mag(Un);
