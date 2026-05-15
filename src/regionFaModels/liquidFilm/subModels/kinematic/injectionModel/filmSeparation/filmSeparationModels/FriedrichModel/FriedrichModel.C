@@ -92,6 +92,8 @@ tmp<scalarField> FriedrichModel::Fratio() const
         const vector Urel(Up[i] - Uf[i]);
         const scalar We = h[i]*rhop_*sqr(mag(Urel))/(2.0*sigma[i]);
 
+        if (We < VSMALL || Re < VSMALL) continue;  // Skip: no separation
+
         // Characteristic breakup length (FLW:Eq. 15)
         const scalar Lb =
             0.0388*Foam::sqrt(h[i])*Foam::pow(Re, 0.6)*Foam::pow(We, -0.5);
@@ -299,16 +301,6 @@ tmp<scalarField> FriedrichModel::separatedMassRatio() const
     return tseparated;
 }
 
-
-/*
-bool FriedrichModel::read(const dictionary& dict) const
-{
-    // Add the base-class reading later
-    // Read the film separation model dictionary
-
-    return true;
-}
-*/
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
