@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2024-2025 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -265,7 +266,7 @@ tmp<scalarField> FriedrichModel::separatedMassRatio() const
             (
                 mesh().newIOobject("Fratio"),
                 mesh(),
-                dimensionedScalar(dimForce, Zero)
+                dimensionedScalar(dimless, Zero)
             );
             areaFratio.primitiveFieldRef() = Fratio;
             areaFratio.write();
