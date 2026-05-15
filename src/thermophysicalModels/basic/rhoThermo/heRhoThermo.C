@@ -28,6 +28,91 @@ License
 
 #include "heRhoThermo.H"
 
+#include <cmath>
+
+// * * * * * * * * * * * * * * * Local Functions * * * * * * * * * * * * * * //
+
+namespace
+{
+
+inline bool validTemperature(const Foam::scalar T)
+{
+    return std::isfinite(T) && T > 0;
+}
+
+
+inline void checkTemperature
+(
+    const Foam::scalar T,
+    const Foam::scalar p,
+    const Foam::scalar he,
+    const Foam::label celli
+)
+{
+    if (FOAM_UNLIKELY(!validTemperature(T)))
+    {
+        using namespace Foam;
+
+        FatalErrorInFunction
+            << "Invalid temperature in cell " << celli
+            << ": T=" << T
+            << ", p=" << p
+            << ", he=" << he << nl
+            << Foam::abort(Foam::FatalError);
+    }
+}
+
+
+inline void checkTemperature
+(
+    const Foam::scalar T,
+    const Foam::scalar p,
+    const Foam::word& patchName,
+    const Foam::label patchi,
+    const Foam::label facei
+)
+{
+    if (FOAM_UNLIKELY(!validTemperature(T)))
+    {
+        using namespace Foam;
+
+        FatalErrorInFunction
+            << "Invalid temperature on patch " << patchi
+            << " (" << patchName << "), face " << facei
+            << ": T=" << T
+            << ", p=" << p << nl
+            << Foam::abort(Foam::FatalError);
+    }
+}
+
+
+inline void checkTemperature
+(
+    const Foam::scalar T,
+    const Foam::scalar p,
+    const Foam::scalar he,
+    const Foam::word& patchName,
+    const Foam::label patchi,
+    const Foam::label facei
+)
+{
+    if (FOAM_UNLIKELY(!validTemperature(T)))
+    {
+        using namespace Foam;
+
+        FatalErrorInFunction
+            << "Invalid temperature on patch " << patchi
+            << " (" << patchName << "), face " << facei
+            << ": T=" << T
+            << ", p=" << p
+            << ", he=" << he << nl
+            << Foam::abort(Foam::FatalError);
+    }
+}
+
+}  // End anonymous namespace
+
+
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
 template<class BasicPsiThermo, class MixtureType>
@@ -84,6 +169,8 @@ void Foam::heRhoThermo<BasicPsiThermo, MixtureType>::calculate
             );
         }
 
+        checkTemperature(TCells[celli], pCells[celli], hCells[celli], celli);
+
         psiCells[celli] = mixture_.psi(pCells[celli], TCells[celli]);
         rhoCells[celli] = mixture_.rho(pCells[celli], TCells[celli]);
 
@@ -116,6 +203,15 @@ void Foam::heRhoThermo<BasicPsiThermo, MixtureType>::calculate
                 const typename MixtureType::thermoType& mixture_ =
                     this->patchFaceMixture(patchi, facei);
 
+                checkTemperature
+                (
+                    pT[facei],
+                    pp[facei],
+                    pp.patch().name(),
+                    patchi,
+                    facei
+                );
+
                 phe[facei] = mixture_.HE(pp[facei], pT[facei]);
 
                 ppsi[facei] = mixture_.psi(pp[facei], pT[facei]);
@@ -135,6 +231,16 @@ void Foam::heRhoThermo<BasicPsiThermo, MixtureType>::calculate
                 {
                     pT[facei] = mixture_.THE(phe[facei], pp[facei], pT[facei]);
                 }
+
+                checkTemperature
+                (
+                    pT[facei],
+                    pp[facei],
+                    phe[facei],
+                    pp.patch().name(),
+                    patchi,
+                    facei
+                );
 
                 ppsi[facei] = mixture_.psi(pp[facei], pT[facei]);
                 prho[facei] = mixture_.rho(pp[facei], pT[facei]);

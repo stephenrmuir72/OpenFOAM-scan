@@ -757,6 +757,12 @@ Note
     Basic tests of face/triFace hashing
 
 
+## Test-face-split  (directory: face-split)
+
+    Tests face splitting behaviour. Use -check for deterministic regression
+    checks and -tri to check triangulation output.
+
+
 ## Test-faces  (directory: faces)
 
     Simple tests for various faces
@@ -1441,4 +1447,3 @@ Usage
     Test of zoneDistribute validated with mapDistribute
 
     Original code supplied by Henning Scheufler, DLR (2019)
-

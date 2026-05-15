@@ -68,6 +68,48 @@ void calcEdgeVectors
 }
 
 
+// Calculate area normal for an arbitrary polygon vertex list
+Foam::vector calcAreaNormal
+(
+    const Foam::UList<Foam::point>& points,
+    const Foam::UList<Foam::label>& verts
+)
+{
+    using namespace Foam;
+
+    const label nVerts = verts.size();
+
+    if (nVerts == 3)
+    {
+        return triPointRef::areaNormal
+        (
+            points[verts[0]],
+            points[verts[1]],
+            points[verts[2]]
+        );
+    }
+
+    point centrePoint(Zero);
+    for (const label pointi : verts)
+    {
+        centrePoint += points[pointi];
+    }
+    centrePoint /= nVerts;
+
+    vector norm(Zero);
+
+    forAll(verts, i)
+    {
+        const point& thisPoint = points[verts[i]];
+        const point& nextPoint = points[verts[(i == nVerts-1) ? 0 : i+1]];
+
+        norm += (thisPoint - centrePoint) ^ (nextPoint - centrePoint);
+    }
+
+    return (0.5*norm);
+}
+
+
 // Find index of largest internal between face edges
 // \returns the face point index of the most concave angle
 Foam::label mostConcaveAngle
@@ -235,7 +277,7 @@ Foam::label Foam::face::split
         else if constexpr (Mode == splitMode::SPLIT_TRIANGLE)
         {
             // Start at point with largest internal angle.
-            const vector fNormal(approxNormal(points));
+            const vector fNormal(calcAreaNormal(points, *this));
             FixedList<vector, 4> workEdges;
             UList<vector> edges(workEdges.data(), workEdges.size());
             calcEdgeVectors(edges, points, *this);
@@ -315,7 +357,6 @@ Foam::label Foam::face::split
         // [v0, v1, v2, ..., N_1, v0, v1, v2, ..., N_2, ...]
         // where N_1, N_2 are the counts for the first, second sub-face etc
 
-        vector fNormal(approxNormal(points));
         List<vector> workEdges(size());
         List<label> workVerts(size());
         DynamicList<label> vertexStack;
@@ -323,7 +364,6 @@ Foam::label Foam::face::split
         if (flipping == flipType::FLIP)
         {
             // Initialize stack with face vertices [flip order]
-            fNormal *= -1;
             vertexStack.push_back((*this)[0]);
             for (label i = size()-1; i > 0; --i)
             {
@@ -390,6 +430,8 @@ Foam::label Foam::face::split
                     // Calculate edges for sub-face
                     calcEdgeVectors(edges, points, verts);
 
+                    const vector fNormal(calcAreaNormal(points, verts));
+
                     scalar angle(0);
                     const auto idx0 = mostConcaveAngle(edges, fNormal, angle);
                     const auto idx1 = ((idx0+1) % nVerts);
@@ -444,6 +486,8 @@ Foam::label Foam::face::split
 
                 // Calculate edges for sub-face
                 calcEdgeVectors(edges, points, verts);
+
+                const vector fNormal(calcAreaNormal(points, verts));
 
                 // Find most concave angle
                 scalar angle(0);

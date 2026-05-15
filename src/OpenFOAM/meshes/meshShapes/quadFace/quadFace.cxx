@@ -36,7 +36,7 @@ License
 Foam::label
 Foam::quadFace::mostConcaveAngle(const UList<point>& points) const
 {
-    const vector n(approxNormal(points));
+    const vector n(areaNormal(points));
 
     // Unit edge vectors
     FixedList<vector, quadFace::size()> edges;
