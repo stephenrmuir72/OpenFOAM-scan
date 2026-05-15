@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2020 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -83,7 +84,11 @@ protected:
     // Protected Member Functions
 
         //- Construct a momentum equation
-        tmp<faVectorMatrix> UEqn(areaVectorField& U);
+        tmp<faVectorMatrix> UEqn
+        (
+            areaVectorField& U,
+            const bool includeMassSource = false
+        );
 
 
 public:

@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2020 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -48,13 +49,14 @@ addToRunTimeSelectionTable(liquidFilmBase, kinematicThinFilm, dictionary);
 
 Foam::tmp<Foam::faVectorMatrix> kinematicThinFilm::UEqn
 (
-    areaVectorField& U
+    areaVectorField& U,
+    const bool includeMassSource
 )
 {
     const areaVectorField& ns = regionMesh().faceAreaNormals();
     const areaVectorField gs(g_ - ns*(ns & g_));
 
-    return tmp<faVectorMatrix>
+    tmp<faVectorMatrix> tUEqn
     (
         fam::ddt(h_, U)
       + fam::div(phi2s_, U)
@@ -65,6 +67,16 @@ Foam::tmp<Foam::faVectorMatrix> kinematicThinFilm::UEqn
       + forces_.correct(U)
       + USp_
     );
+
+    if (includeMassSource)
+    {
+        // The h-equation incorporates rhoSp_ after this assembly. Subsequent
+        // outer corrections use updated h_; thus, rhoSp_ should be omitted in
+        // the remaining outer iterations.
+        tUEqn.ref() += fam::SuSp(rhoSp_, U);
+    }
+
+    return tUEqn;
 }
 
 
@@ -105,9 +117,11 @@ void kinematicThinFilm::evolveRegion()
 
     for (int oCorr=1; oCorr<=nOuterCorr_; ++oCorr)
     {
+        const bool includeMassSource = (oCorr == 1);
+
         pf_.storePrevIter();
 
-        faVectorMatrix UsEqn(UEqn(Uf_));
+        faVectorMatrix UsEqn(UEqn(Uf_, includeMassSource));
 
         UsEqn.relax();
 
