@@ -45,6 +45,68 @@ const char* const Foam::face::typeName = "face";
 namespace
 {
 
+// Calculate the area normal for polygon vertices.
+// Uses central decomposition into triangles
+Foam::vector calcAreaNormal
+(
+    const Foam::UList<Foam::point>& points,
+    const Foam::UList<Foam::label>& verts
+)
+{
+    using namespace Foam;
+
+    const label nVerts = verts.size();
+
+    // If the face is a triangle, do a direct calculation
+    if (nVerts == 3)
+    {
+        return triPointRef::areaNormal
+        (
+            points[verts[0]],
+            points[verts[1]],
+            points[verts[2]]
+        );
+    }
+
+    // Estimated centre by averaging the face points
+
+    // Note: use double precision to avoid overflow/rounding when summing
+    doubleVector avg(Foam::zero{});
+
+    if (nVerts > 2)
+    {
+        for (auto pointi : verts)
+        {
+            avg += points[pointi];
+        }
+        avg /= nVerts;
+    }
+    else
+    {
+        // Should not happen
+        return avg;
+    }
+
+    const point centrePoint(avg);
+
+    vector norm(Foam::zero{});
+
+    for (label idx0 = 0; idx0 < nVerts; ++idx0)
+    {
+        auto idx1 = (idx0 == nVerts-1) ? 0 : idx0+1;  // fcIndex
+
+        // Calculate 2*triangle area normal
+        norm +=
+        (
+            (points[verts[idx0]] - centrePoint)
+          ^ (points[verts[idx1]] - centrePoint)
+        );
+    }
+
+    return (0.5*norm);
+}
+
+
 // Calculate unit edge vectors for a polygon
 void calcEdgeVectors
 (
@@ -57,12 +119,14 @@ void calcEdgeVectors
 
     const label nEdges = std::min(edgeVecs.size(), verts.size());
 
-    for (label i = 0; i < nEdges; ++i)
+    for (label idx0 = 0; idx0 < nEdges; ++idx0)
     {
-        edgeVecs[i] = Foam::normalised
+        auto idx1 = (idx0 == nEdges-1) ? 0 : idx0+1;  // fcIndex
+
+        edgeVecs[idx0] = Foam::normalised
         (
-            points[verts[(i == nEdges-1) ? 0 : i+1]]  // fcIndex
-          - points[verts[i]]
+            points[verts[idx1]]
+          - points[verts[idx0]]
         );
     }
 }
@@ -235,10 +299,12 @@ Foam::label Foam::face::split
         else if constexpr (Mode == splitMode::SPLIT_TRIANGLE)
         {
             // Start at point with largest internal angle.
-            const vector fNormal(approxNormal(points));
             FixedList<vector, 4> workEdges;
             UList<vector> edges(workEdges.data(), workEdges.size());
             calcEdgeVectors(edges, points, *this);
+
+            // Calculate normal as if not flipped, handle that later
+            const vector fNormal(calcAreaNormal(points, *this));
 
             scalar minAngle(0);
             const auto idx0 = mostConcaveAngle(edges, fNormal, minAngle);
@@ -315,7 +381,6 @@ Foam::label Foam::face::split
         // [v0, v1, v2, ..., N_1, v0, v1, v2, ..., N_2, ...]
         // where N_1, N_2 are the counts for the first, second sub-face etc
 
-        vector fNormal(approxNormal(points));
         List<vector> workEdges(size());
         List<label> workVerts(size());
         DynamicList<label> vertexStack;
@@ -323,7 +388,6 @@ Foam::label Foam::face::split
         if (flipping == flipType::FLIP)
         {
             // Initialize stack with face vertices [flip order]
-            fNormal *= -1;
             vertexStack.push_back((*this)[0]);
             for (label i = size()-1; i > 0; --i)
             {
@@ -390,6 +454,8 @@ Foam::label Foam::face::split
                     // Calculate edges for sub-face
                     calcEdgeVectors(edges, points, verts);
 
+                    const vector fNormal(calcAreaNormal(points, verts));
+
                     scalar angle(0);
                     const auto idx0 = mostConcaveAngle(edges, fNormal, angle);
                     const auto idx1 = ((idx0+1) % nVerts);
@@ -446,6 +512,8 @@ Foam::label Foam::face::split
                 calcEdgeVectors(edges, points, verts);
 
                 // Find most concave angle
+                const vector fNormal(calcAreaNormal(points, verts));
+
                 scalar angle(0);
                 const label startIdx = mostConcaveAngle(edges, fNormal, angle);
                 const scalar bisectAngle = (angle / 2);
@@ -840,46 +908,7 @@ Foam::point Foam::face::centre(const UList<point>& points) const
 
 Foam::vector Foam::face::areaNormal(const UList<point>& points) const
 {
-    const label nPoints = size();
-
-    // Calculate the area normal by summing the face triangle area normals.
-    // Changed to deal with small concavity by using a central decomposition
-
-    // If the face is a triangle, do a direct calculation
-    if (nPoints == 3)
-    {
-        return triPointRef::areaNormal
-        (
-            points[(*this)[0]],
-            points[(*this)[1]],
-            points[(*this)[2]]
-        );
-    }
-    // else if (nPoints == 0)
-    // {
-    //     // Should not happen
-    //     return Zero;
-    // }
-
-    // Estimated centre by averaging the face points
-    const point centrePoint(this->average(points));
-
-    vector norm(Zero);
-
-    for (label pointi = 0; pointi < nPoints; ++pointi)
-    {
-        const auto& thisPoint = points[thisLabel(pointi)];
-        const auto& nextPoint = points[nextLabel(pointi)];
-
-        // Calculate 2*triangle area normal
-        norm +=
-        (
-            (thisPoint - centrePoint)
-          ^ (nextPoint - centrePoint)
-        );
-    }
-
-    return (0.5*norm);
+    return calcAreaNormal(points, *this);
 }
 
 
