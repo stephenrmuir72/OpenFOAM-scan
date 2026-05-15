@@ -234,6 +234,7 @@ liquidFilmModel::liquidFilmModel
         dimensionedScalar(dimLength, Zero)
     ),
     turbulence_(filmTurbulenceModel::New(*this, dict)),
+    spreading_(),
     availableMass_(regionMesh().faces().size(), Zero),
     injection_(*this, dict),
     forces_(*this, dict)
@@ -245,6 +246,27 @@ liquidFilmModel::liquidFilmModel
         Tf_ = dimensionedScalar("T0", dimTemperature, dict);
     }
     correctThermoFields();
+
+    // Construct source spreading model
+    if (dict.found("sourceSpreading"))
+    {
+        spreading_ = sourceSpreadingModel::New
+        (
+            regionMesh(),
+            dict.subDict("sourceSpreading")
+        );
+    }
+    else
+    {
+        dictionary defaultDict;
+        defaultDict.add("type", word("none"));
+
+        spreading_ = sourceSpreadingModel::New
+        (
+            regionMesh(),
+            defaultDict
+        );
+    }
 }
 
 
@@ -280,6 +302,31 @@ void liquidFilmModel::preEvolveRegion()
     vsm().mapToSurface(momentumSource_, USp_.primitiveFieldRef());
 
     vsm().mapToSurface(pnSource_, pnSp_.primitiveFieldRef());
+
+    // Map diameter source and compute mass-weighted average diameter
+    scalarField diameterSp(regionMesh().nFaces(), Zero);
+    vsm().mapToSurface(diameterSource_, diameterSp);
+
+    forAll(diameterSp, i)
+    {
+        const scalar mass = rhoSp_[i];
+        if (mass > SMALL)
+        {
+            diameterSp[i] /= mass;
+        }
+        else
+        {
+            diameterSp[i] = 0;
+        }
+    }
+
+    // Apply spatial spreading of source terms
+    spreading_->spread(rhoSp_.primitiveFieldRef(), diameterSp);
+    spreading_->spread(USp_.primitiveFieldRef(), diameterSp);
+    spreading_->spread(pnSp_.primitiveFieldRef(), diameterSp);
+
+    // Reset diameter accumulator for next time step
+    diameterSource_ == Zero;
 
     // Conservation debug: source terms received from Lagrangian
     if (debug)

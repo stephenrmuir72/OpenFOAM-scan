@@ -21,6 +21,10 @@ $(kinematic)/filmTurbulenceModel/filmTurbulenceModel/filmTurbulenceModel.C
 $(kinematic)/filmTurbulenceModel/filmTurbulenceModel/filmTurbulenceModelNew.C
 $(kinematic)/filmTurbulenceModel/laminar/laminar.C
 
+$(kinematic)/sourceSpreadingModel/sourceSpreadingModel/sourceSpreadingModel.C
+$(kinematic)/sourceSpreadingModel/sourceSpreadingModel/sourceSpreadingModelNew.C
+$(kinematic)/sourceSpreadingModel/noSpreading/noSpreading.C
+
 $(kinematic)/injectionModel/injectionModelList/injectionModelList.C
 $(kinematic)/injectionModel/injectionModel/injectionModel.C
 $(kinematic)/injectionModel/injectionModel/injectionModelNew.C

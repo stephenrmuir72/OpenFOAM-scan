@@ -73,6 +73,7 @@ SourceFiles
 #include "injectionModelList.H"
 #include "faCFD.H"
 #include "forceList.H"
+#include "sourceSpreadingModel.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -148,6 +149,9 @@ protected:
 
         //- Turbulence model
         autoPtr<filmTurbulenceModel> turbulence_;
+
+        //- Source spreading model
+        autoPtr<sourceSpreadingModel> spreading_;
 
 
         // Sub-models

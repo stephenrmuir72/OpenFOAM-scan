@@ -173,6 +173,10 @@ protected:
             //- Normal pressure by particles
             volScalarField pnSource_;
 
+            //- Mass-weighted parcel diameter [kg.m]
+            //  Accumulates mass*diameter per face for source spreading
+            volScalarField diameterSource_;
+
             //- Total mass added
             scalar addedMassTotal_;
 
@@ -347,6 +351,15 @@ public:
                 const vector& momentumSource,  // [kg.m/s] (tang'l momentum)
                 const scalar pressureSource,   // [kg.m/s] (normal momentum)
                 const scalar energySource = 0  // [J]
+            );
+
+            //- Accumulate mass-weighted parcel diameter for source spreading
+            virtual void addDiameterSource
+            (
+                const label patchi,            // patchi on primary region
+                const label facei,             // facei of patchi
+                const scalar mass,             // [kg]
+                const scalar diameter          // [m]
             );
 };
 

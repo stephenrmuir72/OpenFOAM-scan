@@ -199,6 +199,17 @@ liquidFilmBase::liquidFilmBase
         primaryMesh(),
         dimensionedScalar(dimMass*dimVelocity, Zero)
     ),
+    diameterSource_
+    (
+        IOobject
+        (
+            "diameterSource",
+            primaryMesh().time().timeName(),
+            primaryMesh().thisDb()
+        ),
+        primaryMesh(),
+        dimensionedScalar(dimMass*dimLength, Zero)
+    ),
     addedMassTotal_(0),
     faOptions_
     (
@@ -425,6 +436,18 @@ void liquidFilmBase::addSources
             << " pn=" << pressureSource
             << endl;
     }
+}
+
+
+void liquidFilmBase::addDiameterSource
+(
+    const label patchi,
+    const label facei,
+    const scalar mass,
+    const scalar diameter
+)
+{
+    diameterSource_.boundaryFieldRef()[patchi][facei] += mass*diameter;
 }
 
 
