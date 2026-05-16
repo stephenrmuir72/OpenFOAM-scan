@@ -93,7 +93,7 @@ Foam::linearUpwindV<Type>::correction
     {
         std::for_each
         (
-            std::execution::par_unseq,
+            policy,
             faceRange.begin(),
             faceRange.end(),
             [&](size_t facei)

@@ -228,32 +228,38 @@ namespace Foam
     // ------------------- sumProdFloatOffload
     float Foam::sumProdScalarOffload(const UList<float>& f1, const UList<float>& f2)
     {
-        return std::transform_reduce
-        (
-            std::execution::par_unseq,
-            f1.begin(),
-            f1.end(),
-            f2.begin(),
-            0.0f,
-            std::plus<float>{},
-            std::multiplies<float>{}
-        );
+        apply_policy(f1.size(), [&](auto policy)
+        {
+            return std::transform_reduce
+            (
+                policy,
+                f1.begin(),
+                f1.end(),
+                f2.begin(),
+                0.0f,
+                std::plus<float>{},
+                std::multiplies<float>{}
+            );
+        });
     }
 
 
     // ------------------- sumProdDoubleOffload
     double Foam::sumProdScalarOffload(const UList<double>& f1, const UList<double>& f2)
     {
-        return std::transform_reduce
-        (
-            std::execution::par_unseq,
-            f1.begin(),
-            f1.end(),
-            f2.begin(),
-            0.0,
-            std::plus<double>{},
-            std::multiplies<double>{}
-        );
+        apply_policy(f1.size(), [&](auto policy)
+        {
+            return std::transform_reduce
+            (
+                policy,
+                f1.begin(),
+                f1.end(),
+                f2.begin(),
+                0.0,
+                std::plus<double>{},
+                std::multiplies<double>{}
+            );
+        });
     }
 
 

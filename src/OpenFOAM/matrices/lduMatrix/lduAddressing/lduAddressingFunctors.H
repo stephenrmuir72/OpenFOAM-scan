@@ -161,24 +161,27 @@ namespace Foam
     )
     {
         const labelRange indices(out.size());
-        std::transform
-        (
-            std::execution::par_unseq,
-            indices.begin(),
-            indices.end(),
-            in,
-            out.begin(),
-            lduAddressingFunctor<Type, OwnFun, NeiFun, OwnOp, NeiOp>
+        apply_policy(indices.size(), [&](auto policy)
+        {
+            std::transform
             (
-                addr.ownerStartAddr(),
-                addr.losortStartAddr(),
-                addr.losortAddr(),
-                o,
-                n,
-                oo,
-                no
-            )
-        );
+                policy,
+                indices.begin(),
+                indices.end(),
+                in,
+                out.begin(),
+                lduAddressingFunctor<Type, OwnFun, NeiFun, OwnOp, NeiOp>
+                (
+                    addr.ownerStartAddr(),
+                    addr.losortStartAddr(),
+                    addr.losortAddr(),
+                    o,
+                    n,
+                    oo,
+                    no
+                )
+            );
+        });
     }
 
 

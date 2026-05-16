@@ -308,7 +308,7 @@ void Foam::twoStageGaussSeidelSmoother::smooth
                     {
                         std::for_each
                         (
-                            std::execution::par_unseq,
+                            policy,
                             indices.begin(), indices.end(),
                             [&](label celli) 
                             {

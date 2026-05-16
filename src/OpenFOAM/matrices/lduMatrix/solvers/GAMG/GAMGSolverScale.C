@@ -60,6 +60,8 @@ void Foam::GAMGSolver::scale
 
     FixedList<solveScalar, 2> scalingFactor(Zero);
 
+    const labelRange cellRange(nCells);
+
     #ifdef FOAM_OFFLOAD
     auto transform_op = [&](label i) -> FixedList<solveScalar, 2>
     {
@@ -80,8 +82,6 @@ void Foam::GAMGSolver::scale
             a[1] + b[1]
         };
     };
-
-    const labelRange cellRange(nCells);
 
     apply_policy(cellRange.size(), [&](auto policy)
     {
