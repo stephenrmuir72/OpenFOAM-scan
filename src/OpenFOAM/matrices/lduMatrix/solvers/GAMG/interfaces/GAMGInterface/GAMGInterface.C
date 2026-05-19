@@ -175,7 +175,7 @@ Foam::tmp<Foam::scalarField> Foam::GAMGInterface::agglomerateCoeffs
                 const label end =
                     faceRestrictTargetStartAddressing_[coarseFacei + 1];
 
-                auto sum = pTraits<scalar>::zero;
+                auto sum = 0.0;
 
                 for (label i = start; i < end; ++i)
                 {
