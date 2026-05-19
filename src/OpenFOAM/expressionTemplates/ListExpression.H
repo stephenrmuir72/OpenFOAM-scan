@@ -52,7 +52,7 @@ SourceFiles
 #elif __has_include(<execution>) && defined(Foam_Expression_execution)
     #include <execution>
 #endif
-#if defined(__STDPAR__) \
+#if defined(FOAM_OFFLOAD) \
     && defined(__cpp_lib_execution) && (__cpp_lib_execution >= 201902L)
     #include <ranges>
 #endif
@@ -102,7 +102,7 @@ public:
             lst[i] = *src;
         }
 #else
-    #if defined(__STDPAR__) \
+    #if defined(FOAM_OFFLOAD) \
         && defined(__cpp_lib_execution) && (__cpp_lib_execution >= 201902L)
         // //- Using iterators
         // std::copy
@@ -125,7 +125,8 @@ public:
         // {
         //     idx[i] = i;
         // }
-        auto idx = std::views::iota(label(0), loopLen);
+        labelRange idx(loopLen);
+        #ifdef FOAM_OFFLOAD_TMP
         if (expr.is_alias(&lst))
         {
             // Need temporary storage to avoid overwriting source data
@@ -149,6 +150,7 @@ public:
             );
         }
         else
+        #endif // FOAM_OFFLOAD_TMP
         {
             std::transform
             (
@@ -2694,9 +2696,9 @@ public:
     void evaluate(ListsRefWrap<E>& exprWarp)
     {
         const label loop_len = this->size();
-#if defined(__STDPAR__) \
+#if defined(FOAM_OFFLOAD) \
     && defined(__cpp_lib_execution) && (__cpp_lib_execution >= 201902L)
-        auto idx = std::views::iota(label(0), loop_len);
+        labelRange idx(loop_len);
         std::transform
         (
             std::execution::par_unseq,

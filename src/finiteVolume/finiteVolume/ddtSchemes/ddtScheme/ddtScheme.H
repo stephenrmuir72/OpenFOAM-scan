@@ -43,7 +43,7 @@ SourceFiles
 
 #include "tmp.H"
 #include "dimensionedType.H"
-#include "volFieldsFwd.H"
+#include "volFields.H"
 #include "surfaceFieldsFwd.H"
 #include "typeInfo.H"
 #include "runTimeSelectionTables.H"
@@ -231,6 +231,13 @@ public:
             const scalar scale,
             const GeometricField<Type, fvPatchField, volMesh>& vf
         );
+        virtual void fvmDdt
+        (
+            fvMatrix<Type>& fvm,
+            const volScalarField::Internal& scaleFld,
+            const scalar scale,
+            const GeometricField<Type, fvPatchField, volMesh>& vf
+        );
 
         virtual void fvmDdt
         (
@@ -239,10 +246,27 @@ public:
             const volScalarField& rho,
             const GeometricField<Type, fvPatchField, volMesh>& vf
         );
+        virtual void fvmDdt
+        (
+            fvMatrix<Type>& fvm,
+            const volScalarField::Internal& scaleFld,
+            const scalar scale,
+            const volScalarField& rho,
+            const GeometricField<Type, fvPatchField, volMesh>& vf
+        );
 
         virtual void fvmDdt
         (
             fvMatrix<Type>& fvm,
+            const scalar scale,
+            const volScalarField& alpha,
+            const volScalarField& rho,
+            const GeometricField<Type, fvPatchField, volMesh>& vf
+        );
+        virtual void fvmDdt
+        (
+            fvMatrix<Type>& fvm,
+            const volScalarField::Internal& scaleFld,
             const scalar scale,
             const volScalarField& alpha,
             const volScalarField& rho,

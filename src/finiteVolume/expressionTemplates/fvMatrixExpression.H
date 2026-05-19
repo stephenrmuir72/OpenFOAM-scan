@@ -335,7 +335,7 @@ public:
                     value_type value_type;
                 typedef Field<value_type> FieldType;
 
-#if defined(__STDPAR__)
+#if defined(FOAM_OFFLOAD)
                 constexpr bool foam_offload = true;
 #else
                 constexpr bool foam_offload = false;
@@ -2764,7 +2764,8 @@ class DirectOp
 {
 public:
 
-    static constexpr bool is_leaf = false;  //true;
+    // Store copies, not references
+    static constexpr bool is_leaf = false;
 
     //- Type to return for internal field
     typedef Type value_type;
@@ -2783,6 +2784,7 @@ private:
     const GeometricField<value_type, fvPatchField, volMesh>& psi_;
 
     const EvalOp evalOp_;
+
 
 public:
 
@@ -2812,8 +2814,12 @@ public:
             dimensions  //elems.dimensions()
         ),
         psi_(psi),
+        // scaleFld_(nullptr),
         evalOp_(std::move(evalOp))
-    {}
+    {
+        // DebugVar("DirectOp constructor");
+        // error::demangle(typeid(EvalOp).name());
+    }
 
 
     // lduMatrix part
@@ -2862,6 +2868,11 @@ public:
             return FaceFluxExpr(Zero);
         }
 
+        const GeometricField<value_type, fvPatchField, volMesh>& psi() const
+        {
+            return psi_;
+        }
+
         template<class Matrix>
         Matrix& evaluate(Matrix& m, const scalar scale) const
         {
@@ -2894,7 +2905,6 @@ struct ddtOp
         const GeometricField<Type, fvPatchField, volMesh>& vf
     ) const
     {
-        // fvm::ddt<Type>(fvm, scale, vf);
         scheme_.ref().fvmDdt(fvm, scale, vf);
     }
 };
@@ -2910,11 +2920,83 @@ public:
         DirectOp<Type, ddtOp<Type>>
         (
             psi,
-            ddtOp<Type>(psi),
+            std::move(ddtOp<Type>(psi)),
             psi.dimensions()*dimVol/dimTime
         )
     {}
 };
+
+//- Variant with non-uniform scaling
+template<class ScaleExpr, class Type>
+struct ddtScaleOp
+{
+    ScaleExpr expr_;
+    tmp<fv::ddtScheme<Type>> scheme_;
+    ddtScaleOp
+    (
+        const GeometricField<Type, fvPatchField, volMesh>& vf,
+        const ScaleExpr& expr
+    )
+    :
+        expr_(expr),
+        scheme_
+        (
+            fv::ddtScheme<Type>::New
+            (
+                vf.mesh(),
+                vf.mesh().ddtScheme("ddt(" + vf.name() + ')')
+            )
+        )
+    {}
+    //- Called from evaluate of DirectOp
+    void operator()
+    (
+        fvMatrix<Type>& fvm,
+        const scalar scale,
+        const GeometricField<Type, fvPatchField, volMesh>& vf
+    ) const
+    {
+        const auto& mesh = vf.mesh();
+        // Get temp storage
+        auto& scaleFld = const_cast<volScalarField&>(mesh.work());
+        // Fill with evaluated expression
+        expr_.evaluate(scaleFld);
+        // Evaluate matrix using supplied operator
+        scheme_.ref().fvmDdt(fvm, scaleFld, scale, vf);
+    }
+};
+template<class ScaleExpr, class Type>
+class ddtScale
+:
+    public DirectOp<Type, ddtScaleOp<ScaleExpr, Type>>
+{
+public:
+
+    ddtScale
+    (
+        const GeometricField<Type, fvPatchField, volMesh>& psi,
+        const ScaleExpr& scaleExpr
+    )
+    :
+        DirectOp<Type, ddtScaleOp<ScaleExpr, Type>>
+        (
+            psi,
+            std::move(ddtScaleOp<ScaleExpr, Type>(psi, scaleExpr)),
+            psi.dimensions()*dimVol/dimTime
+        )
+    {}
+};
+template<class Expr, class Type>
+auto operator*
+(
+    const Expr& scaleExpr,
+    const ddt<Type>& d
+)
+{
+    return ddtScale<Expr, Type>(d.psi(), scaleExpr);
+}
+
+
 template<class Type, class GType>
 struct laplacianOp
 {
@@ -2940,6 +3022,16 @@ struct laplacianOp
     {
         // fvm::laplacian<Type, scalar>(fvm, scale, vf);
         scheme_.ref().fvmLaplacian(fvm, scale, vf);
+    }
+    void operator()
+    (
+        fvMatrix<Type>& fvm,
+        const scalar scale,
+        const volScalarField& scaleFld,
+        const GeometricField<Type, fvPatchField, volMesh>& vf
+    ) const
+    {
+        // scheme_.ref().fvmLaplacian(fvm, scaleFld, scale, vf);
     }
 };
 template<class Type>
@@ -2991,6 +3083,16 @@ struct divOp
     ) const
     {
         scheme_().fvmDiv(fvm, scale, flux_, vf);
+    }
+    void operator()
+    (
+        fvMatrix<Type>& fvm,
+        const scalar scale,
+        const volScalarField& scaleFld,
+        const GeometricField<Type, fvPatchField, volMesh>& vf
+    ) const
+    {
+        // scheme_().fvmDiv(fvm, scaleFld, scale, flux_, vf);
     }
 };
 template<class Type>

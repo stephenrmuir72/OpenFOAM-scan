@@ -158,6 +158,7 @@ void Foam::fvMesh::clearAddressing(const bool isMeshUpdate)
     }
 
     lduPtr_.reset(nullptr);
+    workPtr_.reset(nullptr);
 }
 
 
@@ -731,6 +732,54 @@ const Foam::lduAddressing& Foam::fvMesh::lduAddr() const
 Foam::lduInterfacePtrsList Foam::fvMesh::interfaces() const
 {
     return boundary().interfaces();
+}
+
+
+const Foam::volScalarField& Foam::fvMesh::work() const
+{
+    if (!workPtr_)
+    {
+        workPtr_ = std::make_unique<volScalarField>
+        (
+            IOobject
+            (
+                "work",
+                this->time().timeName(),
+                *this,
+                IOobject::NO_READ,
+                IOobject::NO_WRITE,
+                IOobject::NO_REGISTER
+            ),
+            *this,
+            dimensionedScalar(dimless, Foam::zero{})
+        );
+    }
+
+    return *workPtr_;
+}
+
+
+Foam::volScalarField& Foam::fvMesh::work()
+{
+    if (!workPtr_)
+    {
+        workPtr_ = std::make_unique<volScalarField>
+        (
+            IOobject
+            (
+                "work",
+                this->time().timeName(),
+                *this,
+                IOobject::NO_READ,
+                IOobject::NO_WRITE,
+                IOobject::NO_REGISTER
+            ),
+            *this,
+            dimensionedScalar(dimless, Foam::zero{})
+        );
+    }
+
+    return *workPtr_;
 }
 
 

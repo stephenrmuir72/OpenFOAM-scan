@@ -169,6 +169,13 @@ public:
         virtual void fvmDdt
         (
             fvMatrix<Type>& fvm,
+            const volScalarField::Internal& scaleFld,
+            const scalar scale,
+            const GeometricField<Type, fvPatchField, volMesh>& vf
+        );
+        virtual void fvmDdt
+        (
+            fvMatrix<Type>& fvm,
             const scalar scale,
             const volScalarField& rho,
             const GeometricField<Type, fvPatchField, volMesh>& vf
@@ -176,6 +183,23 @@ public:
         virtual void fvmDdt
         (
             fvMatrix<Type>& fvm,
+            const volScalarField::Internal& scaleFld,
+            const scalar scale,
+            const volScalarField& rho,
+            const GeometricField<Type, fvPatchField, volMesh>& vf
+        );
+        virtual void fvmDdt
+        (
+            fvMatrix<Type>& fvm,
+            const scalar scale,
+            const volScalarField& alpha,
+            const volScalarField& rho,
+            const GeometricField<Type, fvPatchField, volMesh>& vf
+        );
+        virtual void fvmDdt
+        (
+            fvMatrix<Type>& fvm,
+            const volScalarField::Internal& scaleFld,
             const scalar scale,
             const volScalarField& alpha,
             const volScalarField& rho,

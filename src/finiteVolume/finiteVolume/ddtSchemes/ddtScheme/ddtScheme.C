@@ -126,6 +126,17 @@ void ddtScheme<Type>::fvmDdt
 {
     fvm += scale*fvmDdt(vf);
 }
+template<class Type>
+void ddtScheme<Type>::fvmDdt
+(
+    fvMatrix<Type>& fvm,
+    const volScalarField::Internal& scaleFld,
+    const scalar scale,
+    const GeometricField<Type, fvPatchField, volMesh>& vf
+)
+{
+    fvm += scale*scaleFld*fvmDdt(vf);
+}
 
 
 template<class Type>
@@ -138,6 +149,18 @@ void ddtScheme<Type>::fvmDdt
 )
 {
     fvm += scale*fvmDdt(rho, vf);
+}
+template<class Type>
+void ddtScheme<Type>::fvmDdt
+(
+    fvMatrix<Type>& fvm,
+    const volScalarField::Internal& scaleFld,
+    const scalar scale,
+    const volScalarField& rho,
+    const GeometricField<Type, fvPatchField, volMesh>& vf
+)
+{
+    fvm += scale*scaleFld*fvmDdt(rho, vf);
 }
 
 
@@ -152,6 +175,19 @@ void ddtScheme<Type>::fvmDdt
 )
 {
     fvm += scale*fvmDdt(alpha, rho, vf);
+}
+template<class Type>
+void ddtScheme<Type>::fvmDdt
+(
+    fvMatrix<Type>& fvm,
+    const volScalarField::Internal& scaleFld,
+    const scalar scale,
+    const volScalarField& alpha,
+    const volScalarField& rho,
+    const GeometricField<Type, fvPatchField, volMesh>& vf
+)
+{
+    fvm += scale*scaleFld*fvmDdt(alpha, rho, vf);
 }
 
 

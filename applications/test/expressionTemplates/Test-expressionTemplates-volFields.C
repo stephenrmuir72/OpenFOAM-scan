@@ -155,7 +155,7 @@ int main(int argc, char *argv[])
         // fvMatrix<scalar> m3(p, p.dimensions()*dimVol/dimTime);
         // fvm::ddt<scalar>(m3, 1.0, p);
         print("-fvm::ddt", m3);
-        auto expr = -Expression::ddt(p);
+        auto expr(-Expression::ddt(p));
         DebugVar(expr.dimensions());
         DebugVar(expr.hasDiag());
         DebugVar(expr.source().size());
@@ -441,10 +441,15 @@ Pout<< "*** fvm::div ***" << nl;
             fvc::flux(U)
         );
 
-        const fvMatrix<vector> m3(fvm::ddt(U) - fvm::div(phi, U));
-        print("** fv::ddt,fvm::div", m3);
+        const fvMatrix<vector> m3(p*fvm::ddt(U));   // - fvm::div(phi, U));
+        print("** fvm::ddt,fvm::div", m3);
 
-        fvMatrix<vector> m2(U, Expression::ddt(U) - Expression::div(phi, U));
+        // Have operator* for scalarField*Expression
+        fvMatrix<vector> m2(U, p.expr()*Expression::ddt(U));   // - Expression::div(phi, U));
+
+        // p*Expression::ddt(U);
+        // becomes an object
+        // scale<volScalarField, Expression::ddt>
         print("**Expression::ddt,div", m2);
     }
 

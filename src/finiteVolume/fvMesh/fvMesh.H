@@ -130,6 +130,9 @@ protected:
         //- Face motion fluxes
         mutable std::unique_ptr<surfaceScalarField> phiPtr_;
 
+        //- Work space
+        mutable std::unique_ptr<volScalarField> workPtr_;
+
 
     // Private Member Functions
 
@@ -490,6 +493,12 @@ public:
             // -1 : invalid (not solved)
             template<class Type>
             typename pTraits<Type>::labelType validComponents() const;
+
+            //- Work array (volScalarField)
+            const volScalarField& work() const;
+
+            //- Work array (volScalarField)
+            volScalarField& work();
 
 
         // Edit
