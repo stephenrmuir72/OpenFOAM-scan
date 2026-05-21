@@ -8,6 +8,7 @@
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2022 Upstream CFD GmbH
     Copyright (C) 2015-2022 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -28,6 +29,7 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "SpalartAllmarasDDES.H"
+#include "wallDist.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -57,7 +59,8 @@ tmp<volScalarField> SpalartAllmarasDDES<BasicTurbulenceModel>::fd
     const volScalarField& magGradU
 ) const
 {
-    const volScalarField r(this->r(this->nuEff(), magGradU, this->y_));
+    const volScalarField& y = wallDist::New(this->mesh_).y();
+    const volScalarField r(this->r(this->nuEff(), magGradU, y));
 
     tmp<volScalarField> tfd = 1 - tanh(pow(Cd1_*r, Cd2_));
 
@@ -80,7 +83,7 @@ tmp<volScalarField> SpalartAllmarasDDES<BasicTurbulenceModel>::fd
             const volScalarField GnuTilda
             (
                 Cd3_*maxEps(fvc::grad(nuTilda) & n, Zero)
-              / (maxEps(magGradU, SMALL)*this->kappa_*this->y_)
+              / (maxEps(magGradU, SMALL)*this->kappa_*y)
             );
 
             volScalarField fdGnuTilda(1 - tanh(pow(Cd1_*GnuTilda, Cd2_)));
@@ -128,7 +131,7 @@ tmp<volScalarField> SpalartAllmarasDDES<BasicTurbulenceModel>::Stilda
 {
     if (this->useSigma_)
     {
-        const volScalarField& lRAS(this->y_);
+        const volScalarField& lRAS(wallDist::New(this->mesh_).y());
         const volScalarField fv2(this->fv2(chi, fv1));
         const volScalarField lLES(this->lengthScaleLES(chi, fv1));
         const volScalarField Omega(this->Omega(gradU));
@@ -165,7 +168,7 @@ tmp<volScalarField> SpalartAllmarasDDES<BasicTurbulenceModel>::dTilda
     const volTensorField& gradU
 ) const
 {
-    const volScalarField& lRAS(this->y_);
+    const volScalarField& lRAS(wallDist::New(this->mesh_).y());
     const volScalarField lLES(this->lengthScaleLES(chi, fv1));
     const dimensionedScalar l0(dimLength, Zero);
 
