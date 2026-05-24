@@ -835,25 +835,47 @@ void Foam::omegaWallFunctionFvPatchScalarField::updateWeightedCoeffs
     labelRange cellRange(weights.size());
 
     // only set the values if the weights are > tolerance
+    const scalar tolerance = tolerance_;
+
+    const scalar* const __restrict__ weightsPtr = weights.begin();
+
+    const labelUList& faceCells = patch().faceCells();
+    const label* const __restrict__ faceCellsPtr = faceCells.begin();
+
+    scalar* const __restrict__ GPtr = G.begin();
+    scalar* const __restrict__ omegaPtr = omega.begin();
+    scalar* const __restrict__ omegafPtr = omegaf.begin();
+
+    const scalar* const __restrict__ G0Ptr = G0.begin();
+    const scalar* const __restrict__ omega0Ptr = omega0.begin();
+
+    labelField transformResult(cellRange.size());
+
     apply_policy(cellRange.size(), [&](auto policy)
     {
-        std::for_each
+        std::transform
         (
             policy,
             cellRange.begin(),
             cellRange.end(),
-            [&](label facei)
+            transformResult.begin(),
+            [=](const label facei) -> label
             {
-                const scalar w = weights[facei];
+                const scalar w = weightsPtr[facei];
 
-                if (w > tolerance_)
+                if (w > tolerance)
                 {
-                    const label celli = patch().faceCells()[facei];
+                    const label celli = faceCellsPtr[facei];
 
-                    G[celli] = (1.0 - w)*G[celli] + w*G0[celli];
-                    omega[celli] = (1.0 - w)*omega[celli] + w*omega0[celli];
-                    omegaf[facei] = omega[celli];
+                    GPtr[celli] = (1.0 - w)*GPtr[celli] + w*G0Ptr[celli];
+
+                    omegaPtr[celli] =
+                        (1.0 - w)*omegaPtr[celli] + w*omega0Ptr[celli];
+
+                    omegafPtr[facei] = omegaPtr[celli];
                 }
+
+                return facei;
             }
         );
     });
@@ -900,6 +922,12 @@ void Foam::omegaWallFunctionFvPatchScalarField::manipulateMatrix
 
     List<label> selected(weights.size(), -1);
 
+    const scalar tolerance = tolerance_;
+
+    const scalar* const __restrict__ weightsPtr = weights.begin();
+    const label* const __restrict__ faceCellsPtr = faceCells.begin();
+    label* const __restrict__ selectedPtr = selected.begin();
+
     apply_policy(faceRange.size(), [&](auto policy)
     {
         std::transform
@@ -907,12 +935,12 @@ void Foam::omegaWallFunctionFvPatchScalarField::manipulateMatrix
             policy,
             faceRange.begin(),
             faceRange.end(),
-            selected.begin(),
-            [&](const label facei)
+            selectedPtr,
+            [=](const label facei) -> label
             {
-                if (tolerance_ < weights[facei])
+                if (tolerance < weightsPtr[facei])
                 {
-                    return faceCells[facei];
+                    return faceCellsPtr[facei];
                 }
 
                 return label(-1);

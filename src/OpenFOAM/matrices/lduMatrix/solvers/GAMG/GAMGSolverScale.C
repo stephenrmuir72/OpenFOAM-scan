@@ -31,6 +31,49 @@ License
 
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
+template<class Type>
+struct ScalePair
+{
+    Type first_;
+    Type second_;
+};
+
+template<class Type>
+struct ScalePairPlus
+{
+    ScalePair<Type> operator()
+    (
+        const ScalePair<Type>& a,
+        const ScalePair<Type>& b
+    ) const
+    {
+        return ScalePair<Type>
+        {
+            a.first_ + b.first_,
+            a.second_ + b.second_
+        };
+    }
+};
+
+template<class Type>
+struct ScalePairTransform
+{
+    const Type* fieldPtr_;
+    const Type* sourcePtr_;
+    const Type* AcfPtr_;
+
+    ScalePair<Type> operator()(const Foam::label i) const
+    {
+        const Type v = fieldPtr_[i];
+
+        return ScalePair<Type>
+        {
+            v*sourcePtr_[i],
+            v*AcfPtr_[i]
+        };
+    }
+};
+
 void Foam::GAMGSolver::scale
 (
     solveScalarField& field,
@@ -63,38 +106,23 @@ void Foam::GAMGSolver::scale
     const labelRange cellRange(nCells);
 
     #ifdef FOAM_OFFLOAD
-    auto transform_op = [&](label i) -> FixedList<solveScalar, 2>
-    {
-        solveScalar v = fieldPtr[i];
-        return FixedList<solveScalar, 2>
-        {
-            v * sourcePtr[i],
-            v * AcfPtr[i]
-        };
-    };
-
-    auto reduce_op = [](const FixedList<solveScalar, 2>& a,
-        const FixedList<solveScalar, 2>& b) -> FixedList<solveScalar, 2> 
-    {
-        return FixedList<solveScalar, 2>
-        {
-            a[0] + b[0],
-            a[1] + b[1]
-        };
-    };
+    ScalePair<solveScalar> pairResult{Zero, Zero};
 
     apply_policy(cellRange.size(), [&](auto policy)
     {
-        scalingFactor = std::transform_reduce
+        pairResult = std::transform_reduce
         (
             policy,
             cellRange.begin(),
             cellRange.end(),
-            FixedList<solveScalar, 2>(Zero),
-            reduce_op,
-            transform_op
+            ScalePair<solveScalar>{Zero, Zero},
+            ScalePairPlus<solveScalar>(),
+            ScalePairTransform<solveScalar>{fieldPtr, sourcePtr, AcfPtr}
         );
     });
+
+    scalingFactor[0] = pairResult.first_;
+    scalingFactor[1] = pairResult.second_;
     #else
     for (label i=0; i<nCells; i++)
     {
