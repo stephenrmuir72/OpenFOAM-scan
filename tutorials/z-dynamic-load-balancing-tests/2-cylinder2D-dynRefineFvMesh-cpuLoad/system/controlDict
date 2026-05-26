@@ -28,7 +28,12 @@ DebugSwitches
     cpuLoad 2;
 }
 
-application     pimpleFoamBalance;
+libs
+(
+    dynamicLoadBalancing
+);
+
+application     pimpleFoam;
 
 startFrom       startTime;
 
