@@ -1,5 +1,7 @@
 fvMesh/fvMeshGeometry.C
 fvMesh/fvMesh.C
+fvMesh/controlledUpdateHook/controlledUpdateHook.C
+fvMesh/controlledUpdateHook/controlledUpdateHookNew.C
 
 fvGeometryScheme = fvMesh/fvGeometryScheme
 $(fvGeometryScheme)/fvGeometryScheme/fvGeometryScheme.C

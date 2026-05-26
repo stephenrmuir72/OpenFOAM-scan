@@ -31,12 +31,35 @@ License
 #include "profilingPstream.H"
 #include "Function1.H"
 #include "addToRunTimeSelectionTable.H"
+#include "IOdictionary.H"
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
 namespace Foam
 {
     defineTypeNameAndDebug(dynamicLoadBalancer, 0);
+}
+
+
+// * * * * * * * * * * * * * * File-Local Functions * * * * * * * * * * * * * //
+
+namespace
+{
+
+Foam::dictionary readDynamicLoadBalanceDict(Foam::fvMesh& mesh)
+{
+    return Foam::IOdictionary::readContents
+    (
+        Foam::IOobject
+        (
+            "dynamicLoadBalanceDict",
+            mesh.time().constant(),
+            mesh,
+            Foam::IOobject::MUST_READ
+        )
+    );
+}
+
 }
 
 
@@ -108,20 +131,18 @@ Foam::dynamicLoadBalancer::dynamicLoadBalancer
     fvMesh& mesh
 )
 :
+    dynamicLoadBalancer(mesh, readDynamicLoadBalanceDict(mesh))
+{}
+
+
+Foam::dynamicLoadBalancer::dynamicLoadBalancer
+(
+    fvMesh& mesh,
+    const dictionary& dict
+)
+:
     mesh_(mesh),
-    dict_
-    (
-        IOdictionary::readContents
-        (
-            IOobject
-            (
-                "dynamicLoadBalanceDict",
-                mesh.time().constant(),
-                mesh,
-                IOobject::MUST_READ
-            )
-        )
-    ),
+    dict_(dict),
     balanceModelPtr_(balanceModel::New(mesh, dict_)),
     performanceMetricPtr_(performanceMetric::New(mesh, dict_)),
     frequencyPtr_(nullptr),
@@ -156,22 +177,27 @@ Foam::dynamicLoadBalancer::~dynamicLoadBalancer()
 
 bool Foam::dynamicLoadBalancer::read(const dictionary& dict)
 {
+    dict_ = dict;
+
     if
     (
-        !balanceModelPtr_->read(dict)
-     || !performanceMetricPtr_->read(dict)
+        !balanceModelPtr_->read(dict_)
+     || !performanceMetricPtr_->read(dict_)
     )
     {
         return false;
     }
 
     skipBalancePtr_ =
-        Function1<label>::NewIfPresent("skipBalance", dict, &mesh_);
+        Function1<label>::NewIfPresent("skipBalance", dict_, &mesh_);
 
+    recomputeImbalanceTolerance_ = 0;
+    backoffPeriod_ = 0;
+    checkChronicImbalance_ = false;
 
     if
     (
-        const auto& chronic = dict.subOrEmptyDict("chronicImbalanceSettings");
+        const auto& chronic = dict_.subOrEmptyDict("chronicImbalanceSettings");
        !chronic.empty()
     )
     {
@@ -194,11 +220,10 @@ bool Foam::dynamicLoadBalancer::read(const dictionary& dict)
                 << "    recomputeImbalanceTolerance present: " << hasTol << nl
                 << "    backoffPeriod present:               " << hasBack
                 << endl;
-            checkChronicImbalance_ = false;
         }
     }
 
-    frequencyPtr_ = Function1<label>::New("frequency", dict, &mesh_);
+    frequencyPtr_ = Function1<label>::New("frequency", dict_, &mesh_);
 
     bool ok = true;
     ok = ok && (frequencyPtr_);

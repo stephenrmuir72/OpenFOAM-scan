@@ -166,6 +166,9 @@ public:
         //- Construct from the mesh
         dynamicLoadBalancer(fvMesh& mesh);
 
+        //- Construct from the mesh and dictionary
+        dynamicLoadBalancer(fvMesh& mesh, const dictionary& dict);
+
 
     // Generated Methods
 

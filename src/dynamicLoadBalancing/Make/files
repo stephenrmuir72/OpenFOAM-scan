@@ -1,4 +1,5 @@
 dynamicLoadBalancer.C
+controlledUpdateHooks/dynamicLoadBalancing/dynamicLoadBalancingHook.C
 
 performanceMetrics/performanceMetric/performanceMetric.C
 performanceMetrics/performanceMetric/performanceMetricNew.C
@@ -10,4 +11,3 @@ balanceModels/balanceModel/balanceModelNew.C
 balanceModels/distributed/distributed.C
 
 LIB = $(FOAM_LIBBIN)/libdynamicLoadBalancing
-

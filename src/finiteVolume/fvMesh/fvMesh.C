@@ -39,6 +39,8 @@ License
 #include "mapClouds.H"
 #include "MeshObject.H"
 #include "fvMatrix.H"
+#include "controlledUpdateHook.H"
+#include "IOdictionary.H"
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -243,6 +245,76 @@ void Foam::fvMesh::clearMeshPhi()
 {
     // Clear mesh motion flux
     phiPtr_.reset(nullptr);
+}
+
+
+bool Foam::fvMesh::readControlledUpdateHook()
+{
+    IOobject dictHeader
+    (
+        "dynamicLoadBalanceDict",
+        time().constant(),
+        *this,
+        IOobject::MUST_READ,
+        IOobject::NO_WRITE,
+        IOobject::NO_REGISTER
+    );
+
+    if (!returnReduceOr(dictHeader.typeHeaderOk<IOdictionary>(false, false)))
+    {
+        controlledUpdateHookPtr_.reset(nullptr);
+        return false;
+    }
+
+    IOdictionary dict(dictHeader);
+
+    if (!dict.getOrDefault<bool>("active", true))
+    {
+        controlledUpdateHookPtr_.reset(nullptr);
+        return false;
+    }
+
+    dictionary hookDict(dict);
+    const word hookType
+    (
+        hookDict.getOrDefault<word>("type", "dynamicLoadBalancing")
+    );
+    hookDict.set("type", hookType);
+
+    time().libs().open("libs", hookDict, true);
+
+    if (hookType == "dynamicLoadBalancing")
+    {
+        time().libs().open({"dynamicLoadBalancing"}, true);
+    }
+
+    if (!controlledUpdateHookPtr_ || controlledUpdateHookPtr_->name() != hookType)
+    {
+        autoPtr<controlledUpdateHook> hookPtr =
+            controlledUpdateHook::New(hookType, *this, hookDict);
+
+        controlledUpdateHookPtr_.reset(hookPtr.ptr());
+    }
+
+    if (!controlledUpdateHookPtr_->read(hookDict))
+    {
+        FatalIOErrorInFunction(dict)
+            << "Failed to read controlled-update hook " << hookType
+            << exit(FatalIOError);
+    }
+
+    return true;
+}
+
+
+bool Foam::fvMesh::executeControlledUpdateHook()
+{
+    if (!readControlledUpdateHook())
+    {
+        return false;
+    }
+
+    return controlledUpdateHookPtr_->execute();
 }
 
 

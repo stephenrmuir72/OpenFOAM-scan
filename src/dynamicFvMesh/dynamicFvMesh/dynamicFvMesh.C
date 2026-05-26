@@ -166,6 +166,8 @@ Foam::dynamicFvMesh::dynamicFvMesh
 
 bool Foam::dynamicFvMesh::controlledUpdate()
 {
+    bool meshUpdated = false;
+
     if (timeControl_.execute())
     {
         if (!timeControl_.always())
@@ -176,10 +178,12 @@ bool Foam::dynamicFvMesh::controlledUpdate()
         }
 
         addProfiling(mesh, "mesh.update()");
-        return this->update();
+        meshUpdated = this->update();
     }
 
-    return false;
+    const bool hookUpdated = executeControlledUpdateHook();
+
+    return meshUpdated || hookUpdated;
 }
 
 

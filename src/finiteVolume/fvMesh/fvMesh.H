@@ -73,6 +73,7 @@ namespace Foam
 {
 
 // Forward Declarations
+class controlledUpdateHook;
 class fvMeshLduAddressing;
 class volMesh;
 template<class Type> class fvMatrix;
@@ -131,8 +132,19 @@ protected:
         //- Face motion fluxes
         mutable std::unique_ptr<surfaceScalarField> phiPtr_;
 
+        //- Optional hook executed from dynamicFvMesh::controlledUpdate()
+        std::unique_ptr<controlledUpdateHook> controlledUpdateHookPtr_;
+
 
     // Private Member Functions
+
+        // Controlled-update hook management
+
+            //- Read/update optional controlled-update hook
+            bool readControlledUpdateHook();
+
+            //- Execute optional controlled-update hook
+            bool executeControlledUpdateHook();
 
         // Storage management
 
