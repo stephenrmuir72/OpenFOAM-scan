@@ -22,7 +22,7 @@ then
 fi
 
 
-if [ "${WM_COMPILER%Mingw}" != "$WM_COMPILER" ] && [ "$WM_ARCH" != win64 ]
+if [ "${WM_COMPILER%Mingw}" != "$WM_COMPILER" ] && [ "$WM_ARCH" != "winARM64" ]
 then
     # Mingw cross-compilation
 
@@ -34,7 +34,7 @@ then
 
     # Toolchain for target (mingw)
     make \
-        WMAKE_BIN="${WM_PROJECT_DIR}/platforms/tools/win64${WM_COMPILER}" \
+         WMAKE_BIN="${WM_PROJECT_DIR}/platforms/tools/${WM_ARCH}${WM_COMPILER}" \
         "$@"
 else
 

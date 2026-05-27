@@ -7,6 +7,11 @@ RANLIB     = ranlib
 CPP        = cpp
 LD         = ld
 
+ifeq ($(WM_ARCH)_$(findstring Mingw,$(WM_COMPILER)),linuxARM64_Mingw)
+    CPP        = cpp -nostdinc -P
+endif
+
+
 GFLAGS     = -D$(WM_VERSION) \
              -DWM_$(WM_PRECISION_OPTION) -DWM_LABEL_SIZE=$(WM_LABEL_SIZE)
 GINC       =
