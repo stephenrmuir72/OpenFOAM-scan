@@ -33,6 +33,7 @@ License
 #include "decompositionMethod.H"
 #include "decompositionModel.H"
 #include "ListOps.H"
+#include "cloud.H"
 #include "addToRunTimeSelectionTable.H"
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
@@ -323,6 +324,16 @@ bool Foam::balanceModels::distributed::balance(const scalarField& procWeights)
     if (!returnReduceOr(localMoved))
     {
         return false;
+    }
+
+
+    // Snapshot the global positions of any Lagrangian clouds before the mesh
+    // is redistributed. Cloud::autoMap (invoked during the redistribution
+    // mapping) relies on these pre-change positions to relocate particles
+    // correctly; storing them afterwards would sample an already-changed mesh.
+    for (cloud* cloudPtr : mesh().lookupClass<cloud>())
+    {
+        cloudPtr->storeGlobalPositions();
     }
 
 
