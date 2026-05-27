@@ -1,4 +1,9 @@
+ifneq ($(WM_ARCH),winARM64)
 include $(GENERAL_RULES)/cgal-header-only
+CGAL_FLAGS = ${CGAL_INC}
+else
+CGAL_FLAGS =
+endif
 
 EXE_INC = \
     $(c++LESSWARN) \
