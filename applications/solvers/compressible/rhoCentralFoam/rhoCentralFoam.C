@@ -93,7 +93,7 @@ int main(int argc, char *argv[])
             ++runTime;
 
             // Do any mesh changes
-            mesh.update();
+            mesh.controlledUpdate();
         }
 
         // --- Directed interpolation of primitive fields onto faces
