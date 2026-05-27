@@ -1,0 +1,1000 @@
+    From virtual void Foam::fvMesh::movePoints(const pointField &)
+    in file fvMesh/fvMesh.C at line 951
+    Accessing old-time meshPhi field
+
+    From virtual void Foam::fvMesh::updateGeom()
+    in file fvMesh/fvMesh.C at line 979
+    
+
+    From virtual void Foam::fvGeometryScheme::movePoints()
+    in file fvMesh/fvGeometryScheme/fvGeometryScheme/fvGeometryScheme.C at line 187
+    
+
+    From bool Foam::fvGeometryScheme::setMeshPhi() const
+    in file fvMesh/fvGeometryScheme/fvGeometryScheme/fvGeometryScheme.C at line 46
+    Setting mesh phi for region0 changing:1
+
+    From const Foam::volScalarField::Internal &Foam::fvMesh::V() const
+    in file fvMesh/fvMeshGeometry.C at line 184
+    Constructing from primitiveMesh::cellVolumes()
+
+    From void Foam::fvMesh::makeSf() const
+    in file fvMesh/fvMeshGeometry.C at line 44
+    Assembling face areas
+
+    From void Foam::fvMesh::makeMagSf() const
+    in file fvMesh/fvMeshGeometry.C at line 78
+    Assembling mag face areas
+
+    From void Foam::fvMesh::makeC() const
+    in file fvMesh/fvMeshGeometry.C at line 111
+    Assembling cell centres
+
+    From void Foam::fvMesh::makeCf() const
+    in file fvMesh/fvMeshGeometry.C at line 148
+    Assembling face centres
+AMI: Creating AMI for source:AMI1 and target:AMI2
+
+    From Foam::label Foam::AMIInterpolation::calcDistribution(const primitivePatch &, const primitivePatch &, const label, autoPtr<UPstream::communicator> &) const
+    in file AMIInterpolation/AMIInterpolation/AMIInterpolation.C at line 240
+    AMI split across multiple processors (0 1)
+AMI: Patch source faces: 18496
+AMI: Patch target faces: 18720
+AMI: distributed
+AMI: patch proc:-1
+AMI: Patch source sum(weights) min:0.974284 max:1.0174 average:1.00007
+AMI: Patch target sum(weights) min:0.944353 max:1.01166 average:0.99999
+-- addToCache
+[1] [pimpleFoamBalance.C:168] pimpleFoamBalance-2
+[1] [pimpleFoamBalance.C:173] pimpleFoamBalance-3
+[0] [pimpleFoamBalance.C:168] pimpleFoamBalance-2
+[0] [pimpleFoamBalance.C:173] pimpleFoamBalance-3
+[0] [pimpleFoamBalance.C:178] pimpleFoamBalance-4
+[1] [pimpleFoamBalance.C:178] pimpleFoamBalance-4
+[0] [pimpleFoamBalance.C:181] pimpleFoamBalance-5
+[0] [pimpleFoamBalance.C:184] pimpleFoamBalance-6
+[0] [pimpleFoamBalance.C:188] pimpleFoamBalance-7
+[0] [pimpleFoamBalance.C:215] pimpleFoamBalance-12
+[0] [pimpleFoamBalance.C:218] pimpleFoamBalance-13
+[1] [pimpleFoamBalance.C:181] pimpleFoamBalance-5
+[1] [pimpleFoamBalance.C:184] pimpleFoamBalance-6
+[1] [pimpleFoamBalance.C:188] pimpleFoamBalance-7
+[1] [pimpleFoamBalance.C:215] pimpleFoamBalance-12
+[1] [pimpleFoamBalance.C:218] pimpleFoamBalance-13
+smoothSolver:  Solving for Ux, Initial residual = 0.115153, Final residual = 0.000158665, No Iterations 1
+smoothSolver:  Solving for Uy, Initial residual = 0.0637878, Final residual = 8.06453e-05, No Iterations 1
+smoothSolver:  Solving for Uz, Initial residual = 0.109114, Final residual = 0.000157773, No Iterations 1
+[0] [pimpleFoamBalance.C:220] pimpleFoamBalance-14
+[0] [pimpleFoamBalance.C:224] pimpleFoamBalance-15
+[0] pEqn-1
+[1] [pimpleFoamBalance.C:220] pimpleFoamBalance-14
+[1] [pimpleFoamBalance.C:224] pimpleFoamBalance-15
+[1] pEqn-1
+[0] pEqn-2
+[1] pEqn-2
+[0] pEqn-3
+[1] pEqn-3
+[1] pEqn-4
+[1] pEqn-5
+[0] pEqn-4
+[0] pEqn-5
+[1] pEqn-6
+[1] pEqn-7
+[1] pEqn-12
+[1] pEqn-17
+[1] pEqn-18
+[1] pEqn-19
+[1] pEqn-20
+[0] pEqn-6
+[0] pEqn-7
+[0] pEqn-12
+[0] pEqn-17
+[0] pEqn-18
+[0] pEqn-19
+[0] pEqn-20
+[0] pEqn-21
+[1] pEqn-21
+[0] pEqn-22a
+[0] p.size() : 263525
+[0] pEqn-23
+[1] pEqn-22a
+[1] p.size() : 262479
+[1] pEqn-23
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:16293 fineComm:0 coarse source size:0 neighbour source size:10006
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:18496 target:2427 fineComm:0 coarse source size:10625 neighbour source size:1448
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:10006 fineComm:0 coarse source size:0 neighbour source size:7265
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:10625 target:1448 fineComm:0 coarse source size:7649 neighbour source size:1131
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:7265 fineComm:0 coarse source size:0 neighbour source size:4178
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:7649 target:1131 fineComm:0 coarse source size:4435 neighbour source size:631
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:4178 fineComm:0 coarse source size:0 neighbour source size:2665
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:4435 target:631 fineComm:0 coarse source size:2724 neighbour source size:408
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:2665 fineComm:0 coarse source size:0 neighbour source size:1431
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:2724 target:408 fineComm:0 coarse source size:1601 neighbour source size:219
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:1431 fineComm:0 coarse source size:0 neighbour source size:832
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:1601 target:219 fineComm:0 coarse source size:971 neighbour source size:129
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:832 fineComm:0 coarse source size:0 neighbour source size:449
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:971 target:129 fineComm:0 coarse source size:576 neighbour source size:73
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:449 fineComm:0 coarse source size:0 neighbour source size:262
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:576 target:73 fineComm:0 coarse source size:346 neighbour source size:41
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:262 fineComm:0 coarse source size:0 neighbour source size:140
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:346 target:41 fineComm:0 coarse source size:208 neighbour source size:21
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:140 fineComm:0 coarse source size:0 neighbour source size:78
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:208 target:21 fineComm:0 coarse source size:129 neighbour source size:11
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:129 target:11 fineComm:0 coarse source size:73 neighbour source size:6
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:78 fineComm:0 coarse source size:0 neighbour source size:40
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:40 fineComm:0 coarse source size:0 neighbour source size:23
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:73 target:6 fineComm:0 coarse source size:43 neighbour source size:3
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:23 fineComm:0 coarse source size:0 neighbour source size:14
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:43 target:3 fineComm:0 coarse source size:25 neighbour source size:1
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:14 fineComm:0 coarse source size:0 neighbour source size:8
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:25 target:1 fineComm:0 coarse source size:14 neighbour source size:1
+GAMG:  Solving for p, Initial residual = 0.620054, Final residual = 5.21917e-07, No Iterations 13
+[0] pEqn-24
+[0] pEqn-25
+[1] pEqn-24
+[1] pEqn-25
+[0] pEqn-26
+[0] pEqn-27
+[0] pEqn-28
+[1] pEqn-26
+[1] pEqn-27
+[1] pEqn-28
+time step continuity errors : sum local = 1.38711e-10, global = 1.95162e-11, cumulative = 2.01996e-10
+[0] pEqn-29
+[0] pEqn-30
+[1] pEqn-29
+[1] pEqn-30
+[0] pEqn-31
+[1] pEqn-31
+[0] pEqn-32
+[0] pEqn-33
+[1] pEqn-32
+[1] pEqn-33
+[0] pEqn-34
+[0] pEqn-35
+[0] [pimpleFoamBalance.C:226] pimpleFoamBalance-16
+[0] [pimpleFoamBalance.C:229] pimpleFoamBalance-17
+PIMPLE: iteration 2
+[0] [pimpleFoamBalance.C:218] pimpleFoamBalance-13
+[1] pEqn-34
+[1] pEqn-35
+[1] [pimpleFoamBalance.C:226] pimpleFoamBalance-16
+[1] [pimpleFoamBalance.C:229] pimpleFoamBalance-17
+[1] [pimpleFoamBalance.C:218] pimpleFoamBalance-13
+smoothSolver:  Solving for Ux, Initial residual = 0.00139835, Final residual = 9.76126e-07, No Iterations 6
+smoothSolver:  Solving for Uy, Initial residual = 0.000714634, Final residual = 6.68291e-07, No Iterations 7
+smoothSolver:  Solving for Uz, Initial residual = 0.00137664, Final residual = 9.98429e-07, No Iterations 6
+[0] [pimpleFoamBalance.C:220] pimpleFoamBalance-14
+[0] [pimpleFoamBalance.C:224] pimpleFoamBalance-15
+[0] pEqn-1
+[1] [pimpleFoamBalance.C:220] pimpleFoamBalance-14
+[1] [pimpleFoamBalance.C:224] pimpleFoamBalance-15
+[1] pEqn-1
+[0] pEqn-2
+[1] pEqn-2
+[0] pEqn-3
+[1] pEqn-3
+[1] pEqn-4
+[1] pEqn-5
+[0] pEqn-4
+[0] pEqn-5
+[1] pEqn-6
+[1] pEqn-7
+[1] pEqn-12
+[1] pEqn-17
+[1] pEqn-18
+[1] pEqn-19
+[1] pEqn-20
+[1] pEqn-21
+[0] pEqn-6
+[0] pEqn-7
+[0] pEqn-12
+[0] pEqn-17
+[0] pEqn-18
+[0] pEqn-19
+[0] pEqn-20
+[0] pEqn-21
+[0] pEqn-22a
+[0] p.size() : 263525
+[0] pEqn-23
+[1] pEqn-22a
+[1] p.size() : 262479
+[1] pEqn-23
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:16293 fineComm:0 coarse source size:0 neighbour source size:16143
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:18496 target:2427 fineComm:0 coarse source size:16888 neighbour source size:2409
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:16143 fineComm:0 coarse source size:0 neighbour source size:8243
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:16888 target:2409 fineComm:0 coarse source size:8713 neighbour source size:1222
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:8243 fineComm:0 coarse source size:0 neighbour source size:4719
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:8713 target:1222 fineComm:0 coarse source size:4973 neighbour source size:693
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:4719 fineComm:0 coarse source size:0 neighbour source size:2622
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:4973 target:693 fineComm:0 coarse source size:2769 neighbour source size:376
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:2622 fineComm:0 coarse source size:0 neighbour source size:1554
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:2769 target:376 fineComm:0 coarse source size:1669 neighbour source size:222
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:1554 fineComm:0 coarse source size:0 neighbour source size:832
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:1669 target:222 fineComm:0 coarse source size:980 neighbour source size:123
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:832 fineComm:0 coarse source size:0 neighbour source size:475
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:980 target:123 fineComm:0 coarse source size:591 neighbour source size:73
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:475 fineComm:0 coarse source size:0 neighbour source size:249
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:591 target:73 fineComm:0 coarse source size:355 neighbour source size:40
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:355 target:40 fineComm:0 coarse source size:214 neighbour source size:23
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:249 fineComm:0 coarse source size:0 neighbour source size:149
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:149 fineComm:0 coarse source size:0 neighbour source size:81
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:214 target:23 fineComm:0 coarse source size:128 neighbour source size:13
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:81 fineComm:0 coarse source size:0 neighbour source size:43
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:128 target:13 fineComm:0 coarse source size:74 neighbour source size:6
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:43 fineComm:0 coarse source size:0 neighbour source size:23
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:74 target:6 fineComm:0 coarse source size:44 neighbour source size:3
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:44 target:3 fineComm:0 coarse source size:26 neighbour source size:1
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:23 fineComm:0 coarse source size:0 neighbour source size:12
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:12 fineComm:0 coarse source size:0 neighbour source size:7
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:26 target:1 fineComm:0 coarse source size:13 neighbour source size:1
+GAMG:  Solving for p, Initial residual = 0.0936934, Final residual = 9.13612e-07, No Iterations 11
+[0] pEqn-24
+[0] pEqn-25
+[1] pEqn-24
+[1] pEqn-25
+[0] pEqn-26
+[0] pEqn-27
+[0] pEqn-28
+[1] pEqn-26
+[1] pEqn-27
+[1] pEqn-28
+time step continuity errors : sum local = 8.8162e-11, global = -5.3198e-12, cumulative = 1.96677e-10
+[0] pEqn-29
+[0] pEqn-30
+[1] pEqn-29
+[1] pEqn-30
+[0] pEqn-31
+[1] pEqn-31
+[0] pEqn-32
+[0] pEqn-33
+[1] pEqn-32
+[1] pEqn-33
+[0] pEqn-34
+[0] pEqn-35
+[0] [pimpleFoamBalance.C:226] pimpleFoamBalance-16
+[0] [pimpleFoamBalance.C:229] pimpleFoamBalance-17
+[0] [pimpleFoamBalance.C:232] pimpleFoamBalance-18
+[0] [pimpleFoamBalance.C:234] pimpleFoamBalance-19
+[1] pEqn-34
+[1] pEqn-35
+[1] [pimpleFoamBalance.C:226] pimpleFoamBalance-16
+[1] [pimpleFoamBalance.C:229] pimpleFoamBalance-17
+[1] [pimpleFoamBalance.C:232] pimpleFoamBalance-18
+[1] [pimpleFoamBalance.C:234] pimpleFoamBalance-19
+smoothSolver:  Solving for epsilon, Initial residual = 0.00408536, Final residual = 3.95527e-07, No Iterations 8
+smoothSolver:  Solving for k, Initial residual = 0.00690301, Final residual = 7.41057e-07, No Iterations 10
+[0] [pimpleFoamBalance.C:236] pimpleFoamBalance-20
+[0] [pimpleFoamBalance.C:240] pimpleFoamBalance-21
+[0] [pimpleFoamBalance.C:242] pimpleFoamBalance-22
+ExecutionTime = 209.01 s  ClockTime = 209 s
+
+--> FOAM Warning : 
+    From virtual bool Foam::functionObjects::fieldSelection::checkSelection()
+    in file functionObjects/fieldSelections/fieldSelection/fieldSelection.C at line 179
+    Field T not found
+fieldMinMax FOfieldMinMax write:
+[1] [pimpleFoamBalance.C:236] pimpleFoamBalance-20
+[1] [pimpleFoamBalance.C:240] pimpleFoamBalance-21
+[1] [pimpleFoamBalance.C:242] pimpleFoamBalance-22
+    min(mag(U)) = 0 in cell 8735 at location (0.082039 -0.172496 -0.285674) on processor 0
+    max(mag(U)) = 17.9403 in cell 254955 at location (0.0640221 8.12515e-05 0.0937762) on processor 1
+    min(p) = -408.738 in cell 183751 at location (-0.032888 0.0211202 0.0886572) on processor 1
+    max(p) = 1375.35 in cell 253543 at location (0.06833 0.00378302 0.0895055) on processor 1
+
+Courant Number mean: 0.00619514 max: 0.641139
+deltaT = 2.0736e-05
+Time = 6.4416e-05
+
+correctPhi is OFF
+PIMPLE: iteration 1
+[0] [pimpleFoamBalance.C:165] pimpleFoamBalance-1
+[1] [pimpleFoamBalance.C:165] pimpleFoamBalance-1
+
+    From virtual void Foam::fvMesh::movePoints(const pointField &)
+    in file fvMesh/fvMesh.C at line 913
+    
+
+    From void Foam::fvMesh::storeOldVol(const scalarField &)
+    in file fvMesh/fvMesh.C at line 168
+     Storing old time volumes since from time 3 and time now 4 V:263525
+
+    From void Foam::fvMesh::storeOldVol(const scalarField &)
+    in file fvMesh/fvMesh.C at line 207
+     Stored old time volumes V0:263525
+
+    From virtual void Foam::fvMesh::movePoints(const pointField &)
+    in file fvMesh/fvMesh.C at line 951
+    Accessing old-time meshPhi field
+
+    From virtual void Foam::fvMesh::updateGeom()
+    in file fvMesh/fvMesh.C at line 979
+    
+
+    From virtual void Foam::fvGeometryScheme::movePoints()
+    in file fvMesh/fvGeometryScheme/fvGeometryScheme/fvGeometryScheme.C at line 187
+    
+
+    From bool Foam::fvGeometryScheme::setMeshPhi() const
+    in file fvMesh/fvGeometryScheme/fvGeometryScheme/fvGeometryScheme.C at line 46
+    Setting mesh phi for region0 changing:1
+
+    From const Foam::volScalarField::Internal &Foam::fvMesh::V() const
+    in file fvMesh/fvMeshGeometry.C at line 184
+    Constructing from primitiveMesh::cellVolumes()
+
+    From void Foam::fvMesh::makeSf() const
+    in file fvMesh/fvMeshGeometry.C at line 44
+    Assembling face areas
+
+    From void Foam::fvMesh::makeMagSf() const
+    in file fvMesh/fvMeshGeometry.C at line 78
+    Assembling mag face areas
+
+    From void Foam::fvMesh::makeC() const
+    in file fvMesh/fvMeshGeometry.C at line 111
+    Assembling cell centres
+
+    From void Foam::fvMesh::makeCf() const
+    in file fvMesh/fvMeshGeometry.C at line 148
+    Assembling face centres
+AMI: Creating AMI for source:AMI1 and target:AMI2
+
+    From Foam::label Foam::AMIInterpolation::calcDistribution(const primitivePatch &, const primitivePatch &, const label, autoPtr<UPstream::communicator> &) const
+    in file AMIInterpolation/AMIInterpolation/AMIInterpolation.C at line 240
+    AMI split across multiple processors (0 1)
+AMI: Patch source faces: 18496
+AMI: Patch target faces: 18720
+AMI: distributed
+AMI: patch proc:-1
+AMI: Patch source sum(weights) min:0.964372 max:1.0176 average:1.00006
+AMI: Patch target sum(weights) min:0.932825 max:1.01405 average:0.999987
+-- addToCache
+[1] [pimpleFoamBalance.C:168] pimpleFoamBalance-2
+[1] [pimpleFoamBalance.C:173] pimpleFoamBalance-3
+[0] [pimpleFoamBalance.C:168] pimpleFoamBalance-2
+[0] [pimpleFoamBalance.C:173] pimpleFoamBalance-3
+[1] [pimpleFoamBalance.C:178] pimpleFoamBalance-4
+[0] [pimpleFoamBalance.C:178] pimpleFoamBalance-4
+[1] [pimpleFoamBalance.C:181] pimpleFoamBalance-5
+[1] [pimpleFoamBalance.C:184] pimpleFoamBalance-6
+[1] [pimpleFoamBalance.C:188] pimpleFoamBalance-7
+[1] [pimpleFoamBalance.C:215] pimpleFoamBalance-12
+[1] [pimpleFoamBalance.C:218] pimpleFoamBalance-13
+[0] [pimpleFoamBalance.C:181] pimpleFoamBalance-5
+[0] [pimpleFoamBalance.C:184] pimpleFoamBalance-6
+[0] [pimpleFoamBalance.C:188] pimpleFoamBalance-7
+[0] [pimpleFoamBalance.C:215] pimpleFoamBalance-12
+[0] [pimpleFoamBalance.C:218] pimpleFoamBalance-13
+smoothSolver:  Solving for Ux, Initial residual = 0.0261412, Final residual = 3.61247e-05, No Iterations 1
+smoothSolver:  Solving for Uy, Initial residual = 0.0296902, Final residual = 1.76412e-05, No Iterations 1
+smoothSolver:  Solving for Uz, Initial residual = 0.0263821, Final residual = 3.60383e-05, No Iterations 1
+[0] [pimpleFoamBalance.C:220] pimpleFoamBalance-14
+[0] [pimpleFoamBalance.C:224] pimpleFoamBalance-15
+[0] pEqn-1
+[1] [pimpleFoamBalance.C:220] pimpleFoamBalance-14
+[1] [pimpleFoamBalance.C:224] pimpleFoamBalance-15
+[1] pEqn-1
+[0] pEqn-2
+[1] pEqn-2
+[0] pEqn-3
+[1] pEqn-3
+[1] pEqn-4
+[1] pEqn-5
+[0] pEqn-4
+[0] pEqn-5
+[0] pEqn-6
+[0] pEqn-7
+[0] pEqn-12
+[0] pEqn-17
+[0] pEqn-18
+[0] pEqn-19
+[1] pEqn-6
+[1] pEqn-7
+[1] pEqn-12
+[1] pEqn-17
+[1] pEqn-18
+[1] pEqn-19
+[1] pEqn-20
+[0] pEqn-20
+[0] pEqn-21
+[1] pEqn-21
+[0] pEqn-22a
+[0] p.size() : 263525
+[1] pEqn-22a
+[1] p.size() : 262479
+[1] pEqn-23
+[0] pEqn-23
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:16293 fineComm:0 coarse source size:0 neighbour source size:10006
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:18496 target:2427 fineComm:0 coarse source size:10625 neighbour source size:1448
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:10006 fineComm:0 coarse source size:0 neighbour source size:7265
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:10625 target:1448 fineComm:0 coarse source size:7644 neighbour source size:1131
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:7265 fineComm:0 coarse source size:0 neighbour source size:4178
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:7644 target:1131 fineComm:0 coarse source size:4434 neighbour source size:631
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:4178 fineComm:0 coarse source size:0 neighbour source size:2665
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:4434 target:631 fineComm:0 coarse source size:2731 neighbour source size:408
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:2665 fineComm:0 coarse source size:0 neighbour source size:1431
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:2731 target:408 fineComm:0 coarse source size:1613 neighbour source size:219
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:1431 fineComm:0 coarse source size:0 neighbour source size:832
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:1613 target:219 fineComm:0 coarse source size:990 neighbour source size:129
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:832 fineComm:0 coarse source size:0 neighbour source size:449
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:990 target:129 fineComm:0 coarse source size:590 neighbour source size:73
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:590 target:73 fineComm:0 coarse source size:354 neighbour source size:41
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:449 fineComm:0 coarse source size:0 neighbour source size:262
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:354 target:41 fineComm:0 coarse source size:207 neighbour source size:21
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:262 fineComm:0 coarse source size:0 neighbour source size:140
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:207 target:21 fineComm:0 coarse source size:123 neighbour source size:11
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:140 fineComm:0 coarse source size:0 neighbour source size:78
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:123 target:11 fineComm:0 coarse source size:71 neighbour source size:6
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:78 fineComm:0 coarse source size:0 neighbour source size:40
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:71 target:6 fineComm:0 coarse source size:42 neighbour source size:3
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:40 fineComm:0 coarse source size:0 neighbour source size:23
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:23 fineComm:0 coarse source size:0 neighbour source size:14
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:42 target:3 fineComm:0 coarse source size:24 neighbour source size:1
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:24 target:1 fineComm:0 coarse source size:13 neighbour source size:1
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:14 fineComm:0 coarse source size:0 neighbour source size:8
+GAMG:  Solving for p, Initial residual = 0.291701, Final residual = 9.16307e-07, No Iterations 13
+[0] pEqn-24
+[0] pEqn-25
+[1] pEqn-24
+[1] pEqn-25
+[0] pEqn-26
+[0] pEqn-27
+[0] pEqn-28
+[1] pEqn-26
+[1] pEqn-27
+[1] pEqn-28
+time step continuity errors : sum local = 1.00129e-10, global = 1.41241e-11, cumulative = 2.10801e-10
+[0] pEqn-29
+[0] pEqn-30
+[1] pEqn-29
+[1] pEqn-30
+[0] pEqn-31
+[1] pEqn-31
+[0] pEqn-32
+[0] pEqn-33
+[1] pEqn-32
+[1] pEqn-33
+[0] pEqn-34
+[0] pEqn-35
+[0] [pimpleFoamBalance.C:226] pimpleFoamBalance-16
+[0] [pimpleFoamBalance.C:229] pimpleFoamBalance-17
+PIMPLE: iteration 2
+[0] [pimpleFoamBalance.C:218] pimpleFoamBalance-13
+[1] pEqn-34
+[1] pEqn-35
+[1] [pimpleFoamBalance.C:226] pimpleFoamBalance-16
+[1] [pimpleFoamBalance.C:229] pimpleFoamBalance-17
+[1] [pimpleFoamBalance.C:218] pimpleFoamBalance-13
+smoothSolver:  Solving for Ux, Initial residual = 0.000543162, Final residual = 7.84535e-07, No Iterations 2
+smoothSolver:  Solving for Uy, Initial residual = 0.000327473, Final residual = 2.90505e-07, No Iterations 2
+smoothSolver:  Solving for Uz, Initial residual = 0.00054631, Final residual = 7.86674e-07, No Iterations 2
+[0] [pimpleFoamBalance.C:220] pimpleFoamBalance-14
+[0] [pimpleFoamBalance.C:224] pimpleFoamBalance-15
+[0] pEqn-1
+[1] [pimpleFoamBalance.C:220] pimpleFoamBalance-14
+[1] [pimpleFoamBalance.C:224] pimpleFoamBalance-15
+[1] pEqn-1
+[0] pEqn-2
+[1] pEqn-2
+[0] pEqn-3
+[1] pEqn-3
+[1] pEqn-4
+[1] pEqn-5
+[0] pEqn-4
+[0] pEqn-5
+[1] pEqn-6
+[1] pEqn-7
+[0] pEqn-6
+[0] pEqn-7
+[0] pEqn-12
+[0] pEqn-17
+[0] pEqn-18
+[0] pEqn-19
+[0] pEqn-20
+[0] pEqn-21
+[1] pEqn-12
+[1] pEqn-17
+[1] pEqn-18
+[1] pEqn-19
+[1] pEqn-20
+[1] pEqn-21
+[0] pEqn-22a
+[0] p.size() : 263525
+[0] pEqn-23
+[1] pEqn-22a
+[1] p.size() : 262479
+[1] pEqn-23
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:16293 fineComm:0 coarse source size:0 neighbour source size:16143
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:18496 target:2427 fineComm:0 coarse source size:16888 neighbour source size:2409
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:16143 fineComm:0 coarse source size:0 neighbour source size:8243
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:16888 target:2409 fineComm:0 coarse source size:8713 neighbour source size:1222
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:8243 fineComm:0 coarse source size:0 neighbour source size:4719
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:8713 target:1222 fineComm:0 coarse source size:4973 neighbour source size:693
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:4719 fineComm:0 coarse source size:0 neighbour source size:2622
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:4973 target:693 fineComm:0 coarse source size:2769 neighbour source size:376
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:2622 fineComm:0 coarse source size:0 neighbour source size:1554
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:2769 target:376 fineComm:0 coarse source size:1669 neighbour source size:222
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:1554 fineComm:0 coarse source size:0 neighbour source size:832
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:1669 target:222 fineComm:0 coarse source size:980 neighbour source size:123
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:832 fineComm:0 coarse source size:0 neighbour source size:475
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:980 target:123 fineComm:0 coarse source size:591 neighbour source size:73
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:475 fineComm:0 coarse source size:0 neighbour source size:249
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:591 target:73 fineComm:0 coarse source size:355 neighbour source size:40
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:249 fineComm:0 coarse source size:0 neighbour source size:149
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:355 target:40 fineComm:0 coarse source size:214 neighbour source size:23
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:149 fineComm:0 coarse source size:0 neighbour source size:81
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:214 target:23 fineComm:0 coarse source size:128 neighbour source size:13
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:81 fineComm:0 coarse source size:0 neighbour source size:43
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:128 target:13 fineComm:0 coarse source size:74 neighbour source size:6
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:74 target:6 fineComm:0 coarse source size:44 neighbour source size:3
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:43 fineComm:0 coarse source size:0 neighbour source size:23
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:23 fineComm:0 coarse source size:0 neighbour source size:12
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:44 target:3 fineComm:0 coarse source size:26 neighbour source size:1
+[0] AMI: Creating addressing and weights as agglomeration of AMI : source:0 target:12 fineComm:0 coarse source size:0 neighbour source size:7
+[1] AMI: Creating addressing and weights as agglomeration of AMI : source:26 target:1 fineComm:0 coarse source size:13 neighbour source size:1
+GAMG:  Solving for p, Initial residual = 0.0505743, Final residual = 8.0461e-07, No Iterations 11
+[0] pEqn-24
+[0] pEqn-25
+[1] pEqn-24
+[1] pEqn-25
+[0] pEqn-26
+[0] pEqn-27
+[0] pEqn-28
+[1] pEqn-26
+[1] pEqn-27
+[1] pEqn-28
+time step continuity errors : sum local = 5.67486e-11, global = 8.60955e-12, cumulative = 2.1941e-10
+[0] pEqn-29
+[0] pEqn-30
+[1] pEqn-29
+[1] pEqn-30
+[0] pEqn-31
+[1] pEqn-31
+[0] pEqn-32
+[0] pEqn-33
+[1] pEqn-32
+[1] pEqn-33
+[0] pEqn-34
+[0] pEqn-35
+[0] [pimpleFoamBalance.C:226] pimpleFoamBalance-16
+[0] [pimpleFoamBalance.C:229] pimpleFoamBalance-17
+[0] [pimpleFoamBalance.C:232] pimpleFoamBalance-18
+[0] [pimpleFoamBalance.C:234] pimpleFoamBalance-19
+[1] pEqn-34
+[1] pEqn-35
+[1] [pimpleFoamBalance.C:226] pimpleFoamBalance-16
+[1] [pimpleFoamBalance.C:229] pimpleFoamBalance-17
+[1] [pimpleFoamBalance.C:232] pimpleFoamBalance-18
+[1] [pimpleFoamBalance.C:234] pimpleFoamBalance-19
+smoothSolver:  Solving for epsilon, Initial residual = 0.000415558, Final residual = 5.73846e-07, No Iterations 2
+smoothSolver:  Solving for k, Initial residual = 0.000908768, Final residual = 1.93164e-07, No Iterations 3
+[0] [pimpleFoamBalance.C:236] pimpleFoamBalance-20
+[0] [pimpleFoamBalance.C:240] pimpleFoamBalance-21
+[0] [pimpleFoamBalance.C:242] pimpleFoamBalance-22
+ExecutionTime = 268.16 s  ClockTime = 269 s
+
+--> FOAM Warning : 
+    From virtual bool Foam::functionObjects::fieldSelection::checkSelection()
+    in file functionObjects/fieldSelections/fieldSelection/fieldSelection.C at line 179
+    Field T not found
+fieldMinMax FOfieldMinMax write:
+[1] [pimpleFoamBalance.C:236] pimpleFoamBalance-20
+[1] [pimpleFoamBalance.C:240] pimpleFoamBalance-21
+[1] [pimpleFoamBalance.C:242] pimpleFoamBalance-22
+    min(mag(U)) = 0 in cell 8735 at location (0.082039 -0.172496 -0.285674) on processor 0
+    max(mag(U)) = 17.9403 in cell 254955 at location (0.064329 8.12515e-05 0.0935659) on processor 1
+    min(p) = -44.9932 in cell 3743 at location (0.254873 -0.645099 -0.0975198) on processor 0
+    max(p) = 687.352 in cell 89959 at location (0.238532 0.179966 -0.132235) on processor 0
+
+Courant Number mean: 0.00742774 max: 0.754318
+deltaT = 2.48832e-05
+Time = 8.92992e-05
+
+correctPhi is OFF
+PIMPLE: iteration 1
+[0] [pimpleFoamBalance.C:165] pimpleFoamBalance-1
+[1] [pimpleFoamBalance.C:165] pimpleFoamBalance-1
+
+    From virtual void Foam::fvMesh::movePoints(const pointField &)
+    in file fvMesh/fvMesh.C at line 913
+    
+
+    From void Foam::fvMesh::storeOldVol(const scalarField &)
+    in file fvMesh/fvMesh.C at line 168
+     Storing old time volumes since from time 4 and time now 5 V:263525
+
+    From void Foam::fvMesh::storeOldVol(const scalarField &)
+    in file fvMesh/fvMesh.C at line 207
+     Stored old time volumes V0:263525
+
+    From virtual void Foam::fvMesh::movePoints(const pointField &)
+    in file fvMesh/fvMesh.C at line 951
+    Accessing old-time meshPhi field
+
+    From virtual void Foam::fvMesh::updateGeom()
+    in file fvMesh/fvMesh.C at line 979
+    
+
+    From virtual void Foam::fvGeometryScheme::movePoints()
+    in file fvMesh/fvGeometryScheme/fvGeometryScheme/fvGeometryScheme.C at line 187
+    
+
+    From bool Foam::fvGeometryScheme::setMeshPhi() const
+    in file fvMesh/fvGeometryScheme/fvGeometryScheme/fvGeometryScheme.C at line 46
+    Setting mesh phi for region0 changing:1
+
+    From const Foam::volScalarField::Internal &Foam::fvMesh::V() const
+    in file fvMesh/fvMeshGeometry.C at line 184
+    Constructing from primitiveMesh::cellVolumes()
+
+    From void Foam::fvMesh::makeSf() const
+    in file fvMesh/fvMeshGeometry.C at line 44
+    Assembling face areas
+
+    From void Foam::fvMesh::makeMagSf() const
+    in file fvMesh/fvMeshGeometry.C at line 78
+    Assembling mag face areas
+
+    From void Foam::fvMesh::makeC() const
+    in file fvMesh/fvMeshGeometry.C at line 111
+    Assembling cell centres
+
+    From void Foam::fvMesh::makeCf() const
+    in file fvMesh/fvMeshGeometry.C at line 148
+    Assembling face centres
+AMI: Creating AMI for source:AMI1 and target:AMI2
+
+    From Foam::label Foam::AMIInterpolation::calcDistribution(const primitivePatch &, const primitivePatch &, const label, autoPtr<UPstream::communicator> &) const
+    in file AMIInterpolation/AMIInterpolation/AMIInterpolation.C at line 240
+    AMI split across multiple processors (0 1)
+AMI: Patch source faces: 18496
+AMI: Patch target faces: 18720
+AMI: distributed
+AMI: patch proc:-1
+AMI: Patch source sum(weights) min:0.954255 max:1.01853 average:1.00006
+AMI: Patch target sum(weights) min:0.92009 max:1.01857 average:0.999988
+-- addToCache
+[1] [pimpleFoamBalance.C:168] pimpleFoamBalance-2
+[1] [pimpleFoamBalance.C:173] pimpleFoamBalance-3
+[0] [pimpleFoamBalance.C:168] pimpleFoamBalance-2
+[0] [pimpleFoamBalance.C:173] pimpleFoamBalance-3
+Decomposition method scotch [2] (region region0)
+[0] polyTopoChange::changeMesh(polyMesh&, const bool, const bool, const bool, const bool)
+[0] Old mesh:
+[0]     Points      : 295300
+[0]     Faces       : 821979
+[0]     Cells       : 263525
+[0]     PatchSizes  : (611 0 0 316 690 0 16293 332 112 1870)
+[0]     PatchStarts : (801755 802366 802366 802366 802682 803372 803372 819665 819997 820109)
+[0]     cZoneSizes  : (0)
+[0]     fZoneSizes  : (16293)
+[0]     pZoneSizes  : (0)
+[0]     moving      : 1
+[0] 
+[0] Points : active:295300  removed:0
+[1] polyTopoChange::changeMesh(polyMesh&, const bool, const bool, const bool, const bool)
+[1] Old mesh:
+[1]     Points      : 301974
+[1]     Faces       : 820710
+[1]     Cells       : 262479
+[1]     PatchSizes  : (29 21747 192 260 846 18496 2427 320 0 1870)
+[1]     PatchStarts : (774523 774552 796299 796491 796751 797597 816093 818520 818840 818840)
+[1]     cZoneSizes  : (245388)
+[1]     fZoneSizes  : (20923)
+[1]     pZoneSizes  : (0)
+[1]     moving      : 1
+[1] 
+[1] Points : active:301974  removed:0
+[0] Faces : active:821979  removed:0
+[1] Faces : active:820710  removed:0
+[0] Cells : active:263525  removed:0
+[1] Cells : active:262479  removed:0
+
+    From virtual void Foam::fvMesh::updateGeom()
+    in file fvMesh/fvMesh.C at line 979
+    
+
+    From virtual void Foam::fvGeometryScheme::movePoints()
+    in file fvMesh/fvGeometryScheme/fvGeometryScheme/fvGeometryScheme.C at line 187
+    
+
+    From bool Foam::fvGeometryScheme::setMeshPhi() const
+    in file fvMesh/fvGeometryScheme/fvGeometryScheme/fvGeometryScheme.C at line 46
+    Setting mesh phi for region0 changing:1
+[0] Points:  added(from point):0  added(from nothing):0  merged(into other point):0  removed:0
+[1] Points:  added(from point):0  added(from nothing):0  merged(into other point):0  removed:0
+[0] Faces:  added(from face):0  added(inflated):0  merged(into other face):0  removed:0
+[1] Faces:  added(from face):0  added(inflated):0  merged(into other face):0  removed:0
+[0] Cells:  added(from cell):0  added(inflated):0  merged(into other cell):0  removed:0
+[0] 
+[0] pointZone:0  name:frozenPoints  size:0
+[1] Cells:  added(from cell):0  added(inflated):0  merged(into other cell):0  removed:0
+[1] 
+[1] pointZone:0  name:frozenPoints  size:0
+[0] faceZone:0  name:innerCylinderSmall  size:16293
+[0] cellZone:0  name:innerCylinderSmall  size:0
+[0] New mesh:
+[0]     Points      : 295300
+[0]     Faces       : 821979
+[0]     Cells       : 263525
+[0]     PatchSizes  : (611 0 0 316 690 0 16293 332 1982 0)
+[0]     PatchStarts : (801755 802366 802366 802366 802682 803372 803372 819665 819997 821979)
+[0]     cZoneSizes  : (0)
+[0]     fZoneSizes  : (16293)
+[0]     pZoneSizes  : (0)
+[0]     moving      : 1
+[0] 
+[1] faceZone:0  name:innerCylinderSmall  size:20923
+
+    From virtual void Foam::fvMesh::updateMesh(const mapPolyMesh &)
+    in file fvMesh/fvMesh.C at line 989
+    
+[1] cellZone:0  name:innerCylinderSmall  size:245388
+[1] New mesh:
+[1]     Points      : 301974
+[1]     Faces       : 820710
+[1]     Cells       : 262479
+[1]     PatchSizes  : (29 21747 192 260 846 18496 2427 320 1870 0)
+[1]     PatchStarts : (774523 774552 796299 796491 796751 797597 816093 818520 818840 820710)
+[1]     cZoneSizes  : (245388)
+[1]     fZoneSizes  : (20923)
+[1]     pZoneSizes  : (0)
+[1]     moving      : 1
+[1] 
+
+    From virtual void Foam::fvGeometryScheme::updateMesh(const mapPolyMesh &)
+    in file fvMesh/fvGeometryScheme/fvGeometryScheme/fvGeometryScheme.C at line 203
+    
+
+    From void Foam::fvMesh::clearAddressing(const bool)
+    in file fvMesh/fvMesh.C at line 129
+    isMeshUpdate: 1
+
+    From virtual void Foam::fvMesh::mapFields(const mapPolyMesh &)
+    in file fvMesh/fvMesh.C at line 739
+     nOldCells:263525 nCells:263525 nOldFaces:821979 nFaces:821979
+--> FOAM Warning : 
+    From void Foam::fvPatchMapper::calcAddressing() const
+    in file fvMesh/fvMeshMapper/fvPatchMapper.C at line 95
+    Unmapped entry in patch mapping for patch 8 named outlet
+Mapping old time volume V0. Merged 0 out of 263525 cells
+
+    From void Foam::fvMesh::clearAddressing(const bool)
+    in file fvMesh/fvMesh.C at line 129
+    isMeshUpdate: 0
+
+    From Foam::fvMesh::fvMesh(const IOobject &, const fvMesh &, pointField &&, faceList &&, cellList &&, const bool)
+    in file fvMesh/fvMesh.C at line 526
+    Constructing fvMesh as copy and primitives
+
+    From void Foam::fvMesh::clearAddressing(const bool)
+    in file fvMesh/fvMesh.C at line 129
+    isMeshUpdate: 0
+
+    From Foam::fvMesh::fvMesh(const IOobject &, const fvMesh &, pointField &&, faceList &&, cellList &&, const bool)
+    in file fvMesh/fvMesh.C at line 526
+    Constructing fvMesh as copy and primitives
+
+    From void Foam::fvMesh::clearAddressing(const bool)
+    in file fvMesh/fvMesh.C at line 129
+    isMeshUpdate: 0
+[0] polyTopoChange::changeMesh(polyMesh&, const bool, const bool, const bool, const bool)
+[0] Old mesh:
+[0]     Points      : 295300
+[0]     Faces       : 821979
+[0]     Cells       : 263525
+[0]     PatchSizes  : (611 0 0 316 690 0 16293 332 1982)
+[0]     PatchStarts : (801755 802366 802366 802366 802682 803372 803372 819665 819997)
+[0]     cZoneSizes  : (0)
+[0]     fZoneSizes  : (16293)
+[0]     pZoneSizes  : (0)
+[0]     moving      : 1
+[0] 
+[0] Points : active:294746  removed:554
+[0] Faces : active:820302  removed:1677
+[0] Cells : active:262967  removed:558
+[1] polyTopoChange::changeMesh(polyMesh&, const bool, const bool, const bool, const bool)
+[1] Old mesh:
+[1]     Points      : 301974
+[1]     Faces       : 820710
+[1]     Cells       : 262479
+[1]     PatchSizes  : (29 21747 192 260 846 18496 2427 320 1870)
+[1]     PatchStarts : (774523 774552 796299 796491 796751 797597 816093 818520 818840)
+[1]     cZoneSizes  : (245388)
+[1]     fZoneSizes  : (20923)
+[1]     pZoneSizes  : (0)
+[1]     moving      : 1
+[1] 
+[1] Points : active:0  removed:301974
+[1] Faces : active:0  removed:820710
+[1] Cells : active:0  removed:262479
+
+    From virtual void Foam::fvMesh::updateGeom()
+    in file fvMesh/fvMesh.C at line 979
+    
+
+    From virtual void Foam::fvGeometryScheme::movePoints()
+    in file fvMesh/fvGeometryScheme/fvGeometryScheme/fvGeometryScheme.C at line 187
+    
+
+    From bool Foam::fvGeometryScheme::setMeshPhi() const
+    in file fvMesh/fvGeometryScheme/fvGeometryScheme/fvGeometryScheme.C at line 46
+    Setting mesh phi for region0 changing:1
+[1] Points:  added(from point):0  added(from nothing):0  merged(into other point):0  removed:301974
+[1] Faces:  added(from face):0  added(inflated):0  merged(into other face):0  removed:820710
+[1] Cells:  added(from cell):0  added(inflated):0  merged(into other cell):0  removed:262479
+[1] 
+[1] pointZone:0  name:frozenPoints  size:0
+[1] faceZone:0  name:innerCylinderSmall  size:0
+[1] cellZone:0  name:innerCylinderSmall  size:0
+[1] New mesh:
+[1]     Points      : 0
+[1]     Faces       : 0
+[1]     Cells       : 0
+[1]     PatchSizes  : (0 0 0 0 0 0 0 0 0)
+[1]     PatchStarts : (0 0 0 0 0 0 0 0 0)
+[1]     cZoneSizes  : (0)
+[1]     fZoneSizes  : (0)
+[1]     pZoneSizes  : (0)
+[1]     moving      : 1
+[1] 
+[0] Points:  added(from point):0  added(from nothing):0  merged(into other point):0  removed:554
+[0] Faces:  added(from face):0  added(inflated):0  merged(into other face):0  removed:1677
+[0] Cells:  added(from cell):0  added(inflated):0  merged(into other cell):0  removed:558
+[0] 
+[0] pointZone:0  name:frozenPoints  size:0
+[0] faceZone:0  name:innerCylinderSmall  size:16117
+[0] cellZone:0  name:innerCylinderSmall  size:0
+[0] New mesh:
+[0]     Points      : 294746
+[0]     Faces       : 820302
+[0]     Cells       : 262967
+[0]     PatchSizes  : (611 0 0 316 690 0 16117 332 2243)
+[0]     PatchStarts : (799993 800604 800604 800604 800920 801610 801610 817727 818059)
+[0]     cZoneSizes  : (0)
+[0]     fZoneSizes  : (16117)
+[0]     pZoneSizes  : (0)
+[0]     moving      : 1
+[0] 
+
+    From virtual void Foam::fvMesh::updateMesh(const mapPolyMesh &)
+    in file fvMesh/fvMesh.C at line 989
+    
+
+    From Foam::fvMesh::fvMesh(const IOobject &, pointField &&, faceList &&, labelList &&, labelList &&, const bool)
+    in file fvMesh/fvMesh.C at line 391
+    Constructing fvMesh from components
+Selecting model faceAreaWeightAMI
+Selecting model faceAreaWeightAMI
+
+    From virtual void Foam::fvGeometryScheme::updateMesh(const mapPolyMesh &)
+    in file fvMesh/fvGeometryScheme/fvGeometryScheme/fvGeometryScheme.C at line 203
+    
+
+    From void Foam::fvMesh::clearAddressing(const bool)
+    in file fvMesh/fvMesh.C at line 129
+    isMeshUpdate: 1
+
+    From virtual void Foam::fvMesh::mapFields(const mapPolyMesh &)
+    in file fvMesh/fvMesh.C at line 739
+     nOldCells:263525 nCells:262967 nOldFaces:821979 nFaces:820302
+[1] polyTopoChange::changeMesh(polyMesh&, const bool, const bool, const bool, const bool)
+[1] Old mesh:
+[1]     Points      : 0
+[1]     Faces       : 0
+[1]     Cells       : 0
+[1]     PatchSizes  : (0 0 0 0 0 0 0 0 0)
+[1]     PatchStarts : (0 0 0 0 0 0 0 0 0)
+[1]     cZoneSizes  : (0)
+[1]     fZoneSizes  : (0)
+[1]     pZoneSizes  : (0)
+[1]     moving      : 1
+[1] 
+[1] Points : active:855  removed:0
+[1] Faces : active:1938  removed:0
+[1] Cells : active:558  removed:0
+
+    From virtual void Foam::fvMesh::updateGeom()
+    in file fvMesh/fvMesh.C at line 979
+    
+
+    From virtual void Foam::fvGeometryScheme::movePoints()
+    in file fvMesh/fvGeometryScheme/fvGeometryScheme/fvGeometryScheme.C at line 187
+    
+
+    From bool Foam::fvGeometryScheme::setMeshPhi() const
+    in file fvMesh/fvGeometryScheme/fvGeometryScheme/fvGeometryScheme.C at line 46
+    Setting mesh phi for region0 changing:1
+
+    From virtual void Foam::fvMesh::updateGeom()
+    in file fvMesh/fvMesh.C at line 979
+    
+
+    From virtual void Foam::fvGeometryScheme::movePoints()
+    in file fvMesh/fvGeometryScheme/fvGeometryScheme/fvGeometryScheme.C at line 187
+    
+
+    From bool Foam::fvGeometryScheme::setMeshPhi() const
+    in file fvMesh/fvGeometryScheme/fvGeometryScheme/fvGeometryScheme.C at line 46
+    Setting mesh phi for region0 changing:1
+
+    From bool Foam::fvGeometryScheme::setMeshPhi() const
+    in file fvMesh/fvGeometryScheme/fvGeometryScheme/fvGeometryScheme.C at line 61
+    Skipping meshPhi update due to topology change with non-conformal old/current point sizes old:0 current:855
+--> FOAM Warning : 
+    From void Foam::fvPatchMapper::calcAddressing() const
+    in file fvMesh/fvMeshMapper/fvPatchMapper.C at line 95
+    Unmapped entry in patch mapping for patch 8 named outlet
+[1] Points:  added(from point):0  added(from nothing):0  merged(into other point):0  removed:0
+[1] Faces:  added(from face):0  added(inflated):0  merged(into other face):0  removed:0
+[1] Cells:  added(from cell):0  added(inflated):0  merged(into other cell):0  removed:0
+[1] 
+[1] pointZone:0  name:frozenPoints  size:0
+[1] faceZone:0  name:innerCylinderSmall  size:176
+[1] cellZone:0  name:innerCylinderSmall  size:0
+[1] New mesh:
+[1]     Points      : 855
+[1]     Faces       : 1938
+[1]     Cells       : 558
+[1]     PatchSizes  : (0 0 0 0 0 0 176 0 261)
+[1]     PatchStarts : (1501 1501 1501 1501 1501 1501 1501 1677 1677)
+[1]     cZoneSizes  : (0)
+[1]     fZoneSizes  : (176)
+[1]     pZoneSizes  : (0)
+[1]     moving      : 1
+[1] 
+[1] 
+[1] 
+[1] --> FOAM FATAL ERROR: (openfoam-2601)
+[1] attempt to access element 0 from zero sized list
+[1] 
+[1]     From void Foam::UList<Foam::Vector<double>>::checkIndex(const label) const [T = Foam::Vector<double>]
+[1]     in file /home/pikachu2/kuti/OpenFOAM/work/feature-dlb/src/OpenFOAM/lnInclude/UListI.H at line 209.
+[1] 
+FOAM aborting
+[1] 
+[1] [stack trace]
+=============
+[1] #1  Foam::error::simpleExit(int, bool) in ~/OpenFOAM/work/feature-dlb/platforms/linux64ClangDPInt32Debug/lib/libOpenFOAM.so
+[1] #2  Foam::error::exiting(int, bool) in ~/OpenFOAM/work/feature-dlb/platforms/linux64ClangDPInt32Debug/lib/libOpenFOAM.so
+[1] #3  Foam::error::abort() in ~/OpenFOAM/work/feature-dlb/platforms/linux64ClangDPInt32Debug/lib/libOpenFOAM.so
+[1] #4  Foam::Ostream& Foam::operator<< <Foam::error>(Foam::Ostream&, Foam::errorManip<Foam::error>) in ~/OpenFOAM/kuti-v2512/platforms/linux64ClangDPInt32Debug/bin/pimpleFoamBalance
+[1] #5  Foam::UList<Foam::Vector<double>>::checkIndex(int) const in ~/OpenFOAM/kuti-v2512/platforms/linux64ClangDPInt32Debug/bin/pimpleFoamBalance
+[1] #6  Foam::UList<Foam::Vector<double>>::operator[](int) in ~/OpenFOAM/kuti-v2512/platforms/linux64ClangDPInt32Debug/bin/pimpleFoamBalance
+[1] #7  Foam::polyMesh::updateMesh(Foam::mapPolyMesh const&) in ~/OpenFOAM/work/feature-dlb/platforms/linux64ClangDPInt32Debug/lib/libOpenFOAM.so
+[1] #8  Foam::fvMeshAdder::add(int, Foam::UPtrList<Foam::fvMesh>&, Foam::List<int> const&, Foam::List<Foam::List<int>> const&, Foam::List<Foam::List<int>> const&, Foam::List<Foam::List<int>> const&, Foam::List<Foam::List<int>>&, Foam::List<Foam::List<int>>&, Foam::List<Foam::List<int>>&, Foam::List<Foam::List<int>>&) in ~/OpenFOAM/work/feature-dlb/platforms/linux64ClangDPInt32Debug/lib/libdynamicMesh.so
+[1] #9  Foam::fvMeshDistribute::distribute(Foam::List<int> const&) in ~/OpenFOAM/work/feature-dlb/platforms/linux64ClangDPInt32Debug/lib/libdynamicMesh.so
+[1] #10  Foam::balanceModels::distributed::balance(Foam::Field<double> const&) in ~/OpenFOAM/work/feature-dlb/platforms/linux64ClangDPInt32Debug/lib/libdynamicLoadBalancing.so
+[1] #11  Foam::dynamicLoadBalancer::balance() in ~/OpenFOAM/work/feature-dlb/platforms/linux64ClangDPInt32Debug/lib/libdynamicLoadBalancing.so
+[1] #12  ? in ~/OpenFOAM/kuti-v2512/platforms/linux64ClangDPInt32Debug/bin/pimpleFoamBalance
+[1] #13  ? in /lib64/libc.so.6
+[1] #14  __libc_start_main in /lib64/libc.so.6
+[1] #15  ? in ~/OpenFOAM/kuti-v2512/platforms/linux64ClangDPInt32Debug/bin/pimpleFoamBalance
+[1] =============
+[pikachu:33522] *** Process received signal ***
+[pikachu:33522] Signal: Aborted (6)
+[pikachu:33522] Signal code:  (-6)
+[pikachu:33522] [ 0] /lib64/libc.so.6(+0x57980)[0x7f5dd1657980]
+[pikachu:33522] [ 1] /lib64/libc.so.6(+0xa8e7c)[0x7f5dd16a8e7c]
+[pikachu:33522] [ 2] /lib64/libc.so.6(raise+0x14)[0x7f5dd16578c2]
+[pikachu:33522] [ 3] /lib64/libc.so.6(abort+0xd5)[0x7f5dd163f64f]
+[pikachu:33522] [ 4] /home/pikachu2/kuti/OpenFOAM/work/feature-dlb/platforms/linux64ClangDPInt32Debug/lib/libOpenFOAM.so(_ZN4Foam5error10simpleExitEib+0x1cb)[0x7f5dd260b18b]
+[pikachu:33522] [ 5] /home/pikachu2/kuti/OpenFOAM/work/feature-dlb/platforms/linux64ClangDPInt32Debug/lib/libOpenFOAM.so(_ZN4Foam5error7exitingEib+0x1f9)[0x7f5dd260ae79]
+[pikachu:33522] [ 6] /home/pikachu2/kuti/OpenFOAM/work/feature-dlb/platforms/linux64ClangDPInt32Debug/lib/libOpenFOAM.so(_ZN4Foam5error5abortEv+0x1c)[0x7f5dd260b23c]
+[pikachu:33522] [ 7] pimpleFoamBalance(_ZN4FoamlsINS_5errorEEERNS_7OstreamES3_NS_10errorManipIT_EE+0x62)[0x5569811e13a2]
+[pikachu:33522] [ 8] pimpleFoamBalance(_ZNK4Foam5UListINS_6VectorIdEEE10checkIndexEi+0xa2)[0x556981202212]
+[pikachu:33522] [ 9] pimpleFoamBalance(_ZN4Foam5UListINS_6VectorIdEEEixEi+0x1f)[0x5569812013cf]
+[pikachu:33522] [10] /home/pikachu2/kuti/OpenFOAM/work/feature-dlb/platforms/linux64ClangDPInt32Debug/lib/libOpenFOAM.so(_ZN4Foam8polyMesh10updateMeshERKNS_11mapPolyMeshE+0x43f)[0x7f5dd2b2ac0f]
+[pikachu:33522] [11] /home/pikachu2/kuti/OpenFOAM/work/feature-dlb/platforms/linux64ClangDPInt32Debug/lib/libdynamicMesh.so(_ZN4Foam11fvMeshAdder3addEiRNS_8UPtrListINS_6fvMeshEEERKNS_4ListIiEERKNS5_IS6_EESB_SB_RS9_SC_SC_SC_+0xcc2)[0x7f5dd49e2932]
+[pikachu:33522] [12] /home/pikachu2/kuti/OpenFOAM/work/feature-dlb/platforms/linux64ClangDPInt32Debug/lib/libdynamicMesh.so(_ZN4Foam16fvMeshDistribute10distributeERKNS_4ListIiEE+0x3fe3)[0x7f5dd4a79053]
+[pikachu:33522] [13] /home/pikachu2/kuti/OpenFOAM/work/feature-dlb/platforms/linux64ClangDPInt32Debug/lib/libdynamicLoadBalancing.so(_ZN4Foam13balanceModels11distributed7balanceERKNS_5FieldIdEE+0x74f)[0x7f5dd5db970f]
+[pikachu:33522] [14] /home/pikachu2/kuti/OpenFOAM/work/feature-dlb/platforms/linux64ClangDPInt32Debug/lib/libdynamicLoadBalancing.so(_ZN4Foam19dynamicLoadBalancer7balanceEv+0x1e7)[0x7f5dd5daa1e7]
+[pikachu:33522] [15] pimpleFoamBalance(+0x6820a)[0x5569811db20a]
+[pikachu:33522] [16] /lib64/libc.so.6(+0x40eec)[0x7f5dd1640eec]
+[pikachu:33522] [17] /lib64/libc.so.6(__libc_start_main+0x87)[0x7f5dd1640fb5]
+[pikachu:33522] [18] pimpleFoamBalance(+0x60e81)[0x5569811d3e81]
+[pikachu:33522] *** End of error message ***
+--------------------------------------------------------------------------
+mpirun noticed that process rank 1 with PID 33522 on node pikachu exited on signal 6 (Aborted).
+--------------------------------------------------------------------------

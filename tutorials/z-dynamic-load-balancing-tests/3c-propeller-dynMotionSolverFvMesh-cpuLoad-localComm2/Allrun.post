@@ -1,0 +1,18 @@
+#!/bin/sh
+cd "${0%/*}" || exit                                # Run from this directory
+. ${WM_PROJECT_DIR:?}/bin/tools/RunFunctions        # Tutorial run functions
+#------------------------------------------------------------------------------
+
+runParallel -o postProcess -func processorField
+
+runParallel -o foamToVTK \
+    -fields 'processorID' \
+    -no-finite-area -noFunctionObjects -no-lagrangian
+
+# runParallel -o redistributePar -reconstruct -withZero
+
+# runParallel -s final checkMesh -latestTime
+
+touch case.foam
+
+#------------------------------------------------------------------------------
