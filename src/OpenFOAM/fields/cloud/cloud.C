@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2016-2023 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -86,6 +87,13 @@ Foam::label Foam::cloud::nParcels() const
 void Foam::cloud::autoMap(const mapPolyMesh&)
 {
     NotImplemented;
+}
+
+
+void Foam::cloud::storeGlobalPositions() const
+{
+    // No-op by default. Cloud types that track particle positions override
+    // this to snapshot their global positions ahead of a mesh change.
 }
 
 
