@@ -1,7 +1,11 @@
 #!/bin/sh
 cd "${0%/*}" || exit            # Run from OPENFOAM src/ directory only
 set -- -all="${0##*/}" "$@"     # Execute this instead of ./Allwmake
-
+ARCH=$(uname -m)
+if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]
+then
+    ACTUAL_HOME="/home/${SUDO_USER:-$USER}"
+fi
 wmake -check-dir "$WM_PROJECT_DIR/src" 2>/dev/null || {
     echo "Error (${0##*/}) : not located in \$WM_PROJECT_DIR/src"
     echo "    Check your OpenFOAM environment and installation"
@@ -29,25 +33,49 @@ OSspecific/"${WM_OSTYPE:-POSIX}"/Allwmake $targetType $*
 
 case "$WM_COMPILER" in
 (Mingw*)
-    # Handle Pstream/OpenFOAM cyclic dependency
-    # - compile Pstream as single .o object
-    # - compile OpenFOAM and link against libPstream.o
+    # Pstream/OpenFOAM cyclic dependency
+    # 1st pass: link as Pstream as single .o object
     WM_MPLIB=dummy Pstream/Allwmake libo
     FOAM_LINK_DUMMY_PSTREAM=libo wmake $targetType OpenFOAM
+    # 2nd pass: link Pstream.{dll,so} against libOpenFOAM.{dll,so}
+    Pstream/Allwmake $targetType $*
+    
+    if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]
+    then
+        sudo chmod 1777 /tmp
+        llvm-nm --defined-only --extern-only   /home/mcw/openfoam/build/linuxARM64MingwDPInt32OptMSMPI/src/Pstream/mpi/*.o   | awk '$2 == "T" || $2 == "D" || $2 == "B" || $2 == "R" {print $3}'   | grep "^_Z"   | sort -u > /tmp/pstream_syms.txt
 
-    # Force relink of libOpenFOAM against libPstream.{dll,so}
+        echo "EXPORTS" > /tmp/libPstream_full.def
+        awk '{print "    " $0}' /tmp/pstream_syms.txt >> /tmp/libPstream_full.def
+
+        
+        aarch64-w64-mingw32-clang++ \
+        -std=gnu++17 -pthread \
+        -DOPENFOAM=2512 -DWM_DP -DWM_LABEL_SIZE=32 \
+        -O3 -DNDEBUG -DNoRepository -ftemplate-depth-100 \
+        -DMPICH_SKIP_MPICXX -DOMPI_SKIP_MPICXX \
+        -shared \
+        -Wl,--output-def=/home/${SUDO_USER:-$USER}/openfoam/platforms/linuxARM64MingwDPInt32Opt/lib/libPstream.def \
+        -Wl,--out-implib=/home/${SUDO_USER:-$USER}/openfoam/platforms/linuxARM64MingwDPInt32Opt/lib/libPstream.dll.a \
+        /tmp/libPstream_full.def \
+        /home/${SUDO_USER:-$USER}/openfoam/build/linuxARM64MingwDPInt32OptMSMPI/src/Pstream/mpi/*.o \
+        -L/home/${SUDO_USER:-$USER}/openfoam/platforms/linuxARM64MingwDPInt32Opt/lib \
+        -lOpenFOAM \
+        ${ACTUAL_HOME}/openfoam/ThirdParty/platforms/linuxARM64Mingw/msmpi/lib/arm64/msmpi.lib \
+        -Wl,--no-undefined \
+        -Wl,--enable-auto-import \
+        -Wl,--strip-all \
+        -o /home/${SUDO_USER:-$USER}/openfoam/platforms/linuxARM64MingwDPInt32Opt/lib/dummy/libPstream.dll
+    fi 
+
+    # Force relink libOpenFOAM.{dll,so} against libPstream.{dll,so}
     OpenFOAM/Alltouch 2>/dev/null
     ;;
 (*)
-    ## # Update version info (as required)
-    ## OpenFOAM/Alltouch -check 2>/dev/null
-
-    # Force relink of libOpenFOAM against libPstream and OSspecific
-    OpenFOAM/Alltouch 2>/dev/null
+    Pstream/Allwmake $targetType $*
     ;;
 esac
 
-Pstream/Allwmake $targetType $*
 wmake $targetType OpenFOAM
 
 # Frequently needed, even for minimal programs
