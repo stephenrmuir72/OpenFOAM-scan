@@ -129,7 +129,6 @@ int main(int argc, char *argv[])
 
         Info<< "Time = " << runTime.timeName() << nl << endl;
 
-        parcels.storeGlobalPositions();
         mesh.controlledUpdate();
 
         if (mesh.changing())

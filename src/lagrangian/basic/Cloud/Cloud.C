@@ -305,10 +305,13 @@ void Foam::Cloud<ParticleType>::autoMap(const mapPolyMesh& mapper)
 {
     if (!globalPositionsPtr_)
     {
-        FatalErrorInFunction
+        WarningInFunction
             << "Global positions are not available. "
-            << "Cloud::storeGlobalPositions has not been called."
-            << exit(FatalError);
+            << "Cloud::storeGlobalPositions has not been called. "
+            << "Using the current particle positions for auto-mapping."
+            << endl;
+
+        storeGlobalPositions();
     }
 
     // Reset stored data that relies on the mesh
