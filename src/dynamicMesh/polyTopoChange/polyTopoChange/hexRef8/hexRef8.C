@@ -5463,28 +5463,7 @@ Foam::labelList Foam::hexRef8::consistentUnrefinement
 
 
     // Convert back to labelList.
-    label nSet = 0;
-
-    forAll(unrefinePoint, pointi)
-    {
-        if (unrefinePoint.test(pointi))
-        {
-            nSet++;
-        }
-    }
-
-    labelList newPointsToUnrefine(nSet);
-    nSet = 0;
-
-    forAll(unrefinePoint, pointi)
-    {
-        if (unrefinePoint.test(pointi))
-        {
-            newPointsToUnrefine[nSet++] = pointi;
-        }
-    }
-
-    return newPointsToUnrefine;
+    return unrefinePoint.toc();
 }
 
 
