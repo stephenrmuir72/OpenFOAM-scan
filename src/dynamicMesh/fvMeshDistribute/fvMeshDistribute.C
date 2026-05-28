@@ -2788,6 +2788,14 @@ Foam::autoPtr<Foam::mapDistributePolyMesh> Foam::fvMeshDistribute::distribute
 
     mesh_.moving(oldMoving);
 
+    auto meshPhi = mesh_.setPhi();
+    if (meshPhi && meshPhi.cref().size() != mesh_.nInternalFaces())
+    {
+        // fvMeshAdder maps registered fields only; discard any stale
+        // intermediate mesh flux before the next topology update maps it.
+        mesh_.clearMeshPhi();
+    }
+
 
     if (debug)
     {
@@ -3020,6 +3028,11 @@ Foam::autoPtr<Foam::mapDistributePolyMesh> Foam::fvMeshDistribute::distribute
         printIntFieldInfo<volSymmTensorField::Internal>(mesh_);
         printIntFieldInfo<volTensorField::Internal>(mesh_);
         Pout<< nl << endl;
+    }
+
+    if (mesh_.moving())
+    {
+        mesh_.initV0FromV();
     }
 
     // Collect all maps and return
