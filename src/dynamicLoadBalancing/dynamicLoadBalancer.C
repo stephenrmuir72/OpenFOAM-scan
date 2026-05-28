@@ -30,6 +30,7 @@ License
 #include "performanceMetric.H"
 #include "profilingPstream.H"
 #include "Function1.H"
+#include "surfaceFields.H"
 #include "addToRunTimeSelectionTable.H"
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
@@ -217,10 +218,22 @@ bool Foam::dynamicLoadBalancer::balance()
 
     DebugInFunction << "Dynamic load balancing will be performed." << endl;
 
+    auto meshPhi = mesh().setPhi();
+    const IOobjectOption::writeOption meshPhiWriteOpt
+    (
+        meshPhi ? meshPhi.cref().writeOpt() : IOobject::NO_WRITE
+    );
+
     mesh().clearMeshPhi();
     bool balanced =
         balanceModelPtr_->balance(performanceMetricPtr_->processorWeights());
     mesh().createMeshPhi();
+
+    auto newMeshPhi = mesh().setPhi();
+    if (newMeshPhi && meshPhiWriteOpt != IOobject::NO_WRITE)
+    {
+        newMeshPhi.ref().writeOpt(meshPhiWriteOpt);
+    }
 
     DebugInFunction << "Dynamic load balancing is performed." << endl;
 

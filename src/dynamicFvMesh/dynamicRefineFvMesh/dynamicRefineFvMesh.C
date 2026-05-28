@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2018-2022 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -210,6 +211,7 @@ void Foam::dynamicRefineFvMesh::mapFields(const mapPolyMesh& mpm)
 
         // Each split cell becomes original + 7 additional
         labelList nSubCells(mpm.nOldCells(), 0);
+        bool hasSplitCells = false;
 
         forAll(cellMap, celli)
         {
@@ -218,39 +220,53 @@ void Foam::dynamicRefineFvMesh::mapFields(const mapPolyMesh& mpm)
             {
                 // Found master cell.
                 nSubCells[oldCelli]++;
-            }
-        }
-
-        // Start off from mapped old volumes
-        scalarField correctedV0(this->V0());
-
-        // Correct any split cells
-        const auto& V = this->V();
-        forAll(cellMap, celli)
-        {
-            const label oldCelli = cellMap[celli];
-            if (oldCelli >= 0 && nSubCells[oldCelli] == 8)
-            {
-                // Found split cell. Use current volume instead of mapped
-                // old one
-                correctedV0[celli] = V[celli];
+                if (nSubCells[oldCelli] == 8)
+                {
+                    hasSplitCells = true;
+                }
             }
         }
 
         const auto& cellsFromCells = mpm.cellsFromCellsMap();
-        for (const auto& s : cellsFromCells)
-        {
-            // Reset unsplit cell
-            const label celli = s.index();
-            correctedV0[celli] = V[celli];
-            //? Or sum up old volumes?
-            //const labelList& oldCells = s.masterObjects();
-            //for (const label oldCelli : oldCells)
-            //{
-            //}
-        }
 
-        setV0().field() = correctedV0;
+        if (hasSplitCells || cellsFromCells.size())
+        {
+            // Start off from mapped old volumes. Avoid touching V0 for maps
+            // that have no AMR split/merge information, eg, DLB redistribution.
+            scalarField correctedV0(this->V0());
+
+            // Correct any split cells
+            const auto& V = this->V();
+            forAll(cellMap, celli)
+            {
+                const label oldCelli = cellMap[celli];
+                if (oldCelli >= 0 && nSubCells[oldCelli] == 8)
+                {
+                    // Found split cell. Use current volume instead of mapped
+                    // old one
+                    correctedV0[celli] = V[celli];
+                }
+            }
+
+            for (const auto& s : cellsFromCells)
+            {
+                // Reset unsplit cell
+                const label celli = s.index();
+                correctedV0[celli] = V[celli];
+                //? Or sum up old volumes?
+                //const labelList& oldCells = s.masterObjects();
+                //for (const label oldCelli : oldCells)
+                //{
+                //}
+            }
+
+            setV0().field() = correctedV0;
+        }
+        else if (debug)
+        {
+            Pout<< "No AMR cell split/merge volume correction required"
+                << endl;
+        }
     }
 
 
