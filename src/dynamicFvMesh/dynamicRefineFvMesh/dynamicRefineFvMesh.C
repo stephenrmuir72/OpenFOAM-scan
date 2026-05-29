@@ -38,6 +38,8 @@ License
 #include "sigFpe.H"
 #include "cellSet.H"
 #include "HashOps.H"
+#include "Function1.H"
+#include "globalIndex.H"
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -192,6 +194,15 @@ void Foam::dynamicRefineFvMesh::readDict()
     }
 
     refineDict.readEntry("dumpLevel", dumpLevel_);
+
+    maxRefinementCellsPercentagePtr_ =
+        Function1<scalar>::NewIfPresent
+        (
+            "maxRefinementCellsPercentage",
+            refineDict,
+            word::null,
+            this
+        );
 }
 
 
@@ -851,6 +862,57 @@ void Foam::dynamicRefineFvMesh::selectRefineCandidates
 }
 
 
+void Foam::dynamicRefineFvMesh::capRefineCandidates(bitSet& candidateCell) const
+{
+    if (maxRefinementCells_ < 0)
+    {
+        // No cap requested (maxRefinementCellsPercentage not set).
+        return;
+    }
+
+    if (maxRefinementCells_ == 0)
+    {
+        // No refinement is scheduled for this interval. Clear all candidates
+        // so none are subsequently marked as protected from unrefinement.
+        candidateCell.reset();
+        return;
+    }
+
+    // maxRefinementCells_ is derived from the global cell count and is
+    // therefore identical on every rank, so all ranks reach the collective
+    // globalIndex construction below symmetrically.
+    const label nLocal = candidateCell.count();
+    const globalIndex giCandidates(nLocal);
+    const label nGlobal = giCandidates.totalSize();
+
+    if (nGlobal <= maxRefinementCells_)
+    {
+        // Already within the cap.
+        return;
+    }
+
+    // Keep only the first maxRefinementCells_ in a deterministic rank-major
+    // ordering (each rank's candidates occupy the global range
+    // [localStart, localStart+nLocal)), dropping the remainder.
+    const label myStart = giCandidates.localStart();
+
+    const labelList marked(candidateCell.sortedToc());
+    label locali = 0;
+    for (const label celli : marked)
+    {
+        if (myStart + locali >= maxRefinementCells_)
+        {
+            candidateCell.unset(celli);
+        }
+        ++locali;
+    }
+
+    DebugInFunction
+        << "Capped refinement candidates from " << nGlobal
+        << " to " << maxRefinementCells_ << " cells." << endl;
+}
+
+
 Foam::labelList Foam::dynamicRefineFvMesh::selectRefineCells
 (
     const label maxCells,
@@ -1133,6 +1195,8 @@ bool Foam::dynamicRefineFvMesh::init(const bool doInit)
 
     protectedCell_.setSize(nCells());
     nRefinementIterations_ = 0;
+    maxRefinementCells_ = -1;
+
     dumpLevel_ = false;
 
     // Read static part of dictionary
@@ -1293,6 +1357,12 @@ bool Foam::dynamicRefineFvMesh::init(const bool doInit)
 }
 
 
+// * * * * * * * * * * * * * * * * Destructor  * * * * * * * * * * * * * * * //
+
+Foam::dynamicRefineFvMesh::~dynamicRefineFvMesh()
+{}  // Function1 was forward declared
+
+
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
 
 bool Foam::dynamicRefineFvMesh::updateTopology()
@@ -1378,6 +1448,41 @@ bool Foam::dynamicRefineFvMesh::updateTopology()
         );
         const label nBufferLayers = refineDict.get<label>("nBufferLayers");
 
+        maxRefinementCells_ = -1;
+
+        if (maxRefinementCellsPercentagePtr_)
+        {
+            const scalar maxRefinementCellsPercentage =
+                maxRefinementCellsPercentagePtr_->value
+                (
+                    time().timeOutputValue()
+                );
+
+            if
+            (
+                maxRefinementCellsPercentage < 0
+             || maxRefinementCellsPercentage > 100
+            )
+            {
+                FatalErrorInFunction
+                    << "Illegal maxRefinementCellsPercentage "
+                    << maxRefinementCellsPercentage << nl
+                    << "The maxRefinementCellsPercentage setting in the"
+                    << " dynamicMeshDict should be in the range [0, 100]." << nl
+                    << exit(FatalError);
+            }
+
+            maxRefinementCells_ = label
+            (
+                maxRefinementCellsPercentage*globalData().nTotalCells()/100.0
+            );
+
+            DebugInFunction
+                << "maxRefinementCellsPercentage: limiting selected"
+                << " refinement candidates to " << maxRefinementCells_
+                << " cells before 2:1 consistency expansion." << endl;
+        }
+
         // Cells marked for refinement or otherwise protected from unrefinement.
         bitSet refineCell(nCells());
 
@@ -1389,6 +1494,11 @@ bool Foam::dynamicRefineFvMesh::updateTopology()
             vFld,
             refineCell
         );
+
+        // Enforce the per-step refinement-cell cap (maxRefinementCells_).
+        // For 0 this disables refinement this interval; for a positive value
+        // it truncates the marked candidates to that global cell count.
+        capRefineCandidates(refineCell);
 
         if (globalData().nTotalCells() < maxCells)
         {
