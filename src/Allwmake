@@ -1,6 +1,7 @@
 #!/bin/sh
 # Run from OPENFOAM src/ directory only
 cd "${0%/*}" || exit
+
 wmake -check-dir "$WM_PROJECT_DIR/src" 2>/dev/null || {
     echo "Error (${0##*/}) : not located in \$WM_PROJECT_DIR/src"
     echo "    Check your OpenFOAM environment and installation"
@@ -32,18 +33,57 @@ OSspecific/"${WM_OSTYPE:-POSIX}"/Allwmake $targetType $*
 
 case "$WM_COMPILER" in
 (Mingw*)
-    # Handle Pstream/OpenFOAM cyclic dependency
-    # - compile Pstream as single .o object
-    # - compile OpenFOAM and link against libPstream.o
+    # Pstream/OpenFOAM cyclic dependency
+    # 1st pass: link Pstream as single .o object
     WM_MPLIB=dummy Pstream/Allwmake libo
     FOAM_LINK_DUMMY_PSTREAM=libo wmake $targetType OpenFOAM
 
-    # Force relink of libOpenFOAM against libPstream.{dll,so}
+    # 2nd pass: link Pstream.dll against libOpenFOAM.dll
+    Pstream/Allwmake $targetType $*
+
+    # 3rd pass: build libPstream.dll for ARM64
+    ARCH=$(uname -m)
+    if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]
+    then
+        sudo chmod 1777 /tmp
+
+        llvm-nm --defined-only --extern-only \
+            ${WM_PROJECT_DIR}/build/${WM_OPTIONS}MSMPI/src/Pstream/mpi/*.o \
+            | awk '$2 == "T" || $2 == "D" || $2 == "B" || $2 == "R" {print $3}' \
+            | grep "^_Z" \
+            | sort -u > /tmp/pstream_syms.txt
+
+        echo "EXPORTS" > /tmp/libPstream_full.def
+        awk '{print "    " $0}' /tmp/pstream_syms.txt >> /tmp/libPstream_full.def
+
+        aarch64-w64-mingw32-clang++ \
+            -std=gnu++17 -pthread \
+            -DOPENFOAM=2512 -DWM_DP -DWM_LABEL_SIZE=32 \
+            -O3 -DNDEBUG -DNoRepository -ftemplate-depth-100 \
+            -DMPICH_SKIP_MPICXX -DOMPI_SKIP_MPICXX \
+            -shared \
+            -Wl,--output-def=${WM_PROJECT_DIR}/platforms/${WM_OPTIONS}/lib/libPstream.def \
+            -Wl,--out-implib=${WM_PROJECT_DIR}/platforms/${WM_OPTIONS}/lib/libPstream.dll.a \
+            /tmp/libPstream_full.def \
+            ${WM_PROJECT_DIR}/build/${WM_OPTIONS}MSMPI/src/Pstream/mpi/*.o \
+            -L${WM_PROJECT_DIR}/platforms/${WM_OPTIONS}/lib \
+            -lOpenFOAM \
+            ${WM_PROJECT_DIR}/ThirdParty/platforms/linuxARM64Mingw/msmpi/lib/arm64/msmpi.lib \
+            -Wl,--no-undefined \
+            -Wl,--enable-auto-import \
+            -Wl,--strip-all \
+            -o ${WM_PROJECT_DIR}/platforms/${WM_OPTIONS}/lib/dummy/libPstream.dll
+    fi
+
+    # Force relink libOpenFOAM.dll against libPstream.dll
     OpenFOAM/Alltouch 2>/dev/null
+    wmake $targetType OpenFOAM
+    ;;
+(*)
+    Pstream/Allwmake $targetType $*
     ;;
 esac
 
-Pstream/Allwmake $targetType $*
 wmake $targetType OpenFOAM
 
 # Frequently needed, even for minimal programs
@@ -89,7 +129,6 @@ randomProcesses/Allwmake $targetType $*
 
 wmake $targetType ODE
 
-
 thermophysicalModels/Allwmake $targetType $*
 TurbulenceModels/Allwmake $targetType $*
 wmake $targetType fused/turbulenceModels
@@ -127,7 +166,6 @@ wmake $targetType regionFaModels
 lagrangian/Allwmake $targetType $*
 wmake $targetType functionObjects/lagrangian
 
-
 wmake $targetType lumpedPointMotion
 wmake $targetType sixDoFRigidBodyMotion
 wmake $targetType sixDoFRigidBodyState
@@ -136,10 +174,8 @@ wmake $targetType rigidBodyMeshMotion
 wmake $targetType atmosphericModels
 wmake $targetType optimisation/adjointOptimisation/adjoint
 
-
 # interfaceTracking libs
 dynamicFaMesh/Allwmake $targetType $*
-
 
 #------------------------------------------------------------------------------
 

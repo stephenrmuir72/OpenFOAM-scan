@@ -233,11 +233,25 @@ $(LIB).a: $(OBJECTS)
 .PHONY: libo
 libo: $(LIB).o | silent
 
+
+LD_LIB = $(LD)
+LD_LIB_FLAGS = -r -o $(LIB).o
+LD_LIB_OBJECTS = $(OBJECTS)
+
+ifeq ($(WM_ARCH)_$(findstring Mingw,$(WM_COMPILER)),linuxARM64_Mingw)
+    LD_LIB = /opt/llvm-mingw/bin/lld-link
+    LD_LIB_FLAGS = /lib /out:$(LIB).o
+endif
+
 $(LIB).o: $(OBJECTS)
 	@$(WM_SCRIPTS)/makeTargetDir $(LIB)
 	@rm -f $(LIB).o
 	$(call QUIET_MESSAGE,ld,$(LIB).o)
-	$E $(LD) -r -o $(LIB).o $(OBJECTS) $(LIBO_LIBS)
+ifeq ($(WM_ARCH)_$(findstring Mingw,$(WM_COMPILER)),linuxARM64_Mingw)
+	$E $(LD_LIB) $(LD_LIB_FLAGS) $(LD_LIB_OBJECTS) $(LIBO_LIBS)
+else
+	$E $(LD_LIB) $(LD_LIB_FLAGS) $(LD_LIB_OBJECTS) $(LIBO_LIBS)
+endif
 
 
 #------------------------------------------------------------------------------

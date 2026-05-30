@@ -1,4 +1,5 @@
 EXE_INC = \
+    $(ZLIB_INC) \
     -I$(OBJECTS_DIR)
 
 LIB_LIBS = \

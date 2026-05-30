@@ -383,9 +383,10 @@ Foam::autoPtr<Foam::decompositionMethod> Foam::decompositionMethod::New
     {
         regionDict->readIfPresent("method", methodType);
     }
-
+    #ifdef _WIN32
+    Foam::dlOpen("libscotchDecomp.dll", false);
+    #endif
     auto* ctorPtr = dictionaryConstructorTable(methodType);
-
     if (!ctorPtr)
     {
         FatalIOErrorInLookup
