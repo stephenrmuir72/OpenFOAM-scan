@@ -416,9 +416,11 @@ void Foam::fvMatrix<Type>::setValuesFromList
 {
     const fvMesh& mesh = psi_.mesh();
 
-    const cellList& cells = mesh.cells();
     const labelUList& own = mesh.owner();
     const labelUList& nei = mesh.neighbour();
+
+    const label nCells = psi_.size();
+    const label nInternalFaces = mesh.nInternalFaces();
 
     scalarField& Diag = diag();
     Field<Type>& psi =
@@ -427,71 +429,12 @@ void Foam::fvMatrix<Type>::setValuesFromList
             GeometricField<Type, fvPatchField, volMesh>&
         >(psi_).primitiveFieldRef();
 
+    // Expand values into a full cell-indexed field for O(1) neighbour lookup.
+    // cellMask uses label (not bool) to avoid std::vector<bool> bit-packing
+    // issues under par_unseq / GPU offload.
+    Field<Type>   cellValues(nCells, Zero);
+    List<label>   cellMask(nCells, 0);
 
-    // Following actions:
-    // - adjust local field psi
-    // - set local matrix to be diagonal (so adjust source)
-    //      - cut connections to neighbours
-    // - make (on non-adjusted cells) contribution explicit
-
-    if (symmetric() || asymmetric())
-    {
-        forAll(cellLabels, i)
-        {
-            const label celli = cellLabels[i];
-            const Type& value = values[i];
-
-            for (const label facei : cells[celli])
-            {
-                const label patchi = mesh.boundaryMesh().patchID(facei);
-
-                if (patchi == -1)
-                {
-                    if (symmetric())
-                    {
-                        if (celli == own[facei])
-                        {
-                            source_[nei[facei]] -= upper()[facei]*value;
-                        }
-                        else
-                        {
-                            source_[own[facei]] -= upper()[facei]*value;
-                        }
-
-                        upper()[facei] = 0.0;
-                    }
-                    else
-                    {
-                        if (celli == own[facei])
-                        {
-                            source_[nei[facei]] -= lower()[facei]*value;
-                        }
-                        else
-                        {
-                            source_[own[facei]] -= upper()[facei]*value;
-                        }
-
-                        upper()[facei] = 0.0;
-                        lower()[facei] = 0.0;
-                    }
-                }
-                else
-                {
-                    if (internalCoeffs_[patchi].size())
-                    {
-                        const label patchFacei =
-                            mesh.boundaryMesh()[patchi].whichFace(facei);
-
-                        internalCoeffs_[patchi][patchFacei] = Zero;
-                        boundaryCoeffs_[patchi][patchFacei] = Zero;
-                    }
-                }
-            }
-        }
-    }
-
-    // Note: above loop might have affected source terms on adjusted cells
-    // so make sure to adjust them afterwards
     labelRange indices(cellLabels.size());
 
     apply_policy(cellLabels.size(), [&](auto policy)
@@ -499,20 +442,199 @@ void Foam::fvMatrix<Type>::setValuesFromList
         std::for_each
         (
             policy,
-            indices.begin(), 
+            indices.begin(),
             indices.end(),
-            [&](const auto& i) 
+            [&](const label i)
             {
-                // Find the index of celli in cellLabels
                 const label celli = cellLabels[i];
-                const Type& value = values[i];
-
-                psi[celli] = value;
-                source_[celli] = value*Diag[celli];
+                cellMask[celli]   = 1;
+                cellValues[celli] = values[i];
+                psi[celli]        = values[i];
+                source_[celli]    = values[i] * Diag[celli];
             }
         );
     });
+
+    // Following actions for the matrix connectivity:
+    // - adjust source on non-fixed cells that neighbour a fixed cell
+    // - zero face coefficients on faces touching any fixed cell
+    // - zero boundary coefficients for patches adjacent to fixed cells
+
+    if (symmetric() || asymmetric())
+    {
+        // Per-face masks: 1 if that face's owner/neighbour is a fixed cell.
+        // Used to (a) steer the source adjustment and (b) zero coefficients.
+        List<label> ownMask(nInternalFaces, 0);
+        List<label> neiMask(nInternalFaces, 0);
+
+        labelRange faceIndices(nInternalFaces);
+
+        apply_policy(nInternalFaces, [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                faceIndices.begin(),
+                faceIndices.end(),
+                [&](const label facei)
+                {
+                    ownMask[facei] = cellMask[own[facei]];
+                    neiMask[facei] = cellMask[nei[facei]];
+                }
+            );
+        });
+
+        // Adjust source for every non-fixed cell that has at least one
+        // fixed neighbour.  Each cell writes only to source_[celli], so
+        // there are no write races.
+        //
+        // LDU addressing (direct port of the RapidCFD functor):
+        //   ownerStart[celli]   .. ownerStart[celli+1]   - faces where celli
+        //                                                   is the owner; the
+        //                                                   other cell is nei.
+        //   losortStart[celli]  .. losortStart[celli+1]  - faces (via losort)
+        //                                                   where celli is the
+        //                                                   neighbour; other
+        //                                                   cell is own.
+        //
+        //   symmetric:  lower() == upper()
+        //   asymmetric: owner side uses lower, neighbour side uses upper
+
+        const lduAddressing& addr = lduAddr();
+        const labelUList& ownStart    = addr.ownerStartAddr();
+        const labelUList& losortStart = addr.losortStartAddr();
+        const labelUList& losort      = addr.losortAddr();
+
+        const scalarField& Upper = upper();
+        const scalarField& Lower = symmetric() ? upper() : lower();
+
+        labelRange cellIndices(nCells);
+
+        apply_policy(nCells, [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                cellIndices.begin(),
+                cellIndices.end(),
+                [&](const label celli)
+                {
+                    if (cellMask[celli])
+                        return;
+
+                    // Faces where celli is the owner: fixed cell would be nei.
+                    const label oStart = ownStart[celli];
+                    const label oEnd   = ownStart[celli + 1];
+
+                    for (label facei = oStart; facei < oEnd; ++facei)
+                    {
+                        if (neiMask[facei])
+                        {
+                            source_[celli] -=
+                                Lower[facei] * cellValues[nei[facei]];
+                        }
+                    }
+
+                    // Faces where celli is the neighbour: fixed cell is own.
+                    const label nStart = losortStart[celli];
+                    const label nEnd   = losortStart[celli + 1];
+
+                    for (label i = nStart; i < nEnd; ++i)
+                    {
+                        const label facei = losort[i];
+
+                        if (ownMask[facei])
+                        {
+                            source_[celli] -=
+                                Upper[facei] * cellValues[own[facei]];
+                        }
+                    }
+                }
+            );
+        });
+
+        // Zero upper (and lower for asymmetric) on every face that touches
+        // a fixed cell.  Each face has its own slot - no races.
+
+        scalarField& Upper_rw = upper();
+
+        apply_policy(nInternalFaces, [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                faceIndices.begin(),
+                faceIndices.end(),
+                [&](const label facei)
+                {
+                    if (ownMask[facei] || neiMask[facei])
+                        Upper_rw[facei] = 0.0;
+                }
+            );
+        });
+
+        if (asymmetric())
+        {
+            scalarField& Lower_rw = lower();
+
+            apply_policy(nInternalFaces, [&](auto policy)
+            {
+                std::for_each
+                (
+                    policy,
+                    faceIndices.begin(),
+                    faceIndices.end(),
+                    [&](const label facei)
+                    {
+                        if (ownMask[facei] || neiMask[facei])
+                            Lower_rw[facei] = 0.0;
+                    }
+                );
+            });
+        }
+
+        // Boundary patches: zero internalCoeffs / boundaryCoeffs for faces
+        // whose owner cell is in the fixed set.
+
+        forAll(mesh.boundaryMesh(), patchi)
+        {
+            if (!internalCoeffs_[patchi].size())
+                continue;
+
+            const labelUList& pcells = mesh.boundary()[patchi].faceCells();
+            const label nPatchFaces = pcells.size();
+            labelRange patchIndices(nPatchFaces);
+
+            // Resolve the PtrList element references on the host. Indexing
+            // internalCoeffs_[patchi] inside the device lambda would invoke
+            // UPtrList::operator[] -> at() -> FatalError, which nvc++ cannot
+            // compile for the device. Capture raw pointers instead.
+            Type* const intPtr   = internalCoeffs_[patchi].data();
+            Type* const bndPtr   = boundaryCoeffs_[patchi].data();
+            const label* const pcellsPtr = pcells.cdata();
+            const label* const maskPtr   = cellMask.cdata();
+
+            apply_policy(nPatchFaces, [&](auto policy)
+            {
+                std::for_each
+                (
+                    policy,
+                    patchIndices.begin(),
+                    patchIndices.end(),
+                    [=](const label patchFacei)
+                    {
+                        if (maskPtr[pcellsPtr[patchFacei]])
+                        {
+                            intPtr[patchFacei] = Zero;
+                            bndPtr[patchFacei] = Zero;
+                        }
+                    }
+                );
+            });
+        }
+    }
 }
+
 
 
 template<class Type>
