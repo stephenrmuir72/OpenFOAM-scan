@@ -33,4 +33,14 @@ volScalarField& h = thermo.he();
 
 const volScalarField& betav = betavSolid[i];
 
+tmp<surfaceScalarField> talphaf;
+tmp<surfaceScalarField> tkappaf;
+if (thermo.isZoneMixture() && !thermo.isotropic())
+{
+    auto coeffs = calcHarmonicZoneCoeffs(mesh, taniAlpha(), cp);
+
+    talphaf = fvc::interpolate(betav) * coeffs.alphaf;
+    tkappaf = fvc::interpolate(betav) * coeffs.kappaf;
+}
+
 fv::options& fvOptions = solidHeatSources[i];

@@ -44,6 +44,7 @@ Description
 #include "dummyCourantNo.H"
 #include "solidRegionDiffNo.H"
 #include "coordinateSystem.H"
+#include "harmonicKappaEff.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -63,6 +64,7 @@ int main(int argc, char *argv[])
     #include "createDynamicFvMesh.H"
     #include "createFields.H"
     #include "createFieldRefs.H"
+    #include "zoneMixtureCoeffs.H"
 
     // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 

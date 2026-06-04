@@ -46,6 +46,7 @@ Description
 #include "fvOptions.H"
 #include "coordinateSystem.H"
 #include "loopControl.H"
+#include "harmonicKappaEff.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
