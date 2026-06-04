@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2025 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -27,6 +28,56 @@ License
 
 #include "fieldStatistics.H"
 #include "volFields.H"
+
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+namespace
+{
+
+// Return min/max indices based on the magnitude of the input.
+// This function should be migrated elsewhere.
+template<class T>
+Foam::labelPair findMinMax_mag
+(
+    const Foam::UList<T>& input,
+    Foam::label start=0
+)
+{
+    using namespace Foam;
+
+    const label len = input.size();
+
+    if (start < 0 || start >= len)
+    {
+        return labelPair(-1, -1);
+    }
+
+    label minIdx = start;
+    label maxIdx = start;
+
+    scalar minVal = Foam::mag(input[start]);
+    scalar maxVal = minVal;
+
+    for (label i = start+1; i < len; ++i)
+    {
+        const scalar val = Foam::mag(input[i]);
+        if (val < minVal)
+        {
+            minIdx = i;
+            minVal = val;
+        }
+        if (maxVal < val)
+        {
+            maxIdx = i;
+            maxVal = val;
+        }
+    }
+
+    return labelPair(minIdx, maxIdx);
+}
+
+} // End anonymous namespace
+
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -111,13 +162,22 @@ bool Foam::functionObjects::fieldStatistics::calcStat(const word& fieldName)
 
     if (extrema_)
     {
-        extremaResults_.set
-        (
-            fieldName,
-            (mode_ == modeType::MAG)
-          ? calcExtremaData(mag(field)())
-          : calcExtremaData(field)
-        );
+        if (mode_ == modeType::MAG)
+        {
+            extremaResults_.set
+            (
+                fieldName,
+                calcExtremaData<VolFieldType, modeType::MAG>(field)
+            );
+        }
+        else
+        {
+            extremaResults_.set
+            (
+                fieldName,
+                calcExtremaData(field)
+            );
+        }
     }
 
     return true;
@@ -136,17 +196,51 @@ T Foam::functionObjects::fieldStatistics::calcMean(const Field<T>& field) const
 }
 
 
-template<class T>
-T Foam::functionObjects::fieldStatistics::calcMin(const Field<T>& field) const
+template<class T, Foam::functionObjects::fieldStatistics::modeType Mode>
+Foam::functionObjects::fieldStatistics::modeValueType_t<T, Mode>
+Foam::functionObjects::fieldStatistics::calcMin(const Field<T>& field) const
 {
-    return gMin(field);
+    if constexpr (Mode == modeType::MAG)
+    {
+        scalar limit = pTraits<scalar>::max;
+        for (const auto& elem : field)
+        {
+            if (const scalar val = Foam::mag(elem); val < limit)
+            {
+                limit = val;
+            }
+        }
+        Foam::reduce(limit, minOp<scalar>());
+        return limit;
+    }
+    else
+    {
+        return gMin(field);
+    }
 }
 
 
-template<class T>
-T Foam::functionObjects::fieldStatistics::calcMax(const Field<T>& field) const
+template<class T, Foam::functionObjects::fieldStatistics::modeType Mode>
+Foam::functionObjects::fieldStatistics::modeValueType_t<T, Mode>
+Foam::functionObjects::fieldStatistics::calcMax(const Field<T>& field) const
 {
-    return gMax(field);
+    if constexpr (Mode == modeType::MAG)
+    {
+        scalar limit = pTraits<scalar>::min;
+        for (const auto& elem : field)
+        {
+            if (const scalar val = Foam::mag(elem); limit < val)
+            {
+                limit = val;
+            }
+        }
+        Foam::reduce(limit, maxOp<scalar>());
+        return limit;
+    }
+    else
+    {
+        return gMax(field);
+    }
 }
 
 
@@ -176,44 +270,114 @@ T Foam::functionObjects::fieldStatistics::calcVariance
 }
 
 
-template<class GeoField>
+template<class GeoField, Foam::functionObjects::fieldStatistics::modeType Mode>
 Foam::Pair<Foam::functionObjects::fieldStatistics::extremaData>
 Foam::functionObjects::fieldStatistics::calcExtremaData
 (
     const GeoField& field
 ) const
 {
-    typedef typename GeoField::value_type value_type;
+    // The data type of the geometric field
+    typedef typename GeoField::value_type Type;
 
-    const label proci = UPstream::myProcNo();
+    const auto myProci = UPstream::myProcNo();
+    const auto numProc = UPstream::nProcs();
 
-    List<value_type> minVs(UPstream::nProcs(), pTraits<value_type>::max);
-    List<label> minCells(UPstream::nProcs(), Foam::zero{});
-    List<point> minCs(UPstream::nProcs(), Foam::zero{});
+    // NOTE: the code here is largely identical to fieldMinMax
+    // For modeType::MAG, we compute on magnitudes (scalar values)
 
-    List<value_type> maxVs(UPstream::nProcs(), pTraits<value_type>::min);
-    List<label> maxCells(UPstream::nProcs(), Foam::zero{});
-    List<point> maxCs(UPstream::nProcs(), Foam::zero{});
+    // Magnitude mode: scalar; Component mode: Field value_type
+    // (same as std::conditional_t)
+    using value_type = modeValueType_t<Type, Mode>;
 
-    // Find extrema within the internal field
+    // Composite structure for min/max entries
+    struct Extrema
     {
-        auto minMaxIds = findMinMax(field);
+        label cellID_;
+        point position_;
+        value_type value_;
+    };
 
-        if (label celli = minMaxIds.first(); celli >= 0)
+    // Limits are a min/max pair
+    struct Limits
+    {
+        Extrema min_;
+        Extrema max_;
+    };
+
+    // TBD:
+    // static_assert(std::is_trivially_copyable_v<Limits>);
+    // static_assert(std::is_standard_layout_v<Limits>);
+
+    List<Limits> allLimits(numProc);
+
+    // My proc-local entries
+    auto& myData = allLimits[myProci];
+
+    // Return the value or mag at specified index
+    const auto getFieldValue = [](const UList<Type>& fld, label i)
+    {
+        if constexpr (Mode == modeType::MAG)
         {
-            minVs[proci] = field[celli];
-            minCells[proci] = celli;
-            minCs[proci] = mesh_.C()[celli];
+            return Foam::mag(fld[i]);
+        }
+        else
+        {
+            return fld[i];
+        }
+    };
+
+    // Find min/max locations, possibly with on-the-fly mag() calculation
+    const auto findMinMax_locations = [](const UList<Type>& fld)
+    {
+        if constexpr (Mode == modeType::MAG)
+        {
+            return findMinMax_mag(fld);
+        }
+        else
+        {
+            return Foam::findMinMax(fld);
+        }
+    };
+
+
+    // -----------------------------------------------------------------------
+
+    // Find min/max info (internal field) - or use fallback values
+    {
+        const auto& centres = mesh_.C().primitiveField();
+        const auto& fld = field.primitiveField();
+
+        auto [minId, maxId] = findMinMax_locations(field);
+
+        if (auto& slot = myData.min_; minId >= 0)
+        {
+            slot.cellID_ = minId;
+            slot.position_ = centres[minId];
+            slot.value_ = getFieldValue(fld, minId);
+        }
+        else
+        {
+            slot.cellID_ = 0;
+            slot.position_ = point::zero;
+            slot.value_ = pTraits<value_type>::max;
         }
 
-        if (label celli = minMaxIds.second(); celli >= 0)
+        if (auto& slot = myData.max_; maxId >= 0)
         {
-            maxVs[proci] = field[celli];
-            maxCells[proci] = celli;
-            maxCs[proci] = mesh_.C()[celli];
+            slot.cellID_ = maxId;
+            slot.position_ = centres[maxId];
+            slot.value_ = getFieldValue(fld, maxId);
+        }
+        else
+        {
+            slot.cellID_ = 0;
+            slot.position_ = point::zero;
+            slot.value_ = pTraits<value_type>::min;
         }
     }
 
+    // Find min/max info (boundary field)
     if (!internal_)
     {
         // Find extrema within the boundary fields
@@ -222,72 +386,103 @@ Foam::functionObjects::fieldStatistics::calcExtremaData
 
         forAll(fieldBoundary, patchi)
         {
-            const Field<value_type>& fp = fieldBoundary[patchi];
+            const Field<Type>& fld = fieldBoundary[patchi];
 
-            if (fp.size())
+            if (fld.size())
             {
-                const auto& Cfp = CfBoundary[patchi];
-
+                const auto& centres = CfBoundary[patchi];
                 const auto& faceCells
                     = fieldBoundary[patchi].patch().faceCells();
 
-                auto minMaxIds = findMinMax(fp);
+                auto [minId, maxId] = findMinMax_locations(fld);
 
-                if
-                (
-                    label facei = minMaxIds.first();
-                    facei >= 0 && minVs[proci] > fp[facei]
-                )
+                // min
+                if (auto& slot = myData.min_; minId >= 0)
                 {
-                    minVs[proci] = fp[facei];
-                    minCells[proci] = faceCells[facei];
-                    minCs[proci] = Cfp[facei];
+                    if (auto val = getFieldValue(fld, minId); val < slot.value_)
+                    {
+                        slot.cellID_ = faceCells[minId];
+                        slot.position_ = centres[minId];
+                        slot.value_ = val;
+                    }
                 }
 
-                if
-                (
-                    label facei = minMaxIds.second();
-                    facei >= 0 && maxVs[proci] < fp[facei]
-                )
+                // max
+                if (auto& slot = myData.max_; maxId >= 0)
                 {
-                    maxVs[proci] = fp[facei];
-                    maxCells[proci] = faceCells[facei];
-                    maxCs[proci] = Cfp[facei];
+                    if (auto val = getFieldValue(fld, maxId); slot.value_ < val)
+                    {
+                        slot.cellID_ = faceCells[maxId];
+                        slot.position_ = centres[maxId];
+                        slot.value_ = val;
+                    }
                 }
             }
         }
     }
 
-    // Collect info from all processors
-    Pstream::allGatherList(minVs);
-    Pstream::allGatherList(minCells);
-    Pstream::allGatherList(minCs);
 
-    Pstream::allGatherList(maxVs);
-    Pstream::allGatherList(maxCells);
-    Pstream::allGatherList(maxCs);
+    // Gather min/max data for all ranks.
+    //
+    // Handle as byte data directly. Although all elements of Extrema are
+    // contiguous, and thus Limits is also contiguous, there is no
+    // corresponding is_contiguous() trait for either of them.
+
+    // Allgather with one Limits element per rank:
+    UPstream::mpiAllGather(allLimits.data_bytes(), sizeof(Limits));
 
 
+    // Find min/max across all processors
+    label minProci = 0, maxProci = 0;
+
+    for (label proci = 1; proci < numProc; ++proci)
+    {
+        const auto& [localMin, localMax] = allLimits[proci];
+
+        // min
+        if
+        (
+            const auto& best = allLimits[minProci].min_;
+            localMin.value_ < best.value_
+        )
+        {
+            minProci = proci;
+        }
+
+        // max
+        if
+        (
+            const auto& best = allLimits[maxProci].max_;
+            best.value_ < localMax.value_
+        )
+        {
+            maxProci = proci;
+        }
+    }
+
+    // Results
     Pair<extremaData> results;
 
     // min
     {
+        const auto& limit = allLimits[minProci].min_;
         auto& slot = results.first();
-        const label procId = findMin(minVs);
-        slot.value_ = minVs[procId];
-        slot.procID_ = procId;
-        slot.cellID_ = minCells[procId];
-        slot.position_ = minCs[procId];
+
+        slot.value_ = limit.value_;
+        slot.procID_ = minProci;
+        slot.cellID_ = limit.cellID_;
+        slot.position_ = limit.position_;
     }
 
     // max
     {
+        const auto& limit = allLimits[maxProci].max_;
         auto& slot = results.second();
-        const label procId = findMax(maxVs);
-        slot.value_ = maxVs[procId];
-        slot.procID_ = procId;
-        slot.cellID_ = maxCells[procId];
-        slot.position_ = maxCs[procId];
+
+        slot.value_ = limit.value_;
+        slot.procID_ = maxProci;
+        slot.cellID_ = limit.cellID_;
+        slot.position_ = limit.position_;
     }
 
     return results;
