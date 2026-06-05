@@ -1,11 +1,13 @@
 {
+    const auto* aniAlphaPtr = thermo.Anialpha();
+
     fvScalarMatrix hEqn
     (
         fvm::ddt(betav*rho, h)
         - (
-            thermo.isotropic()
-            ? fvm::laplacian(betav*thermo.alpha(), h, "laplacian(alpha,h)")
-            : fvm::laplacian(betav*taniAlpha(), h, "laplacian(alpha,h)")
+            aniAlphaPtr
+            ? fvm::laplacian(betav*(*aniAlphaPtr), h, "laplacian(alpha,h)")
+            : fvm::laplacian(betav*thermo.alpha(), h, "laplacian(alpha,h)")
         )
         ==
         fvOptions(rho, h)

@@ -169,6 +169,13 @@ public:
             //- Return true if thermal conductivity is isotropic
             virtual bool isotropic() const = 0;
 
+            //- Anisotropic thermal diffusivity (kappa/Cp) in global
+            //  coordinates. Returns nullptr for isotropic materials.
+            virtual const volSymmTensorField* Anialpha() const
+            {
+                return nullptr;
+            }
+
 
         // Per patch calculation
 
