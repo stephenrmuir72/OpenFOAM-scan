@@ -28,6 +28,10 @@ License
 
 #include "solidThermo.H"
 #include "fvMesh.H"
+#include "fvm.H"
+#include "fvc.H"
+#include "surfaceFields.H"
+#include "addToRunTimeSelectionTable.H"
 
 
 /* * * * * * * * * * * * * * * private static data * * * * * * * * * * * * * */
@@ -39,6 +43,91 @@ namespace Foam
     defineRunTimeSelectionTable(solidThermo, dictionary);
     defineRunTimeSelectionTable(solidThermo, fvMeshDictPhase);
 }
+
+
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+namespace Foam
+{
+namespace
+{
+
+//- Compute harmonic-averaged face-normal kappaf for anisotropic zone mixtures
+//  kappaf = 1 / ((1-w)/k_own + w/k_nei)  where k = n·(taniAlpha·Cp)·n
+tmp<surfaceScalarField> calcHarmonicKappaf
+(
+    const fvMesh& mesh,
+    const volSymmTensorField& taniAlpha,
+    const volScalarField& cp
+)
+{
+    IOobject ioKappa
+    (
+        "kappaf",
+        mesh.time().timeName(),
+        mesh,
+        IOobject::NO_READ,
+        IOobject::NO_WRITE
+    );
+
+    auto tKappa = taniAlpha*cp;
+    const dimensionSet dimKappa = tKappa().dimensions();
+
+    auto tkappaf = tmp<surfaceScalarField>::New
+    (
+        ioKappa,
+        mesh,
+        dimKappa
+    );
+
+    auto& kappaf = tkappaf.ref();
+
+    // Standard linear interpolation weights from the mesh
+    const surfaceScalarField& w = mesh.surfaceInterpolation::weights();
+
+    const labelUList& owner = mesh.owner();
+    const labelUList& neighbour = mesh.neighbour();
+    const surfaceVectorField& Sf = mesh.Sf();
+    const surfaceScalarField& magSf = mesh.magSf();
+
+    // Internal faces: distance-weighted harmonic mean
+    for (label facei = 0; facei < mesh.nInternalFaces(); ++facei)
+    {
+        const vector n = Sf[facei] / magSf[facei];
+
+        const scalar aOwn = n & taniAlpha[owner[facei]] & n;
+        const scalar aNei = n & taniAlpha[neighbour[facei]] & n;
+        const scalar kOwn = aOwn * cp[owner[facei]];
+        const scalar kNei = aNei * cp[neighbour[facei]];
+
+        const scalar wf = w[facei];  // weight toward neighbour
+
+        kappaf[facei] = 1.0 / ((1.0 - wf)/kOwn + wf/kNei + VSMALL);
+    }
+
+    // Boundary faces: project adjacent cell tensor onto the face normal
+    forAll(kappaf.boundaryField(), patchi)
+    {
+        const fvPatch& patch = mesh.boundary()[patchi];
+        const labelUList& faceCells = patch.faceCells();
+        const vectorField n(patch.nf());
+
+        auto& kappab = kappaf.boundaryFieldRef()[patchi];
+
+        forAll(patch, facei)
+        {
+            const label celli = faceCells[facei];
+            const scalar an = n[facei] & taniAlpha[celli] & n[facei];
+
+            kappab[facei] = an * cp[celli];
+        }
+    }
+
+    return tkappaf;
+}
+
+} // End anonymous namespace
+} // End namespace Foam
 
 
 // * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * //
@@ -139,6 +228,54 @@ Foam::volScalarField& Foam::solidThermo::rho()
 bool Foam::solidThermo::read()
 {
     return regIOobject::read();
+}
+
+
+Foam::tmp<Foam::fvScalarMatrix> Foam::solidThermo::heatDiffusion
+(
+    const volScalarField& betav,
+    const volScalarField& h
+) const
+{
+    if (!isZoneMixture())
+    {
+        // Standard case: single implicit laplacian
+        if (isotropic())
+        {
+            return fvm::laplacian(betav*alpha(), h, "laplacian(alpha,h)");
+        }
+        else
+        {
+            return fvm::laplacian(betav*(*Anialpha()), h, "laplacian(alpha,h)");
+        }
+    }
+    else
+    {
+        // Zone mixture: add explicit correction terms.
+        // At convergence, fvm::laplacian(alpha, h) and
+        // fvc::laplacian(alpha, h) cancel, leaving
+        // -fvc::laplacian(kappa, T), which is the correct diffusion.
+        if (isotropic())
+        {
+            return
+                fvm::laplacian(betav*alpha(), h, "laplacian(alpha,h)")
+              - fvc::laplacian(betav*alpha(), h, "laplacian(alpha,h)")
+              + fvc::laplacian(betav*kappa(), T(), "laplacian(kappa,T)");
+        }
+        else
+        {
+            const auto& aniAlpha = *Anialpha();
+
+            const auto tkappaf =
+                fvc::interpolate(betav)
+              * calcHarmonicKappaf(h.mesh(), aniAlpha, this->Cp());
+
+            return
+                fvm::laplacian(betav*aniAlpha, h, "laplacian(alpha,h)")
+              - fvc::laplacian(betav*aniAlpha, h, "laplacian(alpha,h)")
+              + fvc::laplacian(tkappaf, T(), "laplacian(kappa,T)");
+        }
+    }
 }
 
 
