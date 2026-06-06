@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2015 OpenFOAM Foundation
     Copyright (C) 2020-2021 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -34,7 +35,7 @@ License
 #include "makeThermoParcelForces.H" // thermo variant
 #include "makeParcelDispersionModels.H"
 #include "makeParcelInjectionModels.H"
-#include "makeParcelPatchInteractionModels.H"
+#include "makeThermoParcelPatchInteractionModels.H"
 #include "makeParcelStochasticCollisionModels.H"
 #include "makeThermoParcelSurfaceFilmModels.H" // thermo variant
 
@@ -54,7 +55,7 @@ makeThermoParcelCloudFunctionObjects(basicThermoCloud);
 makeThermoParcelForces(basicThermoCloud);
 makeParcelDispersionModels(basicThermoCloud);
 makeParcelInjectionModels(basicThermoCloud);
-makeParcelPatchInteractionModels(basicThermoCloud);
+makeThermoParcelPatchInteractionModels(basicThermoCloud);
 makeParcelStochasticCollisionModels(basicThermoCloud);
 makeParcelSurfaceFilmModels(basicThermoCloud);
 
