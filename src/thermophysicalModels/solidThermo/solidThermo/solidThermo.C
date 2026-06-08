@@ -52,15 +52,28 @@ namespace Foam
 namespace
 {
 
-//- Compute harmonic-averaged face-normal kappaf for anisotropic zone mixtures
-//  kappaf = 1 / ((1-w)/k_own + w/k_nei)  where k = n·(taniAlpha·Cp)·n
-tmp<surfaceScalarField> calcHarmonicKappaf
+//- Compute harmonic-averaged face-normal alpha and kappa for
+//  anisotropic zone mixtures.
+//  Returns (αf, κf) where:
+//    αf[face] = 1 / ((1-w)/a_own + w/a_nei)   (harmonic of n·aniAlpha·n)
+//    κf[face] = 1 / ((1-w)/k_own + w/k_nei)   (harmonic of n·aniAlpha·Cp·n)
+std::pair<tmp<surfaceScalarField>, tmp<surfaceScalarField>>
+calcHarmonicCoeffs
 (
     const fvMesh& mesh,
-    const volSymmTensorField& taniAlpha,
+    const volSymmTensorField& aniAlpha,
     const volScalarField& cp
 )
 {
+    IOobject ioAlpha
+    (
+        "alphaf",
+        mesh.time().timeName(),
+        mesh,
+        IOobject::NO_READ,
+        IOobject::NO_WRITE
+    );
+
     IOobject ioKappa
     (
         "kappaf",
@@ -70,9 +83,17 @@ tmp<surfaceScalarField> calcHarmonicKappaf
         IOobject::NO_WRITE
     );
 
-    auto tKappa = taniAlpha*cp;
+    // Kappa = aniAlpha * cp  (for dimension checking)
+    auto tKappa = aniAlpha*cp;
     const dimensionSet dimKappa = tKappa().dimensions();
+    const dimensionSet dimAlpha = aniAlpha.dimensions();
 
+    auto talphaf = tmp<surfaceScalarField>::New
+    (
+        ioAlpha,
+        mesh,
+        dimAlpha
+    );
     auto tkappaf = tmp<surfaceScalarField>::New
     (
         ioKappa,
@@ -80,6 +101,7 @@ tmp<surfaceScalarField> calcHarmonicKappaf
         dimKappa
     );
 
+    auto& alphaf = talphaf.ref();
     auto& kappaf = tkappaf.ref();
 
     // Standard linear interpolation weights from the mesh
@@ -95,35 +117,38 @@ tmp<surfaceScalarField> calcHarmonicKappaf
     {
         const vector n = Sf[facei] / magSf[facei];
 
-        const scalar aOwn = n & taniAlpha[owner[facei]] & n;
-        const scalar aNei = n & taniAlpha[neighbour[facei]] & n;
+        const scalar aOwn = n & aniAlpha[owner[facei]] & n;
+        const scalar aNei = n & aniAlpha[neighbour[facei]] & n;
         const scalar kOwn = aOwn * cp[owner[facei]];
         const scalar kNei = aNei * cp[neighbour[facei]];
 
         const scalar wf = w[facei];  // weight toward neighbour
 
+        alphaf[facei] = 1.0 / ((1.0 - wf)/aOwn + wf/aNei + VSMALL);
         kappaf[facei] = 1.0 / ((1.0 - wf)/kOwn + wf/kNei + VSMALL);
     }
 
     // Boundary faces: project adjacent cell tensor onto the face normal
-    forAll(kappaf.boundaryField(), patchi)
+    forAll(alphaf.boundaryField(), patchi)
     {
         const fvPatch& patch = mesh.boundary()[patchi];
         const labelUList& faceCells = patch.faceCells();
         const vectorField n(patch.nf());
 
+        auto& alphab = alphaf.boundaryFieldRef()[patchi];
         auto& kappab = kappaf.boundaryFieldRef()[patchi];
 
         forAll(patch, facei)
         {
             const label celli = faceCells[facei];
-            const scalar an = n[facei] & taniAlpha[celli] & n[facei];
+            const scalar an = n[facei] & aniAlpha[celli] & n[facei];
 
+            alphab[facei] = an;
             kappab[facei] = an * cp[celli];
         }
     }
 
-    return tkappaf;
+    return {std::move(talphaf), std::move(tkappaf)};
 }
 
 } // End anonymous namespace
@@ -266,14 +291,23 @@ Foam::tmp<Foam::fvScalarMatrix> Foam::solidThermo::heatDiffusion
         {
             const auto& aniAlpha = *Anialpha();
 
+            auto [alphaf, kappaf] =
+                calcHarmonicCoeffs(h.mesh(), aniAlpha, this->Cp());
+
+            const auto talphaf =
+                fvc::interpolate(betav) * alphaf;
             const auto tkappaf =
-                fvc::interpolate(betav)
-              * calcHarmonicKappaf(h.mesh(), aniAlpha, this->Cp());
+                fvc::interpolate(betav) * kappaf;
+
+            // Extract const references to avoid double-use of tmp
+            // (the const tmp& overload of laplacian steals the pointer)
+            const auto& talphafRef = talphaf();
+            const auto& tkappafRef = tkappaf();
 
             return
-                fvm::laplacian(betav*aniAlpha, h, "laplacian(alpha,h)")
-              - fvc::laplacian(betav*aniAlpha, h, "laplacian(alpha,h)")
-              + fvc::laplacian(tkappaf, T(), "laplacian(kappa,T)");
+                fvm::laplacian(talphafRef, h, "laplacian(alpha,h)")
+              - fvc::laplacian(talphafRef, h, "laplacian(alpha,h)")
+              + fvc::laplacian(tkappafRef, T(), "laplacian(kappa,T)");
         }
     }
 }

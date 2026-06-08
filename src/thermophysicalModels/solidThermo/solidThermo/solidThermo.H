@@ -40,7 +40,7 @@ SourceFiles
 
 #include "rhoThermo.H"
 #include "autoPtr.H"
-#include "fvScalarMatrix.H"
+#include "fvMatricesFwd.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
