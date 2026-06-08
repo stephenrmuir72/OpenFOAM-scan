@@ -4,18 +4,12 @@ if (finalIter)
 }
 
 {
-    const auto* aniAlphaPtr = thermo.Anialpha();
-
     for (int nonOrth=0; nonOrth<=nNonOrthCorr; ++nonOrth)
     {
         fvScalarMatrix hEqn
         (
             fvm::ddt(betav*rho, h)
-          - (
-               aniAlphaPtr
-             ? fvm::laplacian(betav*(*aniAlphaPtr), h, "laplacian(alpha,h)")
-             : fvm::laplacian(betav*thermo.alpha(), h, "laplacian(alpha,h)")
-            )
+          - thermo.heatDiffusion(betav, h)
           ==
             fvOptions(rho, h)
         );
