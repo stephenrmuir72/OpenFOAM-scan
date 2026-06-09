@@ -44,6 +44,7 @@ Description
 #include "dummyCourantNo.H"
 #include "solidRegionDiffNo.H"
 #include "coordinateSystem.H"
+#include "pureZoneMixtureCorrection.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 

@@ -11,6 +11,12 @@
         fvOptions(rho, h)
     );
 
+    pureZoneMixtureCorrection
+    (
+        hEqn, thermo, betav, h,
+        thermo.isotropic() ? nullptr : &taniAlpha()
+    );
+
     if (meshFluxCorr)
     {
         surfaceScalarField phihMesh
