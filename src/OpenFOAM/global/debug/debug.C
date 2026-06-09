@@ -161,12 +161,14 @@ Foam::dictionary& Foam::debug::controlDict()
                     controlDictPtr_->findDict("InfoSwitches", keyType::LITERAL)
             )
             {
-                std::cout
-                    << "Warning: ignoring 'allowSystemOperations'"
-                    << " in user controlDict in environment variable"
-                    << " FOAM_CONTROLDICT\n"
-                    << std::endl;
-                infoPtr->remove("allowSystemOperations");
+                if (infoPtr->remove("allowSystemOperations"))
+                {
+                    std::cout
+                        << "Warning: ignoring 'allowSystemOperations'"
+                        << " in user controlDict in environment variable"
+                        << " FOAM_CONTROLDICT\n"
+                        << std::endl;
+                }
             }
         }
         else
@@ -215,11 +217,13 @@ Foam::dictionary& Foam::debug::controlDict()
                             dict.findDict("InfoSwitches", keyType::LITERAL)
                     )
                     {
-                        std::cout
-                            << "Warning: ignoring 'allowSystemOperations'"
-                            << " in user controlDict " << userFiles[i] << "\n"
-                            << std::endl;
-                        infoPtr->remove("allowSystemOperations");
+                        if (infoPtr->remove("allowSystemOperations"))
+                        {
+                            std::cout
+                                << "Warning: ignoring 'allowSystemOperations'"
+                                << " in user controlDict " << userFiles[i]
+                                << "\n" << std::endl;
+                        }
                     }
                     controlDictPtr_->merge(dict);
                 }
