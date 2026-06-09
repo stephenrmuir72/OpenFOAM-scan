@@ -1302,9 +1302,10 @@ void Foam::fvMeshSubset::reset
     if (oldMoving)
     {
         subMeshPtr_().moving(true);
-
-        const_cast<pointField&>(subMeshPtr_().oldPoints()) =
-            pointField(baseMesh_.oldPoints(), pointMap_);
+        subMeshPtr_().setOldPoints
+        (
+            pointField(baseMesh_.oldPoints(), pointMap_)
+        );
     }
 
     if (basePointMeshPtr)
