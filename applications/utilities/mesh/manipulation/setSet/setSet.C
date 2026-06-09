@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2018 OpenFOAM Foundation
     Copyright (C) 2017-2023 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -388,6 +389,8 @@ bool doCommand
                 << "  Action:" << actionName
                 << endl;
 
+            bool actionSkipped = false;
+
             switch (action)
             {
                 case topoSetSource::CLEAR :
@@ -422,6 +425,23 @@ bool doCommand
                                 is
                             )
                         );
+
+                        if
+                        (
+                            !topoSetSource::compatible
+                            (
+                                currentSet,
+                                setSource().setType()
+                            )
+                        )
+                        {
+                            WarningInFunction
+                                << "Source '" << sourceType
+                                << "' is not compatible with set type '"
+                                << setType << "'. Skipping action." << endl;
+                            actionSkipped = true;
+                            break;
+                        }
 
                         // Backup current set.
                         autoPtr<topoSet> oldSet
@@ -458,12 +478,29 @@ bool doCommand
                             )
                         );
 
+                        if
+                        (
+                            !topoSetSource::compatible
+                            (
+                                currentSet,
+                                setSource().setType()
+                            )
+                        )
+                        {
+                            WarningInFunction
+                                << "Source '" << sourceType
+                                << "' is not compatible with set type '"
+                                << setType << "'. Skipping action." << endl;
+                            actionSkipped = true;
+                            break;
+                        }
+
                         setSource().applyToSet(action, currentSet);
                     }
                 }
             }
 
-            if (action != topoSetSource::LIST)
+            if (action != topoSetSource::LIST && !actionSkipped)
             {
                 // Set will have been modified.
 

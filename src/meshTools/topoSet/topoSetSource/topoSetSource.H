@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2018-2024 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -245,6 +246,9 @@ public:
         {
             return (t & POINT_TYPE);
         }
+
+        //- True when source produces labels compatible with set instance
+        static bool compatible(const topoSet& set, const sourceType srcType);
 
 
     // Declare run-time constructor selection table

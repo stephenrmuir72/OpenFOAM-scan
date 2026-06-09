@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011 OpenFOAM Foundation
     Copyright (C) 2016-2024 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -154,6 +155,12 @@ public:
 
 
     // Member Functions
+
+        //- Geometric category of the set labels
+        virtual topoSetGeometry geometricType() const noexcept
+        {
+            return topoSetGeometry::POINT;
+        }
 
         //- Sync set across coupled patches. Adds coupled points to set.
         virtual void sync(const polyMesh& mesh);

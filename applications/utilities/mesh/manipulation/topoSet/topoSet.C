@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2018-2022,2025 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -328,6 +329,22 @@ int main(int argc, char *argv[])
                         dict.optionalSubDict("sourceInfo")
                     );
 
+                    if
+                    (
+                        !topoSetSource::compatible
+                        (
+                            currentSet(),
+                            source().setType()
+                        )
+                    )
+                    {
+                        WarningInFunction
+                            << "Source '" << sourceType
+                            << "' is not compatible with set type '"
+                            << setType << "'. Skipping action." << endl;
+                        break;
+                    }
+
                     source().applyToSet(action, currentSet());
                     // Synchronize for coupled patches.
                     if (!noSync) currentSet().sync(mesh);
@@ -352,6 +369,22 @@ int main(int argc, char *argv[])
                         mesh,
                         dict.optionalSubDict("sourceInfo")
                     );
+
+                    if
+                    (
+                        !topoSetSource::compatible
+                        (
+                            currentSet(),
+                            source().setType()
+                        )
+                    )
+                    {
+                        WarningInFunction
+                            << "Source '" << sourceType
+                            << "' is not compatible with set type '"
+                            << setType << "'. Skipping action." << endl;
+                        break;
+                    }
 
                     // Construct 'set' type equivalent of 'zoneSet'. This is
                     // done since we can ignore the flipMap of the

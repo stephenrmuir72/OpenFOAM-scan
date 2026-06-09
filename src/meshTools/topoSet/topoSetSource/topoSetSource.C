@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2018-2024 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -84,6 +85,35 @@ const Foam::string Foam::topoSetSource::illegalSource_
 (
     "Illegal topoSetSource name"
 );
+
+
+bool Foam::topoSetSource::compatible
+(
+    const topoSet& set,
+    const sourceType srcType
+)
+{
+    switch (set.geometricType())
+    {
+        case topoSet::topoSetGeometry::CELL:
+        {
+            return isCell(srcType);
+        }
+
+        case topoSet::topoSetGeometry::FACE:
+        {
+            return isFace(srcType);
+        }
+
+        case topoSet::topoSetGeometry::POINT:
+        {
+            return isPoint(srcType);
+        }
+
+        default:  // should not happen
+            return false;
+    }
+}
 
 
 // * * * * * * * * * * * * Protected Member Functions  * * * * * * * * * * * //
