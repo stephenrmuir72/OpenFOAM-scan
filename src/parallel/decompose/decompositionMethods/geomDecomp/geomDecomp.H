@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011 OpenFOAM Foundation
     Copyright (C) 2018-2021 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -37,7 +38,19 @@ Description
         order     | order of operation                      | no  | xyz
         delta     | delta (jitter) for rotation matrix      | no  | 0.001
         rotation  | coordinate rotation                     | no  |
+        processorWeights | Relative target load per domain  | no  | uniform
     \endtable
+
+Note
+  - The \c processorWeights is optionally calculated as a list of number of
+    subdomains relative to target loads. Only the ratios matter since the
+    list is internally normalised.
+  - The \c hierarchical method uses an arbitrary \c processorWeights vector.
+    Its recursive bisection sizes each bin from the summed weights of the
+    domains in that bin's subtree.
+  - The \c simple method applies the per-axis marginal of the weights to its
+    independent banding, which is exact only when the requested weights are
+    separable across the (x y z) axes and a best-effort approximation otherwise.
 
 SourceFiles
     geomDecomp.C
@@ -96,6 +109,9 @@ protected:
         //- Coefficients for all derived methods
         const dictionary& coeffsDict_;
 
+        //- Optional relative target load per domain, normalised to sum 1.
+        scalarField procWeights_;
+
 
     // Protected Member Functions
 
@@ -104,6 +120,20 @@ protected:
 
         //- Check that mesh directions are compatible with decomposition
         void checkDecompositionDirections(const Vector<label>&) const;
+
+        //- Return the per-bin target fractions (length nBins, summing to 1)
+        //- for the \c nBins bins along an axis with the given processor \c
+        //- stride, starting at processor \c procOffset.
+        scalarField binWeightFractions
+        (
+            const label procOffset,
+            const label stride,
+            const label nBins
+        ) const;
+
+        //- Return the per-axis marginal target fractions for simple
+        //  decomposition's independent x/y/z banding.
+        scalarField axisWeightFractions(const direction cmpt) const;
 
 
 public:
