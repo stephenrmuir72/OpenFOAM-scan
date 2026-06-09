@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2018 OpenFOAM Foundation
     Copyright (C) 2019-2022 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -153,24 +154,89 @@ Foam::dictionary& Foam::debug::controlDict()
             // Read from environment
             IStringStream is(controlDictString);
             controlDictPtr_ = new dictionary(is);
+
+            if
+            (
+                auto* infoPtr =
+                    controlDictPtr_->findDict("InfoSwitches", keyType::LITERAL)
+            )
+            {
+                if (infoPtr->remove("allowSystemOperations"))
+                {
+                    std::cout
+                        << "Warning: ignoring 'allowSystemOperations'"
+                        << " in user controlDict in environment variable"
+                        << " FOAM_CONTROLDICT\n"
+                        << std::endl;
+                }
+            }
         }
         else
         {
-            fileNameList controlDictFiles = findEtcFiles("controlDict", true);
             controlDictPtr_ = new dictionary();
-            forAllReverse(controlDictFiles, i)
-            {
-                IFstream is(controlDictFiles[i]);
 
-                if (!is.good())
+            // System locations
+            {
+                fileNameList systemFiles =
+                    findEtcFiles("controlDict", false, 0077);
+                forAllReverse(systemFiles, i)
                 {
-                    SafeFatalIOErrorInFunction
-                    (
-                        is,
-                        "Cannot open controlDict"
-                    );
+                    IFstream is(systemFiles[i]);
+
+                    if (!is.good())
+                    {
+                        SafeFatalIOErrorInFunction
+                        (
+                            is,
+                            "Cannot open controlDict"
+                        );
+                    }
+                    controlDictPtr_->merge(dictionary(is));
                 }
-                controlDictPtr_->merge(dictionary(is));
+            }
+            // User locations
+            {
+                fileNameList userFiles =
+                    findEtcFiles("controlDict", false, 0700);
+                forAllReverse(userFiles, i)
+                {
+                    IFstream is(userFiles[i]);
+
+                    if (!is.good())
+                    {
+                        SafeFatalIOErrorInFunction
+                        (
+                            is,
+                            "Cannot open controlDict"
+                        );
+                    }
+                    dictionary dict(is);
+                    if
+                    (
+                        auto* infoPtr =
+                            dict.findDict("InfoSwitches", keyType::LITERAL)
+                    )
+                    {
+                        if (infoPtr->remove("allowSystemOperations"))
+                        {
+                            std::cout
+                                << "Warning: ignoring 'allowSystemOperations'"
+                                << " in user controlDict " << userFiles[i]
+                                << "\n" << std::endl;
+                        }
+                    }
+                    controlDictPtr_->merge(dict);
+                }
+            }
+            if (controlDictPtr_->empty())
+            {
+                // See etcFiles::errorMandatoryNotFound;
+                std::cerr
+                    << "--> FOAM FATAL ERROR :\n"
+                    "    Could not find mandatory etc entry (mode=ugo)\n"
+                    "    'controlDict'\n"
+                    << std::endl;
+                std::exit(1);
             }
         }
     }

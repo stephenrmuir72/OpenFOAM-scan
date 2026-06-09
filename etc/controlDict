@@ -71,8 +71,9 @@ InfoSwitches
     // Allow profiling
     allowProfiling  1;
 
-    // Allow case-supplied C++ code (#codeStream, codedFixedValue)
-    allowSystemOperations   1;
+    // Allow case-supplied C++ code (#codeStream, codedFixedValue). Default is
+    // 0 (disallow) for security reasons.
+    // allowSystemOperations   1;
 
     // Allow space character in fileName (use with caution)
     // Ignored (always 1) for Windows.
