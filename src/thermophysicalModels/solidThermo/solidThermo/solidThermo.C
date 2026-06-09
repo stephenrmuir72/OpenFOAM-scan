@@ -289,25 +289,62 @@ Foam::tmp<Foam::fvScalarMatrix> Foam::solidThermo::heatDiffusion
         }
         else
         {
-            const auto& aniAlpha = *Anialpha();
+            // Hybrid approach: harmonic normal-component + full tensor coupling
+            //
+            // The orthogonal face flux uses the harmonic mean of n·A·n for
+            // correct behaviour at material interfaces.  The non-orthogonal
+            // correction uses the full face tensor (linearly interpolated) to
+            // retain off-diagonal tensor coupling.
+            //
+            // Construction of the corrected face tensor:
+            //   A_f_corr = A_f_lin + (alphaf_harm - n·A_f_lin·n) · (n ⊗ n)
+            //
+            // This replaces only the normal-normal component with the harmonic
+            // value while preserving all off-diagonal entries.
 
-            auto [alphaf, kappaf] =
-                calcHarmonicCoeffs(h.mesh(), aniAlpha, this->Cp());
+            const fvMesh& mesh = h.mesh();
+            const volSymmTensorField& aniAlpha = *Anialpha();
 
-            const auto talphaf =
-                fvc::interpolate(betav) * alphaf;
-            const auto tkappaf =
-                fvc::interpolate(betav) * kappaf;
+            tmp<volScalarField> tCp = this->Cp();
+            const volScalarField& cp = tCp();
 
-            // Extract const references to avoid double-use of tmp
-            // (the const tmp& overload of laplacian steals the pointer)
-            const auto& talphafRef = talphaf();
-            const auto& tkappafRef = tkappaf();
+            // 1. Harmonic scalar for n·A·n (correct at interfaces)
+            auto [alphaf_harm, kappaf_harm] =
+                calcHarmonicCoeffs(mesh, aniAlpha, cp);
 
+            // 2. Linearly-interpolated full tensors at faces
+            const surfaceSymmTensorField A_f_lin =
+                fvc::interpolate(aniAlpha);
+
+            const surfaceSymmTensorField kappa_f_lin =
+                fvc::interpolate(aniAlpha * cp);
+
+            // 3. Face unit normal
+            const surfaceVectorField n(mesh.Sf() / mesh.magSf());
+
+            // 4. Normal-normal component from linear interpolation
+            const surfaceScalarField nnAlpha(n & A_f_lin & n);
+
+            // 5. Corrected face tensors
+            surfaceSymmTensorField A_f_corr(A_f_lin);
+            A_f_corr += (alphaf_harm - nnAlpha) * symm(n * n);
+
+            surfaceSymmTensorField kappa_f_corr(kappa_f_lin);
+            const surfaceScalarField nnKappa(n & kappa_f_lin & n);
+            kappa_f_corr += (kappaf_harm - nnKappa) * symm(n * n);
+
+            // 6. Apply porosity factor
+            const surfaceScalarField betav_f = fvc::interpolate(betav);
+
+            // 7. Full tensor laplacians — the standard
+            //    gaussLaplacianScheme now sees SfGammaCorr ≠ 0,
+            //    so the non-orthogonal correction correctly includes
+            //    off-diagonal tensor coupling.  The nNonOrthogonalCorrectors
+            //    loop in the solver operates as usual.
             return
-                fvm::laplacian(talphafRef, h, "laplacian(alpha,h)")
-              - fvc::laplacian(talphafRef, h, "laplacian(alpha,h)")
-              + fvc::laplacian(tkappafRef, T(), "laplacian(kappa,T)");
+                fvm::laplacian(betav_f * A_f_corr, h, "laplacian(alpha,h)")
+              - fvc::laplacian(betav_f * A_f_corr, h, "laplacian(alpha,h)")
+              + fvc::laplacian(betav_f * kappa_f_corr, T(), "laplacian(kappa,T)");
         }
     }
 }
