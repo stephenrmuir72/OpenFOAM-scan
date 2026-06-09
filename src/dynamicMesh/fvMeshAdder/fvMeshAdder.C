@@ -358,8 +358,7 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::fvMeshAdder::add
         }
 
         fvMeshes[0].moving(true);
-        const_cast<pointField&>(fvMeshes[0].oldPoints()) =
-            std::move(mappedOldPoints);
+        fvMeshes[0].setOldPoints(std::move(mappedOldPoints));
     }
 
     // constructPatchMap is patchMap with -1 for the removed

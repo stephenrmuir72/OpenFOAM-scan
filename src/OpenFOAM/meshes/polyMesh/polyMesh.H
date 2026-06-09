@@ -571,6 +571,15 @@ public:
             //- Reset motion
             void resetMotion() const;
 
+            //- Set the old (motion) points directly, replacing any stored
+            //  old points. Used to install mapped old points after mesh
+            //  redistribution/subsetting; the mesh should already be marked
+            //  moving via moving(true).
+            void setOldPoints(const pointField& newOldPoints);
+
+            //- Set the old (motion) points directly by moving the source
+            void setOldPoints(pointField&& newOldPoints);
+
 
         // Topological change
 

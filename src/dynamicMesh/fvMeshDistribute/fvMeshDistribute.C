@@ -1905,8 +1905,7 @@ Foam::autoPtr<Foam::fvMesh> Foam::fvMeshDistribute::receiveMesh
     if (domainMoving)
     {
         domainMesh.moving(true);
-        const_cast<pointField&>(domainMesh.oldPoints()) =
-            std::move(domainOldPoints);
+        domainMesh.setOldPoints(std::move(domainOldPoints));
     }
 
     return domainMeshPtr;
