@@ -172,9 +172,10 @@ public:
 
             //- Anisotropic thermal diffusivity (kappa/Cp) in global
             //  coordinates. Returns nullptr for isotropic materials.
-            virtual const volSymmTensorField* Anialpha() const
+            virtual const volSymmTensorField& aniAlpha() const
             {
-                return nullptr;
+                NotImplemented;
+                return NullObjectRef<volSymmTensorField>();
             }
 
             //- Return the diffusion term for the enthalpy equation.

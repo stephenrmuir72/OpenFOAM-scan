@@ -61,7 +61,7 @@ class heSolidThermo
         void calculate();
 
         //- Construct (or reconstruct) anisotropic alpha field
-        void constructAnialpha();
+        void constructAniAlpha();
 
         //- Construct as copy (not implemented)
         heSolidThermo(const heSolidThermo<BasicSolidThermo, MixtureType>&);
@@ -131,9 +131,15 @@ public:
 
             //- Anisotropic thermal diffusivity (kappa/Cp) in global
             //  coordinates. Returns nullptr for isotropic materials.
-            virtual const volSymmTensorField* Anialpha() const
+            virtual const volSymmTensorField& aniAlpha() const
             {
-                return aniAlphaPtr_.get();
+                if (!aniAlphaPtr_)
+                {
+                    FatalErrorInFunction
+                        << "Requested aniAlpha, but it has not been created"
+                        << abort(FatalError);
+                }
+                return *aniAlphaPtr_.get();
             }
 
 

@@ -65,7 +65,8 @@ public:
         {}
 
         //- True if the mixture uses cellZone-dependent properties
-        virtual bool isZoneMixture() const
+        //  Note: non-virtual - resolved statically via template in heThermo
+        bool isZoneMixture() const
         {
             return false;
         }

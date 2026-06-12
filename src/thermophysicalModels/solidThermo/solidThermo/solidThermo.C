@@ -271,7 +271,7 @@ Foam::tmp<Foam::fvScalarMatrix> Foam::solidThermo::heatDiffusion
         }
         else
         {
-            return fvm::laplacian(betav*(*Anialpha()), h, "laplacian(alpha,h)");
+            return fvm::laplacian(betav*aniAlpha(), h, "laplacian(alpha,h)");
         }
     }
     else
@@ -303,7 +303,7 @@ Foam::tmp<Foam::fvScalarMatrix> Foam::solidThermo::heatDiffusion
             // value while preserving all off-diagonal entries.
 
             const fvMesh& mesh = h.mesh();
-            const volSymmTensorField& aniAlpha = *Anialpha();
+            const volSymmTensorField& aniAlpha = this->aniAlpha();
 
             tmp<volScalarField> tCp = this->Cp();
             const volScalarField& cp = tCp();
@@ -313,11 +313,12 @@ Foam::tmp<Foam::fvScalarMatrix> Foam::solidThermo::heatDiffusion
                 calcHarmonicCoeffs(mesh, aniAlpha, cp);
 
             // 2. Linearly-interpolated full tensors at faces
-            const surfaceSymmTensorField A_f_lin =
-                fvc::interpolate(aniAlpha);
+            const surfaceSymmTensorField A_f_lin(fvc::interpolate(aniAlpha));
 
-            const surfaceSymmTensorField kappa_f_lin =
-                fvc::interpolate(aniAlpha * cp);
+            const surfaceSymmTensorField kappa_f_lin
+            (
+                 fvc::interpolate(aniAlpha*cp)
+            );
 
             // 3. Face unit normal
             const surfaceVectorField n(mesh.Sf() / mesh.magSf());
@@ -334,7 +335,7 @@ Foam::tmp<Foam::fvScalarMatrix> Foam::solidThermo::heatDiffusion
             kappa_f_corr += (kappaf_harm - nnKappa) * symm(n * n);
 
             // 6. Apply porosity factor
-            const surfaceScalarField betav_f = fvc::interpolate(betav);
+            const surfaceScalarField betav_f(fvc::interpolate(betav));
 
             // 7. Full tensor laplacians — the standard
             //    gaussLaplacianScheme now sees SfGammaCorr ≠ 0,

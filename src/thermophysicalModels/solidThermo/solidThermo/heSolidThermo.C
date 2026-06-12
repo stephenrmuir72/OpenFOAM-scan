@@ -143,7 +143,7 @@ void Foam::heSolidThermo<BasicSolidThermo, MixtureType>::calculate()
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 template<class BasicSolidThermo, class MixtureType>
-void Foam::heSolidThermo<BasicSolidThermo, MixtureType>::constructAnialpha()
+void Foam::heSolidThermo<BasicSolidThermo, MixtureType>::constructAniAlpha()
 {
     if (this->isotropic())
     {
@@ -172,7 +172,7 @@ void Foam::heSolidThermo<BasicSolidThermo, MixtureType>::constructAnialpha()
             (
                 IOobject
                 (
-                    "Anialpha",
+                    "aniAlpha",
                     mesh.time().timeName(),
                     mesh,
                     IOobject::NO_READ,
@@ -186,11 +186,7 @@ void Foam::heSolidThermo<BasicSolidThermo, MixtureType>::constructAnialpha()
     }
 
     aniAlphaPtr_().primitiveFieldRef() =
-        csysPtr_().transformPrincipal
-        (
-            mesh.cellCentres(),
-            tkappaByCp()
-        );
+        csysPtr_().transformPrincipal(mesh.cellCentres(), tkappaByCp());
     aniAlphaPtr_().correctBoundaryConditions();
 }
 
@@ -208,7 +204,7 @@ heSolidThermo
     heThermo<BasicSolidThermo, MixtureType>(mesh, phaseName)
 {
     calculate();
-    constructAnialpha();
+    constructAniAlpha();
     this->mu_ == Zero;
     this->psi_ == Zero;
 }
@@ -226,7 +222,7 @@ heSolidThermo
     heThermo<BasicSolidThermo, MixtureType>(mesh, dict, phaseName)
 {
     calculate();
-    constructAnialpha();
+    constructAniAlpha();
     this->mu_ == Zero;
     this->psi_ == Zero;
 }
@@ -244,7 +240,7 @@ heSolidThermo
     heThermo<BasicSolidThermo, MixtureType>(mesh, phaseName, dictName)
 {
     calculate();
-    constructAnialpha();
+    constructAniAlpha();
 
     // TBD. initialise psi, mu (at heThermo level) since these do not
     // get initialised. Move to heThermo constructor?
@@ -268,7 +264,7 @@ void Foam::heSolidThermo<BasicSolidThermo, MixtureType>::correct()
     DebugInFunction << nl;
 
     calculate();
-    constructAnialpha();
+    constructAniAlpha();
 
     DebugInfo << "    Finished" << endl;
 }

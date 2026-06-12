@@ -152,7 +152,7 @@ public:
         }
 
         //- True if the mixture uses cellZone-dependent properties
-        virtual bool isZoneMixture() const
+        bool isZoneMixture() const
         {
             return true;
         }
