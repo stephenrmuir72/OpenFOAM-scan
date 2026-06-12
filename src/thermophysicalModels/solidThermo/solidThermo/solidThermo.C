@@ -128,23 +128,54 @@ calcHarmonicCoeffs
         kappaf[facei] = 1.0 / ((1.0 - wf)/kOwn + wf/kNei + VSMALL);
     }
 
-    // Boundary faces: project adjacent cell tensor onto the face normal
+    // Boundary faces
     forAll(alphaf.boundaryField(), patchi)
     {
         const fvPatch& patch = mesh.boundary()[patchi];
-        const labelUList& faceCells = patch.faceCells();
         const vectorField n(patch.nf());
 
         auto& alphab = alphaf.boundaryFieldRef()[patchi];
         auto& kappab = kappaf.boundaryFieldRef()[patchi];
 
-        forAll(patch, facei)
+        if (aniAlpha.boundaryField()[patchi].coupled())
         {
-            const label celli = faceCells[facei];
-            const scalar an = n[facei] & aniAlpha[celli] & n[facei];
+            // Coupled patch (processor, cyclic, etc.): harmonic average
+            // using both sides, consistent with the internal-face treatment.
+            const tmp<symmTensorField> taniOwn =
+                aniAlpha.boundaryField()[patchi].patchInternalField();
+            const tmp<symmTensorField> taniNei =
+                aniAlpha.boundaryField()[patchi].patchNeighbourField();
+            const tmp<scalarField> tcpOwn =
+                cp.boundaryField()[patchi].patchInternalField();
+            const tmp<scalarField> tcpNei =
+                cp.boundaryField()[patchi].patchNeighbourField();
+            const scalarField& pw = patch.weights();
 
-            alphab[facei] = an;
-            kappab[facei] = an * cp[celli];
+            forAll(patch, facei)
+            {
+                const scalar aOwn = n[facei] & taniOwn()[facei] & n[facei];
+                const scalar aNei = n[facei] & taniNei()[facei] & n[facei];
+                const scalar kOwn = aOwn * tcpOwn()[facei];
+                const scalar kNei = aNei * tcpNei()[facei];
+                const scalar wf = pw[facei];
+
+                alphab[facei] = 1.0 / ((1.0 - wf)/aOwn + wf/aNei + VSMALL);
+                kappab[facei] = 1.0 / ((1.0 - wf)/kOwn + wf/kNei + VSMALL);
+            }
+        }
+        else
+        {
+            // Physical boundary: one-sided projection from the adjacent cell
+            const labelUList& faceCells = patch.faceCells();
+
+            forAll(patch, facei)
+            {
+                const label celli = faceCells[facei];
+                const scalar an = n[facei] & aniAlpha[celli] & n[facei];
+
+                alphab[facei] = an;
+                kappab[facei] = an * cp[celli];
+            }
         }
     }
 
