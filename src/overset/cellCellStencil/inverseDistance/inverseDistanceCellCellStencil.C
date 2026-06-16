@@ -484,8 +484,10 @@ void Foam::cellCellStencils::inverseDistance::markDonors
              && allCellTypes[celli] != HOLE
                 // Targeted cascade guard: block INTERPOLATED (pre-promoted
                 // OVERSET fringe) cells from donating to other OVERSET
-                // acceptors. Non-OVERSET targets may still receive from 
-                // INTERPOLATED sources.
+                // acceptors. Non-OVERSET targets may still receive from
+                // INTERPOLATED sources.  This operates independently of
+                // allowInterpolatedDonors_ since fringe-to-fringe donation
+                // is always unsafe and can crash the interpolation template.
              && !(
                     allCellTypes[srcCellMap[srcCelli]] == INTERPOLATED
                  && allPatchTypes[celli] == OVERSET
@@ -567,8 +569,16 @@ void Foam::cellCellStencils::inverseDistance::markDonors
         label procI = srcOverlapProcs[i];
         const labelList& cellIDs = tgtSendCells[procI];
 
+        // Build target patch types for cells being sent
+        labelList tgtPatchTypes(cellIDs.size());
+        forAll(cellIDs, j)
+        {
+            tgtPatchTypes[j] = allPatchTypes[tgtCellMap[cellIDs[j]]];
+        }
+
         UOPstream os(procI, pBufs);
         os << UIndirectList<point>(tgtCc, cellIDs);
+        os << tgtPatchTypes;
     }
     pBufs.finishedSends();
 
@@ -580,6 +590,7 @@ void Foam::cellCellStencils::inverseDistance::markDonors
 
         UIPstream is(procI, pBufs);
         pointList samples(is);
+        labelList samplePatchTypes(is);
 
         labelList donors(samples.size(), -1);
         forAll(samples, sampleI)
@@ -587,12 +598,16 @@ void Foam::cellCellStencils::inverseDistance::markDonors
             const point& sample = samples[sampleI];
             label srcCelli = srcMesh.findCell(sample, polyMesh::CELL_TETS);
 
-            // Do not use an INTERPOLATED (pre-promoted OVERSET fringe) cell as 
-            // a donor, even when the lookup happens on a remote processor.
+            // Do not use an INTERPOLATED (pre-promoted OVERSET fringe) cell as
+            // a donor.  Apply the same predicate as the local overlap path
+            // now that target patch type is available.
             if 
             (
                 srcCelli != -1
-             && allCellTypes[srcCellMap[srcCelli]] != INTERPOLATED
+             && !(
+                    allCellTypes[srcCellMap[srcCelli]] == INTERPOLATED
+                 && samplePatchTypes[sampleI] == OVERSET
+                )
             )
             {
                 donors[sampleI] = globalCells.toGlobal(srcCellMap[srcCelli]);
@@ -624,8 +639,8 @@ void Foam::cellCellStencils::inverseDistance::markDonors
             label globalDonor = donors[donorI];
             const label celli = tgtCellMap[cellIDs[donorI]];
 
-            // Guard: skip if target became HOLE (e.g. from markPatchesAsHoles
-            // running on another zone pair after the cells were sent)
+            // Guard: skip if target was already marked HOLE (e.g. by
+            // markPatchesAsHoles before donor search began)
             if (globalDonor != -1 && allCellTypes[celli] != HOLE)
             {
                 {
@@ -1695,11 +1710,12 @@ void Foam::cellCellStencils::inverseDistance::createStencil
                         if (cellStencil_[cellI].empty())
                         {
                             // Donor had no valid (non-HOLE) neighbours in
-                            // globalCellCells — the donor itself became a HOLE
+                            // globalCellCells -- the donor itself became a HOLE
                             // after markDonors. Demote acceptor to HOLE so it
                             // is not left as INTERPOLATED with an empty stencil
                             // (which would crash the interpolation template).
                             cellTypes_[cellI] = HOLE;
+                            isValidDonor[cellI] = false;
                             cellInterpolationWeight_[cellI] = 0.0;
                         }
                         else
@@ -1720,7 +1736,7 @@ void Foam::cellCellStencils::inverseDistance::createStencil
 
     // Re-do the mapDistribute
     // First remove any cells demoted to HOLE inside the while loop
-    // (donor became HOLE → empty stencil transferred → acceptor demoted).
+    // (donor became HOLE -> empty stencil transferred -> acceptor demoted).
     {
         DynamicList<label> validCells(interpolationCells_.size());
         forAll(interpolationCells_, i)
@@ -2389,6 +2405,7 @@ bool Foam::cellCellStencils::inverseDistance::update()
                     if (cellStencil_[celli].empty())
                     {
                         cellTypes_[celli] = HOLE;
+                        cellInterpolationWeights_[celli].clear();
                         // weight will be cleared in the allWeight pass below
                     }
                     else
@@ -2407,6 +2424,7 @@ bool Foam::cellCellStencils::inverseDistance::update()
                 // Demote: this cell has no valid donor - treat as HOLE
                 cellTypes_[celli] = HOLE;
                 cellStencil_[celli].clear();
+                cellInterpolationWeights_[celli].clear();
                 // weight will be cleared in the allWeight pass below
             }
         }
@@ -2444,6 +2462,7 @@ bool Foam::cellCellStencils::inverseDistance::update()
             if (cellStencil_[celli].empty())
             {
                 cellTypes_[celli] = HOLE;
+                cellInterpolationWeights_[celli].clear();
                 allWeight[celli] = 0.0;
             }
             else
