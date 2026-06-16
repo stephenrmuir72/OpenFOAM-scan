@@ -29,6 +29,9 @@ _decomp
 
     // unique triangle decomposition; no fill-in
     decomposeUsingBbs   false;
+
+    // Follow mesh or use triangle centres for decomposition ('independent')
+    distributionType    independent;
 }
 
 
