@@ -599,8 +599,7 @@ void Foam::cellCellStencils::inverseDistance::markDonors
             label srcCelli = srcMesh.findCell(sample, polyMesh::CELL_TETS);
 
             // Do not use an INTERPOLATED (pre-promoted OVERSET fringe) cell as
-            // a donor.  Apply the same predicate as the local overlap path
-            // now that target patch type is available.
+            // a donor. 
             if 
             (
                 srcCelli != -1
@@ -2143,8 +2142,6 @@ bool Foam::cellCellStencils::inverseDistance::update()
 
     // Post-demote: OVERSET fringe cells pre-promoted to INTERPOLATED that
     // found no valid (CALCULATED) donor are demoted back to HOLE.
-    // This replaces the old combined promote/demote block; promotion already
-    // happened above before markDonors.
     forAll(allPatchTypes, cellI)
     {
         if
