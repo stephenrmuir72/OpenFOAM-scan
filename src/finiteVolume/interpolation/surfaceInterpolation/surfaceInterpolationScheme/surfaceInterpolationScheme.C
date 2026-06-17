@@ -273,7 +273,7 @@ Foam::surfaceInterpolationScheme<Type>::dotInterpolate
     Field<RetType>& sfi = sf.primitiveFieldRef();
 
     const typename SFType::Internal& Sfi = Sf.internalField();
-       
+
     labelRange faceRange(P.size());
 
     apply_policy(P.size(), [&](auto policy)
