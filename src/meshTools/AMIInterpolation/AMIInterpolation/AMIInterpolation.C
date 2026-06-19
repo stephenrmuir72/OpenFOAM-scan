@@ -741,7 +741,6 @@ bool Foam::AMIInterpolation::calculate
         // leave stale non-null maps that corrupt GAMG agglomeration.
         srcMapPtr_.reset(nullptr);
         tgtMapPtr_.reset(nullptr);
-        geomComm_.reset();
 
         if (srcMagSf_.size())
         {
