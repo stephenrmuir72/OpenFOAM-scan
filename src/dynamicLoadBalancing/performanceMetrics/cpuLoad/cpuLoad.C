@@ -144,7 +144,8 @@ bool Foam::performanceMetrics::cpuLoad::resetTimeCounters()
 {
     // The 'clock' is reset internally in clockTimeIncrement()
 
-    cpuTime_.resetCpuTimeIncrement();
+    // Prime CPU increment baseline (v2306 lacks resetCpuTimeIncrement)
+    (void)cpuTime_.cpuTimeIncrement();
 
     profilingPstream::reset();
 

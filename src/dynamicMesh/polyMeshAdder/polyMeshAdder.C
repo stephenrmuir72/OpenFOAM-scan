@@ -2782,7 +2782,7 @@ void Foam::polyMeshAdder::add
                     -1,
                     -1,
                     destinationMesh ? celli : -1,
-                    zones
+                    newZoneID[celli]
                 );
             }
         }
@@ -2825,7 +2825,7 @@ void Foam::polyMeshAdder::add
                 (
                     points[pointi],
                     destinationMesh ? pointi : -1,
-                    zones,
+                    newZoneID[pointi],
                     true
                 );
             }

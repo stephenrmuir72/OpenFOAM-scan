@@ -162,15 +162,38 @@ void Foam::multiSolidBodyMotionSolver::distribute
     map.distributePointData(points0_);
 
     const polyMesh& mesh = this->mesh();
+    bitSet movePts;
     label zonei = 0;
 
     for (const entry& dEntry : coeffDict())
     {
         if (dEntry.isDict())
         {
-            if (zonei < zoneMotions_.size())
+            const keyType& cellZoneName = dEntry.keyword();
+            const labelList zoneIDs = mesh.cellZones().indices(cellZoneName);
+
+            if (zonei < pointIDs_.size())
             {
-                zoneMotions_[zonei].resetZone(mesh, dEntry.keyword());
+                movePts.reset();
+                movePts.resize(mesh.nPoints());
+
+                for (const label zoneID : zoneIDs)
+                {
+                    for (const label celli : mesh.cellZones()[zoneID])
+                    {
+                        for (const label facei : mesh.cells()[celli])
+                        {
+                            movePts.set(mesh.faces()[facei]);
+                        }
+                    }
+                }
+
+                syncTools::syncPointList
+                (
+                    mesh, movePts, orEqOp<unsigned int>(), 0u
+                );
+
+                pointIDs_[zonei] = movePts.sortedToc();
             }
 
             ++zonei;
