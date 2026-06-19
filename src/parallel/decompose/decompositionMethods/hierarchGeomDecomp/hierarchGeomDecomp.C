@@ -751,6 +751,7 @@ Foam::labelList Foam::hierarchGeomDecomp::decompose
         slice,
         0,              // Sort first component in order_
         1,              // Offset for different x bins.
+        0,              // Processor offset of the root subtree
         finalDecomp
     );
 
@@ -771,6 +772,9 @@ Foam::labelList Foam::hierarchGeomDecomp::decompose
     const scalarField& weights
 ) const
 {
+    // Uniform weighting if weights are empty or poorly sized
+    const bool hasWeights = returnReduceAnd(points.size() == weights.size());
+
     // Construct a list for the final result
     labelList finalDecomp(points.size(), Zero);
 

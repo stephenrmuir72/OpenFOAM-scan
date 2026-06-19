@@ -76,7 +76,7 @@ struct vectorLessOp
 } // End namespace Foam
 
 
-// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+// * * * * * * * * * * * * * * * Local Functions * * * * * * * * * * * * * * //
 
 // assignToProcessorGroup : given nCells cells and nProcGroup processor
 // groups to share them, how do we share them out? Answer : each group
@@ -84,15 +84,18 @@ struct vectorLessOp
 // extra to make up the numbers. This should produce almost
 // perfect load balancing
 
-void Foam::simpleGeomDecomp::assignToProcessorGroup
+namespace Foam
+{
+
+static void assignToProcessorGroup
 (
     labelList& processorGroup,
     const label nProcGroup
 )
 {
-    label jump = processorGroup.size()/nProcGroup;
-    label jumpb = jump + 1;
-    label fstProcessorGroup = processorGroup.size() - jump*nProcGroup;
+    const label jump = processorGroup.size()/nProcGroup;
+    const label jumpb = jump + 1;
+    const label fstProcessorGroup = processorGroup.size() - jump*nProcGroup;
 
     label ind = 0;
     label j = 0;
@@ -118,7 +121,7 @@ void Foam::simpleGeomDecomp::assignToProcessorGroup
 }
 
 
-void Foam::simpleGeomDecomp::assignToProcessorGroup
+static void assignToProcessorGroup
 (
     labelList& processorGroup,
     const label nProcGroup,
@@ -139,6 +142,7 @@ void Foam::simpleGeomDecomp::assignToProcessorGroup
 
     const scalar jump = summedWeights/nProcGroup;
     const label nProcGroupM1 = nProcGroup - 1;
+
     scalar sumWeights = 0;
     label ind = 0;
     label j = 0;
@@ -181,7 +185,7 @@ static void assignToProcessorGroup
     for (label j = 0; j < nProcGroupM1; ++j)
     {
         cumFrac += fractions[j];
-        const label limit = Foam::min(n, label(cumFrac*scalar(n) + 0.5));
+        const label limit = min(n, label(cumFrac*scalar(n) + 0.5));
         while (ind < limit)
         {
             processorGroup[ind++] = j;
@@ -228,6 +232,8 @@ static void assignToProcessorGroup
         processorGroup[ind++] = nProcGroupM1;
     }
 }
+
+} // End namespace Foam
 
 
 Foam::labelList Foam::simpleGeomDecomp::decomposeOneProc

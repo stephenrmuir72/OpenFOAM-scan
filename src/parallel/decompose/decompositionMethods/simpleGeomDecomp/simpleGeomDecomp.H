@@ -62,21 +62,6 @@ class simpleGeomDecomp
 {
     // Private Member Functions
 
-        static void assignToProcessorGroup
-        (
-            labelList& processorGroup,
-            const label nProcGroup
-        );
-
-        static void assignToProcessorGroup
-        (
-            labelList& processorGroup,
-            const label nProcGroup,
-            const labelList& indices,
-            const scalarField& weights,
-            const scalar summedWeights
-        );
-
         labelList decomposeOneProc(const pointField& points) const;
 
         labelList decomposeOneProc
