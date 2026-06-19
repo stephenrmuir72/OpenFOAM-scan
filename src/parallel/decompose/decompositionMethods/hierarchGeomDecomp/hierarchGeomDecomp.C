@@ -6,12 +6,8 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
-<<<<<<< HEAD
-    Copyright (C) 2015-2022 OpenCFD Ltd.
-=======
     Copyright (C) 2015-2023 OpenCFD Ltd.
     Copyright (C) 2026 Keysight Technologies
->>>>>>> 7a1f2c76f7 (ENH: geomDecomp: enable processorWeights in hierarchical/simple methods)
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.

@@ -1234,8 +1234,6 @@ void Foam::fvMeshSubset::reset
 
     // Subset and add any zones
     subsetZones();
-<<<<<<< HEAD
-=======
 
     if (oldMoving)
     {
@@ -1337,7 +1335,6 @@ void Foam::fvMeshSubset::reset
         newBoundary.reorder(oldToNew, true);
         inplaceReorder(oldToNew, pointPatchMap_);
     }
->>>>>>> 76046a4cd9 (ENH: fvMesh: add meshPhi support and moving-mesh redistribution for DLB)
 }
 
 

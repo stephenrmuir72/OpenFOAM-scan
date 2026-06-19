@@ -6,12 +6,8 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
-<<<<<<< HEAD
-    Copyright (C) 2015-2022 OpenCFD Ltd.
-=======
     Copyright (C) 2015-2022,2024 OpenCFD Ltd.
     Copyright (C) 2026 Keysight Technologies
->>>>>>> 76046a4cd9 (ENH: fvMesh: add meshPhi support and moving-mesh redistribution for DLB)
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
