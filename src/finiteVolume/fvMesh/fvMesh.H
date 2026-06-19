@@ -505,6 +505,9 @@ public:
             //- Create and register cell face motion flux field
             void createMeshPhi();
 
+            //- Clear mesh motion flux field
+            void clearMeshPhi();
+
             //- Return old-time cell volumes
             DimensionedField<scalar, volMesh>& setV0();
 

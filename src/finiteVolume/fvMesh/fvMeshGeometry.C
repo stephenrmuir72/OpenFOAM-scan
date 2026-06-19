@@ -239,14 +239,16 @@ void Foam::fvMesh::initV0FromV()
             << "Initialising V0 from current cell volumes V after "
             << "redistribution" << endl;
 
-        V0Ptr_ = std::make_unique<DimensionedField<scalar, volMesh>>
+        V0Ptr_ = new DimensionedField<scalar, volMesh>
         (
             IOobject
             (
                 "V0",
                 this->time().timeName(),
                 *this,
-                IOobjectOption::NO_REGISTER
+                IOobject::NO_READ,
+                IOobject::NO_WRITE,
+                IOobject::NO_REGISTER
             ),
             V()
         );
@@ -469,7 +471,7 @@ void Foam::fvMesh::createMeshPhi()
 {
     if (!phiPtr_)
     {
-        phiPtr_ = std::make_unique<surfaceScalarField>
+        phiPtr_ = new surfaceScalarField
         (
             IOobject
             (
@@ -481,9 +483,15 @@ void Foam::fvMesh::createMeshPhi()
                 IOobject::NO_REGISTER
             ),
             *this,
-            dimensionedScalar(dimVolume/dimTime, Foam::zero{})
+            dimensionedScalar(dimVolume/dimTime, Zero)
         );
     }
+}
+
+
+void Foam::fvMesh::clearMeshPhi()
+{
+    deleteDemandDrivenData(phiPtr_);
 }
 
 
