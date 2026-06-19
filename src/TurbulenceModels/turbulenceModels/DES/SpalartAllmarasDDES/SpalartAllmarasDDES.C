@@ -102,7 +102,7 @@ tmp<volScalarField> SpalartAllmarasDDES<BasicTurbulenceModel>::dTilda
     const volTensorField& gradU
 ) const
 {
-    const volScalarField& lRAS(this->y_);
+    const volScalarField& lRAS = wallDist::New(this->mesh_).y();
     const volScalarField lLES(this->lengthScaleLES(chi, fv1));
     const dimensionedScalar l0(dimLength, Zero);
 
