@@ -133,3 +133,9 @@ mesh.setFluxRequired(alpha1.name());
 #include "createPorosity.H"
 
 isoAdvection advector(alpha1, phi, U);
+
+bool frozenFlowSources = false;
+if (pimple.frozenFlow())
+{
+    pimple.dict().readIfPresent("frozenFlowSources", frozenFlowSources);
+}

@@ -128,3 +128,9 @@ mesh.setFluxRequired(alpha1.name());
 
 #include "createMRF.H"
 #include "createFvOptions.H"
+
+bool frozenFlowSources = false;
+if (pimple.frozenFlow())
+{
+    pimple.dict().readIfPresent("frozenFlowSources", frozenFlowSources);
+}

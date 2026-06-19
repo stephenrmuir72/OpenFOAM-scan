@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2020 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -155,6 +156,47 @@ int main(int argc, char *argv[])
 
             if (pimple.frozenFlow())
             {
+                if (frozenFlowSources && pimple.nCorrPISO() > 0)
+                {
+                    #include "pEqnFrozen.H"
+                }
+                else if (frozenFlowSources)
+                {
+                    static bool warnedFrozenFlowNoCorr = false;
+                    if (!warnedFrozenFlowNoCorr)
+                    {
+                        WarningInFunction
+                            << "PIMPLE.frozenFlowSources=true but"
+                            << " PIMPLE.nCorrectors=" << pimple.nCorrPISO()
+                            << " (<=0); the pressure projection is"
+                            << " skipped and the gravity flux is not"
+                            << " applied. Set PIMPLE.nCorrectors >= 1"
+                            << " (and ensure fvSchemes / fvSolution have"
+                            << " div(rhoPhi,U) and p_rgh entries) to"
+                            << " enable the gravity / source correction."
+                            << endl;
+                        warnedFrozenFlowNoCorr = true;
+                    }
+                }
+                else
+                {
+                    static bool warnedFrozenFlowGravity = false;
+                    if
+                    (
+                        !warnedFrozenFlowGravity && mag(g.value()) > SMALL
+                    )
+                    {
+                        WarningInFunction
+                            << "PIMPLE.frozenFlow=true with non-zero g="
+                            << g.value() << " but PIMPLE.frozenFlowSources"
+                            << " is false; the gravity flux"
+                            << " (ghf*snGrad(rho)) and momentum fvOptions"
+                            << " are not applied. Set"
+                            << " PIMPLE.frozenFlowSources true to enable"
+                            << " the gravity / source correction." << endl;
+                        warnedFrozenFlowGravity = true;
+                    }
+                }
                 continue;
             }
 
