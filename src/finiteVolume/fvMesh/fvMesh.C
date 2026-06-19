@@ -1033,29 +1033,6 @@ void Foam::fvMesh::updateMesh(const mapPolyMesh& mpm)
     }
 
 
-    // Clear mesh motion flux (note: could instead save & map like volumes)
-    if (phiPtr_)
-    {
-        // Mesh moving and topology change. Recreate meshPhi
-        deleteDemandDrivenData(phiPtr_);
-
-        // Create mesh motion flux
-        phiPtr_ = new surfaceScalarField
-        (
-            IOobject
-            (
-                "meshPhi",
-                this->time().timeName(),
-                *this,
-                IOobject::NO_READ,
-                IOobject::NO_WRITE,
-                IOobject::NO_REGISTER
-            ),
-            *this,
-            dimensionedScalar(dimVolume/dimTime, Zero)
-        );
-    }
-
     // Clear the sliced fields
     clearGeomNotOldVol();
     // Clear the current volume and other geometry factors
