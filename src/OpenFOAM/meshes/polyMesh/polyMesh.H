@@ -510,6 +510,9 @@ public:
             //- Return parallel info
             const globalMeshData& globalData() const;
 
+            //- Is demand-driven parallel info available?
+            bool hasGlobalData() const noexcept;
+
             //- Return communicator used for parallel communication
             label comm() const noexcept;
 
