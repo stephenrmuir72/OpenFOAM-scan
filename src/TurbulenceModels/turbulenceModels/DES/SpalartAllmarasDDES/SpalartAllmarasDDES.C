@@ -8,7 +8,6 @@
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2022 Upstream CFD GmbH
     Copyright (C) 2015-2022 OpenCFD Ltd.
-    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -47,61 +46,9 @@ tmp<volScalarField> SpalartAllmarasDDES<BasicTurbulenceModel>::fd
 ) const
 {
     const volScalarField& y = wallDist::New(this->mesh_).y();
-    const volScalarField r(this->r(this->nuEff(), magGradU, y));
-
-    tmp<volScalarField> tfd = 1 - tanh(pow(Cd1_*r, Cd2_));
-
-    switch (shielding_)
-    {
-        case shieldingMode::standard:
-        {
-            return tfd;
-        }
-        case shieldingMode::ZDES2020:
-        {
-            auto maxEps = [](const volScalarField& fld, const scalar eps){
-                return max(fld, dimensionedScalar(fld.dimensions(), eps));
-            };
-
-            volScalarField& fdStd = tfd.ref();
-            const auto& nuTilda = this->nuTilda_;
-            const volVectorField& n = wallDist::New(this->mesh_).n();
-
-            const volScalarField GnuTilda
-            (
-                Cd3_*maxEps(fvc::grad(nuTilda) & n, Zero)
-              / (maxEps(magGradU, SMALL)*this->kappa_*y)
-            );
-
-            volScalarField fdGnuTilda(1 - tanh(pow(Cd1_*GnuTilda, Cd2_)));
-            const volScalarField GOmega
-            (
-              - (fvc::grad(mag(fvc::curl(this->U_))) & n)
-              * sqrt(nuTilda/maxEps(pow3(magGradU), SMALL))
-            );
-            const volScalarField alpha((7.0/6.0*Cd4_ - GOmega)/(Cd4_/6.0));
-            const volScalarField fRGOmega
-            (
-                pos(Cd4_ - GOmega)
-              + 1.0
-               /(1 + exp(min(-6*alpha/max(1 - sqr(alpha), SMALL), scalar(50))))
-               *pos(4*Cd4_/3.0 - GOmega)*pos(GOmega - Cd4_)
-            );
-
-            // Use more conservative fP2-function in case switch is true;
-            // otherwise use simplified formulation
-            if (usefP2_)
-            {
-                fdGnuTilda *=
-                    (1.0 - tanh(pow(Cd1_*betaZDES_*r, Cd2_)))
-		          / maxEps(fdStd, SMALL);
-            }
-
-            fdStd *= 1 - (1 - fdGnuTilda)*fRGOmega;
-        }
-    }
-
-    return tfd;
+    return
+        1
+      - tanh(pow(this->Cd1_*this->r(this->nuEff(), magGradU, y), Cd2_));
 }
 
 
@@ -118,7 +65,7 @@ tmp<volScalarField> SpalartAllmarasDDES<BasicTurbulenceModel>::Stilda
 {
     if (this->useSigma_)
     {
-        const volScalarField& lRAS(wallDist::New(this->mesh_).y());
+        const volScalarField& lRAS = wallDist::New(this->mesh_).y();
         const volScalarField fv2(this->fv2(chi, fv1));
         const volScalarField lLES(this->lengthScaleLES(chi, fv1));
         const volScalarField Omega(this->Omega(gradU));
@@ -155,7 +102,7 @@ tmp<volScalarField> SpalartAllmarasDDES<BasicTurbulenceModel>::dTilda
     const volTensorField& gradU
 ) const
 {
-    const volScalarField& lRAS(wallDist::New(this->mesh_).y());
+    const volScalarField& lRAS(this->y_);
     const volScalarField lLES(this->lengthScaleLES(chi, fv1));
     const dimensionedScalar l0(dimLength, Zero);
 
