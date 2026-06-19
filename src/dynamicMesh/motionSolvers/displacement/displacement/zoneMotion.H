@@ -63,6 +63,7 @@ namespace Foam
 // Forward Declarations
 class dictionary;
 class polyMesh;
+class wordRe;
 
 /*---------------------------------------------------------------------------*\
                            Class zoneMotion Declaration

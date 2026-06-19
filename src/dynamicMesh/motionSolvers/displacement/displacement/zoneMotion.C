@@ -32,6 +32,7 @@ License
 #include "cellSet.H"
 #include "cellZoneMesh.H"
 #include "dictionary.H"
+#include "wordRe.H"
 
 // * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * //
 
@@ -44,6 +45,84 @@ Foam::zoneMotion::zoneMotion
     pointIDs_(),
     moveAllCells_(true)
 {
+    resetZone(mesh, dict);
+}
+
+
+// * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
+
+void Foam::zoneMotion::resetZone()
+{
+    pointIDs_.clear();
+    moveAllCells_ = true;
+}
+
+
+void Foam::zoneMotion::resetZone
+(
+    const polyMesh& mesh,
+    const wordRe& cellZoneSelection
+)
+{
+    pointIDs_.clear();
+    moveAllCells_ = true;
+
+    if (cellZoneSelection.empty() || cellZoneSelection == "none")
+    {
+        return;
+    }
+
+    Info<< "Applying motion to cellZone: " << cellZoneSelection << endl;
+
+    const labelList zoneIDs = mesh.cellZones().indices(cellZoneSelection);
+
+    if (zoneIDs.empty())
+    {
+        WarningInFunction
+            << "No matching cellZones: " << cellZoneSelection << nl
+            << "    Valid zones : "
+            << flatOutput(mesh.cellZones().names()) << nl
+            << "    Valid groups: "
+            << flatOutput(mesh.cellZones().groupNames()) << nl;
+
+        return;
+    }
+
+    bitSet movePts(mesh.nPoints());
+
+    for (const label zoneID : zoneIDs)
+    {
+        for (const label celli : mesh.cellZones()[zoneID])
+        {
+            for (const label facei : mesh.cells()[celli])
+            {
+                movePts.set(mesh.faces()[facei]);
+            }
+        }
+    }
+
+    syncTools::syncPointList(mesh, movePts, orEqOp<unsigned int>(), 0u);
+
+    pointIDs_ = movePts.sortedToc();
+
+    moveAllCells_ = returnReduceAnd(pointIDs_.empty());
+
+    if (moveAllCells_)
+    {
+        Info<< "Applying motion to entire mesh" << endl;
+    }
+}
+
+
+void Foam::zoneMotion::resetZone
+(
+    const polyMesh& mesh,
+    const dictionary& dict
+)
+{
+    pointIDs_.clear();
+    moveAllCells_ = true;
+
     // Specified cellSet?
     word cellSetName;
 
