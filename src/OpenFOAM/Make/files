@@ -449,6 +449,7 @@ $(lduMatrix)/preconditioners/DICPreconditioner/DICPreconditioner.C
 $(lduMatrix)/preconditioners/FDICPreconditioner/FDICPreconditioner.C
 $(lduMatrix)/preconditioners/DILUPreconditioner/DILUPreconditioner.C
 $(lduMatrix)/preconditioners/GAMGPreconditioner/GAMGPreconditioner.C
+$(lduMatrix)/preconditioners/aDICPreconditioner/aDICPreconditioner.C
 
 lduAddressing = $(lduMatrix)/lduAddressing
 $(lduAddressing)/lduAddressing.C
