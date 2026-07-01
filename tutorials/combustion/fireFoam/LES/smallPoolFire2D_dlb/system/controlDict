@@ -71,5 +71,15 @@ adjustTimeStep  yes;
 
 maxCo           0.5;
 
+functions
+{
+    processorField
+    {
+        type            processorField;
+        libs            (fieldFunctionObjects);
+        enabled         true;
+        writeControl    writeTime;
+    }
+}
 
 // ************************************************************************* //

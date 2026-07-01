@@ -7,4 +7,6 @@ cd "${0%/*}" || exit                                # Run from this directory
 
 runParallel $(getApplication)
 
+runParallel -s "final" -o postProcess -func processorField
+
 #------------------------------------------------------------------------------

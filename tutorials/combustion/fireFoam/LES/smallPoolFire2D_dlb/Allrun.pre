@@ -15,4 +15,6 @@ runApplication -s 0 checkMesh
 
 runApplication decomposePar
 
+runParallel -s "initial" -o postProcess -func processorField
+
 #------------------------------------------------------------------------------
