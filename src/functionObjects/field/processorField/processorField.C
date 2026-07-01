@@ -51,11 +51,25 @@ Foam::functionObjects::processorField::processorField
     const dictionary& dict
 )
 :
-    fvMeshFunctionObject(name, runTime, dict)
+    fvMeshFunctionObject(name, runTime, dict),
+    procFieldPtr_(nullptr)
 {
     read(dict);
 
-    volScalarField* procFieldPtr
+    makeField();
+}
+
+
+// * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
+
+void Foam::functionObjects::processorField::makeField()
+{
+    if (procFieldPtr_)
+    {
+        return;
+    }
+
+    procFieldPtr_.reset
     (
         new volScalarField
         (
@@ -66,18 +80,14 @@ Foam::functionObjects::processorField::processorField
                 mesh_,
                 IOobject::NO_READ,
                 IOobject::NO_WRITE,
-                IOobject::REGISTER
+                IOobject::NO_REGISTER
             ),
             mesh_,
             dimensionedScalar(dimless, UPstream::myProcNo())
         )
     );
-
-    mesh_.thisDb().store(procFieldPtr);
 }
 
-
-// * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
 
 bool Foam::functionObjects::processorField::read(const dictionary& dict)
 {
@@ -89,10 +99,9 @@ bool Foam::functionObjects::processorField::read(const dictionary& dict)
 
 bool Foam::functionObjects::processorField::execute()
 {
-    volScalarField& procField =
-        mesh_.lookupObjectRef<volScalarField>("processorID");
+    makeField();
 
-    procField ==
+    *procFieldPtr_ ==
         dimensionedScalar("proci", dimless, UPstream::myProcNo());
 
     return true;
@@ -101,38 +110,20 @@ bool Foam::functionObjects::processorField::execute()
 
 bool Foam::functionObjects::processorField::write()
 {
-    const volScalarField& procField =
-        mesh_.lookupObject<volScalarField>("processorID");
+    if (!procFieldPtr_)
+    {
+        execute();
+    }
 
-    procField.write();
+    procFieldPtr_().write();
 
     return true;
 }
 
 
-void Foam::functionObjects::processorField::updateMesh(const mapPolyMesh& mpm)
+void Foam::functionObjects::processorField::updateMesh(const mapPolyMesh&)
 {
-    const_cast<objectRegistry&>(mesh_.thisDb()).erase("processorID");
-
-    volScalarField* procFieldPtr
-    (
-        new volScalarField
-        (
-            IOobject
-            (
-                "processorID",
-                mesh_.time().timeName(),
-                mesh_,
-                IOobject::NO_READ,
-                IOobject::NO_WRITE,
-                IOobject::REGISTER
-            ),
-            mesh_,
-            dimensionedScalar(dimless, UPstream::myProcNo())
-        )
-    );
-
-    mesh_.thisDb().store(procFieldPtr);
+    procFieldPtr_.clear();
 }
 
 

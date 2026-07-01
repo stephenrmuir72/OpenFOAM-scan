@@ -85,6 +85,7 @@ SourceFiles
 #define functionObjects_processorField_H
 
 #include "fvMeshFunctionObject.H"
+#include "volFieldsFwd.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -101,6 +102,11 @@ class processorField
 :
     public fvMeshFunctionObject
 {
+    //- Processor ID field (not stored on mesh registry to avoid
+    //  conflicts with fvMesh::mapFields and fvMeshDistribute)
+    autoPtr<volScalarField> procFieldPtr_;
+
+
 public:
 
     //- Runtime type information
@@ -129,6 +135,9 @@ public:
 
 
     // Member Functions
+
+        //- Create the processorID field if not present
+        void makeField();
 
         //- Read the input data
         virtual bool read(const dictionary&);
