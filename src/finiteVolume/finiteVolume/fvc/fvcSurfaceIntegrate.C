@@ -112,7 +112,7 @@ void surfaceIntegrate
         const labelUList& pFaceCells =
             mesh.boundary()[patchi].faceCells();
 
-        const fvsPatchField<Type>& pssf = ssf.boundaryField()[patchi];
+        const auto pssf = ssf.boundaryField().patchValues(patchi);
 
         #ifdef FOAM_OFFLOAD
         const labelUList& patchCells = mesh.lduAddr().patchSortCells(patchi);

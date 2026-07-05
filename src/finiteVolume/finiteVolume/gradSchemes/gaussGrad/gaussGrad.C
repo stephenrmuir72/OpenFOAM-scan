@@ -145,7 +145,7 @@ Foam::fv::gaussGrad<Type>::gradf
 
         const vectorField& pSf = mesh.Sf().boundaryField()[patchi];
 
-        const fvsPatchField<Type>& pssf = ssf.boundaryField()[patchi];
+        const auto pssf = ssf.boundaryField().patchValues(patchi);
 
         #ifdef FOAM_OFFLOAD
         const labelUList& patchCells = mesh.lduAddr().patchSortCells(patchi);
@@ -309,7 +309,9 @@ void Foam::fv::gaussGrad<Type>::correctBoundaryConditions
 
     forAll(vsf.boundaryField(), patchi)
     {
-        if (!vsf.boundaryField()[patchi].coupled())
+        const fvPatchField<Type>& pVf = vsf.boundaryField()[patchi];
+
+        if (!pVf.coupled())
         {
             const vectorField n
             (
@@ -317,11 +319,19 @@ void Foam::fv::gaussGrad<Type>::correctBoundaryConditions
               / vsf.mesh().magSf().boundaryField()[patchi]
             );
 
-            gGradbf[patchi] += n *
-            (
-                vsf.boundaryField()[patchi].snGrad()
-              - (n & gGradbf[patchi])
-            );
+                        auto gradValues = gGradbf.patchValues(patchi);
+                        const auto tSnGrad = pVf.snGrad();
+                        const auto& snGradValues = tSnGrad();
+
+                        forAll(gradValues, facei)
+                        {
+                                gradValues[facei] += n[facei]
+                                     *
+                                        (
+                                                snGradValues[facei]
+                                            - (n[facei] & gradValues[facei])
+                                        );
+                        }
         }
      }
 }

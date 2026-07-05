@@ -148,14 +148,28 @@ snGradScheme<Type>::snGrad
     forAll(vf.boundaryField(), patchi)
     {
         const fvPatchField<Type>& pvf = vf.boundaryField()[patchi];
+        auto patchValues = ssfbf.patchValues(patchi);
 
         if (pvf.coupled())
         {
-            ssfbf[patchi] = pvf.snGrad(tdeltaCoeffs().boundaryField()[patchi]);
+            const auto tValues =
+                pvf.snGrad(tdeltaCoeffs().boundaryField()[patchi]);
+            const auto& values = tValues();
+
+            forAll(patchValues, facei)
+            {
+                patchValues[facei] = values[facei];
+            }
         }
         else
         {
-            ssfbf[patchi] = pvf.snGrad();
+            const auto tValues = pvf.snGrad();
+            const auto& values = tValues();
+
+            forAll(patchValues, facei)
+            {
+                patchValues[facei] = values[facei];
+            }
         }
     }
 

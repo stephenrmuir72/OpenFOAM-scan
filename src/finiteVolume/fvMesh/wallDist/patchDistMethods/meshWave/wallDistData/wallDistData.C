@@ -102,23 +102,22 @@ void Foam::wallDistData<TransferType>::correct()
         correctWalls_
     );
 
-    // Transfer cell values from wave into *this and field_
-    transfer(wave.distance());
-
-    field_.transfer(wave.cellData());
+    // Copy cell values without replacing storage used by boundary slices
+    primitiveFieldRef().deepCopy(wave.distance());
+    field_.primitiveFieldRef().deepCopy(wave.cellData());
 
     volScalarField::Boundary& bf = boundaryFieldRef();
 
-    // Transfer values on patches into boundaryField of *this and field_
+    // Copy patch values without replacing storage used by boundary slices
     forAll(bf, patchi)
     {
         scalarField& waveFld = wave.patchDistance()[patchi];
 
         if (!isA<emptyFvPatchScalarField>(bf[patchi]))
         {
-            bf[patchi].transfer(waveFld);
+            bf[patchi].deepCopy(waveFld);
             Field<Type>& wavePatchData = wave.patchData()[patchi];
-            fieldBf[patchi].transfer(wavePatchData);
+            fieldBf[patchi].deepCopy(wavePatchData);
         }
     }
 

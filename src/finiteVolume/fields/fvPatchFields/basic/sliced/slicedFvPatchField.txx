@@ -42,6 +42,9 @@ Foam::slicedFvPatchField<Type>::slicedFvPatchField
 :
     parent_bctype(p, iF, Field<Type>())
 {
+    // Release the base storage (rebind slice or own-allocation) before
+    // pointing at external data
+    this->releaseStorage();
     if (isBoundaryOnly)
     {
         // Set to a slice of the boundary field
@@ -63,7 +66,10 @@ Foam::slicedFvPatchField<Type>::slicedFvPatchField
 )
 :
     parent_bctype(p, iF, Field<Type>())
-{}
+{
+    // Release base storage; an external slice is attached separately
+    this->releaseStorage();
+}
 
 
 template<class Type>
@@ -107,6 +113,9 @@ Foam::slicedFvPatchField<Type>::slicedFvPatchField
 :
     parent_bctype(ptf.patch(), iF, Field<Type>())
 {
+    // Release the base storage (rebind slice or own-allocation) before
+    // pointing at external data
+    this->releaseStorage();
     // Transfer the slice from the argument
     UList<Type>::shallowCopy(ptf);
 }

@@ -86,7 +86,8 @@ Foam::GeometricField<Type, PatchField, GeoMesh>::New
     IOobjectOption::registerOption regOpt,
     const Mesh& mesh,
     const dimensionSet& dims,
-    const word& patchFieldType
+    const word& patchFieldType,
+    const bool deferCalculated
 )
 {
     return GeometricField<Type, PatchField, GeoMesh>::New_impl
@@ -95,7 +96,8 @@ Foam::GeometricField<Type, PatchField, GeoMesh>::New
         name,
         mesh,
         dims,
-        patchFieldType
+        patchFieldType,
+        deferCalculated
     );
 }
 
@@ -107,7 +109,8 @@ Foam::GeometricField<Type, PatchField, GeoMesh>::New
     const word& name,
     const Mesh& mesh,
     const dimensionSet& dims,
-    const word& patchFieldType
+    const word& patchFieldType,
+    const bool deferCalculated
 )
 {
     return GeometricField<Type, PatchField, GeoMesh>::New_impl
@@ -116,7 +119,8 @@ Foam::GeometricField<Type, PatchField, GeoMesh>::New
         name,
         mesh,
         dims,
-        patchFieldType
+        patchFieldType,
+        deferCalculated
     );
 }
 

@@ -48,6 +48,17 @@ registerOptSwitch
     Foam::FieldBase::unifiedGeometricField
 );
 
+bool Foam::FieldBase::deferCalculatedPatches
+(
+    Foam::debug::optimisationSwitch("deferCalculatedPatches", 1)
+);
+registerOptSwitch
+(
+    "deferCalculatedPatches",
+    bool,
+    Foam::FieldBase::deferCalculatedPatches
+);
+
 
 int Foam::FieldBase::localBoundaryConsistency_
 (

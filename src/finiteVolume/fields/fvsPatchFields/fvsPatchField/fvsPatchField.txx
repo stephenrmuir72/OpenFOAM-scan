@@ -32,7 +32,68 @@ License
 #include "surfaceMesh.H"
 #include "fvPatchFieldMapper.H"
 
+// * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
+
+template<class Type>
+void Foam::fvsPatchField<Type>::rebindToIF() noexcept
+{
+    const fvPatch& p = fvsPatchFieldBase::patch();
+
+    // Flat-storage (rebind) design: cannot rebind for a null DimensionedField
+    // (NewCalculatedType arithmetic temporaries, slicedFvsPatchField) or one
+    // without a boundary extension; own p.size() storage in those cases.
+    if (&internalField_ == &DimensionedField<Type, surfaceMesh>::null())
+    {
+        ownAllocation_ = true;
+        static_cast<List<Type>&>(*this).resize_nocopy(p.size());
+        return;
+    }
+
+    const label nInternal = internalField_.mesh().nInternalFaces();
+    const label offset = nInternal + p.offset();
+
+    const auto& df =
+        static_cast<const DynamicField<Type>&>(internalField_);
+
+    if
+    (
+        FieldBase::unifiedGeometricField
+     && df.capacity() >= offset + p.size()
+    )
+    {
+        static_cast<UList<Type>&>(*this) =
+            UList<Type>
+            (
+                const_cast<Type*>(&internalField_[offset]),
+                p.size()
+            );
+    }
+    else
+    {
+        ownAllocation_ = true;
+        static_cast<List<Type>&>(*this).resize_nocopy(p.size());
+    }
+}
+
+
 // * * * * * * * * * * * * Protected Member Functions  * * * * * * * * * * * //
+
+template<class Type>
+void Foam::fvsPatchField<Type>::releaseStorage() noexcept
+{
+    if (ownAllocation_)
+    {
+        // Free the own heap allocation
+        static_cast<List<Type>&>(*this).clear();
+        ownAllocation_ = false;
+    }
+    else
+    {
+        // Detach a rebind slice without freeing the DimensionedField extension
+        static_cast<UList<Type>&>(*this) = UList<Type>();
+    }
+}
+
 
 template<class Type>
 bool Foam::fvsPatchField<Type>::readValueEntry
@@ -75,9 +136,11 @@ Foam::fvsPatchField<Type>::fvsPatchField
 )
 :
     fvsPatchFieldBase(p),
-    Field<Type>(p.size()),
+    Field<Type>(),
     internalField_(iF)
-{}
+{
+    rebindToIF();
+}
 
 
 template<class Type>
@@ -89,9 +152,12 @@ Foam::fvsPatchField<Type>::fvsPatchField
 )
 :
     fvsPatchFieldBase(p),
-    Field<Type>(p.size(), value),
+    Field<Type>(),
     internalField_(iF)
-{}
+{
+    rebindToIF();
+    Field<Type>::operator=(value);
+}
 
 
 template<class Type>
@@ -103,9 +169,12 @@ Foam::fvsPatchField<Type>::fvsPatchField
 )
 :
     fvsPatchFieldBase(p),
-    Field<Type>(pfld),
+    Field<Type>(),
     internalField_(iF)
-{}
+{
+    rebindToIF();
+    if (pfld.size()) Field<Type>::operator=(pfld);
+}
 
 
 template<class Type>
@@ -117,9 +186,12 @@ Foam::fvsPatchField<Type>::fvsPatchField
 )
 :
     fvsPatchFieldBase(p),
-    Field<Type>(std::move(pfld)),
+    Field<Type>(),
     internalField_(iF)
-{}
+{
+    rebindToIF();
+    if (pfld.size()) Field<Type>::operator=(pfld);
+}
 
 
 template<class Type>
@@ -132,9 +204,10 @@ Foam::fvsPatchField<Type>::fvsPatchField
 )
 :
     fvsPatchFieldBase(p, dict),
-    Field<Type>(p.size()),
+    Field<Type>(),
     internalField_(iF)
 {
+    rebindToIF();
     readValueEntry(dict, requireValue);
 }
 
@@ -149,9 +222,12 @@ Foam::fvsPatchField<Type>::fvsPatchField
 )
 :
     fvsPatchFieldBase(ptf, p),
-    Field<Type>(ptf, mapper),
+    Field<Type>(),
     internalField_(iF)
-{}
+{
+    rebindToIF();
+    Field<Type>::map(ptf, mapper);
+}
 
 
 template<class Type>
@@ -164,9 +240,12 @@ Foam::fvsPatchField<Type>::fvsPatchField
 )
 :
     fvsPatchFieldBase(pfld, p),
-    Field<Type>(p.size(), value),
+    Field<Type>(),
     internalField_(iF)
-{}
+{
+    rebindToIF();
+    Field<Type>::operator=(value);
+}
 
 
 template<class Type>
@@ -177,9 +256,25 @@ Foam::fvsPatchField<Type>::fvsPatchField
 )
 :
     fvsPatchFieldBase(pfld),
-    Field<Type>(pfld),
+    Field<Type>(),
     internalField_(iF)
-{}
+{
+    rebindToIF();
+    Field<Type>::operator=(pfld);
+}
+
+
+// * * * * * * * * * * * * * * * Destructor  * * * * * * * * * * * * * * * * //
+
+template<class Type>
+Foam::fvsPatchField<Type>::~fvsPatchField() noexcept
+{
+    if (!ownAllocation_)
+    {
+        static_cast<UList<Type>&>(*this) = UList<Type>();
+    }
+    // else: own allocation from rebindToIF() fallback → let List<T> free it.
+}
 
 
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //

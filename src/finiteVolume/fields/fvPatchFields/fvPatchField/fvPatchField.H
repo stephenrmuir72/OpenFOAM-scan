@@ -321,10 +321,31 @@ private:
         //- Reference to internal field
         const DimensionedField<Type, volMesh>& internalField_;
 
+        //- True only when rebindToIF() fell back to its own heap allocation
+        //  because the DimensionedField had no boundary extension.
+        //  False in all other cases (rebind into extension, shallowCopy from
+        //  SlicedGeometricField, null internalField, etc.) so the destructor
+        //  nulls the UList pointer rather than freeing it.
+        bool ownAllocation_ = false;
+
+
+    // Private Member Functions
+
+        //- Rebind Field<Type> storage to the DimensionedField boundary slice
+        //  when the DimensionedField has sufficient capacity, otherwise fall
+        //  back to own allocation of p.size() elements.
+        //  Sets isRebind_ accordingly.  Called from all constructors.
+        void rebindToIF() noexcept;
+
 
 protected:
 
     // Protected Member Functions
+
+        //- Release the base Field storage prior to pointing at external data
+        //  (slicedFvPatchField).  Frees an own-allocation, or simply detaches
+        //  a rebind slice without freeing the DimensionedField extension.
+        void releaseStorage() noexcept;
 
         //- Read the "value" entry into \c *this.
         //  The reading can be optional (default), mandatory etc.
@@ -583,8 +604,9 @@ public:
         );
 
 
-    //- Destructor
-    virtual ~fvPatchField() = default;
+    //- Destructor: nulls the UList view so Field<Type> does not free
+    //  memory owned by DimensionedField
+    virtual ~fvPatchField() noexcept;
 
 
     // Member Functions

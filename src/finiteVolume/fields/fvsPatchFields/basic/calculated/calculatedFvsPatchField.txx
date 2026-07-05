@@ -39,7 +39,12 @@ Foam::calculatedFvsPatchField<Type>::calculatedFvsPatchField
 )
 :
     parent_bctype(p, iF)
-{}
+{
+    DebugInfo
+        << "Constructed calculatedFvsPatchField for field "
+        << this->internalField().name() << " on patch "
+        << this->patch().name() << endl;
+}
 
 
 template<class Type>
@@ -51,7 +56,12 @@ Foam::calculatedFvsPatchField<Type>::calculatedFvsPatchField
 )
 :
     parent_bctype(p, iF, dict, IOobjectOption::MUST_READ)
-{}
+{
+    DebugInfo
+        << "Constructed calculatedFvsPatchField for field "
+        << this->internalField().name() << " on patch "
+        << this->patch().name() << endl;
+}
 
 
 template<class Type>
@@ -64,7 +74,12 @@ Foam::calculatedFvsPatchField<Type>::calculatedFvsPatchField
 )
 :
     parent_bctype(ptf, p, iF, mapper)
-{}
+{
+    DebugInfo
+        << "Constructed calculatedFvsPatchField for field "
+        << this->internalField().name() << " on patch "
+        << this->patch().name() << endl;
+}
 
 
 template<class Type>
@@ -75,7 +90,12 @@ Foam::calculatedFvsPatchField<Type>::calculatedFvsPatchField
 )
 :
     parent_bctype(ptf, iF)
-{}
+{
+    DebugInfo
+        << "Constructed calculatedFvsPatchField for field "
+        << this->internalField().name() << " on patch "
+        << this->patch().name() << endl;
+}
 
 
 template<class Type>

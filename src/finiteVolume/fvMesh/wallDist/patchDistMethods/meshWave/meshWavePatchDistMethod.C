@@ -83,10 +83,10 @@ bool Foam::patchDistMethods::meshWave::correct(volScalarField& y)
     // Calculate distance starting from patch faces
     patchWave wave(mesh_, patchIDs_, correctWalls_);
 
-    // Transfer cell values from wave into y
-    y.transfer(wave.distance());
+    // Copy cell values without replacing storage used by boundary slices
+    y.primitiveFieldRef().deepCopy(wave.distance());
 
-    // Transfer values on patches into boundaryField of y
+    // Copy values on patches without replacing storage used by boundary slices
     volScalarField::Boundary& ybf = y.boundaryFieldRef();
 
     forAll(ybf, patchi)
@@ -95,7 +95,7 @@ bool Foam::patchDistMethods::meshWave::correct(volScalarField& y)
         {
             scalarField& waveFld = wave.patchDistance()[patchi];
 
-            ybf[patchi].transfer(waveFld);
+            ybf[patchi].deepCopy(waveFld);
         }
     }
 
@@ -136,12 +136,11 @@ bool Foam::patchDistMethods::meshWave::correct
         correctWalls_
     );
 
-    // Transfer cell values from wave into y and n
-    y.transfer(wave.distance());
+    // Copy cell values without replacing storage used by boundary slices
+    y.primitiveFieldRef().deepCopy(wave.distance());
+    n.primitiveFieldRef().deepCopy(wave.cellData());
 
-    n.transfer(wave.cellData());
-
-    // Transfer values on patches into boundaryField of y and n
+    // Copy patch values without replacing storage used by boundary slices
     volScalarField::Boundary& ybf = y.boundaryFieldRef();
 
     forAll(ybf, patchi)
@@ -150,11 +149,11 @@ bool Foam::patchDistMethods::meshWave::correct
 
         if (!isA<emptyFvPatchScalarField>(ybf[patchi]))
         {
-            ybf[patchi].transfer(waveFld);
+            ybf[patchi].deepCopy(waveFld);
 
             vectorField& wavePatchData = wave.patchData()[patchi];
 
-            nbf[patchi].transfer(wavePatchData);
+            nbf[patchi].deepCopy(wavePatchData);
         }
     }
 

@@ -27,6 +27,7 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "GeometricFieldReuseFunctions.H"
+#include "GeometricFieldOps.H"
 
 #define TEMPLATE \
     template<class Type, template<class> class PatchField, class GeoMesh>
@@ -38,6 +39,33 @@ namespace Foam
 {
 
 // * * * * * * * * * * * * * * * Global Functions  * * * * * * * * * * * * * //
+
+template
+<
+    class ResultType,
+    class Type,
+    template<class> class PatchField,
+    class GeoMesh,
+    class UnaryOp,
+    class FieldOp
+>
+void applyUnaryBoundary
+(
+    GeometricBoundaryField<ResultType, PatchField, GeoMesh>& result,
+    const GeometricBoundaryField<Type, PatchField, GeoMesh>& source,
+    const UnaryOp& unaryOp,
+    const FieldOp& fieldOp
+)
+{
+    if (result.hasDeferred() || source.hasDeferred())
+    {
+        result.transform(source, unaryOp);
+    }
+    else
+    {
+        fieldOp(result, source);
+    }
+}
 
 template<class Type, template<class> class PatchField, class GeoMesh>
 void component
@@ -53,7 +81,16 @@ void component
 )
 {
     component(result.primitiveFieldRef(), f1.primitiveField(), d);
-    component(result.boundaryFieldRef(), f1.boundaryField(), d);
+    applyUnaryBoundary
+    (
+        result.boundaryFieldRef(),
+        f1.boundaryField(),
+        [d](const auto& value) { return Foam::component(value, d); },
+        [d](auto& resultBoundary, const auto& sourceBoundary)
+        {
+            Foam::component(resultBoundary, sourceBoundary, d);
+        }
+    );
     result.oriented() = f1.oriented();
     if (GeometricBoundaryField<Type, PatchField, GeoMesh>::debug)
     {
@@ -70,7 +107,16 @@ void T
 )
 {
     T(result.primitiveFieldRef(), f1.primitiveField());
-    T(result.boundaryFieldRef(), f1.boundaryField());
+    applyUnaryBoundary
+    (
+        result.boundaryFieldRef(),
+        f1.boundaryField(),
+        [](const auto& value) { return Foam::T(value); },
+        [](auto& resultBoundary, const auto& sourceBoundary)
+        {
+            Foam::T(resultBoundary, sourceBoundary);
+        }
+    );
     result.oriented() = f1.oriented();
     if (GeometricBoundaryField<Type, PatchField, GeoMesh>::debug)
     {
@@ -94,7 +140,16 @@ void pow
 )
 {
     pow(result.primitiveFieldRef(), f1.primitiveField(), r);
-    pow(result.boundaryFieldRef(), f1.boundaryField(), r);
+    applyUnaryBoundary
+    (
+        result.boundaryFieldRef(),
+        f1.boundaryField(),
+        [](const auto& value) { return Foam::pow(value, r); },
+        [](auto& resultBoundary, const auto& sourceBoundary)
+        {
+            Foam::pow(resultBoundary, sourceBoundary, r);
+        }
+    );
     result.oriented() = pow(f1.oriented(), r);
     result.correctLocalBoundaryConditions();
     if (GeometricBoundaryField<Type, PatchField, GeoMesh>::debug)
@@ -178,7 +233,16 @@ void sqr
 )
 {
     sqr(result.primitiveFieldRef(), f1.primitiveField());
-    sqr(result.boundaryFieldRef(), f1.boundaryField());
+    applyUnaryBoundary
+    (
+        result.boundaryFieldRef(),
+        f1.boundaryField(),
+        [](const auto& value) { return Foam::sqr(value); },
+        [](auto& resultBoundary, const auto& sourceBoundary)
+        {
+            Foam::sqr(resultBoundary, sourceBoundary);
+        }
+    );
     result.oriented() = sqr(f1.oriented());
     result.correctLocalBoundaryConditions();
     if (GeometricBoundaryField<Type, PatchField, GeoMesh>::debug)
@@ -255,7 +319,16 @@ void magSqr
 )
 {
     magSqr(result.primitiveFieldRef(), f1.primitiveField());
-    magSqr(result.boundaryFieldRef(), f1.boundaryField());
+    applyUnaryBoundary
+    (
+        result.boundaryFieldRef(),
+        f1.boundaryField(),
+        [](const auto& value) { return Foam::magSqr(value); },
+        [](auto& resultBoundary, const auto& sourceBoundary)
+        {
+            Foam::magSqr(resultBoundary, sourceBoundary);
+        }
+    );
     result.oriented() = magSqr(f1.oriented());
     result.correctLocalBoundaryConditions();
     if (GeometricBoundaryField<Type, PatchField, GeoMesh>::debug)
@@ -309,7 +382,16 @@ void mag
 )
 {
     mag(result.primitiveFieldRef(), f1.primitiveField());
-    mag(result.boundaryFieldRef(), f1.boundaryField());
+    applyUnaryBoundary
+    (
+        result.boundaryFieldRef(),
+        f1.boundaryField(),
+        [](const auto& value) { return Foam::mag(value); },
+        [](auto& resultBoundary, const auto& sourceBoundary)
+        {
+            Foam::mag(resultBoundary, sourceBoundary);
+        }
+    );
     result.oriented() = mag(f1.oriented());
     result.correctLocalBoundaryConditions();
     if (GeometricBoundaryField<Type, PatchField, GeoMesh>::debug)
@@ -368,7 +450,16 @@ void cmptAv
 )
 {
     cmptAv(result.primitiveFieldRef(), f1.primitiveField());
-    cmptAv(result.boundaryFieldRef(), f1.boundaryField());
+    applyUnaryBoundary
+    (
+        result.boundaryFieldRef(),
+        f1.boundaryField(),
+        [](const auto& value) { return Foam::cmptAv(value); },
+        [](auto& resultBoundary, const auto& sourceBoundary)
+        {
+            Foam::cmptAv(resultBoundary, sourceBoundary);
+        }
+    );
     result.oriented() = cmptAv(f1.oriented());
     if (GeometricBoundaryField<Type, PatchField, GeoMesh>::debug)
     {
@@ -622,18 +713,47 @@ void OpFunc                                                                    \
     const GeometricField<Type2, PatchField, GeoMesh>& f2                       \
 )                                                                              \
 {                                                                              \
-    Foam::OpFunc                                                               \
+    if                                                                         \
     (                                                                          \
-        result.primitiveFieldRef(),                                            \
-        f1.primitiveField(),                                                   \
-        f2.primitiveField()                                                    \
-    );                                                                         \
-    Foam::OpFunc                                                               \
-    (                                                                          \
-        result.boundaryFieldRef(),                                             \
-        f1.boundaryField(),                                                    \
-        f2.boundaryField()                                                     \
-    );                                                                         \
+        !FieldOps::assignFlat                                                   \
+        (                                                                      \
+            result,                                                            \
+            f1,                                                                \
+            f2,                                                                \
+            [](const auto& a, const auto& b) { return a Op b; }                \
+        )                                                                      \
+    )                                                                          \
+    {                                                                          \
+        Foam::OpFunc                                                          \
+        (                                                                      \
+            result.primitiveFieldRef(),                                        \
+            f1.primitiveField(),                                               \
+            f2.primitiveField()                                                \
+        );                                                                     \
+        if                                                                     \
+        (                                                                      \
+            result.boundaryField().hasDeferred()                              \
+         || f1.boundaryField().hasDeferred()                                   \
+         || f2.boundaryField().hasDeferred()                                   \
+        )                                                                      \
+        {                                                                      \
+            result.boundaryFieldRef().apply                                   \
+            (                                                                  \
+                f1.boundaryField(),                                            \
+                f2.boundaryField(),                                            \
+                [](const auto& a, const auto& b) { return a Op b; }            \
+            );                                                                 \
+        }                                                                      \
+        else                                                                   \
+        {                                                                      \
+            Foam::OpFunc                                                      \
+            (                                                                  \
+                result.boundaryFieldRef(),                                     \
+                f1.boundaryField(),                                            \
+                f2.boundaryField()                                             \
+            );                                                                 \
+        }                                                                      \
+    }                                                                          \
                                                                                \
     result.oriented() = (f1.oriented() Op f2.oriented());                      \
     result.correctLocalBoundaryConditions();                                   \
@@ -777,7 +897,28 @@ void OpFunc                                                                    \
 )                                                                              \
 {                                                                              \
     Foam::OpFunc(result.primitiveFieldRef(), f1.primitiveField(), dvs.value());\
-    Foam::OpFunc(result.boundaryFieldRef(), f1.boundaryField(), dvs.value());  \
+    if                                                                       \
+    (                                                                          \
+        result.boundaryField().hasDeferred()                                  \
+     || f1.boundaryField().hasDeferred()                                       \
+    )                                                                          \
+    {                                                                          \
+        result.boundaryFieldRef().apply                                       \
+        (                                                                      \
+            f1.boundaryField(),                                                \
+            dvs.value(),                                                       \
+            [](const auto& a, const auto& b) { return a Op b; }                \
+        );                                                                     \
+    }                                                                          \
+    else                                                                       \
+    {                                                                          \
+        Foam::OpFunc                                                          \
+        (                                                                      \
+            result.boundaryFieldRef(),                                         \
+            f1.boundaryField(),                                                \
+            dvs.value()                                                        \
+        );                                                                     \
+    }                                                                          \
     result.oriented() = f1.oriented();                                         \
     if (GeometricBoundaryField<Type, PatchField, GeoMesh>::debug)              \
     {                                                                          \
@@ -885,7 +1026,28 @@ void OpFunc                                                                    \
 )                                                                              \
 {                                                                              \
     Foam::OpFunc(result.primitiveFieldRef(), dvs.value(), f2.primitiveField());\
-    Foam::OpFunc(result.boundaryFieldRef(), dvs.value(), f2.boundaryField());  \
+    if                                                                       \
+    (                                                                          \
+        result.boundaryField().hasDeferred()                                  \
+     || f2.boundaryField().hasDeferred()                                       \
+    )                                                                          \
+    {                                                                          \
+        result.boundaryFieldRef().apply                                       \
+        (                                                                      \
+            dvs.value(),                                                       \
+            f2.boundaryField(),                                                \
+            [](const auto& a, const auto& b) { return a Op b; }                \
+        );                                                                     \
+    }                                                                          \
+    else                                                                       \
+    {                                                                          \
+        Foam::OpFunc                                                          \
+        (                                                                      \
+            result.boundaryFieldRef(),                                         \
+            dvs.value(),                                                       \
+            f2.boundaryField()                                                 \
+        );                                                                     \
+    }                                                                          \
     result.oriented() = f2.oriented();                                         \
     if (GeometricBoundaryField<Type, PatchField, GeoMesh>::debug)              \
     {                                                                          \

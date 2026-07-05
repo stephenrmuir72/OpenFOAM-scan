@@ -115,8 +115,9 @@ private:
 
     // Private Member Functions
 
-        //- Assert that non-zero field size == mesh size
-        void checkFieldSize() const;
+        //- Assert that non-zero field size == mesh size, and ensure
+        //- allocated capacity covers the boundary extension region
+        void checkFieldSize();
 
         //- Read from file if it is present. Checks the readOption flag
         bool readIfPresent(const word& fieldDictEntry = "value");

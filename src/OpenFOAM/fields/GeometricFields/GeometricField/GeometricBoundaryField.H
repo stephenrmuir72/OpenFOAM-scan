@@ -43,11 +43,15 @@ SourceFiles
 #include "FieldField.H"
 #include "lduInterfaceFieldPtrsList.H"
 #include "LduInterfaceFieldPtrsList.H"
+#include <type_traits>
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 namespace Foam
 {
+
+class pointMesh;
+template<class Type> class fvPatchField;
 
 /*---------------------------------------------------------------------------*\
                    Class GeometricBoundaryField Declaration
@@ -77,6 +81,10 @@ public:
         //- The patch field type for the boundary fields
         typedef PatchField<Type> Patch;
 
+        //- Whether calculated patches may use flat internal storage
+        static constexpr bool supportsDeferred =
+            !std::is_same_v<GeoMesh, pointMesh>;
+
 
 private:
 
@@ -84,6 +92,50 @@ private:
 
         //- Reference to BoundaryMesh for which this field is defined
         const BoundaryMesh& bmesh_;
+
+        //- Internal field used to materialise deferred calculated patches
+        const Internal* deferredInternal_ = nullptr;
+
+        //- Patch-field type to use when materialising deferred patches
+        word deferredPatchFieldType_ = PatchField<Type>::calculatedType();
+
+            //- Per-patch types when deferred patches were specified as a list
+            wordList deferredPatchFieldTypes_;
+
+            //- Return the patch-field type to use when materialising a patch
+            const word& deferredPatchFieldType(const label patchi) const
+            {
+                return deferredPatchFieldTypes_.empty()
+                ? deferredPatchFieldType_
+                : deferredPatchFieldTypes_[patchi];
+            }
+
+        //- Return the flat-storage view for a deferred patch
+        UList<Type> deferredValues(const label patchi) const
+        {
+            if (!deferredInternal_)
+            {
+                FatalErrorInFunction
+                    << "Cannot access an unset patch field at index "
+                    << patchi << abort(FatalError);
+            }
+
+            const label offset =
+                GeoMesh::size(deferredInternal_->mesh())
+              + bmesh_[patchi].offset();
+
+            const auto& values =
+                static_cast<const DynamicField<Type>&>(*deferredInternal_);
+
+            return UList<Type>
+            (
+                const_cast<Type*>(&values[offset]),
+                bmesh_[patchi].size()
+            );
+        }
+
+        //- Refresh deferred extrapolated-calculated values from owner cells
+        void updateDeferredExtrapolated() const;
 
 
     // Private Member Functions
@@ -113,7 +165,8 @@ public:
         (
             const BoundaryMesh& bmesh,
             const Internal& iField,
-            const word& patchFieldType = PatchField<Type>::calculatedType()
+            const word& patchFieldType = PatchField<Type>::calculatedType(),
+            const bool deferCalculatedPatches = true
         );
 
         //- Construct from a BoundaryMesh, reference to the internal field
@@ -186,6 +239,227 @@ public:
 
 
     // Member Functions
+
+        //- Materialise and return the patch field at the given index
+        Patch& patchField(const label patchi);
+
+        //- Materialise and return the patch field at the given index
+        const Patch& patchField(const label patchi) const
+        {
+            return constCast().patchField(patchi);
+        }
+
+        //- True when at least one null slot denotes a deferred calculated patch
+        bool hasDeferred() const noexcept
+        {
+            if (!deferredInternal_)
+            {
+                return false;
+            }
+
+            forAll(*this, patchi)
+            {
+                if (!this->get(patchi)) return true;
+            }
+
+            return false;
+        }
+
+        //- Values of a patch, using its flat-storage slice when deferred
+        UList<Type> patchValues(const label patchi)
+        {
+            if constexpr (supportsDeferred)
+            {
+                if (Patch* pfld = this->get(patchi))
+                {
+                    return UList<Type>(pfld->begin(), pfld->size());
+                }
+
+                return deferredValues(patchi);
+            }
+            else
+            {
+                FatalErrorInFunction
+                    << "Flat patch values are unavailable for point fields."
+                    << " Trying to access values of patch " << patchi
+                    << " of field "
+                    << this->patchField(patchi).internalField().name()
+                    << abort(FatalError);
+                return {};
+            }
+        }
+
+        //- Values of a patch, using its flat-storage slice when deferred
+        UList<Type> patchValues(const label patchi) const
+        {
+            if constexpr (supportsDeferred)
+            {
+                if (const Patch* pfld = this->get(patchi))
+                {
+                    return UList<Type>
+                    (
+                        const_cast<Type*>(pfld->begin()),
+                        pfld->size()
+                    );
+                }
+
+                return deferredValues(patchi);
+            }
+            else
+            {
+                FatalErrorInFunction
+                    << "Flat patch values are unavailable for point fields."
+                    << " Trying to access values of patch " << patchi
+                    << " of field "
+                    << this->patchField(patchi).internalField().name()
+                    << abort(FatalError);
+                return {};
+            }
+        }
+
+        //- Apply an operation to corresponding patch values
+        template<class Type1, class BinaryOp>
+        void apply
+        (
+            const GeometricBoundaryField<Type1, PatchField, GeoMesh>& rhs,
+            const BinaryOp& op
+        )
+        {
+            forAll(*this, patchi)
+            {
+                auto resultValues = patchValues(patchi);
+                const auto rhsValues = rhs.patchValues(patchi);
+
+                forAll(resultValues, i)
+                {
+                    resultValues[i] = op(resultValues[i], rhsValues[i]);
+                }
+            }
+        }
+
+        //- Apply an operation to corresponding values from two fields
+        template<class Type1, class Type2, class BinaryOp>
+        void apply
+        (
+            const GeometricBoundaryField<Type1, PatchField, GeoMesh>& lhs,
+            const GeometricBoundaryField<Type2, PatchField, GeoMesh>& rhs,
+            const BinaryOp& op
+        )
+        {
+            forAll(*this, patchi)
+            {
+                auto resultValues = patchValues(patchi);
+                const auto lhsValues = lhs.patchValues(patchi);
+                const auto rhsValues = rhs.patchValues(patchi);
+
+                forAll(resultValues, i)
+                {
+                    resultValues[i] = op(lhsValues[i], rhsValues[i]);
+                }
+            }
+        }
+
+        //- Apply an operation to a field and uniform value
+        template<class Type1, class BinaryOp>
+        void apply
+        (
+            const Type1& lhs,
+            const GeometricBoundaryField<Type1, PatchField, GeoMesh>& rhs,
+            const BinaryOp& op
+        )
+        {
+            forAll(*this, patchi)
+            {
+                auto resultValues = patchValues(patchi);
+                const auto rhsValues = rhs.patchValues(patchi);
+
+                forAll(resultValues, i)
+                {
+                    resultValues[i] = op(lhs, rhsValues[i]);
+                }
+            }
+        }
+
+        //- Apply an operation to a field and uniform value
+        template<class Type1, class BinaryOp>
+        void apply
+        (
+            const GeometricBoundaryField<Type1, PatchField, GeoMesh>& lhs,
+            const Type1& rhs,
+            const BinaryOp& op
+        )
+        {
+            forAll(*this, patchi)
+            {
+                auto resultValues = patchValues(patchi);
+                const auto lhsValues = lhs.patchValues(patchi);
+
+                forAll(resultValues, i)
+                {
+                    resultValues[i] = op(lhsValues[i], rhs);
+                }
+            }
+        }
+
+        //- Transform corresponding patch values without materialising fields
+        template<class Type1, class UnaryOp>
+        void transform
+        (
+            const GeometricBoundaryField<Type1, PatchField, GeoMesh>& rhs,
+            const UnaryOp& op
+        )
+        {
+            forAll(*this, patchi)
+            {
+                auto resultValues = patchValues(patchi);
+                const auto rhsValues = rhs.patchValues(patchi);
+
+                forAll(resultValues, i)
+                {
+                    resultValues[i] = op(rhsValues[i]);
+                }
+            }
+        }
+
+        template<class Type1, class Type2, class BinaryOp>
+        void apply
+        (
+            const GeometricBoundaryField<Type1, PatchField, GeoMesh>& rhs,
+            const Type2& value,
+            const BinaryOp& op
+        )
+        {
+            forAll(*this, patchi)
+            {
+                auto resultValues = patchValues(patchi);
+                const auto rhsValues = rhs.patchValues(patchi);
+
+                forAll(resultValues, i)
+                {
+                    resultValues[i] = op(rhsValues[i], value);
+                }
+            }
+        }
+
+        template<class Type1, class Type2, class BinaryOp>
+        void apply
+        (
+            const Type1& value,
+            const GeometricBoundaryField<Type2, PatchField, GeoMesh>& rhs,
+            const BinaryOp& op
+        )
+        {
+            forAll(*this, patchi)
+            {
+                auto resultValues = patchValues(patchi);
+                const auto rhsValues = rhs.patchValues(patchi);
+
+                forAll(resultValues, i)
+                {
+                    resultValues[i] = op(value, rhsValues[i]);
+                }
+            }
+        }
 
         //- Return non-const reference to this boundary field
         this_type& constCast() const noexcept
@@ -266,6 +540,21 @@ public:
 
 
     // Member Operators
+
+        //- Preserve FieldField access to component indices
+        using FieldField<PatchField, Type>::operator[];
+
+        //- Access a patch field, materialising it if deferred
+        Patch& operator[](const label patchi)
+        {
+            return patchField(patchi);
+        }
+
+        //- Access a patch field, materialising it if deferred
+        const Patch& operator[](const label patchi) const
+        {
+            return patchField(patchi);
+        }
 
         //- Copy assignment from GeometricBoundaryField
         void operator=(const GeometricBoundaryField& bf);

@@ -73,7 +73,8 @@ public:
         }
 
         //- The geometric boundary size - number of boundary faces.
-        //  Method name expected by GeoMesh interface
+        //  Method name expected by GeoMesh interface.
+        //  Non-zero triggers extra storage in DimensionedField for slicing.
         static label boundary_size(const polyMesh& mesh) noexcept
         {
             return mesh.nBoundaryFaces();

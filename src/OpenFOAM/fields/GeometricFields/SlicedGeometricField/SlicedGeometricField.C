@@ -120,7 +120,9 @@ makeBoundary
                 new SlicedPatchField<Type>
                 (
                     p,
-                    DimensionedField<Type, GeoMesh>::null(),
+                    // Bind to this (now sliced) field: parallel-safe because
+                    // makeBoundary is called after the internal slice is set.
+                    *this,
                     completeOrBoundaryField,
                     isBoundaryOnly
                 )
@@ -176,7 +178,9 @@ makeBoundary
                 new SlicedPatchField<Type>
                 (
                     p,
-                    DimensionedField<Type, GeoMesh>::null()
+                    // Bind to this (now sliced) field: parallel-safe because
+                    // makeBoundary is called after the internal slice is set.
+                    *this
                 )
             );
 
@@ -213,15 +217,26 @@ SlicedGeometricField
         mesh,
         dims,
         Field<Type>(),
-        // preserveProcessorOnly = false
-        // isBoundaryOnly = false
-        makeBoundary(mesh, completeField, preserveCouples)
+        // Empty boundary: populated below once the internal slice is valid
+        UPtrList<PatchField<Type>>()
     )
 {
+    // The internal field was given a boundary-extension capacity by its
+    // constructor (for the flat-storage rebind design); a sliced field owns
+    // no such storage.  Release it (capacity -> 0) before pointing at the
+    // external data, then build the boundary against the valid slice so patch
+    // fields (incl. parallel processor patches) bind correctly.
+    static_cast<DynamicField<Type>&>(*this).clearStorage();
+
     // Set internalField to the slice of the complete field
     UList<Type>::shallowCopy
     (
         SubList<Type>(completeField, GeoMesh::size(mesh))
+    );
+
+    this->boundaryFieldRef().transfer
+    (
+        makeBoundary(mesh, completeField, preserveCouples).ref()
     );
 
     correctBoundaryConditions();
@@ -253,6 +268,22 @@ SlicedGeometricField
         mesh,
         dims,
         Field<Type>(),
+        // Empty boundary: populated below once the internal slice is valid
+        UPtrList<PatchField<Type>>()
+    )
+{
+    // Release the boundary-extension capacity (see other constructor) before
+    // pointing at the external data, then build the boundary against the slice.
+    static_cast<DynamicField<Type>&>(*this).clearStorage();
+
+    // Set internalField to the slice of the complete field
+    UList<Type>::shallowCopy
+    (
+        SubList<Type>(completeIField, GeoMesh::size(mesh))
+    );
+
+    this->boundaryFieldRef().transfer
+    (
         makeBoundary
         (
             mesh,
@@ -260,13 +291,7 @@ SlicedGeometricField
             preserveCouples,
             preserveProcessorOnly,
             isBoundaryAddressing(mesh, completeBField.size())
-        )
-    )
-{
-    // Set internalField to the slice of the complete field
-    UList<Type>::shallowCopy
-    (
-        SubList<Type>(completeIField, GeoMesh::size(mesh))
+        ).ref()
     );
 
     correctBoundaryConditions();
@@ -294,11 +319,20 @@ SlicedGeometricField
         gf.mesh(),
         gf.dimensions(),
         Field<Type>(),
-        makeBoundary(gf.mesh(), gf.boundaryField(), preserveCouples)
+        // Empty boundary: populated below once the internal slice is valid
+        UPtrList<PatchField<Type>>()
     )
 {
+    // Release the boundary-extension capacity before pointing at external data
+    static_cast<DynamicField<Type>&>(*this).clearStorage();
+
     // Set internalField to the internal field
     UList<Type>::shallowCopy(gf.primitiveField());
+
+    this->boundaryFieldRef().transfer
+    (
+        makeBoundary(gf.mesh(), gf.boundaryField(), preserveCouples).ref()
+    );
 
     correctBoundaryConditions();
 }
@@ -323,12 +357,21 @@ SlicedGeometricField
         gf.mesh(),
         gf.dimensions(),
         Field<Type>(),
-        // preserveCouples = true
-        makeBoundary(gf.mesh(), gf.boundaryField(), true)
+        // Empty boundary: populated below once the internal slice is valid
+        UPtrList<PatchField<Type>>()
     )
 {
+    // Release the boundary-extension capacity before pointing at external data
+    static_cast<DynamicField<Type>&>(*this).clearStorage();
+
     // Set internalField to the internal field
     UList<Type>::shallowCopy(gf.primitiveField());
+
+    // preserveCouples = true
+    this->boundaryFieldRef().transfer
+    (
+        makeBoundary(gf.mesh(), gf.boundaryField(), true).ref()
+    );
 }
 
 

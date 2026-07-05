@@ -73,6 +73,14 @@ public:
         :
             DimensionedField<Type, GeoMesh>(io, mesh, dims, Field<Type>())
         {
+            // When enabled, checkFieldSize() reserves boundary extension
+            // capacity for the rebind design. A sliced field owns no such
+            // storage, so release any allocation before pointing at the
+            // external field. This keeps
+            // capacity() honest so fvPatchField::rebindToIF() does not treat
+            // the external slice as if it had a boundary extension.
+            DynamicField<Type>::clearStorage();
+
             // Set internalField to the slice of the complete field
             UList<Type>::shallowCopy
             (

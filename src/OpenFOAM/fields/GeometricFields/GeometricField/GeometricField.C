@@ -27,6 +27,7 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "GeometricField.H"
+#include "GeometricFieldOps.H"
 #include "Time.H"
 #include "dictionary.H"
 #include "localIOdictionary.H"
@@ -177,12 +178,20 @@ Foam::GeometricField<Type, PatchField, GeoMesh>::GeometricField
     const IOobject& io,
     const Mesh& mesh,
     const dimensionSet& dims,
-    const word& patchFieldType
+    const word& patchFieldType,
+    const bool deferCalculated
 )
 :
-    Internal(io, mesh, dims, false, FieldBase::unifiedGeometricField),
+    Internal
+    (
+        io,
+        mesh,
+        dims,
+        false,
+        FieldBase::unifiedGeometricField && GeoMesh::boundary_size(mesh) > 0
+    ),
     timeIndex_(this->time().timeIndex()),
-    boundaryField_(mesh.boundary(), *this, patchFieldType)
+    boundaryField_(mesh.boundary(), *this, patchFieldType, deferCalculated)
 {
     DebugInFunction
         << "Creating" << nl << this->info() << endl;
@@ -201,7 +210,14 @@ Foam::GeometricField<Type, PatchField, GeoMesh>::GeometricField
     const wordList& actualPatchTypes
 )
 :
-    Internal(io, mesh, dims, false, FieldBase::unifiedGeometricField),
+    Internal
+    (
+        io,
+        mesh,
+        dims,
+        false,
+        FieldBase::unifiedGeometricField && GeoMesh::boundary_size(mesh) > 0
+    ),
     timeIndex_(this->time().timeIndex()),
     boundaryField_(mesh.boundary(), *this, patchFieldTypes, actualPatchTypes)
 {
@@ -222,7 +238,15 @@ Foam::GeometricField<Type, PatchField, GeoMesh>::GeometricField
     const word& patchFieldType
 )
 :
-    Internal(io, mesh, value, dims, false, FieldBase::unifiedGeometricField),
+    Internal
+    (
+        io,
+        mesh,
+        value,
+        dims,
+        false,
+        FieldBase::unifiedGeometricField && GeoMesh::boundary_size(mesh) > 0
+    ),
     timeIndex_(this->time().timeIndex()),
     boundaryField_(mesh.boundary(), *this, patchFieldType)
 {
@@ -246,7 +270,15 @@ Foam::GeometricField<Type, PatchField, GeoMesh>::GeometricField
     const wordList& actualPatchTypes
 )
 :
-    Internal(io, mesh, value, dims, false, FieldBase::unifiedGeometricField),
+    Internal
+    (
+        io,
+        mesh,
+        value,
+        dims,
+        false,
+        FieldBase::unifiedGeometricField && GeoMesh::boundary_size(mesh) > 0
+    ),
     timeIndex_(this->time().timeIndex()),
     boundaryField_(mesh.boundary(), *this, patchFieldTypes, actualPatchTypes)
 {
@@ -528,7 +560,14 @@ Foam::GeometricField<Type, PatchField, GeoMesh>::GeometricField
     const bool readOldTime
 )
 :
-    Internal(io, mesh, dimless, false, FieldBase::unifiedGeometricField),
+    Internal
+    (
+        io,
+        mesh,
+        dimless,
+        false,
+        FieldBase::unifiedGeometricField && GeoMesh::boundary_size(mesh) > 0
+    ),
     timeIndex_(this->time().timeIndex()),
     boundaryField_(mesh.boundary())
 {
@@ -565,7 +604,14 @@ Foam::GeometricField<Type, PatchField, GeoMesh>::GeometricField
     const dictionary& dict
 )
 :
-    Internal(io, mesh, dimless, false, FieldBase::unifiedGeometricField),
+    Internal
+    (
+        io,
+        mesh,
+        dimless,
+        false,
+        FieldBase::unifiedGeometricField && GeoMesh::boundary_size(mesh) > 0
+    ),
     timeIndex_(this->time().timeIndex()),
     boundaryField_(mesh.boundary())
 {
@@ -1279,7 +1325,34 @@ void Foam::GeometricField<Type, PatchField, GeoMesh>::replace
 )
 {
     primitiveFieldRef().replace(d, gcf.primitiveField());
-    boundaryFieldRef().replace(d, gcf.boundaryField());
+    if
+    (
+        boundaryField().hasDeferred()
+     || gcf.boundaryField().hasDeferred()
+    )
+    {
+        boundaryFieldRef().apply
+        (
+            gcf.boundaryField(),
+            [d](const auto& fieldValue, const auto& componentValue)
+            {
+                if constexpr (std::is_same_v<Type, cmptType>)
+                {
+                    return componentValue;
+                }
+                else
+                {
+                    auto result = fieldValue;
+                    result.replace(d, componentValue);
+                    return result;
+                }
+            }
+        );
+    }
+    else
+    {
+        boundaryFieldRef().replace(d, gcf.boundaryField());
+    }
 }
 
 
@@ -1291,7 +1364,30 @@ void Foam::GeometricField<Type, PatchField, GeoMesh>::replace
 )
 {
     primitiveFieldRef().replace(d, ds.value());
-    boundaryFieldRef().replace(d, ds.value());
+    if (boundaryField().hasDeferred())
+    {
+        boundaryFieldRef().transform
+        (
+            boundaryField(),
+            [d, value = ds.value()](const auto& fieldValue)
+            {
+                if constexpr (std::is_same_v<Type, cmptType>)
+                {
+                    return value;
+                }
+                else
+                {
+                    auto result = fieldValue;
+                    result.replace(d, value);
+                    return result;
+                }
+            }
+        );
+    }
+    else
+    {
+        boundaryFieldRef().replace(d, ds.value());
+    }
 }
 
 
@@ -1477,14 +1573,24 @@ void Foam::GeometricField<Type, PatchField, GeoMesh>::operator=
     this->dimensions() = gf.dimensions();
     this->oriented() = gf.oriented();
 
-    if (tgf.movable())
+    if (tgf.movable() && GeoMesh::boundary_size(this->mesh()) == 0)
     {
-        // Transfer storage from the tmp
+        // Transfer storage from the tmp only when boundary fields do NOT
+        // use rebind design (i.e. no boundary extension in DimensionedField).
+        // When boundary_size > 0, boundary patch fields point into the
+        // DimensionedField's extension; transferring that memory without
+        // also rebinding all patch fields would leave them pointing at
+        // freed storage.
         primitiveFieldRef().transfer(tgf.constCast().primitiveFieldRef());
     }
     else
     {
-        primitiveFieldRef() = gf.primitiveField();
+        // Use DimensionedField::operator= which calls DynamicField::operator=
+        // (doAssignDynList) and preserves the boundary extension capacity.
+        // primitiveFieldRef() = gf.primitiveField() would go through
+        // List::operator=(UList) which calls resize_nocopy -> clear() and
+        // free the extension that boundary patch fields are pointing into.
+        internalFieldRef() = gf.internalField();
     }
 
     boundaryFieldRef() = gf.boundaryField();
@@ -1588,7 +1694,7 @@ void Foam::GeometricField<Type, PatchField, GeoMesh>::operator==(Foam::zero)
 }
 
 
-#define COMPUTED_ASSIGNMENT(TYPE, op)                                          \
+#define COMPUTED_ASSIGNMENT(TYPE, op, opFunc)                                  \
                                                                                \
 template<class Type, template<class> class PatchField, class GeoMesh>          \
 void Foam::GeometricField<Type, PatchField, GeoMesh>::operator op              \
@@ -1598,8 +1704,35 @@ void Foam::GeometricField<Type, PatchField, GeoMesh>::operator op              \
 {                                                                              \
     checkField(*this, gf, #op);                                                \
                                                                                \
-    internalFieldRef() op gf.internalField();                                  \
-    boundaryFieldRef() op gf.boundaryField();                                  \
+    if                                                                         \
+    (                                                                          \
+        !FieldOps::assignFlat                                                   \
+        (                                                                      \
+            *this,                                                             \
+            *this,                                                             \
+            gf,                                                                \
+            [](const auto& lhs, const auto& rhs) { return lhs opFunc rhs; }   \
+        )                                                                      \
+    )                                                                          \
+    {                                                                          \
+        internalFieldRef() op gf.internalField();                              \
+        if                                                                     \
+        (                                                                      \
+            boundaryField().hasDeferred()                                      \
+         || gf.boundaryField().hasDeferred()                                   \
+        )                                                                      \
+        {                                                                      \
+            boundaryFieldRef().apply                                          \
+            (                                                                  \
+                gf.boundaryField(),                                            \
+                [](const auto& lhs, const auto& rhs) { return lhs opFunc rhs; }\
+            );                                                                 \
+        }                                                                      \
+        else                                                                   \
+        {                                                                      \
+            boundaryFieldRef() op gf.boundaryField();                          \
+        }                                                                      \
+    }                                                                          \
                                                                                \
     boundaryFieldRef().evaluate_if                                             \
     (                                                                          \
@@ -1628,8 +1761,20 @@ void Foam::GeometricField<Type, PatchField, GeoMesh>::operator op              \
     const dimensioned<TYPE>& dt                                                \
 )                                                                              \
 {                                                                              \
-    internalFieldRef() op dt;                                                  \
-    boundaryFieldRef() op dt.value();                                          \
+    if                                                                         \
+    (                                                                          \
+        !FieldOps::assignFlat                                                   \
+        (                                                                      \
+            *this,                                                             \
+            *this,                                                             \
+            dt.value(),                                                        \
+            [](const auto& lhs, const auto& rhs) { return lhs opFunc rhs; }   \
+        )                                                                      \
+    )                                                                          \
+    {                                                                          \
+        internalFieldRef() op dt;                                              \
+        boundaryFieldRef() op dt.value();                                      \
+    }                                                                          \
                                                                                \
     boundaryFieldRef().evaluate_if                                             \
     (                                                                          \
@@ -1637,10 +1782,10 @@ void Foam::GeometricField<Type, PatchField, GeoMesh>::operator op              \
     );                                                                         \
 }
 
-COMPUTED_ASSIGNMENT(Type, +=)
-COMPUTED_ASSIGNMENT(Type, -=)
-COMPUTED_ASSIGNMENT(scalar, *=)
-COMPUTED_ASSIGNMENT(scalar, /=)
+COMPUTED_ASSIGNMENT(Type, +=, +)
+COMPUTED_ASSIGNMENT(Type, -=, -)
+COMPUTED_ASSIGNMENT(scalar, *=, *)
+COMPUTED_ASSIGNMENT(scalar, /=, /)
 
 #undef COMPUTED_ASSIGNMENT
 

@@ -173,7 +173,8 @@ public:
             const IOobject& io,
             const Mesh& mesh,
             const dimensionSet& dims,
-            const word& patchFieldType = PatchField<Type>::calculatedType()
+            const word& patchFieldType = PatchField<Type>::calculatedType(),
+            const bool deferCalculated = FieldBase::deferCalculatedPatches
         );
 
         //- Construct given IOobject, mesh, dimensions and patch types.
@@ -466,7 +467,8 @@ public:
             IOobjectOption::registerOption regOpt,
             const Mesh& mesh,
             const dimensionSet& dims,
-            const word& patchFieldType = PatchField<Type>::calculatedType()
+            const word& patchFieldType = PatchField<Type>::calculatedType(),
+            const bool deferCalculated = FieldBase::deferCalculatedPatches
         );
 
         //- Return tmp field (NO_READ, NO_WRITE)
@@ -479,7 +481,8 @@ public:
             const word& name,
             const Mesh& mesh,
             const dimensionSet& dims,
-            const word& patchFieldType = PatchField<Type>::calculatedType()
+            const word& patchFieldType = PatchField<Type>::calculatedType(),
+            const bool deferCalculated = FieldBase::deferCalculatedPatches
         );
 
         //- Return tmp field (NO_READ, NO_WRITE)

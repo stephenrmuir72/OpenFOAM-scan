@@ -32,7 +32,77 @@ License
 #include "fvPatchFieldMapper.H"
 #include "volMesh.H"
 
+
+// * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * * //
+
+template<class Type>
+void Foam::fvPatchField<Type>::rebindToIF() noexcept
+{
+    const fvPatch& p = fvPatchFieldBase::patch();
+
+    // Flat-storage (rebind) design: a patch field normally slices the
+    // boundary extension of its DimensionedField so internal + boundary data
+    // are contiguous.  Two cases cannot rebind and must own p.size() storage
+    // so the patch field still behaves like a normal Field:
+    //   1. Null DimensionedField (NewCalculatedType for arithmetic
+    //      temporaries; slicedFvPatchField which then shallowCopies).
+    //   2. A DimensionedField without a boundary extension (e.g. the
+    //      SlicedDimensionedField dummy mesh.V() used by nearWallDist).
+    if (&internalField_ == &DimensionedField<Type, volMesh>::null())
+    {
+        ownAllocation_ = true;
+        static_cast<List<Type>&>(*this).resize_nocopy(p.size());
+        return;
+    }
+
+    const label nCells = internalField_.mesh().nCells();
+    const label offset = nCells + p.offset();
+
+    const auto& df =
+        static_cast<const DynamicField<Type>&>(internalField_);
+
+    if
+    (
+        FieldBase::unifiedGeometricField
+     && df.capacity() >= offset + p.size()
+    )
+    {
+        // Rebind: point into the DimensionedField boundary extension.
+        // ownAllocation_ stays false; destructor will null the pointer.
+        static_cast<UList<Type>&>(*this) =
+            UList<Type>
+            (
+                const_cast<Type*>(&internalField_[offset]),
+                p.size()
+            );
+    }
+    else
+    {
+        // No boundary extension available: own p.size() storage.
+        ownAllocation_ = true;
+        static_cast<List<Type>&>(*this).resize_nocopy(p.size());
+    }
+}
+
+
 // * * * * * * * * * * * * Protected Member Functions  * * * * * * * * * * * //
+
+template<class Type>
+void Foam::fvPatchField<Type>::releaseStorage() noexcept
+{
+    if (ownAllocation_)
+    {
+        // Free the own heap allocation
+        static_cast<List<Type>&>(*this).clear();
+        ownAllocation_ = false;
+    }
+    else
+    {
+        // Detach a rebind slice without freeing the DimensionedField extension
+        static_cast<UList<Type>&>(*this) = UList<Type>();
+    }
+}
+
 
 template<class Type>
 bool Foam::fvPatchField<Type>::readValueEntry
@@ -68,9 +138,7 @@ bool Foam::fvPatchField<Type>::readValueEntry
 template<class Type>
 void Foam::fvPatchField<Type>::extrapolateInternal()
 {
-    const auto& p = fvPatchFieldBase::patch();
-    this->resize_nocopy(p.size());  // In general this is a no-op
-    p.patchInternalField(internalField_, *this);
+    fvPatchFieldBase::patch().patchInternalField(internalField_, *this);
 }
 
 
@@ -84,9 +152,11 @@ Foam::fvPatchField<Type>::fvPatchField
 )
 :
     fvPatchFieldBase(p),
-    Field<Type>(p.size()),
+    Field<Type>(),
     internalField_(iF)
-{}
+{
+    rebindToIF();
+}
 
 
 template<class Type>
@@ -98,9 +168,11 @@ Foam::fvPatchField<Type>::fvPatchField
 )
 :
     fvPatchFieldBase(p, patchType),
-    Field<Type>(p.size()),
+    Field<Type>(),
     internalField_(iF)
-{}
+{
+    rebindToIF();
+}
 
 
 template<class Type>
@@ -112,9 +184,12 @@ Foam::fvPatchField<Type>::fvPatchField
 )
 :
     fvPatchFieldBase(p),
-    Field<Type>(p.size(), value),
+    Field<Type>(),
     internalField_(iF)
-{}
+{
+    rebindToIF();
+    Field<Type>::operator=(value);
+}
 
 
 template<class Type>
@@ -126,9 +201,12 @@ Foam::fvPatchField<Type>::fvPatchField
 )
 :
     fvPatchFieldBase(p),
-    Field<Type>(pfld),
+    Field<Type>(),
     internalField_(iF)
-{}
+{
+    rebindToIF();
+    if (pfld.size()) Field<Type>::operator=(pfld);
+}
 
 
 template<class Type>
@@ -140,9 +218,12 @@ Foam::fvPatchField<Type>::fvPatchField
 )
 :
     fvPatchFieldBase(p),
-    Field<Type>(std::move(pfld)),
+    Field<Type>(),
     internalField_(iF)
-{}
+{
+    rebindToIF();
+    if (pfld.size()) Field<Type>::operator=(pfld);
+}
 
 
 template<class Type>
@@ -155,9 +236,10 @@ Foam::fvPatchField<Type>::fvPatchField
 )
 :
     fvPatchFieldBase(p, dict),
-    Field<Type>(p.size()),
+    Field<Type>(),
     internalField_(iF)
 {
+    rebindToIF();
     readValueEntry(dict, requireValue);
 }
 
@@ -172,15 +254,16 @@ Foam::fvPatchField<Type>::fvPatchField
 )
 :
     fvPatchFieldBase(ptf, p),
-    Field<Type>(p.size()),
+    Field<Type>(),
     internalField_(iF)
 {
+    rebindToIF();
     // For unmapped faces set to internal field value (zero-gradient)
     if (notNull(iF) && mapper.hasUnmapped())
     {
         this->extrapolateInternal();
     }
-    this->map(ptf, mapper);
+    Field<Type>::map(ptf, mapper);
 }
 
 
@@ -194,9 +277,12 @@ Foam::fvPatchField<Type>::fvPatchField
 )
 :
     fvPatchFieldBase(pfld, p),
-    Field<Type>(p.size(), value),
+    Field<Type>(),
     internalField_(iF)
-{}
+{
+    rebindToIF();
+    Field<Type>::operator=(value);
+}
 
 
 template<class Type>
@@ -207,9 +293,31 @@ Foam::fvPatchField<Type>::fvPatchField
 )
 :
     fvPatchFieldBase(ptf),
-    Field<Type>(ptf),
+    Field<Type>(),
     internalField_(iF)
-{}
+{
+    rebindToIF();
+    Field<Type>::operator=(ptf);
+}
+
+
+// * * * * * * * * * * * * * * * Destructor  * * * * * * * * * * * * * * * * //
+
+template<class Type>
+Foam::fvPatchField<Type>::~fvPatchField() noexcept
+{
+    if (!ownAllocation_)
+    {
+        // Null the UList so List<Type> destructor does not attempt to free
+        // memory it does not own.  Covers three cases:
+        //   1. Rebind into DimensionedField boundary extension.
+        //   2. Null internalField (SlicedGeometricField, slicedFvPatchField)
+        //      where v_ was set externally via shallowCopy.
+        //   3. rebindToIF() exited early (null reference).
+        static_cast<UList<Type>&>(*this) = UList<Type>();
+    }
+    // else: own allocation from rebindToIF() fallback → let List<T> free it.
+}
 
 
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
@@ -280,21 +388,16 @@ void Foam::fvPatchField<Type>::autoMap
     const fvPatchFieldMapper& mapper
 )
 {
-    Field<Type>& f = *this;
-
     if (!this->size() && !mapper.distributed())
     {
-        f.resize_nocopy(mapper.size());
-        if (f.size())
+        if (this->size())
         {
-            f = this->patchInternalField();
+            Field<Type>::operator=(this->patchInternalField()());
         }
     }
     else
     {
-        // Map all faces provided with mapping data
         Field<Type>::autoMap(mapper);
-
 
         // For unmapped faces set to internal field value (zero-gradient)
         if (mapper.hasUnmapped())
@@ -314,7 +417,7 @@ void Foam::fvPatchField<Type>::autoMap
                 {
                     if (mapAddressing[i] < 0)
                     {
-                        f[i] = pif[i];
+                        Field<Type>::operator[](i) = pif[i];
                     }
                 }
             }
@@ -328,7 +431,7 @@ void Foam::fvPatchField<Type>::autoMap
 
                     if (!localAddrs.size())
                     {
-                        f[i] = pif[i];
+                        Field<Type>::operator[](i) = pif[i];
                     }
                 }
             }

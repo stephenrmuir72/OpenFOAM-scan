@@ -272,10 +272,29 @@ private:
         //- Reference to internal field
         const DimensionedField<Type, surfaceMesh>& internalField_;
 
+        //- True only when rebindToIF() fell back to its own heap allocation
+        //  because the DimensionedField had no boundary extension.
+        //  False in all other cases so the destructor nulls the UList pointer.
+        bool ownAllocation_ = false;
+
+
+    // Private Member Functions
+
+        //- Redirect the Field<Type> UList pointer and size to the slice
+        //- of internalField_ that corresponds to this patch, if the
+        //- DimensionedField has sufficient boundary extension capacity.
+        //- Sets ownAllocation_ when falling back to own allocation.
+        void rebindToIF() noexcept;
+
 
 protected:
 
     // Protected Member Functions
+
+        //- Release the base Field storage prior to pointing at external data
+        //  (slicedFvsPatchField).  Frees an own-allocation, or simply detaches
+        //  a rebind slice without freeing the DimensionedField extension.
+        void releaseStorage() noexcept;
 
         //- Read the "value" entry into \c *this.
         //  The reading can be optional (default), mandatory etc.
@@ -517,8 +536,9 @@ public:
         );
 
 
-    //- Destructor
-    virtual ~fvsPatchField() = default;
+    //- Destructor: null the non-owning Field base so it does not free
+    //- memory belonging to the DimensionedField
+    virtual ~fvsPatchField() noexcept;
 
 
     // Member Functions

@@ -102,6 +102,10 @@ public:
         //- Uses opt-switch "unifiedGeometricField"
         static bool unifiedGeometricField;
 
+        //- Defer construction of calculated geometric boundary patches.
+        //- Uses opt-switch "deferCalculatedPatches"
+        static bool deferCalculatedPatches;
+
         //- Local boundary field consistency checks.
         //- Uses opt-switch "localBoundaryConsistency"
         static int localBoundaryConsistency_;

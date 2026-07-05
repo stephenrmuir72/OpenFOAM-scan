@@ -39,6 +39,7 @@ SourceFiles
 
 #include "FieldOps.H"
 #include "GeometricField.H"
+#include "label.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -50,6 +51,299 @@ namespace FieldOps
 /*---------------------------------------------------------------------------*\
                         Namespace FieldOps Declarations
 \*---------------------------------------------------------------------------*/
+
+template<class Type, template<class> class PatchField, class GeoMesh>
+label flatSize
+(
+    const GeometricField<Type, PatchField, GeoMesh>& field
+)
+{
+    if constexpr
+    (
+        GeometricBoundaryField<Type, PatchField, GeoMesh>::supportsDeferred
+    )
+    {
+        return
+            GeoMesh::size(field.mesh())
+          + GeoMesh::boundary_size(field.mesh());
+    }
+
+    return GeoMesh::size(field.mesh());
+}
+
+
+template<class Type, template<class> class PatchField, class GeoMesh>
+bool hasFlatStorage
+(
+    const GeometricField<Type, PatchField, GeoMesh>& field
+)
+{
+    if constexpr
+    (
+        GeometricBoundaryField<Type, PatchField, GeoMesh>::supportsDeferred
+    )
+    {
+        return
+            FieldBase::unifiedGeometricField
+         && field.primitiveField().capacity() >= flatSize(field);
+    }
+
+    return false;
+}
+
+
+template<class Type, template<class> class PatchField, class GeoMesh>
+UList<Type> flatValues
+(
+    GeometricField<Type, PatchField, GeoMesh>& field
+)
+{
+    auto& values = field.primitiveFieldRef();
+    return UList<Type>(values.begin(), flatSize(field));
+}
+
+
+template<class Type, template<class> class PatchField, class GeoMesh>
+UList<Type> flatValues
+(
+    const GeometricField<Type, PatchField, GeoMesh>& field
+)
+{
+    const auto& values = field.primitiveField();
+    return UList<Type>
+    (
+        const_cast<Type*>(values.begin()),
+        flatSize(field)
+    );
+}
+
+
+template
+<
+    class Tout, class T1, class UnaryOp,
+    template<class> class PatchField, class GeoMesh
+>
+bool assignFlat
+(
+    GeometricField<Tout, PatchField, GeoMesh>& result,
+    const GeometricField<T1, PatchField, GeoMesh>& input,
+    const UnaryOp& op
+)
+{
+    if
+    (
+        !hasFlatStorage(result)
+     || !hasFlatStorage(input)
+     || flatSize(result) != flatSize(input)
+    )
+    {
+        return false;
+    }
+
+    auto resultValues = flatValues(result);
+    const auto inputValues = flatValues(input);
+
+    forAll(resultValues, i)
+    {
+        resultValues[i] = op(inputValues[i]);
+    }
+
+    return true;
+}
+
+
+template
+<
+    class Tout, class T1, class T2, class BinaryOp,
+    template<class> class PatchField, class GeoMesh
+>
+bool assignFlat
+(
+    GeometricField<Tout, PatchField, GeoMesh>& result,
+    const GeometricField<T1, PatchField, GeoMesh>& lhs,
+    const GeometricField<T2, PatchField, GeoMesh>& rhs,
+    const BinaryOp& op
+)
+{
+    if
+    (
+        !hasFlatStorage(result)
+     || !hasFlatStorage(lhs)
+     || !hasFlatStorage(rhs)
+     || flatSize(result) != flatSize(lhs)
+     || flatSize(result) != flatSize(rhs)
+    )
+    {
+        return false;
+    }
+
+    auto resultValues = flatValues(result);
+    const auto lhsValues = flatValues(lhs);
+    const auto rhsValues = flatValues(rhs);
+
+    forAll(resultValues, i)
+    {
+        resultValues[i] = op(lhsValues[i], rhsValues[i]);
+    }
+
+    return true;
+}
+
+
+template
+<
+    class Tout, class T1, class T2, class BinaryOp,
+    template<class> class PatchField, class GeoMesh
+>
+bool assignFlat
+(
+    GeometricField<Tout, PatchField, GeoMesh>& result,
+    const T1& lhs,
+    const GeometricField<T2, PatchField, GeoMesh>& rhs,
+    const BinaryOp& op
+)
+{
+    if
+    (
+        !hasFlatStorage(result)
+     || !hasFlatStorage(rhs)
+     || flatSize(result) != flatSize(rhs)
+    )
+    {
+        return false;
+    }
+
+    auto resultValues = flatValues(result);
+    const auto rhsValues = flatValues(rhs);
+
+    forAll(resultValues, i)
+    {
+        resultValues[i] = op(lhs, rhsValues[i]);
+    }
+
+    return true;
+}
+
+
+template
+<
+    class Tout, class T1, class T2, class BinaryOp,
+    template<class> class PatchField, class GeoMesh
+>
+bool assignFlat
+(
+    GeometricField<Tout, PatchField, GeoMesh>& result,
+    const GeometricField<T1, PatchField, GeoMesh>& lhs,
+    const T2& rhs,
+    const BinaryOp& op
+)
+{
+    if
+    (
+        !hasFlatStorage(result)
+     || !hasFlatStorage(lhs)
+     || flatSize(result) != flatSize(lhs)
+    )
+    {
+        return false;
+    }
+
+    auto resultValues = flatValues(result);
+    const auto lhsValues = flatValues(lhs);
+
+    forAll(resultValues, i)
+    {
+        resultValues[i] = op(lhsValues[i], rhs);
+    }
+
+    return true;
+}
+
+
+template
+<
+    class Tout, class T1, class T2, class T3, class TernaryOp,
+    template<class> class PatchField, class GeoMesh
+>
+bool assignFlat
+(
+    GeometricField<Tout, PatchField, GeoMesh>& result,
+    const GeometricField<T1, PatchField, GeoMesh>& first,
+    const GeometricField<T2, PatchField, GeoMesh>& second,
+    const GeometricField<T3, PatchField, GeoMesh>& third,
+    const TernaryOp& op
+)
+{
+    if
+    (
+        !hasFlatStorage(result)
+     || !hasFlatStorage(first)
+     || !hasFlatStorage(second)
+     || !hasFlatStorage(third)
+     || flatSize(result) != flatSize(first)
+     || flatSize(result) != flatSize(second)
+     || flatSize(result) != flatSize(third)
+    )
+    {
+        return false;
+    }
+
+    auto resultValues = flatValues(result);
+    const auto firstValues = flatValues(first);
+    const auto secondValues = flatValues(second);
+    const auto thirdValues = flatValues(third);
+
+    forAll(resultValues, i)
+    {
+        resultValues[i] = op
+        (
+            firstValues[i],
+            secondValues[i],
+            thirdValues[i]
+        );
+    }
+
+    return true;
+}
+
+
+template
+<
+    class Tout, class T1, class T2, class T3, class TernaryOp,
+    template<class> class PatchField, class GeoMesh
+>
+bool assignFlat
+(
+    GeometricField<Tout, PatchField, GeoMesh>& result,
+    const GeometricField<T1, PatchField, GeoMesh>& first,
+    const GeometricField<T2, PatchField, GeoMesh>& second,
+    const T3& third,
+    const TernaryOp& op
+)
+{
+    if
+    (
+        !hasFlatStorage(result)
+     || !hasFlatStorage(first)
+     || !hasFlatStorage(second)
+     || flatSize(result) != flatSize(first)
+     || flatSize(result) != flatSize(second)
+    )
+    {
+        return false;
+    }
+
+    auto resultValues = flatValues(result);
+    const auto firstValues = flatValues(first);
+    const auto secondValues = flatValues(second);
+
+    forAll(resultValues, i)
+    {
+        resultValues[i] = op(firstValues[i], secondValues[i], third);
+    }
+
+    return true;
+}
 
 //- Populate a geometric field as the result of a unary operation on an input.
 //  It is permissible for inputs/outputs to refer to the same field(s),
@@ -66,26 +360,45 @@ void assign
     const UnaryOp& op
 )
 {
-    FieldOps::assign
+    if constexpr
     (
-        result.primitiveFieldRef(),
-        a.primitiveField(),
-        op
-    );
+        GeometricBoundaryField<Tout, PatchField, GeoMesh>::supportsDeferred
+    )
+    {
+        if (!assignFlat(result, a, op))
+        {
+            FieldOps::assign
+            (
+                result.primitiveFieldRef(),
+                a.primitiveField(),
+                op
+            );
 
-    auto& bfld = result.boundaryFieldRef();
+            auto& bfld = result.boundaryFieldRef();
 
-    const label len = bfld.size();
+            const label len = bfld.size();
 
-    for (label i = 0; i < len; ++i)
+            for (label i = 0; i < len; ++i)
+            {
+                FieldOps::assign
+                (
+                    bfld[i],
+                    a.boundaryField()[i],
+                    op
+                );
+            }
+        }
+    }
+    else
     {
         FieldOps::assign
         (
-            bfld[i],
-            a.boundaryField()[i],
+            result.primitiveFieldRef(),
+            a.primitiveField(),
             op
         );
     }
+
     result.correctLocalBoundaryConditions();
     if (GeometricBoundaryField<Tout, PatchField, GeoMesh>::debug)
     {
@@ -110,28 +423,48 @@ void assign
     const BinaryOp& bop
 )
 {
-    FieldOps::assign
+    if constexpr
     (
-        result.primitiveFieldRef(),
-        a.primitiveField(),
-        b.primitiveField(),
-        bop
-    );
+        GeometricBoundaryField<Tout, PatchField, GeoMesh>::supportsDeferred
+    )
+    {
+        if (!assignFlat(result, a, b, bop))
+        {
+            FieldOps::assign
+            (
+                result.primitiveFieldRef(),
+                a.primitiveField(),
+                b.primitiveField(),
+                bop
+            );
 
-    auto& bfld = result.boundaryFieldRef();
+            auto& bfld = result.boundaryFieldRef();
 
-    const label len = bfld.size();
+            const label len = bfld.size();
 
-    for (label i = 0; i < len; ++i)
+            for (label i = 0; i < len; ++i)
+            {
+                FieldOps::assign
+                (
+                    bfld[i],
+                    a.boundaryField()[i],
+                    b.boundaryField()[i],
+                    bop
+                );
+            }
+        }
+    }
+    else
     {
         FieldOps::assign
         (
-            bfld[i],
-            a.boundaryField()[i],
-            b.boundaryField()[i],
+            result.primitiveFieldRef(),
+            a.primitiveField(),
+            b.primitiveField(),
             bop
         );
     }
+
     result.correctLocalBoundaryConditions();
     if (GeometricBoundaryField<Tout, PatchField, GeoMesh>::debug)
     {
@@ -155,25 +488,56 @@ void ternary
     const BinaryOp& bop
 )
 {
-    FieldOps::ternary
+    if constexpr
     (
-        result.primitiveFieldRef(),
-        a.primitiveField(),
-        b.primitiveField(),
-        bop
-    );
+        GeometricBoundaryField<T, PatchField, GeoMesh>::supportsDeferred
+    )
+    {
+        if
+        (
+            !assignFlat
+            (
+                result,
+                a,
+                b,
+                [&bop](const T& lhs, const T& rhs)
+                {
+                    return bop(lhs, rhs) ? lhs : rhs;
+                }
+            )
+        )
+        {
+            FieldOps::ternary
+            (
+                result.primitiveFieldRef(),
+                a.primitiveField(),
+                b.primitiveField(),
+                bop
+            );
 
-    auto& bfld = result.boundaryFieldRef();
+            auto& bfld = result.boundaryFieldRef();
 
-    const label len = bfld.size();
+            const label len = bfld.size();
 
-    for (label i = 0; i < len; ++i)
+            for (label i = 0; i < len; ++i)
+            {
+                FieldOps::ternary
+                (
+                    bfld[i],
+                    a.boundaryField()[i],
+                    b.boundaryField()[i],
+                    bop
+                );
+            }
+        }
+    }
+    else
     {
         FieldOps::ternary
         (
-            bfld[i],
-            a.boundaryField()[i],
-            b.boundaryField()[i],
+            result.primitiveFieldRef(),
+            a.primitiveField(),
+            b.primitiveField(),
             bop
         );
     }
@@ -204,27 +568,60 @@ void ternarySelect
     const FlipOp& flip
 )
 {
-    FieldOps::ternarySelect
+    if constexpr
     (
-        result.primitiveFieldRef(),
-        cond.primitiveField(),
-        a.primitiveField(),
-        b.primitiveField(),
-        flip
-    );
+        GeometricBoundaryField<T, PatchField, GeoMesh>::supportsDeferred
+    )
+    {
+        if
+        (
+            !assignFlat
+            (
+                result,
+                cond,
+                a,
+                b,
+                [&flip](const auto& selector, const T& lhs, const T& rhs)
+                {
+                    return flip(selector) ? lhs : rhs;
+                }
+            )
+        )
+        {
+            FieldOps::ternarySelect
+            (
+                result.primitiveFieldRef(),
+                cond.primitiveField(),
+                a.primitiveField(),
+                b.primitiveField(),
+                flip
+            );
 
-    auto& bfld = result.boundaryFieldRef();
+            auto& bfld = result.boundaryFieldRef();
 
-    const label len = bfld.size();
+            const label len = bfld.size();
 
-    for (label i = 0; i < len; ++i)
+            for (label i = 0; i < len; ++i)
+            {
+                FieldOps::ternarySelect
+                (
+                    bfld[i],
+                    cond.boundaryField()[i],
+                    a.boundaryField()[i],
+                    b.boundaryField()[i],
+                    flip
+                );
+            }
+        }
+    }
+    else
     {
         FieldOps::ternarySelect
         (
-            bfld[i],
-            cond.boundaryField()[i],
-            a.boundaryField()[i],
-            b.boundaryField()[i],
+            result.primitiveFieldRef(),
+            cond.primitiveField(),
+            a.primitiveField(),
+            b.primitiveField(),
             flip
         );
     }

@@ -157,11 +157,22 @@ tmp<surfaceScalarField> ddtScheme<Type>::fvcDdtPhiCoeff
     if (ddtPhiCoeff_ < 0)
     {
         // v1712 and earlier
-        ddtCouplingCoeff -= min
+        tmp<surfaceScalarField> tMinCoeff = min
         (
             mag(phiCorr)
            /(mag(phi) + dimensionedScalar("small", phi.dimensions(), SMALL)),
             scalar(1)
+        );
+        ddtCouplingCoeff.primitiveFieldRef() -=
+            tMinCoeff().primitiveField();
+        ddtCouplingCoeff.boundaryFieldRef().apply
+        (
+            tMinCoeff().boundaryField(),
+            [](const scalar lhs, const scalar rhs) { return lhs - rhs; }
+        );
+        ddtCouplingCoeff.boundaryFieldRef().evaluate_if
+        (
+            [](const auto& pfld) { return pfld.constraintOverride(); }
         );
     }
     else

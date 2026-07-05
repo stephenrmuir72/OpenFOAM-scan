@@ -47,7 +47,7 @@ if (&(fld1).mesh() != &(fld2).mesh())                               \
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
 template<class Type, class GeoMesh>
-void Foam::DimensionedField<Type, GeoMesh>::checkFieldSize() const
+void Foam::DimensionedField<Type, GeoMesh>::checkFieldSize()
 {
     const label fieldSize = this->size();
     if (fieldSize)
@@ -60,6 +60,17 @@ void Foam::DimensionedField<Type, GeoMesh>::checkFieldSize() const
                 << " is not the same as the size of mesh = "
                 << meshSize
                 << abort(FatalError);
+        }
+    }
+    // Ensure capacity covers boundary extension when unified storage is enabled
+    if (FieldBase::unifiedGeometricField)
+    {
+        const label totalSize =
+            GeoMesh::size(this->mesh_) + GeoMesh::boundary_size(this->mesh_);
+
+        if (this->capacity() < totalSize)
+        {
+            static_cast<DynamicField<Type>&>(*this).reserve_exact(totalSize);
         }
     }
 }
@@ -153,12 +164,16 @@ Foam::DimensionedField<Type, GeoMesh>::DimensionedField
     regIOobject(io),
     DynamicField<Type>
     (
-        // (size,capacity)
         std::pair<label,label>
         (
             GeoMesh::size(mesh),
             GeoMesh::size(mesh)
-          + (extraCapacity ? GeoMesh::boundary_size(mesh) : label(0))
+                    +
+                        (
+                                extraCapacity && FieldBase::unifiedGeometricField
+                            ? GeoMesh::boundary_size(mesh)
+                            : label(0)
+                        )
         )
     ),
     mesh_(mesh),
@@ -185,12 +200,16 @@ Foam::DimensionedField<Type, GeoMesh>::DimensionedField
     regIOobject(io),
     DynamicField<Type>
     (
-        // (size,capacity)
         std::pair<label,label>
         (
             GeoMesh::size(mesh),
             GeoMesh::size(mesh)
-          + (extraCapacity ? GeoMesh::boundary_size(mesh) : label(0))
+                    +
+                        (
+                                extraCapacity && FieldBase::unifiedGeometricField
+                            ? GeoMesh::boundary_size(mesh)
+                            : label(0)
+                        )
         )
     ),
     mesh_(mesh),
@@ -237,7 +256,10 @@ Foam::DimensionedField<Type, GeoMesh>::DimensionedField
     mesh_(df.mesh_),
     dimensions_(df.dimensions_),
     oriented_(df.oriented_)
-{}
+{
+    // DynamicField copy-ctor only copies logical size; restore boundary capacity
+    checkFieldSize();
+}
 
 
 template<class Type, class GeoMesh>
@@ -262,7 +284,14 @@ Foam::DimensionedField<Type, GeoMesh>::DimensionedField
     mesh_(df.mesh_),
     dimensions_(df.dimensions_),
     oriented_(df.oriented_)
-{}
+{
+    // When copying (not moving) DynamicField only copies logical size;
+    // restore boundary extension capacity
+    if (!reuse)
+    {
+        checkFieldSize();
+    }
+}
 
 
 template<class Type, class GeoMesh>
@@ -289,7 +318,10 @@ Foam::DimensionedField<Type, GeoMesh>::DimensionedField
     mesh_(df.mesh_),
     dimensions_(df.dimensions_),
     oriented_(df.oriented_)
-{}
+{
+    // DynamicField copy-ctor only copies logical size; restore boundary capacity
+    checkFieldSize();
+}
 
 
 template<class Type, class GeoMesh>

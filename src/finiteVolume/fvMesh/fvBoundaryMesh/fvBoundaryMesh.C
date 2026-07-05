@@ -28,12 +28,30 @@ License
 
 #include "fvBoundaryMesh.H"
 #include "fvMesh.H"
+#include "Field.H"
+#include "emptyPolyPatch.H"
 #include "PtrListOps.H"
 
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
 void Foam::fvBoundaryMesh::addPatches(const polyBoundaryMesh& pbm)
 {
+    if (FieldBase::unifiedGeometricField)
+    {
+        forAll(pbm, patchi)
+        {
+            if (isA<emptyPolyPatch>(pbm[patchi]))
+            {
+                WarningInFunction
+                    << "Disabling unifiedGeometricField because mesh has "
+                    << "empty patch " << pbm[patchi].name() << endl;
+
+                FieldBase::unifiedGeometricField = false;
+                break;
+            }
+        }
+    }
+
     // Set boundary patches
     fvPatchList& patches = *this;
 

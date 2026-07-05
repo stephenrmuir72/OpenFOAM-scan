@@ -29,6 +29,7 @@ License
 #include "DimensionedField.H"
 #include "IOstreams.H"
 #include "localIOdictionary.H"
+#include "SubList.H"
 
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
@@ -51,18 +52,50 @@ void Foam::DimensionedField<Type, GeoMesh>::readField
     }
 
     const label meshSize = GeoMesh::size(mesh_);
+    const label totalSize = meshSize + GeoMesh::boundary_size(mesh_);
 
     // The primitive field
     auto& fld = static_cast<DynamicField<Type>&>(*this);
 
-    // Resize primitive field to make space for the internal field
-    // - avoid size doubling
-    // - without copying any existing content
-
-    fld.clear();  // ie, ignore any existing content
-    fld.reserve_exact(meshSize);
+    // Resize primitive field to make space for the internal field.
+    // When boundary patch fields already exist (rebind design), they point
+    // into the extension [meshSize..totalSize-1].  Use reserve_exact +
+    // setAddressableSize instead of clear() so the existing allocation (and
+    // any live patch field pointers into it) are preserved.
+    // NOTE: Field<Type>::assign() uses non-virtual List::resize_nocopy
+    // internally, which would call clear() and free the extension.  Read into
+    // a temporary Field and then deepCopy to avoid any List resize/free.
+    if (FieldBase::unifiedGeometricField && fld.capacity() < totalSize)
+    {
+        // No patch fields yet (first/early call): safe to free and realloc.
+        fld.clear();
+        fld.reserve_exact(totalSize);
+    }
+    // Set addressable size to meshSize via DynamicField's own resize_nocopy,
+    // which preserves capacity (unlike List::resize_nocopy which would free).
     fld.resize_nocopy(meshSize);
-    fld.assign(fieldDictEntry, fieldDict, meshSize);  // <- MUST_READ
+
+    {
+        // Read the meshSize internal values into a temporary Field.
+        // Field<Type>(entry, len) calls assign() on its OWN heap allocation,
+        // so it never touches the DimensionedField's extension.
+        const auto* eptr =
+            fieldDict.findEntry(fieldDictEntry, keyType::LITERAL);
+
+        if (!eptr)
+        {
+            FatalIOErrorInFunction(fieldDict)
+                << "Required entry '" << fieldDictEntry
+                << "' missing in dictionary "
+                << fieldDict.relativeName() << nl
+                << exit(FatalIOError);
+        }
+
+        Field<Type> tmp(*eptr, meshSize);
+
+        // Copy meshSize values in-place; extension is untouched.
+        UList<Type>(fld.data(), meshSize).deepCopy(tmp);
+    }
 }
 
 
@@ -130,7 +163,7 @@ Foam::DimensionedField<Type, GeoMesh>::DimensionedField
     regIOobject(io),
     mesh_(mesh)
 {
-    if (extraCapacity)
+    if (extraCapacity && FieldBase::unifiedGeometricField)
     {
         DynamicField<Type>::reserve_exact
         (
@@ -154,7 +187,7 @@ Foam::DimensionedField<Type, GeoMesh>::DimensionedField
     regIOobject(io),
     mesh_(mesh)
 {
-    if (extraCapacity)
+    if (extraCapacity && FieldBase::unifiedGeometricField)
     {
         DynamicField<Type>::reserve_exact
         (

@@ -192,18 +192,33 @@ Foam::surfaceInterpolationScheme<Type>::interpolate
 
     forAll(lambdas.boundaryField(), pi)
     {
-        const fvsPatchScalarField& pLambda = lambdas.boundaryField()[pi];
-        const fvsPatchScalarField& pY = ys.boundaryField()[pi];
+        auto resultValues = sfbf.patchValues(pi);
+        const auto* pVf = vf.boundaryField().get(pi);
 
-        if (vf.boundaryField()[pi].coupled())
+        if (pVf && pVf->coupled())
         {
-            sfbf[pi] =
-                pLambda*vf.boundaryField()[pi].patchInternalField()
-              + pY*vf.boundaryField()[pi].patchNeighbourField();
+            const auto pLambda = lambdas.boundaryField().patchValues(pi);
+            const auto pY = ys.boundaryField().patchValues(pi);
+            const auto tInternal = pVf->patchInternalField();
+            const auto tNeighbour = pVf->patchNeighbourField();
+            const auto& internalValues = tInternal();
+            const auto& neighbourValues = tNeighbour();
+
+            forAll(resultValues, facei)
+            {
+                resultValues[facei] =
+                    pLambda[facei]*internalValues[facei]
+                  + pY[facei]*neighbourValues[facei];
+            }
         }
         else
         {
-            sfbf[pi] = vf.boundaryField()[pi];
+            const auto sourceValues = vf.boundaryField().patchValues(pi);
+
+            forAll(resultValues, facei)
+            {
+                resultValues[facei] = sourceValues[facei];
+            }
         }
     }
 
@@ -301,24 +316,36 @@ Foam::surfaceInterpolationScheme<Type>::dotInterpolate
 
     forAll(lambdas.boundaryField(), pi)
     {
-        const fvsPatchScalarField& pLambda = lambdas.boundaryField()[pi];
+        auto resultValues = sfbf.patchValues(pi);
+        const auto* pVf = vf.boundaryField().get(pi);
         const typename SFType::Patch& pSf = Sf.boundaryField()[pi];
-        fvsPatchField<RetType>& psf = sfbf[pi];
 
-        if (vf.boundaryField()[pi].coupled())
+        if (pVf && pVf->coupled())
         {
-            psf =
-                pSf
-              & lerp
+            const auto pLambda = lambdas.boundaryField().patchValues(pi);
+            const auto tInternal = pVf->patchInternalField();
+            const auto tNeighbour = pVf->patchNeighbourField();
+            const auto& internalValues = tInternal();
+            const auto& neighbourValues = tNeighbour();
+
+            forAll(resultValues, facei)
+            {
+                resultValues[facei] = pSf[facei] & lerp
                 (
-                    vf.boundaryField()[pi].patchNeighbourField(),
-                    vf.boundaryField()[pi].patchInternalField(),
-                    pLambda
+                    neighbourValues[facei],
+                    internalValues[facei],
+                    pLambda[facei]
                 );
+            }
         }
         else
         {
-            psf = pSf & vf.boundaryField()[pi];
+            const auto sourceValues = vf.boundaryField().patchValues(pi);
+
+            forAll(resultValues, facei)
+            {
+                resultValues[facei] = pSf[facei] & sourceValues[facei];
+            }
         }
     }
 

@@ -99,7 +99,10 @@ struct reuseTmpGeometricField
         (
             name,
             f1.mesh(),
-            dimensions
+            dimensions,
+            PatchField<TypeR>::calculatedType(),
+            GeometricBoundaryField
+            <TypeR, PatchField, GeoMesh>::supportsDeferred
         );
     }
 
@@ -117,7 +120,10 @@ struct reuseTmpGeometricField
         (
             name,
             f1.mesh(),
-            dimensions
+            dimensions,
+            PatchField<TypeR>::calculatedType(),
+            GeometricBoundaryField
+            <TypeR, PatchField, GeoMesh>::supportsDeferred
         );
     }
 };
@@ -151,7 +157,10 @@ struct reuseTmpGeometricField<TypeR, TypeR, PatchField, GeoMesh>
         (
             name,
             f1.mesh(),
-            dimensions
+            dimensions,
+            PatchField<TypeR>::calculatedType(),
+            GeometricBoundaryField
+            <TypeR, PatchField, GeoMesh>::supportsDeferred
         );
 
         if (initCopy)
@@ -212,7 +221,10 @@ struct reuseTmpTmpGeometricField
         (
             name,
             f1.mesh(),
-            dimensions
+            dimensions,
+            PatchField<TypeR>::calculatedType(),
+            GeometricBoundaryField
+            <TypeR, PatchField, GeoMesh>::supportsDeferred
         );
     }
 };
@@ -254,7 +266,10 @@ struct reuseTmpTmpGeometricField
         (
             name,
             f1.mesh(),
-            dimensions
+            dimensions,
+            PatchField<TypeR>::calculatedType(),
+            GeometricBoundaryField
+            <TypeR, PatchField, GeoMesh>::supportsDeferred
         );
     }
 };

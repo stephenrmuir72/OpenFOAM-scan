@@ -227,6 +227,10 @@ OptimisationSwitches
     // GeometricField with extra capacity for flattened boundary fields.
     unifiedGeometricField   0;
 
+    // Defer construction of calculated patches where flat storage is supported.
+    // Set to 0 to construct calculated patches immediately (legacy behaviour).
+    deferCalculatedPatches 1;
+
 
     // =====
     // Other

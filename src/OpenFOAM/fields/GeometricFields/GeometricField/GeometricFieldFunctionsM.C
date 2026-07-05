@@ -17,7 +17,6 @@ License
     (at your option) any later version.
 
     OpenFOAM is distributed in the hope that it will be useful, but WITHOUT
-    ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
     FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
     for more details.
 
@@ -27,6 +26,7 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "GeometricFieldReuseFunctions.H"
+#include "GeometricFieldOps.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -44,8 +44,38 @@ void Func                                                                      \
     const GeometricField<Type1, PatchField, GeoMesh>& f1                       \
 )                                                                              \
 {                                                                              \
-    Foam::Func(result.primitiveFieldRef(), f1.primitiveField());               \
-    Foam::Func(result.boundaryFieldRef(), f1.boundaryField());                 \
+    if                                                                         \
+    (                                                                          \
+        !FieldOps::assignFlat                                                   \
+        (                                                                      \
+            result,                                                            \
+            f1,                                                                \
+            [](const auto& value) { return Foam::Func(value); }               \
+        )                                                                      \
+    )                                                                          \
+    {                                                                          \
+        Foam::Func(result.primitiveFieldRef(), f1.primitiveField());           \
+        if                                                                     \
+        (                                                                      \
+            result.boundaryField().hasDeferred()                              \
+         || f1.boundaryField().hasDeferred()                                   \
+        )                                                                      \
+        {                                                                      \
+            result.boundaryFieldRef().transform                               \
+            (                                                                  \
+                f1.boundaryField(),                                           \
+                [](const auto& value) { return Foam::Func(value); }           \
+            );                                                                 \
+        }                                                                      \
+        else                                                                   \
+        {                                                                      \
+            Foam::Func                                                        \
+            (                                                                  \
+                result.boundaryFieldRef(),                                     \
+                f1.boundaryField()                                             \
+            );                                                                 \
+        }                                                                      \
+    }                                                                          \
     result.oriented() = f1.oriented();                                         \
     result.correctLocalBoundaryConditions();                                   \
     if (GeometricBoundaryField<ReturnType, PatchField, GeoMesh>::debug)        \
@@ -107,8 +137,38 @@ void OpFunc                                                                    \
     const GeometricField<Type1, PatchField, GeoMesh>& f1                       \
 )                                                                              \
 {                                                                              \
-    Foam::OpFunc(result.primitiveFieldRef(), f1.primitiveField());             \
-    Foam::OpFunc(result.boundaryFieldRef(), f1.boundaryField());               \
+    if                                                                         \
+    (                                                                          \
+        !FieldOps::assignFlat                                                   \
+        (                                                                      \
+            result,                                                            \
+            f1,                                                                \
+            [](const auto& value) { return Op value; }                        \
+        )                                                                      \
+    )                                                                          \
+    {                                                                          \
+        Foam::OpFunc(result.primitiveFieldRef(), f1.primitiveField());         \
+        if                                                                     \
+        (                                                                      \
+            result.boundaryField().hasDeferred()                              \
+         || f1.boundaryField().hasDeferred()                                   \
+        )                                                                      \
+        {                                                                      \
+            result.boundaryFieldRef().transform                               \
+            (                                                                  \
+                f1.boundaryField(),                                           \
+                [](const auto& value) { return Op value; }                    \
+            );                                                                 \
+        }                                                                      \
+        else                                                                   \
+        {                                                                      \
+            Foam::OpFunc                                                      \
+            (                                                                  \
+                result.boundaryFieldRef(),                                     \
+                f1.boundaryField()                                             \
+            );                                                                 \
+        }                                                                      \
+    }                                                                          \
     result.oriented() = f1.oriented();                                         \
     result.correctLocalBoundaryConditions();                                   \
     if (GeometricBoundaryField<ReturnType, PatchField, GeoMesh>::debug)        \
@@ -171,18 +231,33 @@ void Func                                                                      \
     const GeometricField<Type2, PatchField, GeoMesh>& f2                       \
 )                                                                              \
 {                                                                              \
-    Foam::Func                                                                 \
+    if                                                                         \
     (                                                                          \
-        result.primitiveFieldRef(),                                            \
-        f1.primitiveField(),                                                   \
-        f2.primitiveField()                                                    \
-    );                                                                         \
-    Foam::Func                                                                 \
-    (                                                                          \
-        result.boundaryFieldRef(),                                             \
-        f1.boundaryField(),                                                    \
-        f2.boundaryField()                                                     \
-    );                                                                         \
+        !FieldOps::assignFlat                                                   \
+        (                                                                      \
+            result,                                                            \
+            f1,                                                                \
+            f2,                                                                \
+            [](const auto& lhs, const auto& rhs)                              \
+            {                                                                  \
+                return Foam::Func(lhs, rhs);                                   \
+            }                                                                  \
+        )                                                                      \
+    )                                                                          \
+    {                                                                          \
+        Foam::Func                                                             \
+        (                                                                      \
+            result.primitiveFieldRef(),                                        \
+            f1.primitiveField(),                                               \
+            f2.primitiveField()                                                \
+        );                                                                     \
+        Foam::Func                                                             \
+        (                                                                      \
+            result.boundaryFieldRef(),                                         \
+            f1.boundaryField(),                                                \
+            f2.boundaryField()                                                 \
+        );                                                                     \
+    }                                                                          \
     result.oriented() = Func(f1.oriented(), f2.oriented());                    \
     result.correctLocalBoundaryConditions();                                   \
     if (GeometricBoundaryField<ReturnType, PatchField, GeoMesh>::debug)        \
@@ -298,8 +373,23 @@ void Func                                                                      \
     const GeometricField<Type2, PatchField, GeoMesh>& f2                       \
 )                                                                              \
 {                                                                              \
-    Foam::Func(result.primitiveFieldRef(), dt1.value(), f2.primitiveField());  \
-    Foam::Func(result.boundaryFieldRef(), dt1.value(), f2.boundaryField());    \
+    if                                                                         \
+    (                                                                          \
+        !FieldOps::assignFlat                                                   \
+        (                                                                      \
+            result,                                                            \
+            dt1.value(),                                                       \
+            f2,                                                                \
+            [](const auto& lhs, const auto& rhs)                              \
+            {                                                                  \
+                return Foam::Func(lhs, rhs);                                   \
+            }                                                                  \
+        )                                                                      \
+    )                                                                          \
+    {                                                                          \
+        Foam::Func(result.primitiveFieldRef(), dt1.value(), f2.primitiveField());\
+        Foam::Func(result.boundaryFieldRef(), dt1.value(), f2.boundaryField());\
+    }                                                                          \
     result.oriented() = f2.oriented();                                         \
     result.correctLocalBoundaryConditions();                                   \
     if (GeometricBoundaryField<ReturnType, PatchField, GeoMesh>::debug)        \
@@ -384,8 +474,61 @@ void Func                                                                      \
     const dimensioned<Type2>& dt2                                              \
 )                                                                              \
 {                                                                              \
-    Foam::Func(result.primitiveFieldRef(), f1.primitiveField(), dt2.value());  \
-    Foam::Func(result.boundaryFieldRef(), f1.boundaryField(), dt2.value());    \
+    if                                                                         \
+    (                                                                          \
+        !FieldOps::assignFlat                                                   \
+        (                                                                      \
+            result,                                                            \
+            f1,                                                                \
+            dt2.value(),                                                       \
+            [](const auto& lhs, const auto& rhs)                              \
+            {                                                                  \
+                if constexpr (std::is_same_v<Type2, MinMax<Type1>>)           \
+                {                                                              \
+                    return rhs.clamp(lhs);                                    \
+                }                                                              \
+                else                                                           \
+                {                                                              \
+                    return Foam::Func(lhs, rhs);                              \
+                }                                                              \
+            }                                                                  \
+        )                                                                      \
+    )                                                                          \
+    {                                                                          \
+        Foam::Func(result.primitiveFieldRef(), f1.primitiveField(), dt2.value());\
+        if                                                                     \
+        (                                                                      \
+            result.boundaryField().hasDeferred()                              \
+         || f1.boundaryField().hasDeferred()                                   \
+        )                                                                      \
+        {                                                                      \
+            result.boundaryFieldRef().apply                                   \
+            (                                                                  \
+                f1.boundaryField(),                                           \
+                dt2.value(),                                                  \
+                [](const auto& lhs, const auto& rhs)                          \
+                {                                                              \
+                    if constexpr (std::is_same_v<Type2, MinMax<Type1>>)       \
+                    {                                                          \
+                        return rhs.clamp(lhs);                                \
+                    }                                                          \
+                    else                                                       \
+                    {                                                          \
+                        return Foam::Func(lhs, rhs);                          \
+                    }                                                          \
+                }                                                              \
+            );                                                                 \
+        }                                                                      \
+        else                                                                   \
+        {                                                                      \
+            Foam::Func                                                        \
+            (                                                                  \
+                result.boundaryFieldRef(),                                     \
+                f1.boundaryField(),                                            \
+                dt2.value()                                                    \
+            );                                                                 \
+        }                                                                      \
+    }                                                                          \
     result.oriented() = f1.oriented();                                         \
     result.correctLocalBoundaryConditions();                                   \
     if (GeometricBoundaryField<ReturnType, PatchField, GeoMesh>::debug)        \
@@ -477,18 +620,47 @@ void OpFunc                                                                    \
     const GeometricField<Type2, PatchField, GeoMesh>& f2                       \
 )                                                                              \
 {                                                                              \
-    Foam::OpFunc                                                               \
+    if                                                                         \
     (                                                                          \
-        result.primitiveFieldRef(),                                            \
-        f1.primitiveField(),                                                   \
-        f2.primitiveField()                                                    \
-    );                                                                         \
-    Foam::OpFunc                                                               \
-    (                                                                          \
-        result.boundaryFieldRef(),                                             \
-        f1.boundaryField(),                                                    \
-        f2.boundaryField()                                                     \
-    );                                                                         \
+        !FieldOps::assignFlat                                                   \
+        (                                                                      \
+            result,                                                            \
+            f1,                                                                \
+            f2,                                                                \
+            [](const auto& lhs, const auto& rhs) { return lhs Op rhs; }       \
+        )                                                                      \
+    )                                                                          \
+    {                                                                          \
+        Foam::OpFunc                                                          \
+        (                                                                      \
+            result.primitiveFieldRef(),                                        \
+            f1.primitiveField(),                                               \
+            f2.primitiveField()                                                \
+        );                                                                     \
+        if                                                                     \
+        (                                                                      \
+            result.boundaryField().hasDeferred()                              \
+         || f1.boundaryField().hasDeferred()                                   \
+         || f2.boundaryField().hasDeferred()                                   \
+        )                                                                      \
+        {                                                                      \
+            result.boundaryFieldRef().apply                                   \
+            (                                                                  \
+                f1.boundaryField(),                                           \
+                f2.boundaryField(),                                           \
+                [](const auto& lhs, const auto& rhs) { return lhs Op rhs; }   \
+            );                                                                 \
+        }                                                                      \
+        else                                                                   \
+        {                                                                      \
+            Foam::OpFunc                                                       \
+            (                                                                  \
+                result.boundaryFieldRef(),                                     \
+                f1.boundaryField(),                                            \
+                f2.boundaryField()                                             \
+            );                                                                 \
+        }                                                                      \
+    }                                                                          \
     result.oriented() = (f1.oriented() Op f2.oriented());                      \
     result.correctLocalBoundaryConditions();                                   \
     if (GeometricBoundaryField<ReturnType, PatchField, GeoMesh>::debug)        \
@@ -603,8 +775,41 @@ void OpFunc                                                                    \
     const GeometricField<Type2, PatchField, GeoMesh>& f2                       \
 )                                                                              \
 {                                                                              \
-    Foam::OpFunc(result.primitiveFieldRef(), dt1.value(), f2.primitiveField());\
-    Foam::OpFunc(result.boundaryFieldRef(), dt1.value(), f2.boundaryField());  \
+    if                                                                         \
+    (                                                                          \
+        !FieldOps::assignFlat                                                   \
+        (                                                                      \
+            result,                                                            \
+            dt1.value(),                                                       \
+            f2,                                                                \
+            [](const auto& lhs, const auto& rhs) { return lhs Op rhs; }       \
+        )                                                                      \
+    )                                                                          \
+    {                                                                          \
+        Foam::OpFunc(result.primitiveFieldRef(), dt1.value(), f2.primitiveField());\
+        if                                                                     \
+        (                                                                      \
+            result.boundaryField().hasDeferred()                              \
+         || f2.boundaryField().hasDeferred()                                   \
+        )                                                                      \
+        {                                                                      \
+            result.boundaryFieldRef().apply                                   \
+            (                                                                  \
+                dt1.value(),                                                   \
+                f2.boundaryField(),                                            \
+                [](const auto& a, const auto& b) { return a Op b; }            \
+            );                                                                 \
+        }                                                                      \
+        else                                                                   \
+        {                                                                      \
+            Foam::OpFunc                                                      \
+            (                                                                  \
+                result.boundaryFieldRef(),                                     \
+                dt1.value(),                                                   \
+                f2.boundaryField()                                             \
+            );                                                                 \
+        }                                                                      \
+    }                                                                          \
     result.oriented() = f2.oriented();                                         \
     result.correctLocalBoundaryConditions();                                   \
     if (GeometricBoundaryField<ReturnType, PatchField, GeoMesh>::debug)        \
@@ -688,8 +893,41 @@ void OpFunc                                                                    \
     const dimensioned<Type2>& dt2                                              \
 )                                                                              \
 {                                                                              \
-    Foam::OpFunc(result.primitiveFieldRef(), f1.primitiveField(), dt2.value());\
-    Foam::OpFunc(result.boundaryFieldRef(), f1.boundaryField(), dt2.value());  \
+    if                                                                         \
+    (                                                                          \
+        !FieldOps::assignFlat                                                   \
+        (                                                                      \
+            result,                                                            \
+            f1,                                                                \
+            dt2.value(),                                                       \
+            [](const auto& lhs, const auto& rhs) { return lhs Op rhs; }       \
+        )                                                                      \
+    )                                                                          \
+    {                                                                          \
+        Foam::OpFunc(result.primitiveFieldRef(), f1.primitiveField(), dt2.value());\
+        if                                                                     \
+        (                                                                      \
+            result.boundaryField().hasDeferred()                              \
+         || f1.boundaryField().hasDeferred()                                   \
+        )                                                                      \
+        {                                                                      \
+            result.boundaryFieldRef().apply                                   \
+            (                                                                  \
+                f1.boundaryField(),                                            \
+                dt2.value(),                                                   \
+                [](const auto& a, const auto& b) { return a Op b; }            \
+            );                                                                 \
+        }                                                                      \
+        else                                                                   \
+        {                                                                      \
+            Foam::OpFunc                                                      \
+            (                                                                  \
+                result.boundaryFieldRef(),                                     \
+                f1.boundaryField(),                                            \
+                dt2.value()                                                    \
+            );                                                                 \
+        }                                                                      \
+    }                                                                          \
     result.oriented() = f1.oriented();                                         \
     result.correctLocalBoundaryConditions();                                   \
     if (GeometricBoundaryField<ReturnType, PatchField, GeoMesh>::debug)        \
@@ -1019,20 +1257,36 @@ void Func                                                                      \
     const dimensioned<Type3>& dt3                                              \
 )                                                                              \
 {                                                                              \
-    Foam::Func                                                                 \
+    if                                                                         \
     (                                                                          \
-        result.primitiveFieldRef(),                                            \
-        f1.primitiveField(),                                                   \
-        f2.primitiveField(),                                                   \
-        dt3.value()                                                            \
-    );                                                                         \
-    Foam::Func                                                                 \
-    (                                                                          \
-        result.boundaryFieldRef(),                                             \
-        f1.boundaryField(),                                                    \
-        f2.boundaryField(),                                                    \
-        dt3.value()                                                            \
-    );                                                                         \
+        !FieldOps::assignFlat                                                   \
+        (                                                                      \
+            result,                                                            \
+            f1,                                                                \
+            f2,                                                                \
+            dt3.value(),                                                       \
+            [](const auto& a, const auto& b, const auto& c)                   \
+            {                                                                  \
+                return Foam::Func(a, b, c);                                    \
+            }                                                                  \
+        )                                                                      \
+    )                                                                          \
+    {                                                                          \
+        Foam::Func                                                             \
+        (                                                                      \
+            result.primitiveFieldRef(),                                        \
+            f1.primitiveField(),                                               \
+            f2.primitiveField(),                                               \
+            dt3.value()                                                        \
+        );                                                                     \
+        Foam::Func                                                             \
+        (                                                                      \
+            result.boundaryFieldRef(),                                         \
+            f1.boundaryField(),                                                \
+            f2.boundaryField(),                                                \
+            dt3.value()                                                        \
+        );                                                                     \
+    }                                                                          \
     result.oriented() = Func(f1.oriented(), f2.oriented());                    \
     result.correctLocalBoundaryConditions();                                   \
     if (GeometricBoundaryField<ReturnType, PatchField, GeoMesh>::debug)        \

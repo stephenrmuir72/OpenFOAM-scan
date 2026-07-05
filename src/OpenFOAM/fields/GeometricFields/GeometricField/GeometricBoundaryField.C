@@ -27,7 +27,10 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "GeometricBoundaryField.H"
+#include "debug.H"
+#include "fieldTypes.H"
 #include "globalMeshData.H"
+#include "IndirectList.H"
 #include "cyclicPolyPatch.H"
 #include "emptyPolyPatch.H"
 
@@ -188,6 +191,9 @@ void Foam::GeometricBoundaryField<Type, PatchField, GeoMesh>::readField
 
     // Clear the boundary field if already initialised
     this->resize_null(bmesh_.size());
+    deferredInternal_ = nullptr;
+    deferredPatchFieldType_ = PatchField<Type>::calculatedType();
+    deferredPatchFieldTypes_.clear();
 
     label nUnset = this->size();
 
@@ -345,26 +351,53 @@ Foam::GeometricBoundaryField<Type, PatchField, GeoMesh>::GeometricBoundaryField
 (
     const BoundaryMesh& bmesh,
     const Internal& iField,
-    const word& patchFieldType
+    const word& patchFieldType,
+    const bool deferCalculatedPatches
 )
 :
     FieldField<PatchField, Type>(bmesh.size()),
-    bmesh_(bmesh)
+    bmesh_(bmesh),
+    deferredInternal_
+    (
+        deferCalculatedPatches
+     && Foam::FieldBase::unifiedGeometricField
+     && Foam::FieldBase::deferCalculatedPatches
+     && this_type::supportsDeferred
+     &&
+        (
+            patchFieldType == PatchField<Type>::calculatedType()
+         || patchFieldType == fieldTypes::extrapolatedCalculatedType
+        )
+      ? &iField
+      : nullptr
+    ),
+    deferredPatchFieldType_(patchFieldType)
 {
     // DebugInFunction << nl;
 
     forAll(bmesh_, patchi)
     {
-        this->set
+        if
         (
-            patchi,
-            PatchField<Type>::New
+            deferredInternal_
+         && !polyPatch::constraintType(bmesh_[patchi].type())
+        )
+        {
+            continue;
+        }
+        else
+        {
+            this->set
             (
-                patchFieldType,
-                bmesh_[patchi],
-                iField
-            )
-        );
+                patchi,
+                PatchField<Type>::New
+                (
+                    patchFieldType,
+                    bmesh_[patchi],
+                    iField
+                )
+            );
+        }
     }
 }
 
@@ -405,6 +438,34 @@ Foam::GeometricBoundaryField<Type, PatchField, GeoMesh>::GeometricBoundaryField
           ? constraintTypes[patchi]
           : word::null
         );
+
+        if constexpr (supportsDeferred)
+        {
+            const word& patchFieldType = patchFieldTypes[patchi];
+
+            if
+            (
+                Foam::FieldBase::unifiedGeometricField
+             && Foam::FieldBase::deferCalculatedPatches
+             && constraintType.empty()
+             && !polyPatch::constraintType(bmesh_[patchi].type())
+             &&
+                (
+                    patchFieldType == PatchField<Type>::calculatedType()
+                 || patchFieldType == fieldTypes::extrapolatedCalculatedType
+                )
+            )
+            {
+                if (deferredPatchFieldTypes_.empty())
+                {
+                    deferredPatchFieldTypes_.setSize(this->size());
+                }
+
+                deferredInternal_ = &iField;
+                deferredPatchFieldTypes_[patchi] = patchFieldType;
+                continue;
+            }
+        }
 
         this->set
         (
@@ -454,7 +515,10 @@ Foam::GeometricBoundaryField<Type, PatchField, GeoMesh>::GeometricBoundaryField
 )
 :
     FieldField<PatchField, Type>(btf, iField),
-    bmesh_(btf.bmesh_)
+    bmesh_(btf.bmesh_),
+    deferredInternal_(&iField),
+    deferredPatchFieldType_(btf.deferredPatchFieldType_),
+    deferredPatchFieldTypes_(btf.deferredPatchFieldTypes_)
 {}
 
 
@@ -468,7 +532,10 @@ Foam::GeometricBoundaryField<Type, PatchField, GeoMesh>::GeometricBoundaryField
 )
 :
     FieldField<PatchField, Type>(btf.size()),
-    bmesh_(btf.bmesh_)
+    bmesh_(btf.bmesh_),
+    deferredInternal_(&iField),
+    deferredPatchFieldType_(btf.deferredPatchFieldType_),
+    deferredPatchFieldTypes_(btf.deferredPatchFieldTypes_)
 {
     // DebugInFunction << nl;
 
@@ -490,7 +557,83 @@ Foam::GeometricBoundaryField<Type, PatchField, GeoMesh>::GeometricBoundaryField
     {
         if (!this->set(patchi))
         {
-            this->set(patchi, btf[patchi].clone(iField));
+            if (const Patch* pfld = btf.get(patchi))
+            {
+                this->set(patchi, pfld->clone(iField));
+            }
+        }
+    }
+}
+
+
+template<class Type, template<class> class PatchField, class GeoMesh>
+typename Foam::GeometricBoundaryField<Type, PatchField, GeoMesh>::Patch&
+Foam::GeometricBoundaryField<Type, PatchField, GeoMesh>::patchField
+(
+    const label patchi
+)
+{
+    if (Patch* pfld = this->get(patchi))
+    {
+        return *pfld;
+    }
+
+    if (deferredInternal_)
+    {
+        this->set
+        (
+            patchi,
+            PatchField<Type>::New
+            (
+                deferredPatchFieldType(patchi),
+                bmesh_[patchi],
+                *deferredInternal_
+            )
+        );
+
+        if constexpr (supportsDeferred)
+        {
+            static_cast<Field<Type>&>(*this->get(patchi)) =
+                deferredValues(patchi);
+        }
+
+        return *this->get(patchi);
+    }
+
+    return FieldField<PatchField, Type>::operator[](patchi);
+}
+
+
+template<class Type, template<class> class PatchField, class GeoMesh>
+void Foam::GeometricBoundaryField<Type, PatchField, GeoMesh>::
+updateDeferredExtrapolated() const
+{
+    if constexpr (std::is_same_v<PatchField<Type>, fvPatchField<Type>>)
+    {
+        if (!deferredInternal_)
+        {
+            return;
+        }
+
+        const auto& internalValues =
+            static_cast<const Field<Type>&>(*deferredInternal_);
+
+        forAll(bmesh_, patchi)
+        {
+            if
+            (
+                !this->get(patchi)
+             && deferredPatchFieldType(patchi)
+             == fieldTypes::extrapolatedCalculatedType
+            )
+            {
+                const labelUList& faceCells = bmesh_[patchi].faceCells();
+                auto patchFieldValues = deferredValues(patchi);
+                patchFieldValues.deepCopy
+                (
+                    UIndirectList<Type>(internalValues, faceCells)
+                );
+            }
         }
     }
 }
@@ -531,6 +674,8 @@ void Foam::GeometricBoundaryField<Type, PatchField, GeoMesh>::evaluate
     const UPstream::commsTypes commsType
 )
 {
+    updateDeferredExtrapolated();
+
     if
     (
         commsType == UPstream::commsTypes::buffered
@@ -560,15 +705,16 @@ void Foam::GeometricBoundaryField<Type, PatchField, GeoMesh>::evaluate
         for (const auto& schedEval : patchSchedule)
         {
             const label patchi = schedEval.patch;
-            auto& pfld = (*this)[patchi];
-
-            if (schedEval.init)
+            if (Patch* pfld = this->get(patchi))
             {
-                pfld.initEvaluate(commsType);
-            }
-            else
-            {
-                pfld.evaluate(commsType);
+                if (schedEval.init)
+                {
+                    pfld->initEvaluate(commsType);
+                }
+                else
+                {
+                    pfld->evaluate(commsType);
+                }
             }
         }
     }
@@ -629,17 +775,15 @@ void Foam::GeometricBoundaryField<Type, PatchField, GeoMesh>::evaluate_if
         for (const auto& schedEval : patchSchedule)
         {
             const label patchi = schedEval.patch;
-            auto& pfld = (*this)[patchi];
-
-            if (pred(pfld))
+            if (Patch* pfld = this->get(patchi); pfld && pred(*pfld))
             {
                 if (schedEval.init)
                 {
-                    pfld.initEvaluate(commsType);
+                    pfld->initEvaluate(commsType);
                 }
                 else
                 {
-                    pfld.evaluate(commsType);
+                    pfld->evaluate(commsType);
                 }
             }
         }
@@ -695,6 +839,8 @@ void Foam::GeometricBoundaryField<Type, PatchField, GeoMesh>::evaluateLocal
         return;
     }
 
+    updateDeferredExtrapolated();
+
     if
     (
         commsType == UPstream::commsTypes::buffered
@@ -724,15 +870,16 @@ void Foam::GeometricBoundaryField<Type, PatchField, GeoMesh>::evaluateLocal
         for (const auto& schedEval : patchSchedule)
         {
             const label patchi = schedEval.patch;
-            auto& pfld = (*this)[patchi];
-
-            if (schedEval.init)
+            if (Patch* pfld = this->get(patchi))
             {
-                pfld.initEvaluateLocal(commsType);
-            }
-            else
-            {
-                pfld.evaluateLocal(commsType);
+                if (schedEval.init)
+                {
+                    pfld->initEvaluateLocal(commsType);
+                }
+                else
+                {
+                    pfld->evaluateLocal(commsType);
+                }
             }
         }
     }
@@ -791,7 +938,12 @@ Foam::GeometricBoundaryField<Type, PatchField, GeoMesh>::types() const
         }
         else
         {
-            list[patchi] = "null";
+            list[patchi] =
+            (
+                deferredInternal_
+              ? deferredPatchFieldType(patchi)
+              : word("null")
+            );
         }
     }
 
@@ -885,8 +1037,9 @@ void Foam::GeometricBoundaryField<Type, PatchField, GeoMesh>::writeEntries
     Ostream& os
 ) const
 {
-    for (const auto& pfld : *this)
+    forAll(bmesh_, patchi)
     {
+        const Patch& pfld = patchField(patchi);
         os.beginBlock(pfld.patch().name());
         os << pfld;
         os.endBlock();
@@ -913,6 +1066,28 @@ void Foam::GeometricBoundaryField<Type, PatchField, GeoMesh>::operator=
     const GeometricBoundaryField<Type, PatchField, GeoMesh>& bf
 )
 {
+    if (bf.hasDeferred() || this->hasDeferred())
+    {
+        forAll(*this, patchi)
+        {
+            if (!this->get(patchi) && deferredInternal_)
+            {
+                auto resultValues = patchValues(patchi);
+                const auto sourceValues = bf.patchValues(patchi);
+
+                forAll(resultValues, i)
+                {
+                    resultValues[i] = sourceValues[i];
+                }
+            }
+            else
+            {
+                this->patchField(patchi) = bf.patchField(patchi);
+            }
+        }
+        return;
+    }
+
     FieldField<PatchField, Type>::operator=(bf);
 }
 
@@ -933,6 +1108,23 @@ void Foam::GeometricBoundaryField<Type, PatchField, GeoMesh>::operator=
     const Type& val
 )
 {
+    if (hasDeferred())
+    {
+        forAll(*this, patchi)
+        {
+            if (!this->get(patchi) && deferredInternal_)
+            {
+                auto values = patchValues(patchi);
+                values = val;
+            }
+            else
+            {
+                this->patchField(patchi) = val;
+            }
+        }
+        return;
+    }
+
     FieldField<PatchField, Type>::operator=(val);
 }
 
@@ -943,6 +1135,23 @@ void Foam::GeometricBoundaryField<Type, PatchField, GeoMesh>::operator=
     Foam::zero
 )
 {
+    if (hasDeferred())
+    {
+        forAll(*this, patchi)
+        {
+            if (!this->get(patchi) && deferredInternal_)
+            {
+                auto values = patchValues(patchi);
+                values = Foam::zero{};
+            }
+            else
+            {
+                this->patchField(patchi) = Foam::zero{};
+            }
+        }
+        return;
+    }
+
     FieldField<PatchField, Type>::operator=(Foam::zero{});
 }
 
@@ -953,6 +1162,28 @@ void Foam::GeometricBoundaryField<Type, PatchField, GeoMesh>::operator==
     const GeometricBoundaryField<Type, PatchField, GeoMesh>& bf
 )
 {
+    if (bf.hasDeferred() || this->hasDeferred())
+    {
+        forAll(*this, patchi)
+        {
+            if (!this->get(patchi) && deferredInternal_)
+            {
+                auto resultValues = patchValues(patchi);
+                const auto sourceValues = bf.patchValues(patchi);
+
+                forAll(resultValues, i)
+                {
+                    resultValues[i] = sourceValues[i];
+                }
+            }
+            else
+            {
+                this->patchField(patchi) == bf.patchField(patchi);
+            }
+        }
+        return;
+    }
+
     forAll(*this, patchi)
     {
         this->operator[](patchi) == bf[patchi];
@@ -979,6 +1210,23 @@ void Foam::GeometricBoundaryField<Type, PatchField, GeoMesh>::operator==
     const Type& val
 )
 {
+    if (hasDeferred())
+    {
+        forAll(*this, patchi)
+        {
+            if (!this->get(patchi) && deferredInternal_)
+            {
+                auto values = patchValues(patchi);
+                values = val;
+            }
+            else
+            {
+                this->patchField(patchi) == val;
+            }
+        }
+        return;
+    }
+
     for (auto& pfld : *this)
     {
         pfld == val;

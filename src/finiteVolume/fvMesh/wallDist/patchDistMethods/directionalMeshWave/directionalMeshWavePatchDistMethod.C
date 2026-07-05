@@ -128,12 +128,11 @@ bool Foam::patchDistMethods::directionalMeshWave::correct
         testDirection
     );
 
-    // Transfer cell values from wave into y and n
-    y.transfer(wave.distance());
+    // Copy cell values without replacing storage used by boundary slices
+    y.primitiveFieldRef().deepCopy(wave.distance());
+    n.primitiveFieldRef().deepCopy(wave.cellData());
 
-    n.transfer(wave.cellData());
-
-    // Transfer values on patches into boundaryField of y and n
+    // Copy patch values without replacing storage used by boundary slices
     volScalarField::Boundary& ybf = y.boundaryFieldRef();
 
     forAll(ybf, patchi)
@@ -142,11 +141,11 @@ bool Foam::patchDistMethods::directionalMeshWave::correct
 
         if (!isA<emptyFvPatchScalarField>(ybf[patchi]))
         {
-            ybf[patchi].transfer(waveFld);
+            ybf[patchi].deepCopy(waveFld);
 
             vectorField& wavePatchData = wave.patchData()[patchi];
 
-            nbf[patchi].transfer(wavePatchData);
+            nbf[patchi].deepCopy(wavePatchData);
         }
     }
 
