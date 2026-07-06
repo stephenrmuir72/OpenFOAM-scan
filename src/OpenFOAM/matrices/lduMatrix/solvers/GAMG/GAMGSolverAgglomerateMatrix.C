@@ -49,11 +49,14 @@ void Foam::GAMGSolver::agglomerateMatrix
         const label nCoarseCells = agglomeration_.nCells(fineLevelIndex);
 
         // Set the coarse level matrix
-        matrixLevels_.set
-        (
-            fineLevelIndex,
-            new lduMatrix(coarseMesh)
-        );
+        if (!matrixLevels_.set(fineLevelIndex))
+        {
+            matrixLevels_.set
+            (
+                fineLevelIndex,
+                new lduMatrix(coarseMesh)
+            );
+        }
         lduMatrix& coarseMatrix = matrixLevels_[fineLevelIndex];
 
 
@@ -76,39 +79,51 @@ void Foam::GAMGSolver::agglomerateMatrix
             interfaceLevel(fineLevelIndex);
 
         // Create coarse-level interfaces
-        primitiveInterfaceLevels_.set
-        (
-            fineLevelIndex,
-            new PtrList<lduInterfaceField>(fineInterfaces.size())
-        );
+        if (!primitiveInterfaceLevels_.set(fineLevelIndex))
+        {
+            primitiveInterfaceLevels_.set
+            (
+                fineLevelIndex,
+                new PtrList<lduInterfaceField>(fineInterfaces.size())
+            );
+        }
 
         PtrList<lduInterfaceField>& coarsePrimInterfaces =
             primitiveInterfaceLevels_[fineLevelIndex];
 
-        interfaceLevels_.set
-        (
-            fineLevelIndex,
-            new lduInterfaceFieldPtrsList(fineInterfaces.size())
-        );
+        if (!interfaceLevels_.set(fineLevelIndex))
+        {
+            interfaceLevels_.set
+            (
+                fineLevelIndex,
+                new lduInterfaceFieldPtrsList(fineInterfaces.size())
+            );
+        }
 
         lduInterfaceFieldPtrsList& coarseInterfaces =
             interfaceLevels_[fineLevelIndex];
 
         // Set coarse-level boundary coefficients
-        interfaceLevelsBouCoeffs_.set
-        (
-            fineLevelIndex,
-            new FieldField<Field, scalar>(fineInterfaces.size())
-        );
+        if (!interfaceLevelsBouCoeffs_.set(fineLevelIndex))
+        {
+            interfaceLevelsBouCoeffs_.set
+            (
+                fineLevelIndex,
+                new FieldField<Field, scalar>(fineInterfaces.size())
+            );
+        }
         FieldField<Field, scalar>& coarseInterfaceBouCoeffs =
             interfaceLevelsBouCoeffs_[fineLevelIndex];
 
         // Set coarse-level internal coefficients
-        interfaceLevelsIntCoeffs_.set
-        (
-            fineLevelIndex,
-            new FieldField<Field, scalar>(fineInterfaces.size())
-        );
+        if (!interfaceLevelsIntCoeffs_.set(fineLevelIndex))
+        {
+            interfaceLevelsIntCoeffs_.set
+            (
+                fineLevelIndex,
+                new FieldField<Field, scalar>(fineInterfaces.size())
+            );
+        }
         FieldField<Field, scalar>& coarseInterfaceIntCoeffs =
             interfaceLevelsIntCoeffs_[fineLevelIndex];
 
@@ -141,6 +156,10 @@ void Foam::GAMGSolver::agglomerateMatrix
             // Coarse matrix upper coefficients. Note passed in size
             scalarField& coarseUpper = coarseMatrix.upper(nCoarseFaces);
             scalarField& coarseLower = coarseMatrix.lower(nCoarseFaces);
+            // In case they were already allocated (so maybe reused)
+            // set to zero before agglomerating
+            coarseUpper = Zero;
+            coarseLower = Zero;
 
             forAll(faceRestrictAddr, fineFacei)
             {
@@ -176,6 +195,7 @@ void Foam::GAMGSolver::agglomerateMatrix
 
             // Coarse matrix upper coefficients
             scalarField& coarseUpper = coarseMatrix.upper(nCoarseFaces);
+            coarseUpper = Zero;
 
             forAll(faceRestrictAddr, fineFacei)
             {
@@ -236,28 +256,37 @@ void Foam::GAMGSolver::agglomerateInterfaceCoefficients
                     coarseMeshInterfaces[inti]
                 );
 
-            coarsePrimInterfaces.set
-            (
-                inti,
-                GAMGInterfaceField::New
+            if (!coarsePrimInterfaces.set(inti))
+            {
+                coarsePrimInterfaces.set
                 (
-                    coarseInterface,
-                    fineInterfaces[inti]
-                ).ptr()
-            );
-            coarseInterfaces.set
-            (
-                inti,
-                &coarsePrimInterfaces[inti]
-            );
+                    inti,
+                    GAMGInterfaceField::New
+                    (
+                        coarseInterface,
+                        fineInterfaces[inti]
+                    ).ptr()
+                );
+            }
+            if (!coarseInterfaces.set(inti))
+            {
+                coarseInterfaces.set
+                (
+                    inti,
+                    &coarsePrimInterfaces[inti]
+                );
+            }
 
             const labelList& faceRestrictAddressing = patchFineToCoarse[inti];
 
-            coarseInterfaceBouCoeffs.set
-            (
-                inti,
-                new scalarField(nPatchFaces[inti], Zero)
-            );
+            if (!coarseInterfaceBouCoeffs.set(inti))
+            {
+                coarseInterfaceBouCoeffs.set
+                (
+                    inti,
+                    new scalarField(nPatchFaces[inti], Zero)
+                );
+            }
             agglomeration_.restrictField
             (
                 coarseInterfaceBouCoeffs[inti],
@@ -265,11 +294,14 @@ void Foam::GAMGSolver::agglomerateInterfaceCoefficients
                 faceRestrictAddressing
             );
 
-            coarseInterfaceIntCoeffs.set
-            (
-                inti,
-                new scalarField(nPatchFaces[inti], Zero)
-            );
+            if (!coarseInterfaceIntCoeffs.set(inti))
+            {
+                coarseInterfaceIntCoeffs.set
+                (
+                    inti,
+                    new scalarField(nPatchFaces[inti], Zero)
+                );
+            }
             agglomeration_.restrictField
             (
                 coarseInterfaceIntCoeffs[inti],

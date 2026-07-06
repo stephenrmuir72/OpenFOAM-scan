@@ -140,6 +140,20 @@ class GAMGSolver
         //- Sparse coarsest matrix solver
         autoPtr<lduMatrix::solver> coarsestSolverPtr_;
 
+        // Create coarse grid correction fields
+        mutable PtrList<solveScalarField> coarseCorrFields_;
+
+        // Create coarse grid sources
+        mutable PtrList<solveScalarField> coarseSources_;
+
+        // Create the smoothers for all levels
+        mutable PtrList<lduMatrix::smoother> smoothers_;
+
+        // Scratch fields if processor-agglomerated coarse level meshes
+        // are bigger than original. Usually not needed
+        mutable solveScalarField scratch1_;
+        mutable solveScalarField scratch2_;
+
 
     // Private Member Functions
 

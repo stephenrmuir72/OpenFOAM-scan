@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2015 OpenFOAM Foundation
     Copyright (C) 2019 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -52,42 +53,9 @@ Foam::FDICPreconditioner::FDICPreconditioner
     lduMatrix::preconditioner(sol),
     rD_(sol.matrix().diag().size()),
     rDuUpper_(sol.matrix().upper().size()),
-    rDlUpper_(sol.matrix().upper().size())
-{
-    const scalarField& diag = sol.matrix().diag();
-    std::copy(diag.begin(), diag.end(), rD_.begin());
-
-    solveScalar* __restrict__ rDPtr = rD_.begin();
-    solveScalar* __restrict__ rDuUpperPtr = rDuUpper_.begin();
-    solveScalar* __restrict__ rDlUpperPtr = rDlUpper_.begin();
-
-    const label* const __restrict__ uPtr =
-        solver_.matrix().lduAddr().upperAddr().begin();
-    const label* const __restrict__ lPtr =
-        solver_.matrix().lduAddr().lowerAddr().begin();
-    const scalar* const __restrict__ upperPtr =
-        solver_.matrix().upper().begin();
-
-    const label nCells = rD_.size();
-    const label nFaces = solver_.matrix().upper().size();
-
-    for (label face=0; face<nFaces; face++)
-    {
-        rDPtr[uPtr[face]] -= sqr(upperPtr[face])/rDPtr[lPtr[face]];
-    }
-
-    // Generate reciprocal FDIC
-    for (label cell=0; cell<nCells; cell++)
-    {
-        rDPtr[cell] = 1.0/rDPtr[cell];
-    }
-
-    for (label face=0; face<nFaces; face++)
-    {
-        rDuUpperPtr[face] = rDPtr[uPtr[face]]*upperPtr[face];
-        rDlUpperPtr[face] = rDPtr[lPtr[face]]*upperPtr[face];
-    }
-}
+    rDlUpper_(sol.matrix().upper().size()),
+    isValid_(false)
+{}
 
 
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
@@ -99,6 +67,45 @@ void Foam::FDICPreconditioner::precondition
     const direction
 ) const
 {
+    if (!isValid_)
+    {
+        const auto& diag = solver_.matrix().diag();
+        std::copy(diag.begin(), diag.end(), rD_.begin());
+
+        solveScalar* __restrict__ rDPtr = rD_.begin();
+        solveScalar* __restrict__ rDuUpperPtr = rDuUpper_.begin();
+        solveScalar* __restrict__ rDlUpperPtr = rDlUpper_.begin();
+
+        const label* const __restrict__ uPtr =
+            solver_.matrix().lduAddr().upperAddr().begin();
+        const label* const __restrict__ lPtr =
+            solver_.matrix().lduAddr().lowerAddr().begin();
+        const scalar* const __restrict__ upperPtr =
+            solver_.matrix().upper().begin();
+
+        const label nCells = rD_.size();
+        const label nFaces = solver_.matrix().upper().size();
+
+        for (label face=0; face<nFaces; face++)
+        {
+            rDPtr[uPtr[face]] -= sqr(upperPtr[face])/rDPtr[lPtr[face]];
+        }
+
+        // Generate reciprocal FDIC
+        for (label cell=0; cell<nCells; cell++)
+        {
+            rDPtr[cell] = 1.0/rDPtr[cell];
+        }
+
+        for (label face=0; face<nFaces; face++)
+        {
+            rDuUpperPtr[face] = rDPtr[uPtr[face]]*upperPtr[face];
+            rDlUpperPtr[face] = rDPtr[lPtr[face]]*upperPtr[face];
+        }
+
+        isValid_ = true;
+    }
+
     solveScalar* __restrict__ wAPtr = wA.begin();
     const solveScalar* __restrict__ rAPtr = rA.begin();
     const solveScalar* __restrict__ rDPtr = rD_.begin();

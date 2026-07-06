@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2015 OpenFOAM Foundation
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -52,19 +53,8 @@ Foam::diagonalPreconditioner::diagonalPreconditioner
 )
 :
     lduMatrix::preconditioner(sol),
-    rD(sol.matrix().diag().size())
-{
-    solveScalar* __restrict__ rDPtr = rD.begin();
-    const scalar* __restrict__ DPtr = solver_.matrix().diag().begin();
-
-    const label nCells = rD.size();
-
-    // Generate reciprocal diagonal
-    for (label cell=0; cell<nCells; cell++)
-    {
-        rDPtr[cell] = 1.0/DPtr[cell];
-    }
-}
+    isValid_(false)
+{}
 
 
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
@@ -76,9 +66,27 @@ void Foam::diagonalPreconditioner::precondition
     const direction
 ) const
 {
+    if (!isValid_)
+    {
+        const auto& diag = solver_.matrix().diag();
+        const scalar* __restrict__ DPtr = solver_.matrix().diag().begin();
+
+        const label nCells = diag.size();
+
+        auto& rD = const_cast<solveScalarField&>(rD_);
+        rD.resize_nocopy(nCells);
+
+        // Generate reciprocal diagonal
+        for (label cell=0; cell<nCells; cell++)
+        {
+            rD[cell] = 1.0/DPtr[cell];
+        }
+        isValid_ = true;
+    }
+
     solveScalar* __restrict__ wAPtr = wA.begin();
     const solveScalar* __restrict__ rAPtr = rA.begin();
-    const solveScalar* __restrict__ rDPtr = rD.begin();
+    const solveScalar* __restrict__ rDPtr = rD_.begin();
 
     const label nCells = wA.size();
 
