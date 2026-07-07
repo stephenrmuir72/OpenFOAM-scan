@@ -1584,6 +1584,19 @@ void Foam::fvMatrix<Type>::operator=(const tmp<fvMatrix<Type>>& tfvmv)
 
 
 template<class Type>
+void Foam::fvMatrix<Type>::operator=(Foam::zero)
+{
+    if (hasUpper()) upper() = Zero;
+    if (hasLower()) lower() = Zero;
+    if (hasDiag())  diag()  = Zero;
+    source_ = Zero;
+    internalCoeffs_ = Zero;
+    boundaryCoeffs_ = Zero;
+    faceFluxCorrectionPtr_.reset(nullptr);
+}
+
+
+template<class Type>
 void Foam::fvMatrix<Type>::negate()
 {
     lduMatrix::negate();
