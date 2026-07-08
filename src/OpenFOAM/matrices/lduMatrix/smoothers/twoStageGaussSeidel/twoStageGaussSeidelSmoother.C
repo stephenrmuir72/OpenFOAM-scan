@@ -101,14 +101,9 @@ void Foam::twoStageGaussSeidelSmoother::smooth
     const scalar* const __restrict__ diagPtr = matrix_.diag().begin();
     const scalar* const __restrict__ upperPtr =
         matrix_.upper().begin();
-    const scalar* const __restrict__ lowerPtr =
-        matrix_.lower().begin();
 
     const label* const __restrict__ uPtr =
         matrix_.lduAddr().upperAddr().begin();
-
-    const label* const __restrict__ lPtr =
-        matrix_.lduAddr().lowerAddr().begin();
 
     const label* const __restrict__ ownStartPtr =
         matrix_.lduAddr().ownerStartAddr().begin();
@@ -119,7 +114,7 @@ void Foam::twoStageGaussSeidelSmoother::smooth
     matrix_.lowerCSR();
 
     //temporary field
-    solveScalarField Z(psi.size()); //temporary array 
+    solveScalarField Z(psi.size()); //temporary array
     solveScalarField R(psi.size()); //residual
 
     solveScalar* __restrict__ rhs_ptr = bPrime.begin();
@@ -127,7 +122,6 @@ void Foam::twoStageGaussSeidelSmoother::smooth
     solveScalar* __restrict__ u_ptr = psi.begin();
     solveScalar* __restrict__ z_ptr = Z.begin();
 
-    const label nFaces = matrix_.upper().size();
 
     // Parallel boundary initialisation.  The parallel boundary is treated
     // as an effective jacobi interface in the boundary.
@@ -174,7 +168,7 @@ void Foam::twoStageGaussSeidelSmoother::smooth
 
         const label* const __restrict__ lcsrPtr =
             matrix_.lduAddr().lowerCSRAddr().begin();
-        const scalar* const __restrict__ lowercsrPtr = 
+        const scalar* const __restrict__ lowercsrPtr =
             matrix_.lowerCSR().begin();
 
         apply_policy(nCells, [&](auto policy)
@@ -227,7 +221,7 @@ void Foam::twoStageGaussSeidelSmoother::smooth
                     policy,
                     indices.begin(),
                     indices.end(),
-                    [&](size_t i) 
+                    [&](size_t i)
                     {
                         scalar r = rhs_ptr[i] - r_ptr[i];
                         u_ptr[i] += relax_weight * r / diagPtr[i];
@@ -245,7 +239,7 @@ void Foam::twoStageGaussSeidelSmoother::smooth
                     policy,
                     indices.begin(),
                     indices.end(),
-                    [&](size_t i) 
+                    [&](size_t i)
                     {
                         scalar r = rhs_ptr[i] - r_ptr[i]; // residual
                         z_ptr[i] = r / diagPtr[i];
@@ -266,7 +260,7 @@ void Foam::twoStageGaussSeidelSmoother::smooth
                         policy,
                         indices.begin(),
                         indices.end(),
-                        [&](label celli) 
+                        [&](label celli)
                         {
                             const label start = ownStartPtr[celli];
                             const label end   = ownStartPtr[celli + 1];
@@ -293,7 +287,7 @@ void Foam::twoStageGaussSeidelSmoother::smooth
                             policy,
                             indices.begin(),
                             indices.end(),
-                            [&](label celli) 
+                            [&](label celli)
                             {
                                 z_ptr[celli] = r_ptr[celli] / diagPtr[celli];
                                 u_ptr[celli] += multiplier * z_ptr[celli];
@@ -303,14 +297,14 @@ void Foam::twoStageGaussSeidelSmoother::smooth
                 }
                 else
                 {
-                    //no need to save "Z"  
+                    //no need to save "Z"
                     apply_policy(nCells, [&](auto policy)
                     {
                         std::for_each
                         (
                             policy,
                             indices.begin(), indices.end(),
-                            [&](label celli) 
+                            [&](label celli)
                             {
                                 u_ptr[celli] += multiplier*r_ptr[celli]
                                     /diagPtr[celli];

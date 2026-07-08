@@ -96,7 +96,7 @@ Foam::PhiScheme<Type, PhiLimiter>::limiter
             policy,
             faceRange.begin(),
             faceRange.end(),
-            [&](const auto& face)
+            [&](const label face)
             {
                 pLimiter[face] = PhiLimiter::limiter
                 (
@@ -143,7 +143,7 @@ Foam::PhiScheme<Type, PhiLimiter>::limiter
                     policy,
                     faceRange.begin(),
                     faceRange.end(),
-                    [&](const auto& face)
+                    [&](const label face)
                     {
                         pLimiter[face] = PhiLimiter::limiter
                         (
