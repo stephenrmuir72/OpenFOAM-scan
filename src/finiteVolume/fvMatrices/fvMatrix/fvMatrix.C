@@ -1592,7 +1592,10 @@ void Foam::fvMatrix<Type>::operator=(Foam::zero)
     source_ = Zero;
     internalCoeffs_ = Zero;
     boundaryCoeffs_ = Zero;
-    faceFluxCorrectionPtr_.reset(nullptr);
+    if (faceFluxCorrectionPtr_)
+    {
+        faceFluxCorrectionPtr_->operator=(Zero);
+    }
 }
 
 
