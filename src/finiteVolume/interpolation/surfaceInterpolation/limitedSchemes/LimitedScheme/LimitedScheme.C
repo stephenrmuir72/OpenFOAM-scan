@@ -132,7 +132,7 @@ void Foam::LimitedScheme<Type, Limiter, LimitFunc>::calcLimiter
                     policy,
                     faceRange.begin(),
                     faceRange.end(),
-                    [&](const auto& face)
+                    [&](const label face)
                     {
                         pLim[face] = Limiter::limiter
                         (
