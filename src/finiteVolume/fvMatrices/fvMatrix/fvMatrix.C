@@ -419,9 +419,6 @@ void Foam::fvMatrix<Type>::setValuesFromList
     const labelUList& own = mesh.owner();
     const labelUList& nei = mesh.neighbour();
 
-    const label nCells = psi_.size();
-    const label nInternalFaces = mesh.nInternalFaces();
-
     scalarField& Diag = diag();
     Field<Type>& psi =
         const_cast
@@ -429,9 +426,19 @@ void Foam::fvMatrix<Type>::setValuesFromList
             GeometricField<Type, fvPatchField, volMesh>&
         >(psi_).primitiveFieldRef();
 
+    // Following actions:
+    // - adjust local field psi
+    // - set local matrix to be diagonal (so adjust source)
+    //      - cut connections to neighbours
+    // - make (on non-adjusted cells) contribution explicit
+
+    #ifdef FOAM_OFFLOAD
     // Expand values into a full cell-indexed field for O(1) neighbour lookup.
     // cellMask uses label (not bool) to avoid std::vector<bool> bit-packing
     // issues under par_unseq / GPU offload.
+    const label nCells = psi_.size();
+    const label nInternalFaces = mesh.nInternalFaces();
+
     Field<Type>   cellValues(nCells, Zero);
     List<label>   cellMask(nCells, 0);
 
@@ -568,7 +575,9 @@ void Foam::fvMatrix<Type>::setValuesFromList
                 [&](const label facei)
                 {
                     if (ownMask[facei] || neiMask[facei])
+                    {
                         Upper_rw[facei] = 0.0;
+                    }
                 }
             );
         });
@@ -587,7 +596,9 @@ void Foam::fvMatrix<Type>::setValuesFromList
                     [&](const label facei)
                     {
                         if (ownMask[facei] || neiMask[facei])
+                        {
                             Lower_rw[facei] = 0.0;
+                        }
                     }
                 );
             });
@@ -633,6 +644,76 @@ void Foam::fvMatrix<Type>::setValuesFromList
             });
         }
     }
+    #else
+    // Keep cpu code since does not require extra memory.
+    if (symmetric() || asymmetric())
+    {
+        const cellList& cells = mesh.cells();
+        forAll(cellLabels, i)
+        {
+            const label celli = cellLabels[i];
+            const Type& value = values[i];
+
+            for (const label facei : cells[celli])
+            {
+                const label patchi = mesh.boundaryMesh().patchID(facei);
+
+                if (patchi == -1)
+                {
+                    if (symmetric())
+                    {
+                        if (celli == own[facei])
+                        {
+                            source_[nei[facei]] -= upper()[facei]*value;
+                        }
+                        else
+                        {
+                            source_[own[facei]] -= upper()[facei]*value;
+                        }
+
+                        upper()[facei] = 0.0;
+                    }
+                    else
+                    {
+                        if (celli == own[facei])
+                        {
+                            source_[nei[facei]] -= lower()[facei]*value;
+                        }
+                        else
+                        {
+                            source_[own[facei]] -= upper()[facei]*value;
+                        }
+
+                        upper()[facei] = 0.0;
+                        lower()[facei] = 0.0;
+                    }
+                }
+                else
+                {
+                    if (internalCoeffs_[patchi].size())
+                    {
+                        const label patchFacei =
+                            mesh.boundaryMesh()[patchi].whichFace(facei);
+
+                        internalCoeffs_[patchi][patchFacei] = Zero;
+                        boundaryCoeffs_[patchi][patchFacei] = Zero;
+                    }
+                }
+            }
+        }
+    }
+
+    // Note: above loop might have affected source terms on adjusted cells
+    // so make sure to adjust them afterwards
+    forAll(cellLabels, i)
+    {
+        const label celli = cellLabels[i];
+        const Type& value = values[i];
+
+        psi[celli] = value;
+        source_[celli] = value*Diag[celli];
+    }
+    #endif
 }
 
 
