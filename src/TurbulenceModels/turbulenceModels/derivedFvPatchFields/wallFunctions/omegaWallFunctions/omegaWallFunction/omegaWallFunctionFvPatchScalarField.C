@@ -831,19 +831,45 @@ void Foam::omegaWallFunctionFvPatchScalarField::updateWeightedCoeffs
     typedef DimensionedField<scalar, volMesh> FieldType;
 
     FieldType& G = db().lookupObjectRef<FieldType>(turbModel.GName());
-
     FieldType& omega = const_cast<FieldType&>(internalField());
 
     scalarField& omegaf = *this;
 
-    labelRange cellRange(weights.size());
+    const labelUList& faceCells = patch().faceCells();
+
+#ifndef FOAM_OFFLOAD
+
+    forAll(weights, facei)
+    {
+        const scalar w = weights[facei];
+
+        if (w > tolerance_)
+        {
+            const label celli = faceCells[facei];
+
+            G[celli] = (1.0 - w)*G[celli] + w*G0[celli];
+            omega[celli] = (1.0 - w)*omega[celli] + w*omega0[celli];
+            omegaf[facei] = omega[celli];
+        }
+    }
+
+#else
 
     // only set the values if the weights are > tolerance
+
     const scalar tolerance = tolerance_;
 
-    const scalar* const __restrict__ weightsPtr = weights.begin();
+    const auto& lduAddr = patch().boundaryMesh().mesh().lduAddr();
+    const auto& patchCells = lduAddr.patchSortCells(patch().index());
+    const auto& neiStart = lduAddr.patchSortStartAddr(patch().index());
+    const auto& losort = lduAddr.patchSortAddr(patch().index());
+    const label* const __restrict__ patchCellsPtr = patchCells.begin();
+    const label* const __restrict__ neiStartPtr = neiStart.begin();
+    const label* const __restrict__ losortPtr = losort.begin();
 
-    const labelUList& faceCells = patch().faceCells();
+    const labelRange patchCellRange(weights.size());
+
+    const scalar* const __restrict__ weightsPtr = weights.begin();
     const label* const __restrict__ faceCellsPtr = faceCells.begin();
 
     scalar* const __restrict__ GPtr = G.begin();
@@ -853,36 +879,47 @@ void Foam::omegaWallFunctionFvPatchScalarField::updateWeightedCoeffs
     const scalar* const __restrict__ G0Ptr = G0.begin();
     const scalar* const __restrict__ omega0Ptr = omega0.begin();
 
-    labelField transformResult(cellRange.size());
-
-    apply_policy(cellRange.size(), [&](auto policy)
+    apply_policy(patchCellRange.size(), [&](auto policy)
     {
-        std::transform
+        std::for_each
         (
             policy,
-            cellRange.begin(),
-            cellRange.end(),
-            transformResult.begin(),
-            [=](const label facei) -> label
+            patchCellRange.begin(),
+            patchCellRange.end(),
+            [=](const label id)
             {
-                const scalar w = weightsPtr[facei];
+                const label celli = patchCellsPtr[id];
 
-                if (w > tolerance)
+                scalar Gval = GPtr[celli];
+                scalar omegaval = omegaPtr[celli];
+
+                const label start = neiStartPtr[id];
+                const label end = neiStartPtr[id + 1];
+
+                for (label i = start; i < end; ++i)
                 {
-                    const label celli = faceCellsPtr[facei];
+                    const label facei = losortPtr[i];
+                    const scalar w = weightsPtr[facei];
 
-                    GPtr[celli] = (1.0 - w)*GPtr[celli] + w*G0Ptr[celli];
+                    if (w > tolerance)
+                    {
+                        Gval =
+                            (1.0 - w)*Gval + w*G0Ptr[celli];
 
-                    omegaPtr[celli] =
-                        (1.0 - w)*omegaPtr[celli] + w*omega0Ptr[celli];
+                        omegaval =
+                            (1.0 - w)*omegaval + w*omega0Ptr[celli];
 
-                    omegafPtr[facei] = omegaPtr[celli];
+                        omegafPtr[facei] = omegaval;
+                    }
                 }
 
-                return facei;
+                GPtr[celli] = Gval;
+                omegaPtr[celli] = omegaval;
             }
         );
     });
+
+#endif
 
     fvPatchField<scalar>::updateCoeffs();
 }
