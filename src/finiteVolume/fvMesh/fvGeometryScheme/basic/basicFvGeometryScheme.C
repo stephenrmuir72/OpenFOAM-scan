@@ -110,11 +110,11 @@ Foam::tmp<Foam::surfaceScalarField> Foam::basicFvGeometryScheme::weights() const
 
     // ... and reference to the internal field of the weighting factors
     scalarField& w = weights.primitiveFieldRef();
-    
+
     labelRange faceRange(owner.size());
 
     apply_policy(owner.size(), [&](auto policy)
-    {       
+    {
         std::for_each
         (
             policy, // Use parallel, vectorized execution
@@ -122,11 +122,11 @@ Foam::tmp<Foam::surfaceScalarField> Foam::basicFvGeometryScheme::weights() const
             faceRange.end(),  // Iterate over all faces
             [&](const auto& facei)
             {
-            // Note: mag in the dot-product.
-            // For all valid meshes, the non-orthogonality will be less than
-            // 90 deg and the dot-product will be positive.  For invalid
-            // meshes (d & s <= 0), this will stabilise the calculation
-            // but the result will be poor.
+                // Note: mag in the dot-product.
+                // For all valid meshes, the non-orthogonality will be less than
+                // 90 deg and the dot-product will be positive.  For invalid
+                // meshes (d & s <= 0), this will stabilise the calculation
+                // but the result will be poor.
                 scalar SfdOwn = mag(Sf[facei] & (Cf[facei] - C[owner[facei]]));
                 scalar SfdNei =
                     mag(Sf[facei] & (C[neighbour[facei]] - Cf[facei]));
@@ -210,7 +210,8 @@ Foam::basicFvGeometryScheme::deltaCoeffs() const
             faceRange.end(),  // Iterate over all faces
             [&](const auto& facei)
             {
-            deltaCoeffs[facei] = 1.0/mag(C[neighbour[facei]] - C[owner[facei]]);
+                deltaCoeffs[facei] =
+                    1.0/mag(C[neighbour[facei]] - C[owner[facei]]);
             }
         );
     });
