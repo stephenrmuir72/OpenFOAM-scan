@@ -143,14 +143,14 @@ Foam::linearUpwind<Type>::correction
                             if (pFaceFlux[facei] > 0)
                             {
                                 setComponent(pSfCorr[facei], cmpt) =
-                                (pCf[facei] - C[own])
-                                 & gradVf[own];
+                                    (pCf[facei] - C[own])
+                                  & gradVf[own];
                             }
                             else
                             {
                                 setComponent(pSfCorr[facei], cmpt) =
-                                (pCf[facei] - pd[facei] - C[own])
-                                 & pGradVfNei[facei];
+                                    (pCf[facei] - pd[facei] - C[own])
+                                  & pGradVfNei[facei];
                             }
                         }
                     );
@@ -266,14 +266,15 @@ Foam::linearUpwind<Foam::vector>::correction
 
                         if (pFaceFlux[facei] > 0)
                         {
-                            pSfCorr[facei] = (pCf[facei] - C[own])
-                             & gradVf[own];
+                            pSfCorr[facei] =
+                                (pCf[facei] - C[own])
+                              & gradVf[own];
                         }
                         else
                         {
                             pSfCorr[facei] =
                                 (pCf[facei] - pd[facei] - C[own])
-                                 & pGradVfNei[facei];
+                              & pGradVfNei[facei];
                         }
                     }
                 );

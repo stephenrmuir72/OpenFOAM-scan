@@ -316,13 +316,13 @@ void checkFields
     const label loop_len = (f1).size();                                        \
                                                                                \
     using SVal = std::decay_t<typeS>;                                          \
-    const SVal s_ = (s);                                                       \
                                                                                \
     if constexpr (FOAM_OFFLOAD_ENABLED                                         \
     && std::is_trivially_copyable_v<typeF1>                                    \
     && std::is_trivially_copyable_v<typeF2>                                    \
     && std::is_trivially_copyable_v<SVal>)                                     \
     {                                                                          \
+        const SVal s_ = (s);                                                   \
         apply_policy(loop_len, [&](auto policy)                                \
         {                                                                      \
             std::for_each(policy,                                              \
@@ -378,13 +378,13 @@ void checkFields
     const label loop_len = (f1).size();                                        \
                                                                                \
     using SVal = std::decay_t<typeS>;                                          \
-    const SVal s_ = (s);                                                       \
                                                                                \
     if constexpr (FOAM_OFFLOAD_ENABLED                                         \
     && std::is_trivially_copyable_v<typeF1>                                    \
     && std::is_trivially_copyable_v<typeF2>                                    \
     && std::is_trivially_copyable_v<SVal>)                                     \
     {                                                                          \
+        const SVal s_ = (s);                                                   \
         apply_policy(loop_len, [&](auto policy)                                \
         {                                                                      \
             std::for_each(policy,                                              \
@@ -419,14 +419,14 @@ void checkFields
                                                                                \
     using S1Val = std::decay_t<typeS1>;                                        \
     using S2Val = std::decay_t<typeS2>;                                        \
-    const S1Val s1_ = (s1);                                                    \
-    const S2Val s2_ = (s2);                                                    \
                                                                                \
     if constexpr (FOAM_OFFLOAD_ENABLED                                         \
     && std::is_trivially_copyable_v<typeF1>                                    \
     && std::is_trivially_copyable_v<S1Val>                                     \
     && std::is_trivially_copyable_v<S2Val>)                                    \
     {                                                                          \
+        const S1Val s1_ = (s1);                                                \
+        const S2Val s2_ = (s2);                                                \
         apply_policy(loop_len, [&](auto policy)                                \
         {                                                                      \
             std::for_each(policy,                                              \
@@ -463,13 +463,13 @@ void checkFields
     const label loop_len = (f1).size();                                        \
                                                                                \
     using SVal = std::decay_t<typeS>;                                          \
-    const SVal s_ = (s);                                                       \
                                                                                \
     if constexpr (FOAM_OFFLOAD_ENABLED                                         \
     && std::is_trivially_copyable_v<typeF1>                                    \
     && std::is_trivially_copyable_v<typeF2>                                    \
     && std::is_trivially_copyable_v<SVal>)                                     \
     {                                                                          \
+        const SVal s_ = (s);                                                   \
         apply_policy(loop_len, [&](auto policy)                                \
         {                                                                      \
             std::for_each(policy,                                              \
@@ -555,7 +555,6 @@ void checkFields
     const label loop_len = (f1).size();                                        \
                                                                                \
     using S4Val = std::decay_t<typeS4>;                                        \
-    const S4Val s4_ = (s4);                                                    \
                                                                                \
     if constexpr (FOAM_OFFLOAD_ENABLED                                         \
     && std::is_trivially_copyable_v<typeF1>                                    \
@@ -563,6 +562,7 @@ void checkFields
     && std::is_trivially_copyable_v<typeF3>                                    \
     && std::is_trivially_copyable_v<S4Val>)                                    \
     {                                                                          \
+        const S4Val s4_ = (s4);                                                \
         apply_policy(loop_len, [&](auto policy)                                \
         {                                                                      \
             std::for_each(policy,                                              \
@@ -645,13 +645,13 @@ void checkFields
     const label loop_len = (f1).size();                                        \
                                                                                \
     using SVal = std::decay_t<typeS>;                                          \
-    const SVal s_ = (s);                                                       \
                                                                                \
     if constexpr (FOAM_OFFLOAD_ENABLED                                         \
     && std::is_trivially_copyable_v<typeF1>                                    \
     && std::is_trivially_copyable_v<typeF2>                                    \
     && std::is_trivially_copyable_v<SVal>)                                     \
     {                                                                          \
+        const SVal s_ = (s);                                                   \
         apply_policy(loop_len, [&](auto policy)                                \
         {                                                                      \
             std::for_each(policy,                                              \
@@ -689,13 +689,13 @@ void checkFields
     const label loop_len = (f1).size();                                        \
                                                                                \
     using SVal = std::decay_t<typeS>;                                          \
-    const SVal s_ = (s);                                                       \
                                                                                \
     if constexpr (FOAM_OFFLOAD_ENABLED                                         \
     && std::is_trivially_copyable_v<typeF1>                                    \
     && std::is_trivially_copyable_v<typeF2>                                    \
     && std::is_trivially_copyable_v<SVal>)                                     \
     {                                                                          \
+        const SVal s_ = (s);                                                   \
         apply_policy(loop_len, [&](auto policy)                                \
         {                                                                      \
             std::for_each(policy,                                              \
@@ -810,12 +810,12 @@ void checkFields
                                                                                \
                                                                                \
     using SVal = std::decay_t<typeS>;                                          \
-    const SVal s_ = (s);                                                       \
                                                                                \
     if constexpr (FOAM_OFFLOAD_ENABLED                                         \
     && std::is_trivially_copyable_v<typeF>                                     \
     && std::is_trivially_copyable_v<SVal>)                                     \
     {                                                                          \
+        const SVal s_ = (s);                                                   \
         apply_policy(loop_len, [&](auto policy)                                \
         {                                                                      \
             std::for_each(policy,                                              \

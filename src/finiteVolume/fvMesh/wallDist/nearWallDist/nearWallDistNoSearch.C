@@ -72,7 +72,7 @@ void Foam::nearWallDistNoSearch::doAll()
                             Apatch[facei] &
                             (
                                 patchCentres[facei]
-                            - cellCentres[faceCells[facei]]
+                              - cellCentres[faceCells[facei]]
                             )
                         )/magApatch[facei];
                     }
