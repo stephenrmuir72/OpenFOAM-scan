@@ -112,7 +112,7 @@ void Foam::omegaWallFunctionFvPatchScalarField::createAveragingWeights()
             #ifdef FOAM_OFFLOAD
             const auto& pcells = mesh.lduAddr().patchSortCells(patchi);
             const auto& losortStart = mesh.lduAddr().patchSortStartAddr(patchi);
-            
+
             labelRange cellRange(0, pcells.size());
 
             apply_policy(cellRange.size(), [&](auto policy)
@@ -423,7 +423,7 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
 
         case blenderType::EXPONENTIAL:
         {
-            #ifdef FOMA_OFFLOAD
+            #ifdef FOAM_OFFLOAD
             auto neiFun = [&](const label, const label facei) -> scalar
             {
                 const scalar yPlusFace = yPlus(facei);
