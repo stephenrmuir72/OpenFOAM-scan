@@ -58,8 +58,6 @@ SourceFiles
 
 #include <iterator>
 #include <vector>  // i.e, std::vector
-#include <algorithm>
-#include <execution>
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
