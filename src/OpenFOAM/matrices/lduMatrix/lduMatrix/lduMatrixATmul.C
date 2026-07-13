@@ -6,7 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
-    Copyright (C) 2017-2024 OpenCFD Ltd.
+    Copyright (C) 2017-2026 OpenCFD Ltd.
     Copyright (C) 2026 UKRI-STFC.
 -------------------------------------------------------------------------------
 License
@@ -196,7 +196,7 @@ void Foam::lduMatrix::Amul
         //       so is handling symmetric()
         const scalar* const __restrict__ lowercsrPtr = lowerCSR().begin();
 
-        labelRange cellIndices(nCells);
+        const labelRange cellIndices(nCells);
 
         apply_policy(static_cast<std::size_t>(nCells), [&](auto policy)
         {
@@ -240,7 +240,7 @@ void Foam::lduMatrix::Amul
     else
     {
         #ifdef FOAM_OFFLOAD
-        labelRange indices(psi.size());
+        const labelRange indices(psi.size());
 
         apply_policy(static_cast<std::size_t>(psi.size()), [&](auto policy)
         {
@@ -420,13 +420,15 @@ void Foam::lduMatrix::sumA
             const labelUList& pa = lduAddr().patchAddr(patchi);
             const scalarField& pCoeffs = interfaceBouCoeffs[patchi];
 
+            const labelRange faceIndices(pa.size());
+
             apply_policy(static_cast<std::size_t>(pa.size()), [&](auto policy)
             {
                 std::for_each
                 (
                     policy,
-                    pa.begin(),
-                    pa.end(),
+                    faceIndices.begin(),
+                    faceIndices.end(),
                     [&](const auto& face)
                     {
                         sumAPtr[pa[face]] -= pCoeffs[face];
@@ -487,7 +489,7 @@ void Foam::lduMatrix::residual
     const label nCells = diag().size();
 
     #ifdef FOAM_OFFLOAD
-    labelRange cellIndices(psi.size());
+    const labelRange cellIndices(psi.size());
 
     apply_policy(static_cast<std::size_t>(nCells), [&](auto policy)
     {
