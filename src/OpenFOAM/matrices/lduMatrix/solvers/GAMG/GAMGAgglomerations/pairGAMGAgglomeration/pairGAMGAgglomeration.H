@@ -29,7 +29,14 @@ Class
     Foam::pairGAMGAgglomeration
 
 Description
-    Agglomerate using the pair algorithm.
+    Agglomerate using the pair algorithm. Candidate faces can optionally be
+    filtered using a level-relative strong-connection threshold. A positive
+    face is strong when its weight reaches the threshold relative to either
+    endpoint's strongest positive connection.
+
+    The optional \c strengthThreshold control is in the range [0,1] and
+    defaults to zero, which preserves legacy pairing. Its physical meaning
+    follows the face weights supplied by the derived agglomerator.
 
 SourceFiles
     pairGAMGAgglomeration.C
@@ -63,6 +70,9 @@ class pairGAMGAgglomeration
         //- Apply renumbering after clustering
         bool renumber_;
 
+        //- Strong-connection fraction. Zero uses legacy pairing
+        scalar strengthThreshold_;
+
         //- Direction of cell loop for the current level
         static bool forward_;
 
@@ -80,16 +90,6 @@ protected:
             const labelList& coarseCellMap,
             labelList& cellCells,
             labelList& cellOffsets
-        );
-
-        //- Agglomerate using a level-relative strong-face threshold
-        void agglomerateSelective
-        (
-            const label nCellsInCoarsestLevel,
-            const label startLevel,
-            const scalarField& startFaceWeights,
-            const scalar strengthThreshold,
-            const bool doProcessorAgglomerate
         );
 
         //- No copy construct

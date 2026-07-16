@@ -47,8 +47,20 @@ Foam::pairGAMGAgglomeration::pairGAMGAgglomeration
 :
     GAMGAgglomeration(mesh, controlDict),
     mergeLevels_(controlDict.getOrDefault<label>("mergeLevels", 1)),
-    renumber_(controlDict.getOrDefault<bool>("renumber", false))
-{}
+    renumber_(controlDict.getOrDefault<bool>("renumber", false)),
+    strengthThreshold_
+    (
+        controlDict.getOrDefault<scalar>("strengthThreshold", 0)
+    )
+{
+    if (!(strengthThreshold_ >= 0 && strengthThreshold_ <= 1))
+    {
+        FatalIOErrorInFunction(controlDict)
+            << "strengthThreshold " << strengthThreshold_
+            << " is outside the range [0,1]"
+            << exit(FatalIOError);
+    }
+}
 
 
 // ************************************************************************* //

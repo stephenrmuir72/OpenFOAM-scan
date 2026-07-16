@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -33,6 +34,7 @@ Description
 
 #include "fvCFD.H"
 #include "GAMGAgglomeration.H"
+#include "lduMatrix.H"
 #include "OFstream.H"
 #include "meshTools.H"
 
@@ -51,6 +53,18 @@ int main(int argc, char *argv[])
         "normalise",
         "normalise agglomeration (0..1)"
     );
+    argList::addOption
+    (
+        "agglomerator",
+        "type",
+        "Override the fvSolution GAMG agglomerator"
+    );
+    argList::addOption
+    (
+        "strengthThreshold",
+        "scalar",
+        "Override the pair-agglomeration strength threshold"
+    );
 
     #include "setRootCase.H"
     #include "createTime.H"
@@ -61,13 +75,34 @@ int main(int argc, char *argv[])
     #include "createMesh.H"
 
     const fvSolution& sol = static_cast<const fvSolution&>(mesh);
-    const dictionary& pDict = sol.subDict("solvers").subDict("p");
+    dictionary pDict(sol.subDict("solvers").subDict("p"));
+
+    if (args.found("agglomerator"))
+    {
+        pDict.set("agglomerator", args.get<word>("agglomerator"));
+    }
+    if (args.found("strengthThreshold"))
+    {
+        pDict.set
+        (
+            "strengthThreshold",
+            args.get<scalar>("strengthThreshold")
+        );
+    }
+
+    // Supply meaningful positive internal coefficients so matrix-only
+    // agglomerators can be selected. Geometric types retain their fallback.
+    lduMatrix matrix(mesh);
+    matrix.diag(mesh.nCells()) = scalar(1);
+    matrix.upper(mesh.nInternalFaces()) = mesh.magSf().primitiveField();
 
     const GAMGAgglomeration& agglom = GAMGAgglomeration::New
     (
-        mesh,
+        matrix,
         pDict
     );
+
+    Info<< "Selected agglomerator: " << agglom.type() << nl << endl;
 
     labelList cellToCoarse(identity(mesh.nCells()));
     CompactListList<label> coarseToCell
@@ -111,13 +146,36 @@ int main(int argc, char *argv[])
         Info<< "Time = " << runTime.timeName() << nl << endl;
 
         const labelList& addr = agglom.restrictAddressing(level);
+
+        if (addr.empty() || min(addr) < 0)
+        {
+            FatalErrorInFunction
+                << "Invalid restriction labels at level " << level
+                << exit(FatalError);
+        }
+
         label coarseSize = max(addr)+1;
+
+        const label globalFineSize = returnReduce(addr.size(), sumOp<label>());
+        const label globalCoarseSize = returnReduce
+        (
+            coarseSize,
+            sumOp<label>()
+        );
+
+        if (globalCoarseSize >= globalFineSize)
+        {
+            FatalErrorInFunction
+                << "Non-coarsening hierarchy level " << level
+                << ": " << globalFineSize << " -> " << globalCoarseSize
+                << exit(FatalError);
+        }
 
         Info<< "Level : " << level << endl
             << "    current size      : "
-            << returnReduce(addr.size(), sumOp<label>()) << endl
+            << globalFineSize << endl
             << "    agglomerated size : "
-            << returnReduce(coarseSize, sumOp<label>()) << endl;
+            << globalCoarseSize << endl;
 
         labelList newAddr;
         label newCoarseSize = 0;
@@ -132,14 +190,14 @@ int main(int argc, char *argv[])
         );
         if (!ok)
         {
-            WarningInFunction
+            FatalErrorInFunction
                 << "At level " << level
                 << " there are " << coarseSize
                 << " agglomerated cells but " << newCoarseSize
                 << " disconnected regions" << endl
                 << "    This means that some agglomerations (coarse cells)"
                 << "    consist of multiple disconnected regions."
-                << endl;
+                << exit(FatalError);
         }
 
 

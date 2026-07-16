@@ -495,9 +495,6 @@ $(pairGAMGAgglomeration)/pairGAMGAgglomerate.C
 algebraicPairGAMGAgglomeration = $(GAMGAgglomerations)/algebraicPairGAMGAgglomeration
 $(algebraicPairGAMGAgglomeration)/algebraicPairGAMGAgglomeration.C
 
-selectivePairGAMGAgglomeration = $(GAMGAgglomerations)/selectivePairGAMGAgglomeration
-$(selectivePairGAMGAgglomeration)/selectivePairGAMGAgglomeration.C
-
 dummyAgglomeration = $(GAMGAgglomerations)/dummyAgglomeration
 $(dummyAgglomeration)/dummyAgglomeration.C
 

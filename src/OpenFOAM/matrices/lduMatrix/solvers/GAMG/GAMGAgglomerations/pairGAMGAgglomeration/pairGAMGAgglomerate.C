@@ -139,34 +139,6 @@ void Foam::pairGAMGAgglomeration::agglomerate
     const bool doProcessorAgglomerate
 )
 {
-    agglomerateSelective
-    (
-        nCellsInCoarsestLevel,
-        startLevel,
-        startFaceWeights,
-        0,
-        doProcessorAgglomerate
-    );
-}
-
-
-void Foam::pairGAMGAgglomeration::agglomerateSelective
-(
-    const label nCellsInCoarsestLevel,
-    const label startLevel,
-    const scalarField& startFaceWeights,
-    const scalar strengthThreshold,
-    const bool doProcessorAgglomerate
-)
-{
-    if (!(strengthThreshold >= 0 && strengthThreshold <= 1))
-    {
-        FatalErrorInFunction
-            << "Strength threshold " << strengthThreshold
-            << " is outside the range [0,1]"
-            << exit(FatalError);
-    }
-
     if (nCells_.size() < maxLevels_)
     {
         // See compactLevels. Make space if not enough
@@ -223,7 +195,7 @@ void Foam::pairGAMGAgglomeration::agglomerateSelective
             fineMesh.lduAddr(),
             faceWeights,
             renumber_,
-            strengthThreshold
+            strengthThreshold_
         );
 
         if
