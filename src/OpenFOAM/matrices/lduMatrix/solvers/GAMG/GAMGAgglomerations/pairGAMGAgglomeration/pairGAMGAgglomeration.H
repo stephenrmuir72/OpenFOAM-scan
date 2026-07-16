@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2013 OpenFOAM Foundation
     Copyright (C) 2023 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -81,6 +82,16 @@ protected:
             labelList& cellOffsets
         );
 
+        //- Agglomerate using a level-relative strong-face threshold
+        void agglomerateSelective
+        (
+            const label nCellsInCoarsestLevel,
+            const label startLevel,
+            const scalarField& startFaceWeights,
+            const scalar strengthThreshold,
+            const bool doProcessorAgglomerate
+        );
+
         //- No copy construct
         pairGAMGAgglomeration(const pairGAMGAgglomeration&) = delete;
 
@@ -112,6 +123,18 @@ public:
             const bool renumber
         );
 
+        //- Calculate and return agglomeration using only strong faces.
+        //  A positive face is strong when its weight exceeds the threshold
+        //  relative to either endpoint. A zero threshold uses legacy pairing.
+        static tmp<labelField> agglomerate
+        (
+            label& nCoarseCells,
+            const lduAddressing& fineMatrixAddressing,
+            const scalarField& faceWeights,
+            const bool renumber,
+            const scalar strengthThreshold
+        );
+
         //- Agglomerate from a starting level. Starting level is usually 0
         //- (initial mesh) but sometimes >0 (restarting after processor
         //- agglomeration)
@@ -122,6 +145,7 @@ public:
             const scalarField& startFaceWeights,
             const bool doProcessorAgglomerate = true
         );
+
 };
 
 
