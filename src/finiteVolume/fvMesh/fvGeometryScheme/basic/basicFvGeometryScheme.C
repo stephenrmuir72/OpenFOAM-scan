@@ -6,6 +6,8 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2020-2021 OpenCFD Ltd.
+    Copyright (C) 2026 UKRI-STFC.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -111,7 +113,7 @@ Foam::tmp<Foam::surfaceScalarField> Foam::basicFvGeometryScheme::weights() const
     // ... and reference to the internal field of the weighting factors
     scalarField& w = weights.primitiveFieldRef();
 
-    labelRange faceRange(owner.size());
+    const labelRange faceRange(owner.size());
 
     apply_policy(owner.size(), [&](auto policy)
     {
@@ -199,7 +201,7 @@ Foam::basicFvGeometryScheme::deltaCoeffs() const
     const labelUList& owner = mesh_.owner();
     const labelUList& neighbour = mesh_.neighbour();
 
-    labelRange faceRange(owner.size());
+    const labelRange faceRange(owner.size());
 
     apply_policy(owner.size(), [&](auto policy)
     {
@@ -300,41 +302,32 @@ Foam::basicFvGeometryScheme::nonOrthDeltaCoeffs() const
 
         const vectorField patchDeltas(mesh_.boundary()[patchi].delta());
 
-        forAll(nonOrthDeltaCoeffsBf, patchi)
+        const vectorField& pSf = Sf.boundaryField()[patchi];
+        const scalarField& pMagSf = magSf.boundaryField()[patchi];
+
+        const label len = p.size();
+
+        labelRange faceRange(0, len);
+
+        apply_policy(static_cast<std::size_t>(len), [&](auto policy)
         {
-            fvsPatchScalarField& patchDeltaCoeffs = nonOrthDeltaCoeffsBf[patchi];
+            std::for_each
+            (
+                policy,
+                faceRange.begin(),
+                faceRange.end(),
+                [&](const label patchFacei)
+                {
+                    const vector unitArea =
+                        pSf[patchFacei]/pMagSf[patchFacei];
 
-            const fvPatch& p = patchDeltaCoeffs.patch();
+                    const vector& delta = patchDeltas[patchFacei];
 
-            const vectorField patchDeltas(mesh_.boundary()[patchi].delta());
-
-            const vectorField& pSf = Sf.boundaryField()[patchi];
-            const scalarField& pMagSf = magSf.boundaryField()[patchi];
-
-            const label len = p.size();
-
-            labelRange faceRange(0, len);
-
-            apply_policy(static_cast<std::size_t>(len), [&](auto policy)
-            {
-                std::for_each
-                (
-                    policy,
-                    faceRange.begin(),
-                    faceRange.end(),
-                    [&](const label patchFacei)
-                    {
-                        const vector unitArea =
-                            pSf[patchFacei]/pMagSf[patchFacei];
-
-                        const vector& delta = patchDeltas[patchFacei];
-
-                        patchDeltaCoeffs[patchFacei] =
-                            1.0/max(unitArea & delta, 0.05*mag(delta));
-                    }
-                );
-            });
-        }
+                    patchDeltaCoeffs[patchFacei] =
+                        1.0/max(unitArea & delta, 0.05*mag(delta));
+                }
+            );
+        });
 
         // Optionally correct
         p.makeNonOrthoDeltaCoeffs(patchDeltaCoeffs);
@@ -383,7 +376,7 @@ Foam::basicFvGeometryScheme::nonOrthCorrectionVectors() const
 
     const label len = owner.size();
 
-    labelRange faceRange(len);
+    const labelRange faceRange(len);
 
     apply_policy(static_cast<std::size_t>(len), [&](auto policy)
     {
@@ -429,7 +422,7 @@ Foam::basicFvGeometryScheme::nonOrthCorrectionVectors() const
 
             const label len = p.size();
 
-            labelRange faceRange(0, len);
+            const labelRange faceRange(len);
 
             apply_policy(static_cast<std::size_t>(len), [&](auto policy)
             {
