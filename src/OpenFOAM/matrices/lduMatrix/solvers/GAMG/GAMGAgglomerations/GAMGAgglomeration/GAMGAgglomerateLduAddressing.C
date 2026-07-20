@@ -33,6 +33,7 @@ License
 #include "PrecisionAdaptor.H"
 
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
+
 #ifdef FOAM_OFFLOAD
 void Foam::GAMGAgglomeration::createSort
 (
@@ -244,7 +245,7 @@ void Foam::GAMGAgglomeration::buildFullPatchFaceRestrictAddr
 )
 {
     patchFaceRestrictSortAddressing_.set
-    ( 
+    (
         level,
         new labelListList(addr.size())
     );
@@ -254,7 +255,7 @@ void Foam::GAMGAgglomeration::buildFullPatchFaceRestrictAddr
         new labelListList(addr.size())
     );
     patchFaceRestrictTargetStartAddressing_.set
-    ( 
+    (
         level,
         new labelListList(addr.size())
     );

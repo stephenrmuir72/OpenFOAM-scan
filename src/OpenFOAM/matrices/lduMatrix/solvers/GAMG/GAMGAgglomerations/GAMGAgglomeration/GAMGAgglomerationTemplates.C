@@ -34,6 +34,7 @@ License
 #endif
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
 #ifdef FOAM_OFFLOAD
 template<class Type>
 void Foam::GAMGAgglomeration::restrictField

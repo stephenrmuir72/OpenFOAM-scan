@@ -173,11 +173,10 @@ Foam::limitedSurfaceInterpolationScheme<Type>::weights
 
         const scalarField& pCDweights = CDweights.boundaryField()[patchi];
         const scalarField& pFaceFlux = faceFlux_.boundaryField()[patchi];
-        
+
         labelRange faceRange(pWeights.size());
 
-        apply_policy(pWeights.size(),
-        [&](auto policy)
+        apply_policy(pWeights.size(), [&](auto policy)
         {
             std::for_each
             (
