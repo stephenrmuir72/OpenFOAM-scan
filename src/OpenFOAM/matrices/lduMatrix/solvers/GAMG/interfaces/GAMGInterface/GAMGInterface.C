@@ -61,6 +61,7 @@ Foam::GAMGInterface::GAMGInterface
 
 
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
+
 #ifdef FOAM_OFFLOAD
 void Foam::GAMGInterface::updateAddressing()
 {

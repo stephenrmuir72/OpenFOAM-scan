@@ -692,7 +692,8 @@ void Foam::Field<Type>::clamp_min(const UList<Type>& lower)
 
     apply_policy(n, [&](auto policy)
     {
-        std::transform(
+        std::transform
+        (
             policy,     // parallel + SIMD
             this->begin(),
             this->begin() + n,
@@ -705,7 +706,8 @@ void Foam::Field<Type>::clamp_min(const UList<Type>& lower)
     // Copy back (safe for overlapping ranges)
     apply_policy(n, [&](auto policy)
     {
-        std::copy(
+        std::copy
+        (
             policy,
             tmp.begin(),
             tmp.end(),
@@ -742,7 +744,8 @@ void Foam::Field<Type>::clamp_max(const UList<Type>& upper)
 
     apply_policy(n, [&](auto policy)
     {
-        std::transform(
+        std::transform
+        (
             policy,     // parallel + SIMD
             this->begin(),
             this->begin() + n,
@@ -755,7 +758,8 @@ void Foam::Field<Type>::clamp_max(const UList<Type>& upper)
     // Write back (safe)
     apply_policy(n, [&](auto policy)
     {
-        std::copy(
+        std::copy
+        (
             policy,
             tmp.begin(),
             tmp.end(),
