@@ -502,6 +502,9 @@ $(pairGAMGAgglomeration)/pairGAMGAgglomerate.C
 algebraicPairGAMGAgglomeration = $(GAMGAgglomerations)/algebraicPairGAMGAgglomeration
 $(algebraicPairGAMGAgglomeration)/algebraicPairGAMGAgglomeration.C
 
+rugeStubenGAMGAgglomeration = $(GAMGAgglomerations)/rugeStubenGAMGAgglomeration
+$(rugeStubenGAMGAgglomeration)/rugeStubenGAMGAgglomeration.C
+
 dummyAgglomeration = $(GAMGAgglomerations)/dummyAgglomeration
 $(dummyAgglomeration)/dummyAgglomeration.C
 
@@ -521,6 +524,9 @@ $(noneGAMGProcAgglomeration)/noneGAMGProcAgglomeration.C
 procFacesGAMGProcAgglomeration = $(GAMGProcAgglomerations)/procFacesGAMGProcAgglomeration
 $(procFacesGAMGProcAgglomeration)/procFacesGAMGProcAgglomeration.C
 
+RugeStubenAMG = $(lduMatrix)/solvers/RugeStubenAMG
+$(RugeStubenAMG)/RugeStubenAMG.C
+$(RugeStubenAMG)/RugeStubenCoarsening.C
 
 meshes/ijkMesh/ijkMesh.C
 
