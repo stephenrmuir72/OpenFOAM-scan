@@ -265,4 +265,78 @@ void Foam::GAMGSolver::interpolate
 }
 
 
+void Foam::GAMGSolver::interpolate
+(
+    solveScalarField& psi,
+    solveScalarField& Apsi,
+    const lduMatrix& m,
+    const FieldField<Field, scalar>& interfaceBouCoeffs,
+    const lduInterfaceFieldPtrsList& interfaces,
+    const labelListList& interpolationAddr,
+    const List<scalarField>& interpolationWeights,
+    const solveScalarField& psiC,
+    const direction cmpt
+) const
+{
+    interpolate
+    (
+        psi,
+        Apsi,
+        m,
+        interfaceBouCoeffs,
+        interfaces,
+        cmpt
+    );
+
+    const label nCells = m.diag().size();
+    solveScalar* __restrict__ psiPtr = psi.begin();
+    const scalar* const __restrict__ diagPtr = m.diag().begin();
+    const solveScalar* const __restrict__ psiCPtr = psiC.begin();
+
+    const label nCCells = psiC.size();
+    solveScalarField corrC(nCCells, 0);
+    solveScalar* __restrict__ corrCPtr = corrC.begin();
+
+    solveScalarField diagC(nCCells, 0);
+    solveScalar* __restrict__ diagCPtr = diagC.begin();
+
+    // Scatter each fine-cell's diagonal-weighted correction (and diagonal)
+    // out to all its interpolation parents, weighted by the
+    // corresponding interpolation weight (generalises the single-parent
+    // restrictAddressing accumulation above to weighted, possibly
+    // multi-parent interpolation)
+    for (label celli=0; celli<nCells; celli++)
+    {
+        const labelList& parents = interpolationAddr[celli];
+        const scalarField& weights = interpolationWeights[celli];
+
+        forAll(parents, k)
+        {
+            const scalar w = weights[k];
+            corrCPtr[parents[k]] += w*diagPtr[celli]*psiPtr[celli];
+            diagCPtr[parents[k]] += w*diagPtr[celli];
+        }
+    }
+
+    for (label ccelli=0; ccelli<nCCells; ccelli++)
+    {
+        corrCPtr[ccelli] = psiCPtr[ccelli] - corrCPtr[ccelli]/diagCPtr[ccelli];
+    }
+
+    for (label celli=0; celli<nCells; celli++)
+    {
+        const labelList& parents = interpolationAddr[celli];
+        const scalarField& weights = interpolationWeights[celli];
+
+        solveScalar corr(Zero);
+        forAll(parents, k)
+        {
+            corr += weights[k]*corrCPtr[parents[k]];
+        }
+
+        psiPtr[celli] += corr;
+    }
+}
+
+
 // ************************************************************************* //

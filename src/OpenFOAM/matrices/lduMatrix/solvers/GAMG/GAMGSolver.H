@@ -265,6 +265,24 @@ class GAMGSolver
             const direction cmpt
         ) const;
 
+        //- Interpolate the correction after injected prolongation and
+        //  re-normalise, using weighted, possibly multi-parent
+        //  interpolation addressing (see
+        //  GAMGAgglomeration::hasInterpolation()) instead of the
+        //  single-parent restrictAddressing
+        void interpolate
+        (
+            solveScalarField& psi,
+            solveScalarField& Apsi,
+            const lduMatrix& m,
+            const FieldField<Field, scalar>& interfaceBouCoeffs,
+            const lduInterfaceFieldPtrsList& interfaces,
+            const labelListList& interpolationAddr,
+            const List<scalarField>& interpolationWeights,
+            const solveScalarField& psiC,
+            const direction cmpt
+        ) const;
+
         //- Calculate and apply the scaling factor from Acf, coarseSource
         //  and coarseField.
         //  At the same time do a Jacobi iteration on the coarseField using
