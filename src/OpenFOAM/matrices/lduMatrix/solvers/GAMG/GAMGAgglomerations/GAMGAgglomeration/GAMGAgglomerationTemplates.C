@@ -145,6 +145,72 @@ void Foam::GAMGAgglomeration::restrictField
 
 
 template<class Type>
+void Foam::GAMGAgglomeration::restrictFieldWeighted
+(
+    Field<Type>& cf,
+    const Field<Type>& ff,
+    const label fineLevelIndex,
+    const bool procAgglom
+) const
+{
+    if (!hasInterpolation(fineLevelIndex))
+    {
+        restrictField(cf, ff, fineLevelIndex, procAgglom);
+        return;
+    }
+
+    const labelListList& addr = interpolationAddr_[fineLevelIndex];
+    const List<scalarField>& weights = interpolationWeights_[fineLevelIndex];
+
+    if (!procAgglom && ff.size() != addr.size())
+    {
+        FatalErrorInFunction
+            << "field does not correspond to level " << fineLevelIndex
+            << " sizes: field = " << ff.size()
+            << " level = " << addr.size()
+            << abort(FatalError);
+    }
+
+    // By processor agglomeration the cf might be left zero size. Make sure
+    // it is large enough.
+    cf.resize_nocopy(nCells_[fineLevelIndex]);
+    cf = Zero;
+
+    forAll(addr, i)
+    {
+        const labelList& a = addr[i];
+        const scalarField& w = weights[i];
+
+        forAll(a, k)
+        {
+            cf[a[k]] += w[k]*ff[i];
+        }
+    }
+
+    const label coarseLevelIndex = fineLevelIndex+1;
+
+    if (procAgglom && hasProcMesh(coarseLevelIndex))
+    {
+        const label coarseComm =
+            UPstream::parent(procCommunicator_[coarseLevelIndex]);
+
+        const auto& procIDs = agglomProcIDs(coarseLevelIndex);
+        const auto& offsets = cellOffsets(coarseLevelIndex);
+
+        globalIndex::gatherInplace
+        (
+            offsets,
+            coarseComm,
+            procIDs,
+            cf,
+            UPstream::msgType(),
+            UPstream::commsTypes::nonBlocking
+        );
+    }
+}
+
+
+template<class Type>
 void Foam::GAMGAgglomeration::restrictFaceField
 (
     Field<Type>& cf,
@@ -272,6 +338,79 @@ void Foam::GAMGAgglomeration::prolongField
                 }
             );
         });
+    }
+}
+
+
+template<class Type>
+void Foam::GAMGAgglomeration::prolongFieldWeighted
+(
+    Field<Type>& ff,
+    const Field<Type>& cf,
+    const label levelIndex,
+    const bool procAgglom
+) const
+{
+    if (!hasInterpolation(levelIndex))
+    {
+        prolongField(ff, cf, levelIndex, procAgglom);
+        return;
+    }
+
+    const labelListList& addr = interpolationAddr_[levelIndex];
+    const List<scalarField>& weights = interpolationWeights_[levelIndex];
+
+    const label coarseLevelIndex = levelIndex+1;
+
+    if (procAgglom && hasProcMesh(coarseLevelIndex))
+    {
+        const label coarseComm =
+            UPstream::parent(procCommunicator_[coarseLevelIndex]);
+
+        const auto& procIDs = agglomProcIDs(coarseLevelIndex);
+        const auto& offsets = cellOffsets(coarseLevelIndex);
+
+        const label localSize = nCells_[levelIndex];
+
+        Field<Type> allCf(localSize);
+        globalIndex::scatter
+        (
+            offsets,
+            coarseComm,
+            procIDs,
+            cf,
+            allCf,
+            UPstream::msgType(),
+            UPstream::commsTypes::nonBlocking
+        );
+
+        forAll(addr, i)
+        {
+            const labelList& a = addr[i];
+            const scalarField& w = weights[i];
+
+            Type val(Zero);
+            forAll(a, k)
+            {
+                val += w[k]*allCf[a[k]];
+            }
+            ff[i] = val;
+        }
+    }
+    else
+    {
+        forAll(addr, i)
+        {
+            const labelList& a = addr[i];
+            const scalarField& w = weights[i];
+
+            Type val(Zero);
+            forAll(a, k)
+            {
+                val += w[k]*cf[a[k]];
+            }
+            ff[i] = val;
+        }
     }
 }
 

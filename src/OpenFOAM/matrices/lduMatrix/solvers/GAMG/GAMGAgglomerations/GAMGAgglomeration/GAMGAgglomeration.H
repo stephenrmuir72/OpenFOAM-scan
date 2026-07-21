@@ -133,6 +133,20 @@ protected:
         PtrList<labelField> restrictTargetStartAddressing_;
         #endif
 
+        //- Optional weighted, possibly multi-parent cell interpolation
+        //- addressing (e.g. classical Ruge-Stuben direct interpolation),
+        //- used instead of the single-parent (injection/clustering)
+        //- restrictAddressing_ above when set. interpolationAddr_[i][celli]
+        //- lists, for fine cell celli at level i, the coarse cells
+        //- (indices into the level i+1 addressing) it interpolates
+        //- to/from. Left unset (default) for agglomerators that only
+        //- provide the classical single-parent restrictAddressing_.
+        PtrList<labelListList> interpolationAddr_;
+
+        //- Weighted interpolation weights, parallel to
+        //- interpolationAddr_ (same sizes, same order)
+        PtrList<List<scalarField>> interpolationWeights_;
+
         //- The number of (coarse) faces in each level.
         //  max(faceRestrictAddressing)+1.
         labelList nFaces_;
@@ -453,6 +467,34 @@ public:
                 return restrictTargetStartAddressing_[leveli];
             }
             #endif
+            //- True if weighted, possibly multi-parent interpolation
+            //- addressing (interpolationAddr()/interpolationWeights())
+            //- has been provided for the given level, instead of the
+            //- default single-parent restrictAddressing()
+            bool hasInterpolation(const label leveli) const
+            {
+                return
+                    leveli < interpolationAddr_.size()
+                 && interpolationAddr_.set(leveli);
+            }
+
+            //- Return weighted interpolation addressing of given level.
+            //- Only valid if hasInterpolation(leveli)
+            const labelListList& interpolationAddr(const label leveli) const
+            {
+                return interpolationAddr_[leveli];
+            }
+
+            //- Return weighted interpolation weights of given level,
+            //- parallel to interpolationAddr(leveli). Only valid if
+            //- hasInterpolation(leveli)
+            const List<scalarField>& interpolationWeights
+            (
+                const label leveli
+            ) const
+            {
+                return interpolationWeights_[leveli];
+            }
 
             //- Return face restrict addressing of given level
             const labelList& faceRestrictAddressing(const label leveli) const
@@ -601,6 +643,33 @@ public:
                 Field<Type>& work,      // work storage
                 const Field<Type>& cf,  // coarse-level field
                 const label coarseLevelIndex
+            ) const;
+
+            //- Restrict (weighted interpolation sum) cell field using
+            //- interpolationAddr()/interpolationWeights() when
+            //- hasInterpolation(fineLevelIndex) is true; otherwise
+            //- falls back to the plain injection-based restrictField()
+            //- above.
+            template<class Type>
+            void restrictFieldWeighted
+            (
+                Field<Type>& cf,
+                const Field<Type>& ff,
+                const label fineLevelIndex,
+                const bool procAgglom
+            ) const;
+
+            //- Prolong (weighted interpolation) cell field using
+            //- interpolationAddr()/interpolationWeights() when
+            //- hasInterpolation(levelIndex) is true; otherwise falls
+            //- back to the plain injection-based prolongField() above.
+            template<class Type>
+            void prolongFieldWeighted
+            (
+                Field<Type>& ff,
+                const Field<Type>& cf,
+                const label levelIndex,
+                const bool procAgglom
             ) const;
 
 

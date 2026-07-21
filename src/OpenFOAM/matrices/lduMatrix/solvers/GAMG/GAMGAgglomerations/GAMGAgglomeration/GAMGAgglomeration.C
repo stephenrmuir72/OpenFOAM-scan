@@ -56,6 +56,8 @@ void Foam::GAMGAgglomeration::compactLevels
 {
     nCells_.setSize(nCreatedLevels, 0);
     restrictAddressing_.setSize(nCreatedLevels);
+    interpolationAddr_.setSize(nCreatedLevels);
+    interpolationWeights_.setSize(nCreatedLevels);
     nFaces_.setSize(nCreatedLevels, 0);
     faceRestrictAddressing_.setSize(nCreatedLevels);
     faceFlipMap_.setSize(nCreatedLevels);
@@ -291,6 +293,8 @@ Foam::GAMGAgglomeration::GAMGAgglomeration
 
     nCells_(maxLevels_),
     restrictAddressing_(maxLevels_),
+    interpolationAddr_(maxLevels_),
+    interpolationWeights_(maxLevels_),
     nFaces_(maxLevels_),
     faceRestrictAddressing_(maxLevels_),
     faceFlipMap_(maxLevels_),
@@ -612,6 +616,8 @@ void Foam::GAMGAgglomeration::clearLevel(const label i)
         {
             nCells_[i] = -555;
             restrictAddressing_.set(i, nullptr);
+            interpolationAddr_.set(i, nullptr);
+            interpolationWeights_.set(i, nullptr);
             nFaces_[i] = -666;
             faceRestrictAddressing_.set(i, nullptr);
             faceFlipMap_.set(i, nullptr);
