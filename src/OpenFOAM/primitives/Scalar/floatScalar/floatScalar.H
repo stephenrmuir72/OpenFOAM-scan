@@ -87,14 +87,14 @@ inline Scalar atan2(const Scalar y, const Scalar x)
 
 // Single-precision transcendental functions (with 'f' appended to the name)
 #if defined(FOAM_OFFLOAD) && defined(__HIP_DEVICE_COMPILE__)
-// GPU version — use ROCm OCML intrinsics
+// GPU version - use ROCm OCML intrinsics
 #define transFunc(func)                                         \
 __host__ __device__ inline Scalar func(const Scalar s)          \
 {                                                               \
     return __ocml_##func##_f32(static_cast<float>(s));          \
 }
 #else
-// CPU version — normal math library call
+// CPU version - normal math library call
 #define transFunc(func)                                         \
 inline Scalar func(const Scalar s)                              \
 {                                                               \
