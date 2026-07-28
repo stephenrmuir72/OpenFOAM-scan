@@ -105,7 +105,7 @@ Foam::scaledFixedValueFvPatchField<Type>::scaledFixedValueFvPatchField
 :
     fixedValueFvPatchField<Type>(spf, iF),
     scalePtr_(spf.scalePtr_.clone(spf.patch().patch())),
-    refValuePtr_(spf.refValue().clone())
+    refValuePtr_(spf.refValue().clone(iF))
 {}
 
 
