@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2019 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -105,7 +106,7 @@ Foam::scaledFixedValueFvPatchField<Type>::scaledFixedValueFvPatchField
 :
     fixedValueFvPatchField<Type>(spf, iF),
     scalePtr_(spf.scalePtr_.clone(spf.patch().patch())),
-    refValuePtr_(spf.refValue().clone())
+    refValuePtr_(spf.refValue().clone(iF))
 {}
 
 
@@ -188,12 +189,13 @@ void Foam::scaledFixedValueFvPatchField<Type>::operator==
 {
     const scalarField s(scalePtr_->value(this->db().time().timeOutputValue()));
 
+    auto& refVals = refValuePtr_.ref();
+
     forAll(s, facei)
     {
-        const scalar si = s[facei];
-        if (mag(si) > ROOTVSMALL)
+        if (const auto si = s[facei]; Foam::mag(si) > ROOTVSMALL)
         {
-            refValuePtr_->operator[](facei) = ptf[facei]/si;
+            refVals[facei] = ptf[facei]/si;
         }
     }
 
@@ -206,12 +208,13 @@ void Foam::scaledFixedValueFvPatchField<Type>::operator==(const Field<Type>& tf)
 {
     const scalarField s(scalePtr_->value(this->db().time().timeOutputValue()));
 
+    auto& refVals = refValuePtr_.ref();
+
     forAll(s, facei)
     {
-        const scalar si = s[facei];
-        if (mag(si) > ROOTVSMALL)
+        if (const auto si = s[facei]; Foam::mag(si) > ROOTVSMALL)
         {
-            refValuePtr_->operator[](facei) = tf[facei]/si;
+            refVals[facei] = tf[facei]/si;
         }
     }
 
@@ -224,12 +227,13 @@ void Foam::scaledFixedValueFvPatchField<Type>::operator==(const Type& t)
 {
     const scalarField s(scalePtr_->value(this->db().time().timeOutputValue()));
 
+    auto& refVals = refValuePtr_.ref();
+
     forAll(s, facei)
     {
-        const scalar si = s[facei];
-        if (mag(si) > ROOTVSMALL)
+        if (const auto si = s[facei]; Foam::mag(si) > ROOTVSMALL)
         {
-            refValuePtr_->operator[](facei) = t/si;
+            refVals[facei] = t/si;
         }
     }
 
