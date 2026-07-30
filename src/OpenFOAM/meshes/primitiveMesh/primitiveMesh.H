@@ -187,19 +187,19 @@ class primitiveMesh
             // 2D/1D
 
                 //- Cell areas
-                mutable vectorField* cellDir0Ptr_;
+                mutable std::unique_ptr<vectorField> cellDir0Ptr_;
 
                 //- Cell tangential direction
-                mutable vectorField* cellDir1Ptr_;
+                mutable std::unique_ptr<vectorField> cellDir1Ptr_;
 
                 //- Face tangential direction1
-                mutable vectorField* faceDir1Ptr_;
+                mutable std::unique_ptr<vectorField> faceDir1Ptr_;
 
                 //- Face tangential vector2 (unnormalised)
-                mutable vectorField* faceVec2Ptr_;
+                mutable std::unique_ptr<vectorField> faceVec2Ptr_;
 
                 //- Point normal direction (average of surrounding cellDir0)
-                mutable vectorField* pointDir0Ptr_;
+                mutable std::unique_ptr<vectorField> pointDir0Ptr_;
 
 
     // Private Member Functions
@@ -956,7 +956,8 @@ public:
             //- Clear all geometry and addressing unnecessary for CFD
             void clearOut();
 
-            //- Reset additional mesh primitive data
+            //- Reset additional mesh primitive data.
+            //  Ownership of any non-null field is transferred to the mesh.
             void resetPrimitives
             (
                 autoPtr<vectorField>&& cellDir0,

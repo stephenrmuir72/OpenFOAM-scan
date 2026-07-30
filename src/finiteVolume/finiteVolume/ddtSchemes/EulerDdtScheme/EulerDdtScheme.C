@@ -372,7 +372,10 @@ EulerDdtScheme<Type>::fvmDdt
         new fvMatrix<Type>
         (
             vf,
-            vf.dimensions()*dimVol/dimTime
+            // Reduced-order (2D) meshes carry dimArea cell "volumes"; use the
+            // mesh's actual V dimensions (== dimVol in 3D) so the matrix agrees
+            // with the field source path (checkMethod divides by mesh().V()).
+            vf.dimensions()*mesh().V().dimensions()/dimTime
         )
     );
 
@@ -408,7 +411,7 @@ EulerDdtScheme<Type>::fvmDdt
         new fvMatrix<Type>
         (
             vf,
-            rho.dimensions()*vf.dimensions()*dimVol/dimTime
+            rho.dimensions()*vf.dimensions()*mesh().V().dimensions()/dimTime
         )
     );
     fvMatrix<Type>& fvm = tfvm.ref();
@@ -445,7 +448,7 @@ EulerDdtScheme<Type>::fvmDdt
         new fvMatrix<Type>
         (
             vf,
-            rho.dimensions()*vf.dimensions()*dimVol/dimTime
+            rho.dimensions()*vf.dimensions()*mesh().V().dimensions()/dimTime
         )
     );
     fvMatrix<Type>& fvm = tfvm.ref();
@@ -485,7 +488,8 @@ EulerDdtScheme<Type>::fvmDdt
         new fvMatrix<Type>
         (
             vf,
-            alpha.dimensions()*rho.dimensions()*vf.dimensions()*dimVol/dimTime
+            alpha.dimensions()*rho.dimensions()*vf.dimensions()
+           *mesh().V().dimensions()/dimTime
         )
     );
     fvMatrix<Type>& fvm = tfvm.ref();

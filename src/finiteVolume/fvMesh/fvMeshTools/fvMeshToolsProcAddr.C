@@ -32,17 +32,15 @@ License
 #include "IOmapDistributePolyMesh.H"
 #include "OSspecific.H"
 
-// * * * * * * * * * * * * * * * Local Functions * * * * * * * * * * * * * * //
-
-namespace Foam
-{
+// * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * * //
 
 // Create a reconstruct map.
 // The baseMeshPtr is non-null (and probably has cells) on the master
 // is ignored elsewhere.
 //
 // The incoming faceProcAddressing is assumed to have flip addressing.
-static autoPtr<mapDistributePolyMesh> createReconstructMap
+Foam::autoPtr<Foam::mapDistributePolyMesh>
+Foam::fvMeshTools::createReconstructMap
 (
     const fvMesh& mesh,
     const fvMesh* baseMeshPtr,
@@ -213,7 +211,184 @@ static autoPtr<mapDistributePolyMesh> createReconstructMap
     }
 }
 
-} // End namespace Foam
+
+// Create a decompose (scatter) map: the inverse of createReconstructMap.
+//
+// The completeMeshPtr is non-null (and probably has cells) on the master and
+// is ignored elsewhere. The incoming faceProcAddressing is assumed to have
+// flip addressing. Each proc-local entity names the complete-mesh entity it
+// derives from, so the send (sub) maps live on the master and the construct
+// maps are proc-local identities.
+Foam::autoPtr<Foam::mapDistributePolyMesh>
+Foam::fvMeshTools::createDecomposeMap
+(
+    const fvMesh& procMesh,
+    const fvMesh* completeMeshPtr,
+    const labelUList& cellProcAddressing,
+    const labelUList& faceProcAddressing,
+    const labelUList& pointProcAddressing,
+    const labelUList& boundaryProcAddressing
+)
+{
+    const label numProc = UPstream::nProcs();
+    const label myProci = UPstream::myProcNo();
+
+    // Local (destination) sizes -- known on every rank
+    const label nProcPoints = procMesh.nPoints();
+    const label nProcFaces = procMesh.nFaces();
+    const label nProcCells = procMesh.nCells();
+    const label nProcPatches = procMesh.boundaryMesh().size();
+
+    // Source (complete) sizes: only meaningful on the master. Stored for
+    // completeness (mesh topology is not distributed through this map; field
+    // values go through the mapDistribute schedules below).
+    label nOldPoints = 0;
+    label nOldFaces = 0;
+    label nOldCells = 0;
+    labelList oldPatchStarts;
+    labelList oldPatchNumPoints;
+
+    if (UPstream::master() && completeMeshPtr && completeMeshPtr->nCells())
+    {
+        const fvMesh& completeMesh = *completeMeshPtr;
+        const polyBoundaryMesh& pbm = completeMesh.boundaryMesh();
+
+        nOldPoints = completeMesh.nPoints();
+        nOldFaces = completeMesh.nFaces();
+        nOldCells = completeMesh.nCells();
+
+        oldPatchStarts.resize(pbm.size());
+        oldPatchNumPoints.resize(pbm.size());
+        forAll(pbm, patchi)
+        {
+            oldPatchStarts[patchi] = pbm[patchi].start();
+            oldPatchNumPoints[patchi] = pbm[patchi].nPoints();
+        }
+    }
+
+    // Gather proc->complete addressing onto master to form the send maps
+    labelListList cellAddressing(numProc);
+    cellAddressing[myProci] = cellProcAddressing;
+    Pstream::gatherList(cellAddressing);
+
+    labelListList faceAddressing(numProc);
+    faceAddressing[myProci] = faceProcAddressing;
+    Pstream::gatherList(faceAddressing);
+
+    labelListList pointAddressing(numProc);
+    pointAddressing[myProci] = pointProcAddressing;
+    Pstream::gatherList(pointAddressing);
+
+    labelListList boundaryAddressing(numProc);
+    boundaryAddressing[myProci] = boundaryProcAddressing;
+    Pstream::gatherList(boundaryAddressing);
+
+
+    // Send (sub) maps: populated on the master only. subMap[proci] lists the
+    // complete-mesh entities to send to proci, in that proc's local order.
+    labelListList cellSubMap(numProc);
+    labelListList faceSubMap(numProc);
+    labelListList pointSubMap(numProc);
+    labelListList patchSubMap(numProc);
+
+    if (UPstream::master())
+    {
+        forAll(cellAddressing, proci)
+        {
+            cellSubMap[proci] = cellAddressing[proci];   // 0-based indices
+            faceSubMap[proci] = faceAddressing[proci];   // flip-encoded
+            pointSubMap[proci] = pointAddressing[proci];
+
+            // Patches: only proc patches that map to a complete patch
+            // (skip -1 entries, e.g. processor patches)
+            patchSubMap[proci] =
+                IndirectList<label>::subset_if
+                (
+                    boundaryAddressing[proci],
+                    labelRange::ge0()
+                );
+        }
+    }
+
+    // Construct maps: every proc receives its portion from the master (proc 0)
+    // in the order it was sent, so construct maps are local identities.
+    labelListList cellConstructMap(numProc);
+    cellConstructMap[Pstream::masterNo()] = identity(nProcCells);
+
+    labelListList faceConstructMap(numProc);
+    faceConstructMap[Pstream::masterNo()] = identity(nProcFaces);
+
+    labelListList pointConstructMap(numProc);
+    pointConstructMap[Pstream::masterNo()] = identity(nProcPoints);
+
+    // Patch construct: the proc-patch positions that map to a complete patch,
+    // in the same skip-(-1) order as patchSubMap above.
+    labelListList patchConstructMap(numProc);
+    {
+        label nValid = 0;
+        forAll(boundaryProcAddressing, p)
+        {
+            if (boundaryProcAddressing[p] >= 0)
+            {
+                ++nValid;
+            }
+        }
+        labelList procPatchPos(nValid);
+        nValid = 0;
+        forAll(boundaryProcAddressing, p)
+        {
+            if (boundaryProcAddressing[p] >= 0)
+            {
+                procPatchPos[nValid++] = p;
+            }
+        }
+        patchConstructMap[Pstream::masterNo()] = std::move(procPatchPos);
+    }
+
+
+    mapDistribute cellMap
+    (
+        nProcCells,
+        std::move(cellSubMap),
+        std::move(cellConstructMap)
+    );
+
+    mapDistribute faceMap
+    (
+        nProcFaces,
+        std::move(faceSubMap),
+        std::move(faceConstructMap),
+        true,   // subHasFlip
+        false   // constructHasFlip
+    );
+
+    mapDistribute pointMap
+    (
+        nProcPoints,
+        std::move(pointSubMap),
+        std::move(pointConstructMap)
+    );
+
+    mapDistribute patchMap
+    (
+        nProcPatches,
+        std::move(patchSubMap),
+        std::move(patchConstructMap)
+    );
+
+    return autoPtr<mapDistributePolyMesh>::New
+    (
+        nOldPoints,
+        nOldFaces,
+        nOldCells,
+        std::move(oldPatchStarts),
+        std::move(oldPatchNumPoints),
+        std::move(pointMap),
+        std::move(faceMap),
+        std::move(cellMap),
+        std::move(patchMap)
+    );
+}
 
 
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //

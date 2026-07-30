@@ -38,6 +38,7 @@ SourceFiles
 #define basicFvGeometryScheme_H
 
 #include "fvGeometryScheme.H"
+#include "linePointRef.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -56,6 +57,9 @@ protected:
 
     // Protected Member Functions
 
+        //- Reduced-order (2D) manifold geometry building blocks, reused by
+        //  faGeometryScheme. Kept here so the derived scheme can share them.
+
         void calcPointAreaNormals(vectorField& result) const;
 
         void calcFaceAreaNormalsInvDistSqrWeighted(vectorField& fDir1) const;
@@ -65,6 +69,16 @@ protected:
             const vectorField& pointNormals,
             vectorField& fDir1
         ) const;
+
+        //- Calculate the 'Le' edge vector from face centre to edge centre,
+        //  using the edge normal to correct for curvature. Rescaled to the
+        //  edge length.
+        static vector calcLeVector
+        (
+            const point& faceCentre,
+            const linePointRef& edgeLine,
+            const vector& edgeNormal
+        );
 
 
 private:

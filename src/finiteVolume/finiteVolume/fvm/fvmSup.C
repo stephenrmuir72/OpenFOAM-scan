@@ -53,7 +53,7 @@ Foam::fvm::Su
     auto tmat = tmp<fvMatrix<Type>>::New
     (
         fld,
-        dimVol*su.dimensions()
+        fld.mesh().V().dimensions()*su.dimensions()
     );
     auto& mat = tmat.ref();
     const auto& domain = fld.mesh().V();
@@ -78,7 +78,7 @@ Foam::fvm::Su
     auto tmat = tmp<fvMatrix<Type>>::New
     (
         fld,
-        dimVol*su.dimensions()
+        fld.mesh().V().dimensions()*su.dimensions()
     );
     auto& mat = tmat.ref();
     const auto& domain = fld.mesh().V();
@@ -142,7 +142,7 @@ Foam::fvm::Sp
     auto tmat = tmp<fvMatrix<Type>>::New
     (
         fld,
-        dimVol*sp.dimensions()*fld.dimensions()
+        fld.mesh().V().dimensions()*sp.dimensions()*fld.dimensions()
     );
     auto& mat = tmat.ref();
     const auto& domain = fld.mesh().V();
@@ -167,7 +167,7 @@ Foam::fvm::Sp
     auto tmat = tmp<fvMatrix<Type>>::New
     (
         fld,
-        dimVol*sp.dimensions()*fld.dimensions()
+        fld.mesh().V().dimensions()*sp.dimensions()*fld.dimensions()
     );
     auto& mat = tmat.ref();
     const auto& domain = fld.mesh().V();
@@ -231,7 +231,7 @@ Foam::fvm::SuSp
     auto tmat = tmp<fvMatrix<Type>>::New
     (
         fld,
-        dimVol*susp.dimensions()*fld.dimensions()
+        fld.mesh().V().dimensions()*susp.dimensions()*fld.dimensions()
     );
     auto& mat = tmat.ref();
     const auto& domain = fld.mesh().V();
@@ -260,7 +260,7 @@ Foam::fvm::SuSp
     auto tmat = tmp<fvMatrix<Type>>::New
     (
         fld,
-        dimVol*susp.dimensions()*fld.dimensions()
+        fld.mesh().V().dimensions()*susp.dimensions()*fld.dimensions()
     );
     auto& mat = tmat.ref();
     const auto& domain = fld.mesh().V();

@@ -38,6 +38,41 @@ License
 namespace Foam
 {
 
+// Local (non-collective) topological dimension from the face point counts.
+//
+// The mesh-level primitiveMesh::nTopologicalD() performs a worldComm reduce so
+// that empty/partial ranks agree on the global dimension. The geometry formulas
+// below, however, only need the LOCAL dimension: a 2-point face is an edge
+// (2D), a 1-point face is a point (1D) and a >2-point face is a polygon (3D),
+// independent of any other rank, and a rank with no faces has no geometry to
+// compute. Using the collective accessor here is not only unnecessary but
+// unsafe: face/cell centres are evaluated lazily (e.g. from
+// processorPolyPatch::initGeometry during fvMeshDistribute), so on an empty
+// destination subdomain the reduce would not be matched and would deadlock.
+static inline Foam::label localTopologicalD(const UList<face>& faces)
+{
+    label nD = -1;
+    for (const face& f : faces)
+    {
+        const label sz = f.size();
+        if (sz > 2)
+        {
+            return 3;
+        }
+        else if (sz == 2)
+        {
+            nD = max(nD, label(2));
+        }
+        else if (sz == 1)
+        {
+            nD = max(nD, label(1));
+        }
+    }
+
+    // No faces (or none resolved): locally assume 3D (harmless - nothing to do)
+    return (nD == -1 ? 3 : nD);
+}
+
 // Average of points
 // Note: use double precision to avoid overflows when summing
 static inline Foam::doubleVector pointsAverage
@@ -81,14 +116,18 @@ void Foam::primitiveMeshTools::updateFaceCentresAndAreas
         const auto& f = fs[facei];
         const label nPoints = f.size();
 
-        if (mesh.nTopologicalD() == 1)
+        // Per-face point count drives the formula (local, non-collective):
+        // a 1-point face is a point, a 2-point face an edge, otherwise a
+        // polygon. Avoids the worldComm reduce in primitiveMesh::nTopologicalD()
+        // from this lazily-evaluated path.
+        if (nPoints == 1)
         {
             // Each face is a point.
             fCtrs[facei] = p[f[0]];
             // Direction?
             fAreas[facei] = vector(1, 0, 0);
         }
-        else if (mesh.nTopologicalD() == 2)
+        else if (nPoints == 2)
         {
             // Each face is two points
             fCtrs[facei] = 0.5*(p[f[0]]+p[f[1]]);
@@ -139,6 +178,26 @@ void Foam::primitiveMeshTools::updateFaceCentresAndAreas
             }
         }
     }
+}
+
+
+void Foam::primitiveMeshTools::updateCellCentresAndVols
+(
+    const primitiveMesh& mesh,
+    const vectorField& fCtrs,
+    const vectorField& fAreas,
+    const List<label>& cellIDs,
+    const List<cell>& cells,
+    vectorField& cellCtrs_s,
+    scalarField& cellVols_s
+)
+{
+    // 3D convenience overload: no reduced-order cell-normal field.
+    vectorField cellDir0s;
+    updateCellCentresAndVols
+    (
+        mesh, fCtrs, fAreas, cellIDs, cells, cellCtrs_s, cellVols_s, cellDir0s
+    );
 }
 
 
@@ -202,20 +261,23 @@ void Foam::primitiveMeshTools::updateCellCentresAndVols
     const auto& points = mesh.points();
     const auto& faces = mesh.faces();
 
+    // Local (non-collective) dimension - see localTopologicalD / makeCell...
+    const label topoD = localTopologicalD(faces);
+
     forAll(cellIDs, i)
     {
         const label celli = cellIDs[i];
         const auto& c = cells[celli];
         const solveVector cc(Cc0[i]);
 
-        if (mesh.nTopologicalD() == 1)
+        if (topoD == 1)
         {
             const auto& p0 = fCtrs[c[0]];
             const auto& p1 = fCtrs[c[1]];
             cellCtrs[celli] = 0.5*(p0+p1);
             cellVols[celli] = mag(p1-p0);
         }
-        else if (mesh.nTopologicalD() == 2)
+        else if (topoD == 2)
         {
             for (const label facei : c)
             {
@@ -248,16 +310,19 @@ void Foam::primitiveMeshTools::updateCellCentresAndVols
                     cellDir0s[celli] += tri.areaNormal();
                 }
             }
-            forAll(cellCtrs, celli)
+
+            // Normalise this cell only (mirrors the 3D branch below and
+            // makeCellCentresAndVols): the previous code looped over *all*
+            // cells here, which re-normalised the whole mesh on every updated
+            // cell (O(nCells^2)) and wrote this cell's estimate Cc0[i] into
+            // unrelated cells.
+            if (mag(cellVols[celli]) > VSMALL)
             {
-                if (mag(cellVols[celli]) > VSMALL)
-                {
-                    cellCtrs[celli] /= cellVols[celli];
-                }
-                else
-                {
-                    cellCtrs[celli] = Cc0[i];
-                }
+                cellCtrs[celli] /= cellVols[celli];
+            }
+            else
+            {
+                cellCtrs[celli] = cc;
             }
             if (cellDir0s.size())
             {
@@ -388,11 +453,29 @@ void Foam::primitiveMeshTools::makeFaceCentresAndAreas
 {
     makeFaceCentresAndAreas
     (
-        mesh.nTopologicalD(),
+        localTopologicalD(mesh.faces()),    // local, non-collective (see above)
         mesh.faces(),
         p,
         fCtrs,
         fAreas
+    );
+}
+
+
+void Foam::primitiveMeshTools::makeCellCentresAndVols
+(
+    const primitiveMesh& mesh,
+    const vectorField& fCtrs,
+    const vectorField& fAreas,
+    vectorField& cellCtrs_s,
+    scalarField& cellVols_s
+)
+{
+    // 3D convenience overload: no reduced-order cell-normal field.
+    vectorField cellDir0s;
+    makeCellCentresAndVols
+    (
+        mesh, fCtrs, fAreas, cellCtrs_s, cellVols_s, cellDir0s
     );
 }
 
@@ -424,6 +507,12 @@ void Foam::primitiveMeshTools::makeCellCentresAndVols
     const auto& points = mesh.points();
     const auto& faces = mesh.faces();
 
+    // Local (non-collective) dimension: the cell formula depends only on the
+    // local face point counts (see localTopologicalD). Avoids the worldComm
+    // reduce in primitiveMesh::nTopologicalD() firing from this lazily-evaluated
+    // geometry path (deadlocks on empty subdomains during fvMeshDistribute).
+    const label topoD = localTopologicalD(faces);
+
     // first estimate the approximate cell centre as the average of
     // face centres
     vectorField cEst(mesh.nCells(), Zero);
@@ -447,7 +536,7 @@ void Foam::primitiveMeshTools::makeCellCentresAndVols
     }
 
 
-    if (mesh.nTopologicalD() == 1)
+    if (topoD == 1)
     {
         const auto& cells = mesh.cells();
         forAll(cells, celli)
@@ -457,7 +546,7 @@ void Foam::primitiveMeshTools::makeCellCentresAndVols
             cellVols[celli] = mag(fCtrs[c[1]]-fCtrs[c[0]]);
         }
     }
-    else if (mesh.nTopologicalD() == 2)
+    else if (topoD == 2)
     {
         forAll(own, facei)
         {

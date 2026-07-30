@@ -419,26 +419,40 @@ void Foam::primitiveMesh::resetPrimitives
     autoPtr<vectorField>&& pointDir0
 )
 {
-    if (cellDir0)
-    {
-        cellDir0Ptr_ = cellDir0.ptr();
-    }
-    if (cellDir1)
-    {
-        cellDir1Ptr_ = cellDir1.ptr();
-    }
-    if (faceDir1)
-    {
-        faceDir1Ptr_ = faceDir1.ptr();
-    }
-    if (faceVec2)
-    {
-        faceVec2Ptr_ = faceVec2.ptr();
-    }
-    if (pointDir0)
-    {
-        pointDir0Ptr_ = pointDir0.ptr();
-    }
+    // Install each supplied field. An empty autoPtr leaves the corresponding
+    // data untouched.
+    //
+    // When the target already exists with a matching size, copy the values in
+    // place rather than swapping in a new array: the reduced-order (2D)
+    // geometry (faceVec2 -> Le, faceDir1 -> edgeAreaNormals) is exposed via
+    // *sliced* fvMesh fields that hold a view onto these arrays. A geometry
+    // recompute (e.g. every movePoints, which reallocates the temporaries in
+    // faGeometryScheme) would otherwise free the backing array out from under
+    // those cached slices, leaving them dangling onto reused memory. Preserving
+    // the array identity keeps the slices valid and simply refreshes their
+    // values -- the same in-place semantics faceAreas already relies on.
+    const auto installField =
+        [](std::unique_ptr<vectorField>& target, autoPtr<vectorField>&& src)
+        {
+            if (!src)
+            {
+                return;
+            }
+            if (target && target->size() == src->size())
+            {
+                *target = *src;
+            }
+            else
+            {
+                target.reset(src.release());
+            }
+        };
+
+    installField(cellDir0Ptr_, std::move(cellDir0));
+    installField(cellDir1Ptr_, std::move(cellDir1));
+    installField(faceDir1Ptr_, std::move(faceDir1));
+    installField(faceVec2Ptr_, std::move(faceVec2));
+    installField(pointDir0Ptr_, std::move(pointDir0));
 }
 
 

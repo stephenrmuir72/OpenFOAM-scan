@@ -95,6 +95,7 @@ void Foam::fvMesh::clearGeomNotOldVol()
     faceCurvaturesPtr_.reset();
     edgeAreaNormalsPtr_.reset(nullptr);
     LePtr_.reset(nullptr);
+    edgeTransformTensorsPtr_.reset(nullptr);
 }
 
 
@@ -303,6 +304,57 @@ Foam::fvMesh::fvMesh(const IOobject& io, const bool doInit)
 }
 
 
+Foam::fvMesh::fvMesh
+(
+    const IOobject& io,
+    const bool doInit,
+    const dictionary& schemesFallback,
+    const dictionary& solutionFallback
+)
+:
+    polyMesh(io, doInit),
+    // Read fv* controls if present, otherwise use the supplied fallback
+    // content (e.g. legacy faSchemes/faSolution). READ_IF_PRESENT so a
+    // missing fv* file does not fatal-error before the fallback is applied.
+    fvSchemes
+    (
+        static_cast<const objectRegistry&>(*this),
+        IOobjectOption::READ_IF_PRESENT,
+        &schemesFallback
+    ),
+    surfaceInterpolation(*this),
+    fvSolution
+    (
+        static_cast<const objectRegistry&>(*this),
+        IOobjectOption::READ_IF_PRESENT,
+        &solutionFallback
+    ),
+    boundary_(*this, boundaryMesh()),
+    lduPtr_(nullptr),
+    curTimeIndex_(time().timeIndex()),
+    VPtr_(nullptr),
+    V0Ptr_(nullptr),
+    V00Ptr_(nullptr),
+    SfPtr_(nullptr),
+    magSfPtr_(nullptr),
+    CPtr_(nullptr),
+    CfPtr_(nullptr),
+    phiPtr_(nullptr),
+    faceAreaNormalsPtr_(nullptr),
+    faceCurvaturesPtr_(nullptr),
+    edgeAreaNormalsPtr_(nullptr),
+    LePtr_(nullptr)
+{
+    DebugInFunction << "Constructing fvMesh from IOobject (with fallback)"
+        << endl;
+
+    if (doInit)
+    {
+        fvMesh::init(false);    // do not initialise lower levels
+    }
+}
+
+
 bool Foam::fvMesh::init(const bool doInit)
 {
     if (doInit)
@@ -423,6 +475,63 @@ Foam::fvMesh::fvMesh
     fvSchemes(static_cast<const objectRegistry&>(*this)),
     surfaceInterpolation(*this),
     fvSolution(static_cast<const objectRegistry&>(*this)),
+    boundary_(*this),
+    lduPtr_(nullptr),
+    curTimeIndex_(time().timeIndex()),
+    VPtr_(nullptr),
+    V0Ptr_(nullptr),
+    V00Ptr_(nullptr),
+    SfPtr_(nullptr),
+    magSfPtr_(nullptr),
+    CPtr_(nullptr),
+    CfPtr_(nullptr),
+    phiPtr_(nullptr),
+    faceAreaNormalsPtr_(nullptr),
+    faceCurvaturesPtr_(nullptr),
+    edgeAreaNormalsPtr_(nullptr),
+    LePtr_(nullptr)
+{
+    DebugInFunction << "Constructing fvMesh from components" << endl;
+}
+
+
+Foam::fvMesh::fvMesh
+(
+    const IOobject& io,
+    pointField&& points,
+    faceList&& faces,
+    labelList&& allOwner,
+    labelList&& allNeighbour,
+    const dictionary& schemesFallback,
+    const dictionary& solutionFallback,
+    const bool syncPar
+)
+:
+    polyMesh
+    (
+        io,
+        std::move(points),
+        std::move(faces),
+        std::move(allOwner),
+        std::move(allNeighbour),
+        syncPar
+    ),
+    // Read fv* controls if present, otherwise use the supplied fallback
+    // content (e.g. legacy faSchemes/faSolution). READ_IF_PRESENT so a
+    // missing fv* file does not fatal-error before the fallback is applied.
+    fvSchemes
+    (
+        static_cast<const objectRegistry&>(*this),
+        IOobjectOption::READ_IF_PRESENT,
+        &schemesFallback
+    ),
+    surfaceInterpolation(*this),
+    fvSolution
+    (
+        static_cast<const objectRegistry&>(*this),
+        IOobjectOption::READ_IF_PRESENT,
+        &solutionFallback
+    ),
     boundary_(*this),
     lduPtr_(nullptr),
     curTimeIndex_(time().timeIndex()),
@@ -1066,6 +1175,14 @@ void Foam::fvMesh::updateMesh(const mapPolyMesh& mpm)
 
     // Update polyMesh. This needs to keep volume existent!
     polyMesh::updateMesh(mpm);
+
+    // Re-seed the (collective) topological dimension uniformly on every rank
+    // now, while we are guaranteed to be inside a synchronised update. This
+    // prevents the worldComm reduce inside nTopologicalD() from later firing
+    // from a lazily-evaluated, potentially rank-asymmetric geometry path
+    // (e.g. an empty subdomain after fvMeshDistribute) - the same class of
+    // deadlock the local geometry calculators were changed to avoid.
+    (void)nTopologicalD();
 
     // Our slice of the addressing is no longer valid
     lduPtr_.reset(nullptr);

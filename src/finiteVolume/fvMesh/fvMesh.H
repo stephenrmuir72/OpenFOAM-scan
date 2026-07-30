@@ -134,16 +134,17 @@ protected:
         // 2D
 
             //- Cell normals
-            mutable slicedVolVectorField* faceAreaNormalsPtr_;
+            mutable std::unique_ptr<slicedVolVectorField> faceAreaNormalsPtr_;
 
             //- Face curvatures
             mutable std::unique_ptr<volScalarField> faceCurvaturesPtr_;
 
             //- Face tangential direction
-            mutable slicedSurfaceVectorField* edgeAreaNormalsPtr_;
+            mutable std::unique_ptr<slicedSurfaceVectorField>
+                edgeAreaNormalsPtr_;
 
             //- Edge directions (= second tangential face direction)
-            mutable slicedSurfaceVectorField* LePtr_;
+            mutable std::unique_ptr<slicedSurfaceVectorField> LePtr_;
 
             //- Edge transformation tensors
             mutable std::unique_ptr<FieldField<Field, tensor>>
@@ -217,6 +218,21 @@ public:
         //- Construct from IOobject
         explicit fvMesh(const IOobject& io, const bool doInit=true);
 
+        //- Construct from IOobject, supplying fallback dictionary content for
+        //- the fvSchemes/fvSolution controls (used when the corresponding
+        //- system/<region>/fvSchemes|fvSolution file is absent). Unlike the
+        //- plain IOobject constructor - which requires the fv* files - this
+        //- form reads them as READ_IF_PRESENT and falls back to the supplied
+        //- content. Empty fallbacks are permitted (yield empty controls).
+        //  Used by faMesh to honour legacy finiteArea faSchemes/faSolution.
+        fvMesh
+        (
+            const IOobject& io,
+            const bool doInit,
+            const dictionary& schemesFallback,
+            const dictionary& solutionFallback
+        );
+
         //- Construct from IOobject or as zero-sized mesh
         //  Boundary is added using addFvPatches() member function
         fvMesh(const IOobject& io, const Foam::zero, bool syncPar=true);
@@ -240,6 +256,25 @@ public:
             faceList&& faces,
             labelList&& allOwner,
             labelList&& allNeighbour,
+            const bool syncPar = true
+        );
+
+        //- Construct from components without boundary, supplying fallback
+        //- dictionary content for the fvSchemes/fvSolution controls (read as
+        //- READ_IF_PRESENT, so a missing system/<region>/fvSchemes|fvSolution
+        //- falls back to the supplied content). Empty fallbacks are permitted.
+        //  Used by faMesh to honour legacy finiteArea faSchemes/faSolution when
+        //  a reduced-order region is built directly from its parent mesh.
+        //  Boundary is added using addFvPatches() member function
+        fvMesh
+        (
+            const IOobject& io,
+            pointField&& points,
+            faceList&& faces,
+            labelList&& allOwner,
+            labelList&& allNeighbour,
+            const dictionary& schemesFallback,
+            const dictionary& solutionFallback,
             const bool syncPar = true
         );
 

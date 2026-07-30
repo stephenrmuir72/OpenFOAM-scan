@@ -35,8 +35,8 @@ License
 #include "SubField.H"
 #include "cyclicFvPatchFields.H"
 #include "cyclicAMIFvPatchFields.H"
+#include "processorFvPatch.H"
 #include "fvcSurfaceIntegrate.H"
-#include "skewCorrectionVectors.H"
 
 // * * * * * * * * * * * * * * * Local Functions * * * * * * * * * * * * * * //
 
@@ -101,8 +101,8 @@ void Foam::fvMesh::makeSf() const
             IOobject::NO_REGISTER
         ),
         *this,
-        //(nTopologicalD() == 2 ? dimLength : dimArea),
-        dimArea,
+        // Reduced-order (2D) manifold: face "area" is an edge length
+        (nTopologicalD() == 2 ? dimLength : dimArea),
         faceAreas()
     );
 
@@ -207,7 +207,7 @@ void Foam::fvMesh::makeC() const
         //    pfld = pfld.patch().patchSlice(faceDir1());
         //}
         //n.boundaryFieldRef().template evaluateCoupled<processorFvPatch>();
-        faceAreaNormalsPtr_ = new slicedVolVectorField
+        faceAreaNormalsPtr_ = std::make_unique<slicedVolVectorField>
         (
             IOobject
             (
@@ -266,7 +266,7 @@ void Foam::fvMesh::makeCf() const
     {
         DebugInFunction << "Assembling 2D face vectors" << endl;
 
-        LePtr_ = new slicedSurfaceVectorField
+        LePtr_ = std::make_unique<slicedSurfaceVectorField>
         (
             IOobject
             (
@@ -285,7 +285,7 @@ void Foam::fvMesh::makeCf() const
 
         LePtr_->setOriented();
 
-        edgeAreaNormalsPtr_ = new slicedSurfaceVectorField
+        edgeAreaNormalsPtr_ = std::make_unique<slicedSurfaceVectorField>
         (
             IOobject
             (
@@ -378,7 +378,168 @@ void Foam::fvMesh::calcEdgeTransformTensors() const
     const surfaceVectorField& Ne = edgeAreaNormals();
     const surfaceVectorField& Ce = edgeCentres();
 
-    const auto& scv = skewCorrectionVectors::New(*this);
+    // Halo-swapped neighbour-cell geometry for the processor-edge branch below.
+    //
+    // faceAreaNormals()/areaCentres() are cached *sliced* fields: their coupled
+    // (processor) patch value is initialised to the boundary-edge slice and is
+    // never evaluate()d, so patchNeighbourField() would return that edge value
+    // rather than the neighbour area-cell centre/normal. Build short-lived,
+    // halo-swapped copies here so the neighbour transform tensor is built from
+    // the *neighbour* cell's tangent plane. This is essential for the
+    // non-orthogonal Laplacian correction across processor edges on a curved
+    // manifold (it is a no-op on a flat plane, where the transform is identity)
+    // and mirrors the legacy faMesh, which evaluateCoupled()s these exact
+    // geometry fields (finiteArea/faMesh/faMeshDemandDrivenData.C). Local copies
+    // are used so the shared cached cell-centre/normal fields are left intact.
+    autoPtr<volVectorField> NfSwapPtr;
+    autoPtr<volVectorField> CfSwapPtr;
+    if (Pstream::parRun())
+    {
+        NfSwapPtr.reset
+        (
+            new volVectorField
+            (
+                IOobject
+                (
+                    "faceAreaNormalsProcSwap",
+                    pointsInstance(),
+                    *this,
+                    IOobject::NO_READ,
+                    IOobject::NO_WRITE,
+                    IOobject::NO_REGISTER
+                ),
+                Nf
+            )
+        );
+        NfSwapPtr->boundaryFieldRef()
+            .template evaluateCoupled<processorFvPatch>();
+
+        CfSwapPtr.reset
+        (
+            new volVectorField
+            (
+                IOobject
+                (
+                    "areaCentresProcSwap",
+                    pointsInstance(),
+                    *this,
+                    IOobject::NO_READ,
+                    IOobject::NO_WRITE,
+                    IOobject::NO_REGISTER
+                ),
+                Cf
+            )
+        );
+        CfSwapPtr->boundaryFieldRef()
+            .template evaluateCoupled<processorFvPatch>();
+    }
+
+    // FA-safe skew-correction vectors for the reduced-order (2-manifold) mesh.
+    //
+    // The generic finiteVolume skewCorrectionVectors forms the correction as
+    // Cpf - ((Sf & Cpf)/(Sf & d))*d, which is singular here: on the reduced
+    // mesh a "face" is a 2-point edge whose area vector Sf is zero, so (Sf & d)
+    // vanishes and the division is a floating-point exception. Instead derive
+    // the correction directly from the edge geometry (area/edge centres and the
+    // edge vector), mirroring the legacy finiteArea
+    // edgeInterpolation::makeSkewCorrectionVectors and guarding degenerate
+    // edges (alpha < SMALL -> zero correction). On an orthogonal/flat mesh the
+    // correction is ~0, so this is a no-op there and only activates on skewed
+    // curved manifolds.
+    surfaceVectorField skewCorrVecs
+    (
+        IOobject
+        (
+            "edgeSkewCorrectionVectors",
+            pointsInstance(),
+            *this,
+            IOobject::NO_READ,
+            IOobject::NO_WRITE,
+            IOobject::NO_REGISTER
+        ),
+        *this,
+        dimensionedVector(dimLength, Zero)
+    );
+    {
+        const pointField& pts = points();
+        const faceList& fcs = faces();
+
+        // Internal edges
+        vectorField& scvIn = skewCorrVecs.primitiveFieldRef();
+        for (label edgei = 0; edgei < nInternalFaces(); ++edgei)
+        {
+            const vector& P = Cf.internalField()[owner()[edgei]];
+            const vector& N = Cf.internalField()[neighbour()[edgei]];
+            const face& f = fcs[edgei];
+            const vector& S = pts[f[0]];
+
+            const vector d(N - P);
+            const vector e(pts[f[1]] - pts[f[0]]);
+            const vector de(d ^ e);
+            const scalar alpha = magSqr(de);
+
+            if (alpha < SMALL)
+            {
+                continue;
+            }
+
+            const scalar beta = -((d ^ (S - P)) & de)/alpha;
+            const vector E(S + beta*e);
+
+            scvIn[edgei] = Ce.internalField()[edgei] - E;
+        }
+
+        // Coupled boundary edges: use the halo-swapped neighbour area-centres
+        // (CfSwapPtr) built above. Non-coupled boundary edges keep zero skew,
+        // matching the legacy finiteArea treatment.
+        if (Pstream::parRun())
+        {
+            auto& scvBf = skewCorrVecs.boundaryFieldRef();
+
+            forAll(boundary(), patchi)
+            {
+                if (!boundary()[patchi].coupled())
+                {
+                    continue;
+                }
+
+                const labelUList& edgeFaces = boundary()[patchi].faceCells();
+                const label startFace = boundary()[patchi].start();
+
+                vectorField nbrCf
+                (
+                    CfSwapPtr->boundaryField()[patchi].patchNeighbourField()
+                );
+
+                auto& pscv = scvBf[patchi];
+
+                forAll(edgeFaces, bndEdgei)
+                {
+                    const label facei = startFace + bndEdgei;
+                    const vector& P = Cf.internalField()[edgeFaces[bndEdgei]];
+                    const vector& N = nbrCf[bndEdgei];
+                    const face& f = fcs[facei];
+                    const vector& S = pts[f[0]];
+
+                    const vector d(N - P);
+                    const vector e(pts[f[1]] - pts[f[0]]);
+                    const vector de(d ^ e);
+                    const scalar alpha = magSqr(de);
+
+                    if (alpha < SMALL)
+                    {
+                        continue;
+                    }
+
+                    const scalar beta = -((d ^ (S - P)) & de)/alpha;
+                    const vector E(S + beta*e);
+
+                    pscv[bndEdgei] =
+                        Ce.boundaryField()[patchi][bndEdgei] - E;
+                }
+            }
+        }
+    }
 
     // Internal edges transformation tensors
     for (label edgei = 0; edgei < nInternalFaces(); ++edgei)
@@ -388,11 +549,7 @@ void Foam::fvMesh::calcEdgeTransformTensors() const
         auto& tensors = edgeTransformTensors[edgei];
 
         vector edgeCtr = Ce.internalField()[edgei];
-
-        if (scv.skew())
-        {
-            edgeCtr -= scv().internalField()[edgei];
-        }
+        edgeCtr -= skewCorrVecs.internalField()[edgei];
 
         // Edge transformation tensor
         tensors[0] =
@@ -426,8 +583,18 @@ void Foam::fvMesh::calcEdgeTransformTensors() const
 
         if (boundary()[patchi].coupled())
         {
-            vectorField nbrCf(Cf.boundaryField()[patchi].patchNeighbourField());
-            vectorField nbrNf(Nf.boundaryField()[patchi].patchNeighbourField());
+            // Neighbour area-cell centre/normal from the halo-swapped copies
+            // (see the NfSwap/CfSwap construction above): the cached sliced
+            // fields' patchNeighbourField() would otherwise return the local
+            // boundary-edge slice, not the neighbour cell value.
+            vectorField nbrCf
+            (
+                CfSwapPtr->boundaryField()[patchi].patchNeighbourField()
+            );
+            vectorField nbrNf
+            (
+                NfSwapPtr->boundaryField()[patchi].patchNeighbourField()
+            );
 
             forAll(edgeFaces, bndEdgei)
             {
@@ -437,11 +604,7 @@ void Foam::fvMesh::calcEdgeTransformTensors() const
                 auto& tensors = edgeTransformTensors[meshEdgei];
 
                 vector edgeCtr = Ce.boundaryField()[patchi][bndEdgei];
-
-                if (scv.skew())
-                {
-                    edgeCtr -= scv().boundaryField()[patchi][bndEdgei];
-                }
+                edgeCtr -= skewCorrVecs.boundaryField()[patchi][bndEdgei];
 
                 // Edge transformation tensor
                 tensors[0] =
@@ -478,11 +641,7 @@ void Foam::fvMesh::calcEdgeTransformTensors() const
                 auto& tensors = edgeTransformTensors[meshEdgei];
 
                 vector edgeCtr = Ce.boundaryField()[patchi][bndEdgei];
-
-                if (scv.skew())
-                {
-                    edgeCtr -= scv().boundaryField()[patchi][bndEdgei];
-                }
+                edgeCtr -= skewCorrVecs.boundaryField()[patchi][bndEdgei];
 
                 // Edge transformation tensor
                 tensors[0] =
@@ -529,8 +688,8 @@ const Foam::volScalarField::Internal& Foam::fvMesh::V() const
                 IOobject::NO_REGISTER
             ),
             *this,
-            //(nTopologicalD() == 2 ? dimArea : dimVolume),
-            dimVolume,
+            // Reduced-order (2D) manifold: cell "volume" is a face area
+            (nTopologicalD() == 2 ? dimArea : dimVolume),
             cellVolumes()
         );
     }

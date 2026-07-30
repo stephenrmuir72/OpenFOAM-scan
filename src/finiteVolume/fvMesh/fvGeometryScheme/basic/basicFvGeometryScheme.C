@@ -33,6 +33,8 @@ License
 #include "syncTools.H"
 #include "triPointRef.H"
 #include "wedgePolyPatch.H"
+#include "labelIOList.H"
+#include "vectorIOField.H"
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -162,7 +164,7 @@ namespace Foam
 //  using the edge normal to correct for curvature
 //
 //  Normalise and rescaled to the edge length
-static inline vector calcLeVector
+Foam::vector Foam::basicFvGeometryScheme::calcLeVector
 (
     const point& faceCentre,
     const linePointRef& edgeLine,
@@ -299,15 +301,59 @@ void Foam::basicFvGeometryScheme::calcPointAreaNormals
         }
     }
 
-    // Parallel
-    syncTools::syncPointList
-    (
-        mesh_,
-        result,
-        plusEqOp<point>(),
-        vector::zero,
-        mapDistribute::transform()
-    );
+    // Parallel: sum the locally-accumulated contributions of each shared point
+    // across point coupling.
+    //
+    // A reduced-order manifold that is a boundary region of a parent volume
+    // mesh (the finiteArea faMesh) publishes in its registry the parent-mesh
+    // point label of each of its points (a labelList named as below). Its OWN
+    // point coupling is degenerate: the edges-as-faces processor patches
+    // collapse the global-point addressing, so a shared point is treated as
+    // coupled to every processor-boundary point and the summed normal is
+    // corrupted at multiply-shared points (e.g. the poles of a decomposed
+    // sphere, shared by non-adjacent ranks at a domain corner). When that map
+    // and a parent mesh are available, route the sum through the PARENT mesh's
+    // (correct) global point coupling, which resolves both adjacent-rank and
+    // multiply-shared points in a single collective (the parent-global analogue
+    // of the legacy faMesh::calcPointAreaNormals processor point exchange +
+    // sharedPoints combineReduce). Otherwise fall back to this mesh's own
+    // coupling: correct for a genuine fvMesh, and a no-op in serial.
+    //
+    // Name kept in sync with faMesh::registerParentPointMap (finiteArea). The
+    // seam is a registry lookup (not a virtual/data member on fvMesh) so it does
+    // not perturb the fvMesh ABI for the many fvMesh subclasses.
+    const labelIOList* parentMapPtr =
+        mesh_.thisDb().cfindObject<labelIOList>("pointAreaNormalsParentMap");
+
+    refPtr<fvMesh> parentRef;
+    if (parentMapPtr && parentMapPtr->size() == result.size())
+    {
+        parentRef = mesh_.parentMesh();
+    }
+
+    if (parentRef.good())
+    {
+        syncTools::syncPointList
+        (
+            parentRef(),
+            *parentMapPtr,          // reduced-order point -> parent point
+            result,
+            plusEqOp<point>(),
+            vector::zero,
+            mapDistribute::transform()
+        );
+    }
+    else
+    {
+        syncTools::syncPointList
+        (
+            mesh_,
+            result,
+            plusEqOp<point>(),
+            vector::zero,
+            mapDistribute::transform()
+        );
+    }
 
     // TBD: wedge correction?
     {
@@ -321,10 +367,15 @@ void Foam::basicFvGeometryScheme::calcPointAreaNormals
         }
     }
 
-    // TBD: guarantee point normal perpendicular to any coupled fvMesh
-    WarningInFunction
-        << "PointNormals not perpendicular to any coupled fvPatch."
-        << endl;
+    // TBD: guarantee point normal perpendicular to any coupled fvMesh.
+    // Debug-only: this fires on every point-normal (re)build; keep it out of
+    // normal run output until the coupled-perpendicular correction is added.
+    if (debug)
+    {
+        WarningInFunction
+            << "PointNormals not perpendicular to any coupled fvPatch."
+            << endl;
+    }
 
 //for (label facei = mesh_.nInternalFaces(); facei < mesh_.nFaces(); facei++)
 //{
@@ -334,6 +385,44 @@ void Foam::basicFvGeometryScheme::calcPointAreaNormals
 //        result[f[i]].removeCollinear(vector(0, 0, 1));
 //    }
 //}
+
+    // Boundary (contact-line) point-normal correction seam.
+    //
+    // A reduced-order manifold coupled to a parent volume mesh (the finiteArea
+    // faMesh) may require its boundary point normals to be made perpendicular to
+    // a neighbouring wall polyPatch, so that the finite-area curvature -- the
+    // surface-tension restoring term in free-surface tracking -- is correct at
+    // the contact line. That coupling (neighbour polyPatch face normals, and
+    // which patches opt in) is faMesh-specific and cannot be derived by this
+    // generic scheme, so faMesh publishes, per reduced-order point, the
+    // accumulated neighbour-face normal whose component is to be removed (Zero
+    // elsewhere), refreshed before each geometry (re)build.
+    //
+    // It is applied HERE -- inside the point-normal build, hence before the
+    // eager edge derivation in faGeometryScheme::movePoints (edgeAreaNormals,
+    // Le, rotated edge Sf) and therefore before faceCurvatures -- exactly as the
+    // legacy faMesh::calcPointAreaNormals removeCollinear(haloFaceNormals)
+    // correction. A registry entry (not an fvMesh member/virtual) keeps the
+    // fvMesh ABI untouched, mirroring the "pointAreaNormalsParentMap" seam above.
+    //
+    // Name kept in sync with faMesh::updatePointNormalsBoundaryCorrection.
+    const vectorIOField* pnCorrPtr =
+        mesh_.thisDb().cfindObject<vectorIOField>
+        (
+            "pointAreaNormalsBoundaryCorrection"
+        );
+
+    if (pnCorrPtr && pnCorrPtr->size() == result.size())
+    {
+        const vectorField& pnCorr = *pnCorrPtr;
+        forAll(result, pointi)
+        {
+            if (magSqr(pnCorr[pointi]) > ROOTVSMALL)
+            {
+                result[pointi].removeCollinear(normalised(pnCorr[pointi]));
+            }
+        }
+    }
 
     result.normalise();
 }
@@ -365,9 +454,6 @@ void Foam::basicFvGeometryScheme::calcFaceAreaNormalsInvDistSqrWeighted
             edgeLine,
             cc[owner[facei]]
         );
-
-        Pout<< "face:" << facei << " owner vector:" << fDir1[facei]
-            << endl;
     }
 
     vectorField nbrDir1
@@ -387,24 +473,11 @@ void Foam::basicFvGeometryScheme::calcFaceAreaNormalsInvDistSqrWeighted
         const face& f = faces[facei];
         const linePointRef edgeLine(pts[f[1]], pts[f[0]]);
 
-        const vector v
-        (
-            areaInvDistSqrWeightedNormalFaceTriangle
-            (
-                edgeLine,
-                cc[neighbour[facei]]
-            )
-        );
-
         fDir1[facei] += areaInvDistSqrWeightedNormalFaceTriangle
         (
             edgeLine,
             cc[neighbour[facei]]
         );
-
-        Pout<< "face:" << facei << " neighbour vector:" << v
-            << endl;
-
     }
 
     // Finish coupled faces
@@ -429,10 +502,15 @@ void Foam::basicFvGeometryScheme::calcFaceAreaNormalsInvDistSqrWeighted
     }
 
 
-    // TBD: guarantee point normal perpendicular to any coupled fvMesh
-    WarningInFunction
-        << "PointNormals not perpendicular to any coupled fvPatch."
-        << endl;
+    // TBD: guarantee point normal perpendicular to any coupled fvMesh.
+    // Debug-only: this fires on every point-normal (re)build; keep it out of
+    // normal run output until the coupled-perpendicular correction is added.
+    if (debug)
+    {
+        WarningInFunction
+            << "PointNormals not perpendicular to any coupled fvPatch."
+            << endl;
+    }
 
 //for (label facei = mesh_.nInternalFaces(); facei < mesh_.nFaces(); facei++)
 //{
@@ -497,163 +575,10 @@ void Foam::basicFvGeometryScheme::movePoints()
             << "recalculating primitiveMesh centres" << endl;
     }
 
-    // Use lower level to calculate the geometry
+    // Use lower level to calculate the geometry.
+    // Reduced-order (2D) manifold geometry is handled by the dedicated
+    // faGeometryScheme (selected automatically for 2D meshes).
     const_cast<fvMesh&>(mesh_).primitiveMesh::updateGeom();
-
-    if (mesh_.nTopologicalD() == 2)
-    {
-        // In 2D above primitiveMesh will now have the edge-vectors stored
-        // in the faceAreas.
-        // Correct:
-        // - calculate cell direction1 (= normal, since is now a face)
-        // - option1: average cell direction1 onto face
-        // - option2: average triangle direction1 onto face
-        // - re-orient face area to be perpendicular to direction1
-
-        const labelUList& owner = mesh_.faceOwner();
-        const labelUList& neighbour = mesh_.neighbour();
-        const auto& faces = mesh_.faces();
-        const auto& pts = mesh_.points();
-        const auto& cc = mesh_.cellCentres();
-
-        // Calculate point normals from cell normals (cellDir0)
-        autoPtr<vectorField> tpointDir0
-        (
-            autoPtr<vectorField>::New(mesh_.nPoints())
-        );
-        calcPointAreaNormals(tpointDir0.ref());
-
-
-        // Average of element normals onto face
-        autoPtr<vectorField> tfDir1(autoPtr<vectorField>::New(mesh_.nFaces()));
-        auto& fDir1 = tfDir1.ref();
-
-
-        // Option 1: use average cell normals ...
-        if (false)
-        {
-            // Cell normals
-            const auto& cDir0 = mesh_.cellDir0();
-
-            forAll(owner, facei)
-            {
-                fDir1[facei] = cDir0[owner[facei]];
-            }
-
-            vectorField nbrCellDir0;
-            syncTools::swapBoundaryCellList(mesh_, cDir0, nbrCellDir0);
-
-            // Finish internal faces
-            forAll(neighbour, facei)
-            {
-                fDir1[facei] += cDir0[neighbour[facei]];
-            }
-
-            // Finish coupled faces
-            for (auto& fpp : mesh_.boundary())
-            {
-                const auto* ppPtr = isA<coupledPolyPatch>(fpp.patch());
-                if (ppPtr)
-                {
-                    vectorField s
-                    (
-                        fpp.boundarySlice(nbrCellDir0)
-                      + fpp.patchInternalField(cDir0)
-                    );
-                    SubList<vector>(fDir1, fpp.size(), fpp.start()) = s;
-                }
-            }
-
-            fDir1.normalise();
-
-            // Re-do face-area to be perpendicular to the tangential
-            // face-direction
-            vectorField& faceAreas =
-                const_cast<vectorField&>(mesh_.faceAreas());
-            const scalarField magS(mag(faceAreas));
-
-            // edge-vector as calculated by primitiveMesh
-            autoPtr<vectorField> tfVec2(autoPtr<vectorField>::New(faceAreas));
-
-            // primitiveMesh::faceAreas becomes the faceDir0
-            faceAreas = (faceAreas ^ fDir1);
-            faceAreas.normalise();
-            faceAreas *= magS;
-
-            const_cast<fvMesh&>(mesh_).primitiveMesh::resetPrimitives
-            (
-                autoPtr<vectorField>(),
-                autoPtr<vectorField>(),
-                std::move(tfDir1),          // average cell normal
-                std::move(tfVec2),          // 'edge' vector (unnormalised)
-                std::move(tpointDir0)       // point normal
-            );
-        }
-
-        // Option 2: average local triangle normals instead of the cell normal
-        //           (see areaInvDistSqrWeightedNormalFaceTriangle in
-        //            faMeshDemandDrivenData.C)
-
-        const label geometryOrder = 2;
-
-        if (geometryOrder < 2)
-        {
-            // Face normal direction from triangle orientation
-            calcFaceAreaNormalsInvDistSqrWeighted(fDir1);
-        }
-        else
-        {
-
-            // This is the original approach using an average of the
-            // point normals.  May be removed in the future (2022-09)
-
-            // Starting from point area normals
-            calcFaceAreaNormalsAvgPoint(tpointDir0(), fDir1);
-        }
-
-
-        vectorField& faceAreas =
-            const_cast<vectorField&>(mesh_.faceAreas());
-
-        autoPtr<vectorField> tLe(autoPtr<vectorField>::New(faceAreas));
-        // Re-calculate edge vectors from the edgeAreaNormals
-        {
-            vectorField& Le = tLe.ref();
-
-            forAll(owner, facei)
-            {
-                const face& f = faces[facei];
-                const linePointRef edgeLine(pts[f[0]], pts[f[1]]);
-
-                Le[facei] = calcLeVector
-                (
-                    cc[owner[facei]],   // only used for sign
-                    edgeLine,
-                    fDir1[facei]        // face-tangential direction
-                );
-            }
-        }
-
-
-        // Re-do face-area to be perpendicular to the tangential
-        // face-directions
-        const scalarField magS(mag(faceAreas));
-
-        faceAreas = (faceAreas ^ fDir1);
-        faceAreas.normalise();
-        faceAreas *= magS;
-
-        // Store on the primitiveMesh level; fvMesh will demand-driven slice it
-        // into vol- and surface- fields
-        const_cast<fvMesh&>(mesh_).primitiveMesh::resetPrimitives
-        (
-            autoPtr<vectorField>(),
-            autoPtr<vectorField>(),
-            std::move(tfDir1),          // face normal from average cell normal
-            std::move(tLe),             // edge vector (unnormalised)
-            std::move(tpointDir0)       // point normal
-        );
-    }
 }
 
 
@@ -997,13 +922,22 @@ bool Foam::basicFvGeometryScheme::updateGeom
         faceAreas
     );
 
+    // Cell direction (element normal) is only meaningful for reduced-order
+    // (2D) meshes; leave empty otherwise so makeCellCentresAndVols() skips it.
+    vectorField cellDir0;
+    if (mesh_.nTopologicalD() == 2)
+    {
+        cellDir0.setSize(mesh_.nCells(), Zero);
+    }
+
     primitiveMeshTools::makeCellCentresAndVols
     (
         mesh_,
         faceCentres,
         faceAreas,
         cellCentres,
-        cellVolumes
+        cellVolumes,
+        cellDir0
     );
 
     // Assume something has changed

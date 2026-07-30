@@ -35,6 +35,7 @@ Description
 #include "surfaceFields.H"
 #include "coupledFvPatch.H"
 #include "basicFvGeometryScheme.H"
+#include "faGeometryScheme.H"
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -84,11 +85,21 @@ const Foam::fvGeometryScheme& Foam::surfaceInterpolation::geometry() const
 {
     if (!geometryPtr_)
     {
+        // Reduced-order (2D) manifold meshes default to the finite-area
+        // geometry scheme; full 3D meshes to the basic scheme. Either can be
+        // overridden explicitly via the "geometry" scheme entry.
+        const word& defaultScheme =
+        (
+            mesh_.nTopologicalD() == 2
+          ? faGeometryScheme::typeName
+          : basicFvGeometryScheme::typeName
+        );
+
         geometryPtr_ = fvGeometryScheme::New
         (
             mesh_,
             mesh_.schemesDict().subOrEmptyDict("geometry"),
-            basicFvGeometryScheme::typeName
+            defaultScheme
         );
     }
 

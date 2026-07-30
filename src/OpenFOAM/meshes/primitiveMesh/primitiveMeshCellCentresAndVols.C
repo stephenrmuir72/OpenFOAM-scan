@@ -60,11 +60,35 @@ void Foam::primitiveMesh::calcCellCentresAndVols() const
     cellVolumesPtr_ = std::make_unique<scalarField>(nCells(), Zero);
     auto& cellVols = *cellVolumesPtr_;
 
-    cellDir0Ptr_ = new vectorField();
-    vectorField& cellDir0 = *cellDir0Ptr_;
-    if (nTopologicalD() == 2)
+    // Only allocate the cell direction field for reduced-order (2D) meshes.
+    // For 3D meshes it is left empty; makeCellCentresAndVols() guards on size.
+    // Use a LOCAL (non-collective) test on the face point counts rather than
+    // nTopologicalD() (a worldComm reduce): this is a lazily-evaluated geometry
+    // path and the collective would deadlock on empty subdomains during
+    // fvMeshDistribute. A 2D mesh has 2-point faces; an empty rank has no cells
+    // so cellDir0 is empty regardless of the outcome.
+    cellDir0Ptr_ = std::make_unique<vectorField>();
+    auto& cellDir0 = *cellDir0Ptr_;
     {
-        cellDir0.setSize(nCells(), Zero);
+        const faceList& fcs = faces();
+        bool reducedOrder = false;
+        for (const face& f : fcs)
+        {
+            const label sz = f.size();
+            if (sz > 2)
+            {
+                reducedOrder = false;
+                break;
+            }
+            else if (sz == 2)
+            {
+                reducedOrder = true;
+            }
+        }
+        if (reducedOrder)
+        {
+            cellDir0.setSize(nCells(), Zero);
+        }
     }
 
     // Make centres and volumes

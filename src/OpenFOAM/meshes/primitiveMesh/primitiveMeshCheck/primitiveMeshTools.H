@@ -84,6 +84,20 @@ public:
         vectorField& cellAreas_s
     );
 
+    //- Update cell centres and volumes (3D; no reduced-order cell areas)
+    //  for the cells in the set cellIDs. Convenience overload forwarding an
+    //  empty cell-area field (the 2D cell-normal is not computed).
+    static void updateCellCentresAndVols
+    (
+        const primitiveMesh& mesh,
+        const vectorField& fCtrs,
+        const vectorField& fAreas,
+        const List<label>& cellIDs,
+        const List<cell>& cells,
+        vectorField& cellCtrs_s,
+        scalarField& cellVols_s
+    );
+
     //- Calculate face centres and areas for specified faces.
     //- Adjusts the lengths of centres and area normals if required.
     //- For 2D: returns edge centre and edge vector
@@ -118,6 +132,18 @@ public:
         vectorField& cellCtrs,
         scalarField& cellVols,
         vectorField& cellAreas
+    );
+
+    //- Calculate cell centres and volumes (3D; no reduced-order cell normals)
+    //  from face properties. Convenience overload forwarding an empty
+    //  cell-area field (the 2D cell-normal is not computed).
+    static void makeCellCentresAndVols
+    (
+        const primitiveMesh& mesh,
+        const vectorField& fCtrs,
+        const vectorField& fAreas,
+        vectorField& cellCtrs,
+        scalarField& cellVols
     );
 
     //- Generate non-orthogonality field (internal faces only)

@@ -222,6 +222,43 @@ public:
         const fvMesh* baseMeshPtr
     );
 
+    //- Build a reconstruct (many-to-1) mapDistributePolyMesh directly from
+    //- in-memory proc->base addressing (no disk IO). The addressing has the
+    //- usual (cell|face|point|boundary)ProcAddressing semantics; faceProc-
+    //- Addressing carries flip/sign. The baseMesh (target) is only used on the
+    //- master; other ranks get a zero-sized construct map. This is dimension-
+    //- agnostic, so it also builds the map for a reduced-order faMesh (which
+    //- is an fvMesh) given faMeshProcAddressing::calc() output.
+    static autoPtr<mapDistributePolyMesh> createReconstructMap
+    (
+        const fvMesh& procMesh,
+        const fvMesh* baseMeshPtr,
+        const labelUList& cellProcAddressing,
+        const labelUList& faceProcAddressing,
+        const labelUList& pointProcAddressing,
+        const labelUList& boundaryProcAddressing
+    );
+
+    //- Build a decompose (1-to-many) mapDistributePolyMesh directly from
+    //- in-memory proc->complete addressing (no disk IO). This is the scatter
+    //- inverse of createReconstructMap and uses the identical addressing
+    //- (cell|face|point|boundary)ProcAddressing: each proc-local entity names
+    //- the complete-mesh entity it derives from, and faceProcAddressing carries
+    //- the flip/sign. The complete mesh (source) is only meaningful on the
+    //- master; other ranks send nothing. constructMaps are proc-local so a
+    //- parFvFieldDistributor built with (complete -> proc) scatters the field
+    //- values. Dimension-agnostic, so it also handles a reduced-order faMesh
+    //- given faMeshProcAddressing::calc() output.
+    static autoPtr<mapDistributePolyMesh> createDecomposeMap
+    (
+        const fvMesh& procMesh,
+        const fvMesh* completeMeshPtr,
+        const labelUList& cellProcAddressing,
+        const labelUList& faceProcAddressing,
+        const labelUList& pointProcAddressing,
+        const labelUList& boundaryProcAddressing
+    );
+
     //- Write addressing if decomposing (1 to many) or reconstructing
     //- (many to 1)
     static void writeProcAddressing
