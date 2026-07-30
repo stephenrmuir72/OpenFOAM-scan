@@ -47,10 +47,9 @@ Description
 #include "pointFieldReconstructor.H"
 #include "lagrangianReconstructor.H"
 
-#include "faCFD.H"
 #include "faMesh.H"
-#include "processorFaMeshes.H"
-#include "faFieldReconstructor.H"
+#include "faMeshProcAddressing.H"
+#include "IOdictionary.H"
 
 #include "cellSet.H"
 #include "faceSet.H"
@@ -400,32 +399,6 @@ int main(int argc, char *argv[])
                 IOobjectOption::NO_REGISTER
             );
 
-            // The finite-area fields (multiple finite-area per volume)
-            HashTable<IOobjectList> faObjects;
-
-            if (doFiniteArea && doFields)
-            {
-                // Lists of finite-area fields - scan on processor0
-                faObjects.reserve(areaRegionNames.size());
-
-                for (const word& areaName : areaRegionNames)
-                {
-                    // The finite-area objects for this area region
-                    IOobjectList objs
-                    (
-                        procMeshes.meshes()[0],
-                        databases[0].timeName(),
-                        faMesh::dbDir(areaName),  // local relative to mesh
-                        IOobjectOption::NO_REGISTER
-                    );
-
-                    if (!objs.empty())
-                    {
-                        faObjects.emplace_set(areaName, std::move(objs));
-                    }
-                }
-            }
-
             if (doFields)
             {
                 // If there are any FV fields, reconstruct them
@@ -573,57 +546,114 @@ int main(int argc, char *argv[])
             }
 
 
-            // Reconstruct any finite-area fields
-            if (doFiniteArea)
+            // Reconstruct any finite-area fields.
+            //
+            // finiteArea: the finite-area region is a reduced-order fvMesh
+            // (area-face = cell, edge = face) coupled to the parent. Its region
+            // is demand-built from system/finite-area/faMeshDefinition, its
+            // processor addressing is derived from the parent decomposition via
+            // faMeshProcAddressing, and its fields are ordinary vol/surface
+            // fields reconstructed by the stock fvFieldReconstructor. This
+            // replaces the legacy faMesh/processorFaMeshes/faFieldReconstructor
+            // path (faReconstruct).
+            if (doFiniteArea && doFields)
             {
-                bool hadFaFields = false;
-                for (const word& areaName : areaRegionNames)
+                IOobject faDefIO
+                (
+                    "faMeshDefinition",
+                    runTime.system(),
+                    faMesh::prefix(),
+                    mesh,
+                    IOobject::MUST_READ,
+                    IOobject::NO_WRITE,
+                    IOobject::NO_REGISTER
+                );
+
+                if (!faDefIO.typeHeaderOk<IOdictionary>(false))
                 {
-                    const auto objs = faObjects.cfind(areaName);
-                    if (!objs.good())
+                    Info<< "No finite-area mesh" << nl << endl;
+                }
+                else
+                {
+                    Info<< "Reconstructing finite-area fields" << nl << endl;
+
+                    const IOdictionary faMeshDefinition(faDefIO);
+
+                    // Complete finite-area region on the reconstructed parent
+                    faMesh aMesh(word::null, mesh, faMeshDefinition);
+                    const faMeshProcAddressing faAddr(aMesh);
+
+                    const label nMesh = procMeshes.meshes().size();
+
+                    // Per-processor finite-area meshes + derived addressing
+                    PtrList<faMesh> procFa(nMesh);
+                    UPtrList<fvMesh> procFaRefs(nMesh);
+                    PtrList<labelIOList> faCell(nMesh), faFace(nMesh), faBnd(nMesh);
+                    UPtrList<labelIOList> faCellU(nMesh), faFaceU(nMesh), faBndU(nMesh);
+
+                    forAll(procMeshes.meshes(), proci)
                     {
-                        continue;
+                        fvMesh& procParent = procMeshes.meshes()[proci];
+
+                        procFa.set
+                        (
+                            proci,
+                            new faMesh(word::null, procParent, faMeshDefinition)
+                        );
+                        faMesh& pFa = procFa[proci];
+                        procFaRefs.set(proci, &pFa);
+
+                        labelList cAddr, fAddr, pAddr, bAddr;
+                        faAddr.calc
+                        (
+                            pFa,
+                            procMeshes.faceProcAddressing()[proci],
+                            procMeshes.pointProcAddressing()[proci],
+                            cAddr, fAddr, pAddr, bAddr
+                        );
+
+                        const IOobject aio
+                        (
+                            "faProcAddressing",
+                            databases[proci].timeName(),
+                            polyMesh::meshSubDir,
+                            pFa,
+                            IOobject::NO_READ,
+                            IOobject::NO_WRITE,
+                            IOobject::NO_REGISTER
+                        );
+                        faCell.set(proci, new labelIOList(aio, std::move(cAddr)));
+                        faFace.set(proci, new labelIOList(aio, std::move(fAddr)));
+                        faBnd.set(proci, new labelIOList(aio, std::move(bAddr)));
+                        faCellU.set(proci, &faCell[proci]);
+                        faFaceU.set(proci, &faFace[proci]);
+                        faBndU.set(proci, &faBnd[proci]);
                     }
-                    const auto& faObjs = objs.val();
 
-                    if
+                    // Finite-area field objects (scan on processor0)
+                    IOobjectList faObjects
                     (
-                        !faObjs.count(fieldTypes::is_area)
-                     && !faObjs.count<edgeScalarField>()
-                    )
-                    {
-                        continue;
-                    }
-
-                    hadFaFields = true;
-
-                    Info<< "Reconstructing finite-area fields ["
-                        << polyMesh::regionName(areaName)
-                        << "]" << nl << endl;
-
-                    const faMesh aMesh(areaName, mesh);
-
-                    processorFaMeshes procFaMeshes
-                    (
-                        procMeshes.meshes(),
-                        areaName
+                        procMeshes.meshes()[0],
+                        databases[0].timeName(),
+                        faMesh::prefix(),        // "finite-area"
+                        IOobjectOption::NO_REGISTER
                     );
 
-                    faFieldReconstructor reconstructor
+                    fvFieldReconstructor faReconstructor
                     (
                         aMesh,
-                        procFaMeshes.meshes(),
-                        procFaMeshes.edgeProcAddressing(),
-                        procFaMeshes.faceProcAddressing(),
-                        procFaMeshes.boundaryProcAddressing()
+                        procFaRefs,
+                        faFaceU,
+                        faCellU,
+                        faBndU
                     );
 
-                    reconstructor.reconstructAllFields(faObjs);
-                }
+                    faReconstructor.reconstructAllFields(faObjects, selectedFields);
 
-                if (!hadFaFields)
-                {
-                    Info << "No finite-area fields" << nl << endl;
+                    if (faReconstructor.nReconstructed() == 0)
+                    {
+                        Info<< "No finite-area fields" << nl << endl;
+                    }
                 }
             }
 

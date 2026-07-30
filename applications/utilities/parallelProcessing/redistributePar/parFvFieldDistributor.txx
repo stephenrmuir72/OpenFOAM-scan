@@ -242,7 +242,7 @@ Foam::parFvFieldDistributor::distributeField
     const auto internalSize = tgtMesh_.nInternalFaces();
 
     Field<Type> primitiveField;
-    //Field<Type> flatBoundary;
+    Field<Type> flatBoundary;
     {
         // Create flat field of internalField + all patch fields
         Field<Type> fullField(fld.mesh().nFaces(), Foam::zero{});
@@ -261,8 +261,13 @@ Foam::parFvFieldDistributor::distributeField
         // Trim to internal faces (note: could also have special mapper)
         if (internalSize < primitiveField.size())
         {
-            // // Save boundary values
-            // flatBoundary = primitiveField.slice(internalSize);
+            // Save the mapped boundary-face values. For the decompose
+            // direction these carry the correct face values (a target
+            // processor-patch/cut face maps from a source internal face) and
+            // are used to populate the coupled patches below; without this
+            // they would be left uninitialised. Empty for reconstruct (the
+            // complete target has no such patches).
+            flatBoundary = primitiveField.slice(internalSize);
 
             // Internal values
             primitiveField.resize(internalSize);
@@ -346,22 +351,49 @@ Foam::parFvFieldDistributor::distributeField
         }
     }
 
-    // Add some empty patches on remaining patches
-    // (... probably processor patches)
+    // Remaining patches (typically processor patches introduced by the
+    // decompose direction). Build the patch's natural field type and populate
+    // it from the mapped boundary-face values (the cut face carries the source
+    // internal-face value); fall back to an empty patch when nothing was mapped
+    // (e.g. reconstruct, whose complete target has no such patches).
     forAll(newPatchFields, patchi)
     {
         if (!newPatchFields.set(patchi))
         {
-            newPatchFields.set
-            (
-                patchi,
-                fvsPatchField<Type>::New
+            const fvPatch& fvp = tgtMesh_.boundary()[patchi];
+
+            const label bStart = fvp.start() - internalSize;
+
+            if (flatBoundary.size() && bStart >= 0 && fvp.size())
+            {
+                auto tpfld = fvsPatchField<Type>::New
                 (
-                    fvsPatchFieldBase::emptyType(),
-                    tgtMesh_.boundary()[patchi],
+                    fvp.type(),
+                    fvp,
                     fvsPatchField<Type>::Internal::null()
-                )
-            );
+                );
+                fvsPatchField<Type>& pfld = tpfld.ref();
+
+                // Assign the mapped cut-face values (already orientation-
+                // flipped by the internalField mapping above)
+                static_cast<Field<Type>&>(pfld) =
+                    SubList<Type>(flatBoundary, fvp.size(), bStart);
+
+                newPatchFields.set(patchi, tpfld.ptr());
+            }
+            else
+            {
+                newPatchFields.set
+                (
+                    patchi,
+                    fvsPatchField<Type>::New
+                    (
+                        fvsPatchFieldBase::emptyType(),
+                        fvp,
+                        fvsPatchField<Type>::Internal::null()
+                    )
+                );
+            }
         }
     }
 

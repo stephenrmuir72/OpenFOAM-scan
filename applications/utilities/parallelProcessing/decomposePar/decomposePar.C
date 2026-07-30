@@ -160,9 +160,10 @@ Usage
 
 #include "lagrangianFieldDecomposer.H"
 
-#include "emptyFaPatch.H"
-#include "faFieldDecomposer.H"
-#include "faMeshDecomposition.H"
+#include "faMesh.H"
+#include "faMeshProcAddressing.H"
+#include "IOdictionary.H"
+#include "processorPolyPatch.H"
 
 // * * * * * * * * * * * * * * * Local Functions * * * * * * * * * * * * * * //
 
@@ -196,42 +197,6 @@ const labelIOList& procAddressing
             name,
             procMesh.facesInstance(),
             polyMesh::meshSubDir,  // local
-            procMesh,
-            IOobjectOption::MUST_READ,
-            IOobjectOption::NO_WRITE,
-            IOobjectOption::NO_REGISTER
-        )
-    );
-}
-
-
-// Return cached finite-area proc addressing,
-// or read from facesInstance (which is normally just "constant")
-FOAM_NO_DANGLING_REFERENCE
-const labelIOList& procAddressing
-(
-    const UPtrList<faMesh>& procMeshList,
-    const label proci,
-    const word& name,
-    PtrList<labelIOList>& procAddressingList
-)
-{
-    const auto& procMesh = procMeshList[proci];
-
-    // Allow lazy initial sizing
-    if (procAddressingList.size() < procMeshList.size())
-    {
-        procAddressingList.resize(procMeshList.size());
-    }
-
-    return procAddressingList.try_emplace
-    (
-        proci,
-        IOobject
-        (
-            name,
-            procMesh.facesInstance(),
-            faMesh::meshSubDir,  // local
             procMesh,
             IOobjectOption::MUST_READ,
             IOobjectOption::NO_WRITE,
@@ -480,12 +445,9 @@ int main(int argc, char *argv[])
     bool decomposeFieldsOnly = args.found("fields");
     bool forceOverwrite      = args.found("force");
 
-    // Special use - emit old (2512 and earlier) edgeProcAddressing format
-    // without encoded edge flips.
-    if (args.found("disable-edge-encoding"))
-    {
-        faMeshDecomposition::allowEdgeEncoding(false);
-    }
+    // Note: -disable-edge-encoding is accepted for CLI compatibility but is a
+    // no-op for the finiteArea model: edge (face) orientation is carried by the
+    // standard signed faceProcAddressing derived by faMeshProcAddressing.
 
     // Set time from database
     #include "createTime.H"
@@ -766,66 +728,43 @@ int main(int argc, char *argv[])
             fileHandler().flush();
         }
 
-        // Finite area handling
-        // - all area regions use the same volume decomposition
-        HashPtrTable<faMeshDecomposition> faMeshes;
-        HashTable<bool> faMeshEdgeEncoding;
+        // Finite area handling (finiteArea)
+        // - The finite-area region is a reduced-order fvMesh (area-face = cell,
+        //   edge = face) demand-built from system/finite-area/faMeshDefinition on
+        //   the complete parent. There is no separate FA mesh decomposition: the
+        //   per-processor FA mesh is rebuilt from each processor's parent (and the
+        //   shared faMeshDefinition) by solvers/reconstructPar. FA fields are
+        //   ordinary vol/surface fields, split with fvFieldDecomposer using
+        //   addressing derived from the parent decomposition by
+        //   faMeshProcAddressing.
+        autoPtr<IOdictionary> faMeshDefinitionPtr;
+        autoPtr<faMesh> completeFaPtr;
+        autoPtr<faMeshProcAddressing> faAddrPtr;
 
-        if (doFiniteArea && !areaRegionNames.empty())
+        if (doFiniteArea)
         {
-            const word boundaryInst =
-                mesh.time().findInstance(mesh.meshDir(), "boundary");
+            IOobject faDefIO
+            (
+                "faMeshDefinition",
+                runTime.system(),
+                faMesh::prefix(),
+                mesh,
+                IOobject::MUST_READ,
+                IOobject::NO_WRITE,
+                IOobject::NO_REGISTER
+            );
 
-            for (const word& areaName : areaRegionNames)
+            if (faDefIO.typeHeaderOk<IOdictionary>(false))
             {
-                autoPtr<faMeshDecomposition> faDecompPtr;
+                Info<< "\nFinite area: building region from faMeshDefinition"
+                    << endl;
 
-                IOobject io
+                faMeshDefinitionPtr.reset(new IOdictionary(faDefIO));
+                completeFaPtr.reset
                 (
-                    "faBoundary",
-                    boundaryInst,
-                    faMesh::meshDir(mesh, areaName),
-                    mesh.time(),
-                    IOobject::READ_IF_PRESENT,
-                    IOobject::NO_WRITE,
-                    IOobject::NO_REGISTER
+                    new faMesh(word::null, mesh, *faMeshDefinitionPtr)
                 );
-
-                if (io.typeHeaderOk<faBoundaryMesh>(true))
-                {
-                    // Always based on the volume decomposition!
-                    faDecompPtr = autoPtr<faMeshDecomposition>::New
-                    (
-                        areaName,
-                        mesh,
-                        mesh.nProcs(),
-                        mesh.model()
-                    );
-                }
-
-                if (faDecompPtr)
-                {
-                    if (!decomposeFieldsOnly)
-                    {
-                        // Decompose the finite-area mesh
-                        auto& aMesh = faDecompPtr();
-                        Info<< "\nFinite area mesh decomposition: "
-                            << areaName << endl;
-
-                        aMesh.decomposeMesh();
-                        aMesh.writeDecomposition();
-
-                        // Remember edge encoding used
-                        faMeshEdgeEncoding.set
-                        (
-                            areaName,
-                            faMeshDecomposition::allowEdgeEncoding()
-                        );
-                    }
-
-                    // Cache for subsequent field decomposition
-                    faMeshes.set(areaName, std::move(faDecompPtr));
-                }
+                faAddrPtr.reset(new faMeshProcAddressing(*completeFaPtr));
             }
         }
 
@@ -915,101 +854,6 @@ int main(int argc, char *argv[])
             PtrList<pointFieldDecomposer> pointFieldDecomposerList(numProcs);
 
 
-            // Cached processor meshes and maps.
-            // These are only preserved if running with multiple times.
-            HashPtrTable<PtrList<faMesh>> procFaMeshes;
-            HashPtrTable<PtrList<labelIOList>> faFaceProcAddressing;
-            HashPtrTable<PtrList<labelIOList>> faEdgeProcAddressing;
-            HashPtrTable<PtrList<labelIOList>> faBoundProcAddressing;
-            HashPtrTable<PtrList<faFieldDecomposer>> faFieldDecomposers;
-
-            // Slightly wasteful, but with an *existing* finite-area
-            // decomposition must scan edgeProcAddressing (from disk)
-            // to know if it uses flip encoding or not.
-
-            if
-            (
-                doDecompFields
-             && !faMeshes.empty() && faMeshEdgeEncoding.empty()
-            )
-            {
-                for (label proci = numProcs-1; proci >= 0; --proci)
-                {
-                    auto& procTime = emplaceTime(processorDbList, proci, args);
-
-                    forAllConstIters(faMeshes, iter)
-                    {
-                        const word& areaName = iter.key();
-
-                        if (faMeshEdgeEncoding.contains(areaName))
-                        {
-                            // Already found the encoding type
-                            continue;
-                        }
-
-                        IOobject ioAddr
-                        (
-                            "edgeProcAddressing",
-                            procTime.constant(),
-                            faMesh::meshDir(regionName, areaName),
-                            procTime,
-                            IOobject::READ_IF_PRESENT,
-                            IOobject::NO_WRITE,
-                            IOobject::NO_REGISTER
-                        );
-
-                        labelList edgeProcAddr
-                        (
-                            labelIOList::readContents(ioAddr)
-                        );
-
-                        // Look for 0 or -ve values
-                        auto i = ListOps::find_if
-                        (
-                            edgeProcAddr,
-                            labelRange::le0()
-                        );
-
-                        if (i >= 0)
-                        {
-                            // A -ve value : definitely uses edge encoding.
-                            // A '0' value : only occurs without encoding.
-                            faMeshEdgeEncoding.set
-                            (
-                                areaName,
-                                (edgeProcAddr[i] < 0)
-                            );
-                        }
-                    }
-                }
-            }
-
-            // Report edge-encoding (if disabled)
-            if (!faMeshEdgeEncoding.empty())
-            {
-                bool header = false;
-                forAllConstIters(faMeshEdgeEncoding, iter)
-                {
-                    const auto& areaName = iter.key();
-                    const bool encoding = iter.val();
-
-                    if (!encoding)
-                    {
-                        if (!header)
-                        {
-                            header = true;
-                            Info<< "Area region without edge encoding:" << nl;
-                        }
-                        Info<< "    " << areaName;
-                    }
-                }
-                if (header)
-                {
-                    Info<< endl;
-                }
-            }
-
-
             // Loop over all times
             forAll(times, timei)
             {
@@ -1030,32 +874,19 @@ int main(int argc, char *argv[])
 
                 }
 
-                // The finite-area fields (single or multiple per volume)
-                HashTable<IOobjectList> faObjects;
+                // The finite-area fields live under the "finite-area" dbDir as
+                // ordinary vol/surface fields.
+                IOobjectList faObjects;
 
-                if (doDecompFields && doFiniteArea && faMeshes.size())
+                if (doDecompFields && completeFaPtr)
                 {
-                    // Lists of finite-area fields
-                    faObjects.reserve(faMeshes.size());
-
-                    forAllConstIters(faMeshes, iter)
-                    {
-                        const word& areaName = iter.key();
-
-                        // The finite-area objects for this area region
-                        IOobjectList objs
-                        (
-                            faMesh::Registry(mesh),
-                            runTime.timeName(),
-                            polyMesh::regionName(areaName),
-                            IOobjectOption::NO_REGISTER
-                        );
-
-                        if (!objs.empty())
-                        {
-                            faObjects.emplace_set(areaName, std::move(objs));
-                        }
-                    }
+                    faObjects = IOobjectList
+                    (
+                        mesh,
+                        runTime.timeName(),
+                        faMesh::prefix(),    // "finite-area"
+                        IOobjectOption::NO_REGISTER
+                    );
                 }
 
                 // Volume/surface/internal fields
@@ -1224,27 +1055,11 @@ int main(int argc, char *argv[])
                 // Finite-area (area/edge) fields
                 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-                HashPtrTable<faFieldDecomposer::fieldsCache> areaFieldCaches;
+                fvFieldDecomposer::fieldsCache areaFieldCache;
 
-                if (doDecompFields && doFiniteArea)
+                if (doDecompFields && completeFaPtr && !faObjects.empty())
                 {
-                    forAllConstIters(faObjects, iter)
-                    {
-                        const word& areaName = iter.key();
-                        const auto& objs = iter.val();
-
-                        if
-                        (
-                            const auto meshIter = faMeshes.cfind(areaName);
-                            (meshIter.good() && !objs.empty())
-                        )
-                        {
-                            const faMesh& aMesh = *(meshIter.val());
-                            auto& cache = areaFieldCaches.emplace_set(areaName);
-
-                            cache.readAllFields(aMesh, objs);
-                        }
-                    }
+                    areaFieldCache.readAllFields(*completeFaPtr, faObjects);
                 }
 
                 Info<< endl;
@@ -1448,85 +1263,69 @@ int main(int argc, char *argv[])
                         }
                     }
 
+                    // Finite-area fields (finiteArea): the FA region is a
+                    // reduced-order fvMesh and its fields are ordinary
+                    // vol/surface fields. Build the per-processor FA region from
+                    // this processor's parent, derive its
+                    // {cell,face,boundary}ProcAddressing from the parent
+                    // decomposition via faMeshProcAddressing, and split with the
+                    // stock fvFieldDecomposer. Must run before the early deletion
+                    // below, which releases the parent face/pointProcAddressing.
+                    if (completeFaPtr && !areaFieldCache.empty())
+                    {
+                        const faMesh& completeFa = *completeFaPtr;
+
+                        faMesh procFa
+                        (
+                            word::null, procMesh, *faMeshDefinitionPtr
+                        );
+
+                        const auto& pointProcAddressing = procAddressing
+                        (
+                            procMeshList,
+                            proci,
+                            "pointProcAddressing",
+                            pointProcAddressingList
+                        );
+
+                        labelList faCellAddr, faFaceAddr, faPointAddr, faBndAddr;
+                        faAddrPtr->calc
+                        (
+                            procFa,
+                            faceProcAddressing,
+                            pointProcAddressing,
+                            faCellAddr, faFaceAddr, faPointAddr, faBndAddr
+                        );
+
+                        // The reduced-order faMesh is a genuine fvMesh, so its
+                        // inter-domain edges are exposed as standard processor
+                        // patches (see faMesh::buildRegionMeshFromDefinition).
+                        // fvFieldDecomposer therefore builds the coupled
+                        // processor boundary fields with no finite-area-specific
+                        // machinery, exactly as for any volume field.
+                        fvFieldDecomposer faDecomposer
+                        (
+                            completeFa,
+                            procFa,
+                            faFaceAddr,
+                            faCellAddr,
+                            faBndAddr
+                        );
+
+                        areaFieldCache.decomposeAllFields
+                        (
+                            faDecomposer,
+                            args.verbose()  // report
+                        );
+                    }
+
                     if (times.size() == 1)
                     {
                         // Early deletion
                         boundaryProcAddressingList.set(proci, nullptr);
                         cellProcAddressingList.set(proci, nullptr);
                         faceProcAddressingList.set(proci, nullptr);
-                    }
-
-                    // Finite-area fields
-                    for (const auto& iter : areaFieldCaches.csorted())
-                    {
-                        const word& areaName = iter.key();
-                        const auto& areaCache = *(iter.val());
-
-                        // Serial mesh:
-                        const faMesh& aMesh = *(faMeshes[areaName]);
-
-                        // List of proc meshes:
-                        auto& faProcMeshList =
-                            procFaMeshes.try_emplace(areaName, numProcs);
-
-                        auto& procFaMesh =
-                            faProcMeshList
-                            .try_emplace(proci, areaName, procMesh);
-
-                        const auto& faFaceProcAddr =
-                            procAddressing
-                            (
-                                faProcMeshList,
-                                proci,
-                                "faceProcAddressing",
-                                faFaceProcAddressing.try_emplace(areaName)
-                            );
-
-                        const auto& faBoundProcAddr =
-                            procAddressing
-                            (
-                                faProcMeshList,
-                                proci,
-                                "boundaryProcAddressing",
-                                faBoundProcAddressing.try_emplace(areaName)
-                            );
-
-                        const auto& faEdgeProcAddr =
-                            procAddressing
-                            (
-                                faProcMeshList,
-                                proci,
-                                "edgeProcAddressing",
-                                faEdgeProcAddressing.try_emplace(areaName)
-                            );
-
-
-                        auto& faFieldDecomposerList =
-                            faFieldDecomposers.try_emplace(areaName, numProcs);
-
-                        if (!faFieldDecomposerList.test(proci))
-                        {
-                            faFieldDecomposerList.emplace
-                            (
-                                proci,
-                                //
-                                aMesh,
-                                procFaMesh,
-                                faEdgeProcAddr,
-                                faFaceProcAddr,
-                                faBoundProcAddr,
-                                // noEdgeEncoding
-                                (!faMeshEdgeEncoding.lookup(areaName, true))
-                            );
-                        }
-
-                        auto& fieldDecomposer = faFieldDecomposerList[proci];
-
-                        areaCache.decomposeAllFields
-                        (
-                            fieldDecomposer,
-                            args.verbose()  // report
-                        );
+                        pointProcAddressingList.set(proci, nullptr);
                     }
 
                     // We have cached all the constant mesh data for the current
@@ -1534,27 +1333,6 @@ int main(int argc, char *argv[])
                     // multiple times, otherwise it is just extra storage.
                     if (times.size() == 1)
                     {
-                        forAllIters(faFieldDecomposers, iter)
-                        {
-                            iter.val()->set(proci, nullptr);
-                        }
-                        forAllIters(faEdgeProcAddressing, iter)
-                        {
-                            iter.val()->set(proci, nullptr);
-                        }
-                        forAllIters(faFaceProcAddressing, iter)
-                        {
-                            iter.val()->set(proci, nullptr);
-                        }
-                        forAllIters(faBoundProcAddressing, iter)
-                        {
-                            iter.val()->set(proci, nullptr);
-                        }
-                        forAllIters(procFaMeshes, iter)
-                        {
-                            iter.val()->set(proci, nullptr);
-                        }
-
                         procMeshList.set(proci, nullptr);
                         processorDbList.set(proci, nullptr);
                     }

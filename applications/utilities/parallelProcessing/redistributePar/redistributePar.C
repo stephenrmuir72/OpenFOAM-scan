@@ -100,11 +100,13 @@ Usage
 #include "meshRefinement.H"
 #include "pointFields.H"
 
-#include "faMeshSubset.H"
-#include "faMeshTools.H"
-#include "faMeshDistributor.H"
-#include "faMeshesRegistry.H"
-#include "parFaFieldDistributorCache.H"
+// finiteArea: the finite-area region is a reduced-order fvMesh demand-built
+// from system/finite-area/faMeshDefinition; its processor addressing derives
+// from the parent decomposition via faMeshProcAddressing, and its fields are
+// ordinary vol/surface fields redistributed by the stock parFvFieldDistributor.
+#include "faMesh.H"
+#include "faMeshProcAddressing.H"
+#include "fvMeshTools.H"
 
 #include "redistributeLagrangian.H"
 
@@ -965,24 +967,15 @@ autoPtr<mapDistributePolyMesh> redistributeAndWrite
     }
 
 
-    // If faMeshesRegistry exists, it is also owned by the polyMesh and will
-    // be destroyed by clearGeom() in fvMeshDistribute::distribute()
-    //
-    // Rescue faMeshesRegistry from destruction by temporarily moving
-    // it to be locally owned.
-    std::unique_ptr<faMeshesRegistry> faMeshesRegistry_saved
-    (
-        faMeshesRegistry::Release(mesh)
-    );
+    // finiteArea: the reduced-order faMesh is a demand-driven MeshObject on
+    // the parent mesh, so it is cleared/rebuilt automatically by the parent's
+    // MeshObject framework across the redistribution; no manual rescue needed.
 
     // Mesh distribution engine
     fvMeshDistribute distributor(mesh);
 
     // Do all the distribution of mesh and fields
     autoPtr<mapDistributePolyMesh> distMap = distributor.distribute(decomp);
-
-    // Restore ownership onto the polyMesh
-    faMeshesRegistry::Store(std::move(faMeshesRegistry_saved));
 
 
     // Print some statistics
@@ -1413,7 +1406,6 @@ int main(int argc, char *argv[])
     if (optVerbose)
     {
         // Report on output
-        faMeshDistributor::verbose_ = 1;
         parPointFieldDistributor::verbose_ = 1;
 
         if (optVerbose > 1)
@@ -1720,9 +1712,6 @@ int main(int argc, char *argv[])
                 << "Reconstructing mesh:"
                 << polyMesh::regionName(regionName) << nl << endl;
 
-            // Which area regions (if any) have proc meshes
-            boolList areaMeshDetected(areaRegionNames.size(), false);
-
             // Loop over all times
             forAll(timeDirs, timei)
             {
@@ -1735,7 +1724,6 @@ int main(int argc, char *argv[])
                 // Where meshes are:
                 // missing == "constant", but will be rechecked anyhow
                 fileName volMeshInstance;
-                fileNameList areaMeshInstances(areaRegionNames.size());
 
                 volMeshInstance = runTime.findInstance
                 (
@@ -1744,31 +1732,11 @@ int main(int argc, char *argv[])
                     IOobjectOption::READ_IF_PRESENT
                 );
 
-                // -> if (doFiniteArea)
-                forAll(areaRegionNames, areai)
-                {
-                    const word& areaName = areaRegionNames[areai];
-                    auto& areaInstance = areaMeshInstances[areai];
-
-                    areaInstance = runTime.findInstance
-                    (
-                        faMesh::meshDir(regionName, areaName),
-                        "faceLabels",
-                        IOobjectOption::READ_IF_PRESENT
-                    );
-                }
-
-                Pstream::broadcasts
-                (
-                    UPstream::worldComm,
-                    volMeshInstance,
-                    areaMeshInstances
-                );
+                Pstream::broadcast(volMeshInstance, UPstream::worldComm);
 
 
                 // Check processors have meshes
                 // - check for 'faces' file (polyMesh)
-                // - check for 'faceLabels' file (faMesh)
                 boolList volMeshOnProc;
 
                 volMeshOnProc = haveMeshFile
@@ -1781,42 +1749,6 @@ int main(int argc, char *argv[])
 
                 // Create handler for reading
                 newHandler(volMeshOnProc, volMeshReadHandler);
-
-                List<boolList> areaMeshesOnProc(areaRegionNames.size());
-
-                // -> if (doFiniteArea)
-                forAll(areaRegionNames, areai)
-                {
-                    const word& areaName = areaRegionNames[areai];
-
-                    auto& meshOnProc = areaMeshesOnProc[areai];
-                    const auto& areaInstance = areaMeshInstances[areai];
-                    auto& areaReadHandler = areaMeshReadHandlers[areai];
-
-                    meshOnProc = haveMeshFile
-                    (
-                        "faceLabels",
-                        areaInstance,
-                        faMesh::meshDir(regionName, areaName),
-                        runTime
-                    );
-
-                    areaMeshDetected[areai] = meshOnProc.contains(true);
-
-                    if (meshOnProc == volMeshOnProc)
-                    {
-                        if (volMeshReadHandler)
-                        {
-                            // Use same reader for faMesh as for fvMesh
-                            areaReadHandler.ref(volMeshReadHandler.ref());
-                        }
-                    }
-                    else
-                    {
-                        // Create handler for reading
-                        newHandler(meshOnProc, areaReadHandler);
-                    }
-                }
 
 
                 // Addressing back to reconstructed mesh as xxxProcAddressing.
@@ -1861,62 +1793,11 @@ int main(int argc, char *argv[])
                 }
 
 
-                // For each area region
-                boolList haveAreaAddressing(areaRegionNames.size(), true);
-
-                // -> if (doFiniteArea)
-                forAll(areaRegionNames, areai)
-                {
-                    const word& areaName = areaRegionNames[areai];
-
-                    const auto& meshOnProc = areaMeshesOnProc[areai];
-                    const auto& areaInstance = areaMeshInstances[areai];
-
-                    auto& haveAddressing = haveAreaAddressing[areai];
-
-                    if (meshOnProc[UPstream::myProcNo()])
-                    {
-                        IOobject io
-                        (
-                            "faceLabels",
-                            areaInstance,
-                            faMesh::meshDir(regionName, areaName),
-                            runTime,
-                            IOobjectOption::MUST_READ
-                        );
-
-                        // How many mesh faces (faceLabels)?
-                        label nFaces = labelIOList::readContentsSize(io);
-
-                        // Check faceProcAddressing
-                        io.resetHeader("faceProcAddressing");
-                        io.readOpt(IOobjectOption::READ_IF_PRESENT);
-
-                        label nProcAddr = labelIOList::readContentsSize(io);
-
-                        haveAddressing =
-                        (
-                            nProcAddr >= 0 && nProcAddr == nFaces
-                        );
-                    }
-                    else if (areaMeshDetected[areai])
-                    {
-                        // Don't care about addressing if there is no proc mesh
-                        haveAddressing = true;
-                    }
-                }
-
-
                 // Additionally check for master faces being readable. Could
                 // do even more checks, e.g. global number of cells same
                 // as cellProcAddressing
 
                 bool volMeshHaveUndecomposed = false;
-                boolList areaMeshesHaveUndecomposed
-                (
-                    areaRegionNames.size(),
-                    false
-                );
 
                 if (UPstream::master())
                 {
@@ -1946,57 +1827,18 @@ int main(int argc, char *argv[])
                         volMeshHaveUndecomposed = io.headerOk();
                     }
 
-                    // Area
-                    // -> if (doFiniteArea)
-                    forAll(areaRegionNames, areai)
-                    {
-                        const word& areaName = areaRegionNames[areai];
-                        const auto& areaInstance = areaMeshInstances[areai];
-
-                        labelIOList io
-                        (
-                            IOobject
-                            (
-                                "faceLabels",
-                                areaInstance,
-                                faMesh::meshDir(regionName, areaName),
-                                baseRunTime,
-                                IOobjectOption::NO_READ,
-                                IOobjectOption::NO_WRITE,
-                                IOobjectOption::NO_REGISTER
-                            )
-                        );
-                        areaMeshesHaveUndecomposed[areai] = io.headerOk();
-                    }
-
                     fileHandler().constCast().nProcs(oldNumProcs);
                     UPstream::parRun(oldParRun);  // Restore parallel state
                 }
 
-                Pstream::broadcasts
-                (
-                    UPstream::worldComm,
-                    volMeshHaveUndecomposed,
-                    areaMeshesHaveUndecomposed
-                );
+                Pstream::broadcast(volMeshHaveUndecomposed, UPstream::worldComm);
 
                 // Report
                 {
                     InfoOrPout
                         << "    volume mesh ["
                         << volMeshHaveUndecomposed << "] : "
-                        << volMeshInstance << nl;
-
-                    forAll(areaRegionNames, areai)
-                    {
-                        InfoOrPout
-                            << "    area   mesh ["
-                            << areaMeshesHaveUndecomposed[areai] << "] : "
-                            << areaMeshInstances[areai]
-                            << " (" << areaRegionNames[areai] << ')' << nl;
-                    }
-
-                    InfoOrPout << endl;
+                        << volMeshInstance << nl << endl;
                 }
 
                 if
@@ -2008,24 +1850,6 @@ int main(int argc, char *argv[])
                     InfoOrPout
                         << "No undecomposed mesh. Creating from: "
                         << volMeshInstance << endl;
-
-                    bool warnUndecomposedArea(false);
-
-                    for (auto& areaUndecomposed : areaMeshesHaveUndecomposed)
-                    {
-                        if (areaUndecomposed)
-                        {
-                            areaUndecomposed = false;
-                            warnUndecomposedArea = true;
-                        }
-                    }
-
-                    if (warnUndecomposedArea)
-                    {
-                        InfoOrPout
-                            << "Also ignoring any undecomposed area meshes"
-                            << endl;
-                    }
 
                     autoPtr<fvMesh> volMeshPtr = fvMeshTools::loadOrCreateMesh
                     (
@@ -2073,163 +1897,11 @@ int main(int argc, char *argv[])
                 }
 
 
-                // Similarly for finiteArea
-                // - may or may not have undecomposed mesh
-                // - may or may not have decomposed meshes
-                {
-                    autoPtr<fvMesh> baseMeshPtr;
-                    autoPtr<fvMesh> volMeshPtr;
-                    mapDistributePolyMesh distMap;
-
-                    forAll(areaRegionNames, areai)
-                    {
-                        const word& areaName = areaRegionNames[areai];
-
-                        const auto& meshOnProc = areaMeshesOnProc[areai];
-                        const auto& areaInstance = areaMeshInstances[areai];
-
-                        const auto& areaUndecomposed =
-                            areaMeshesHaveUndecomposed[areai];
-
-                        const auto& haveAddressing =
-                            haveAreaAddressing[areai];
-
-                        auto& areaReadHandler = areaMeshReadHandlers[areai];
-
-                        if
-                        (
-                            // Has any proc meshes?
-                            // ie, areaMeshDetected[areai]
-                            meshOnProc.contains(true)
-                         &&
-                            (
-                                !areaUndecomposed
-                             || !returnReduceAnd(haveAddressing)
-                            )
-                        )
-                        {
-                            // Reconstruct this area mesh
-                        }
-                        else
-                        {
-                            // Nothing to reconstruct
-                            continue;
-                        }
-
-                        if (!baseMeshPtr)
-                        {
-                            InfoOrPout
-                                << "Getting volume mesh support"
-                                << " (for finite-area reconstruct)"
-                                << endl;
-
-                            baseMeshPtr = fvMeshTools::newMesh
-                            (
-                                IOobject
-                                (
-                                    regionName,
-                                    baseRunTime.timeName(),
-                                    baseRunTime,
-                                    IOobjectOption::MUST_READ
-                                ),
-                                true   // read on master only
-                            );
-                            fvMeshTools::setBasicGeometry(baseMeshPtr());
-
-                            volMeshPtr = fvMeshTools::loadOrCreateMesh
-                            (
-                                IOobject
-                                (
-                                    regionName,
-                                    baseMeshPtr().facesInstance(),
-                                    runTime,
-                                    IOobjectOption::MUST_READ
-                                ),
-                                volMeshReadHandler
-                            );
-
-                            // Read volume proc addressing back to base mesh
-                            distMap =
-                                fvMeshTools::readProcAddressing
-                                (
-                                    volMeshPtr(),
-                                    baseMeshPtr.get()
-                                );
-                        }
-
-                        autoPtr<faMesh> areaMeshPtr =
-                            faMeshTools::loadOrCreateMesh
-                            (
-                                areaName,
-                                // IOobject for the polyMesh
-                                IOobject
-                                (
-                                    regionName,
-                                    areaInstance,
-                                    runTime,
-                                    IOobjectOption::MUST_READ
-                                ),
-                                // The referenced polyMesh (from above)
-                                volMeshPtr(),
-                                areaReadHandler
-                            );
-                        faMesh& areaMesh = areaMeshPtr();
-
-                        faMeshTools::forceDemandDriven(areaMesh);
-                        faMeshTools::unregisterMesh(areaMesh);
-
-                        autoPtr<faMesh> areaBaseMeshPtr;
-
-                        // Reconstruct using polyMesh distribute map
-                        mapDistributePolyMesh faDistMap
-                        (
-                            faMeshDistributor::distribute
-                            (
-                                areaMesh,
-                                distMap,        // The polyMesh distMap
-                                baseMeshPtr(),  // Target polyMesh
-                                areaBaseMeshPtr
-                            )
-                        );
-
-                        faMeshTools::forceDemandDriven(areaBaseMeshPtr());
-                        faMeshTools::unregisterMesh(areaBaseMeshPtr());
-
-
-                        if (UPstream::master())
-                        {
-                            InfoOrPout
-                                << "Setting caseName to "
-                                << baseRunTime.caseName()
-                                << " to write reconstructed area mesh: "
-                                << areaName << endl;
-
-                            runTime.caseName() = baseRunTime.caseName();
-                            auto oldProcCase = runTime.processorCase(false);
-                            const auto oldParRun = UPstream::parRun(false);
-                            const auto oldNumProcs = fileHandler().nProcs();
-
-                            areaBaseMeshPtr().write();
-
-                            // Now we've written all. Reset caseName on master
-                            InfoOrPout<< "Restoring caseName" << endl;
-                            fileHandler().constCast().nProcs(oldNumProcs);
-                            UPstream::parRun(oldParRun);
-                            runTime.caseName() = proc0CaseName;
-                            runTime.processorCase(oldProcCase);
-                        }
-
-                        // Update for the reconstructed procAddressing
-                        faMeshTools::writeProcAddressing
-                        (
-                            areaBaseMeshPtr(),  // Reconstruct location
-                            faDistMap,
-                            false,              // decompose=false
-                            writeHandler,       //writeHandler,
-                            areaMeshPtr.get()   // procMesh
-                        );
-                    }
-                }
+                // finiteArea: no separate finite-area mesh is reconstructed
+                // here. The reduced-order faMesh is demand-built from
+                // faMeshDefinition and its fields are reconstructed by value in
+                // Pass2 below (see the finite-area block after the fv field
+                // reconstruction is set up).
             }
 
             // Make sure all is finished writing until re-reading in pass2
@@ -2307,100 +1979,6 @@ int main(int argc, char *argv[])
             fvMesh& mesh = volMeshPtr();
 
 
-            // Similarly for finiteArea
-
-            PtrList<faMesh> areaBaseMeshPtrs(areaRegionNames.size());
-            PtrList<faMesh> areaMeshPtrs(areaRegionNames.size());
-            PtrList<mapDistributePolyMesh> areaDistMaps(areaRegionNames.size());
-            PtrList<faMeshDistributor> faDistributors(areaRegionNames.size());
-
-            forAll(areaRegionNames, areai)
-            {
-                const word& areaName = areaRegionNames[areai];
-
-                auto& areaReadHandler = areaMeshReadHandlers[areai];
-
-                if (!areaMeshDetected[areai])
-                {
-                    // No proc meshes
-                    InfoOrPout
-                        << "No local decomposed area mesh: "
-                        << areaName << endl;
-                    continue;
-                }
-
-                InfoOrPout
-                    << "Reading base area mesh: "
-                    << areaName << endl;
-
-                areaBaseMeshPtrs.set
-                (
-                    areai,
-                    faMeshTools::loadOrCreateMesh
-                    (
-                        areaName,
-                        IOobject
-                        (
-                            regionName,
-                            baseMeshPtr().facesInstance(),
-                            baseRunTime,
-                            IOobjectOption::MUST_READ
-                        ),
-                        baseMeshPtr(),
-                        masterOnlyHandler
-                    )
-                );
-                auto& areaBaseMesh = areaBaseMeshPtrs[areai];
-
-                areaMeshPtrs.set
-                (
-                    areai,
-                    faMeshTools::loadOrCreateMesh
-                    (
-                        areaName,
-                        IOobject
-                        (
-                            regionName,
-                            areaBaseMesh.facesInstance(),
-                            runTime,
-                            IOobjectOption::MUST_READ
-                        ),
-                        mesh,
-                        areaReadHandler
-                    )
-                );
-                auto& areaProcMesh = areaMeshPtrs[areai];
-
-                areaDistMaps.emplace_set
-                (
-                    areai,
-                    faMeshTools::readProcAddressing
-                    (
-                        areaProcMesh,
-                       &areaBaseMesh
-                    )
-                );
-
-                faMeshTools::forceDemandDriven(areaProcMesh);
-
-                // Create an appropriate field distributor
-                faDistributors.set
-                (
-                    areai,
-                    new faMeshDistributor
-                    (
-                        areaProcMesh,  // source
-                        areaBaseMesh,  // target
-                        areaDistMaps[areai],
-                        masterOnlyHandler   // only write on master
-                    )
-                );
-
-                // Report some messages. Tbd.
-                faMeshDistributor::verbose_ = 1;
-            }
-
-
             // Read addressing back to base mesh
             autoPtr<mapDistributePolyMesh> distMap;
             distMap = fvMeshTools::readProcAddressing(mesh, baseMeshPtr.get());
@@ -2427,6 +2005,151 @@ int main(int argc, char *argv[])
                     distMap(),
                     masterOnlyHandler   // Write on master only
                 );
+
+
+            // finiteArea reconstruct setup
+            // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            // The finite-area region is a reduced-order fvMesh (area-face =
+            // cell, edge = face) demand-built from
+            // system/finite-area/faMeshDefinition. It carries no faceLabels
+            // file: the FA processor addressing is derived from the parent
+            // decomposition via faMeshProcAddressing (the serial key-data is
+            // broadcast from the master, which alone holds the complete base
+            // parent), the reconstruct map is assembled by
+            // fvMeshTools::createReconstructMap, and the FA vol/surface field
+            // values are gathered by the stock parFvFieldDistributor. No FA
+            // topology is rebuilt (contrast the legacy faMeshDistributor).
+            autoPtr<faMesh> baseFaPtr;
+            autoPtr<faMesh> procFaPtr;
+            autoPtr<mapDistributePolyMesh> faDistMap;
+            autoPtr<parFvFieldDistributor> faFieldDistributorPtr;
+
+            // (Re)build the FA reconstruct distributor from the current parent
+            // meshes/addressing. Collective on every rank.
+            auto rebuildFaDistributor = [&]()
+            {
+                faFieldDistributorPtr.reset(nullptr);
+                faDistMap.reset(nullptr);
+                procFaPtr.reset(nullptr);
+                baseFaPtr.reset(nullptr);
+
+                IOobject faDefIO
+                (
+                    "faMeshDefinition",
+                    runTime.system(),
+                    faMesh::prefix(),
+                    mesh.thisDb(),
+                    IOobjectOption::MUST_READ,
+                    IOobjectOption::NO_WRITE,
+                    IOobjectOption::NO_REGISTER
+                );
+
+                bool haveFa = faDefIO.typeHeaderOk<IOdictionary>(false);
+                Pstream::broadcast(haveFa);   // consistent (shared system dir)
+
+                if (!haveFa || !doFiniteArea)
+                {
+                    return;
+                }
+
+                InfoOrPout
+                    << "Reconstructing finite-area addressing" << nl << endl;
+
+                const IOdictionary faMeshDefinition(faDefIO);
+
+                // Reduced-order FA region on this rank's parent, and on the
+                // base parent (complete on master, empty elsewhere). Both
+                // builds are collective and empty-subdomain safe (see
+                // faMesh::finaliseParallelBoundary).
+                baseFaPtr.reset
+                (
+                    new faMesh(word::null, baseMeshPtr(), faMeshDefinition)
+                );
+                procFaPtr.reset
+                (
+                    new faMesh(word::null, mesh, faMeshDefinition)
+                );
+
+                // Serial FA key-data (built on master, broadcast to all)
+                faMeshProcAddressing faAddr(baseFaPtr());
+                faAddr.broadcast();
+
+                // Parent proc->base addressing for this rank
+                IOobject ioAddr
+                (
+                    "faceProcAddressing",
+                    mesh.facesInstance(),
+                    polyMesh::meshSubDir,
+                    mesh.thisDb(),
+                    IOobjectOption::READ_IF_PRESENT,
+                    IOobjectOption::NO_WRITE,
+                    IOobjectOption::NO_REGISTER
+                );
+                labelIOList parentFaceAddr(ioAddr);
+                ioAddr.resetHeader("pointProcAddressing");
+                labelIOList parentPointAddr(ioAddr);
+
+                // A subdomain that actually carries part of the area region
+                // must have valid parent processor addressing to map onto the
+                // base mesh. (An empty region on this rank needs nothing:
+                // faAddr.calc() then indexes neither list.) Guard explicitly so
+                // a missing/short file gives a clear error rather than an
+                // out-of-range crash inside calc().
+                if
+                (
+                    procFaPtr().nFaces()
+                 && (
+                        parentFaceAddr.size() < mesh.nFaces()
+                     || parentPointAddr.size() < mesh.nPoints()
+                    )
+                )
+                {
+                    FatalErrorInFunction
+                        << "Incomplete parent processor addressing for a"
+                        << " non-empty finite-area region on this subdomain."
+                        << nl
+                        << "    faceProcAddressing: " << parentFaceAddr.size()
+                        << " (need >= " << mesh.nFaces() << ")" << nl
+                        << "    pointProcAddressing: " << parentPointAddr.size()
+                        << " (need >= " << mesh.nPoints() << ")" << nl
+                        << "Cannot reconstruct finite-area fields. Ensure the"
+                        << " case was decomposed with processor addressing"
+                        << " written, or pass -no-finite-area." << nl
+                        << exit(FatalError);
+                }
+
+                // Derive the FA {cell,face,point,boundary}ProcAddressing
+                // (empty where the region is absent from this rank)
+                labelList faCellAddr, faFaceAddr, faPointAddr, faBndAddr;
+                faAddr.calc
+                (
+                    procFaPtr(),
+                    parentFaceAddr,
+                    parentPointAddr,
+                    faCellAddr, faFaceAddr, faPointAddr, faBndAddr
+                );
+
+                // Reconstruct (many->1) map for the FA region
+                faDistMap = fvMeshTools::createReconstructMap
+                (
+                    procFaPtr(),
+                    baseFaPtr.get(),
+                    faCellAddr, faFaceAddr, faPointAddr, faBndAddr
+                );
+
+                faFieldDistributorPtr.reset
+                (
+                    new parFvFieldDistributor
+                    (
+                        procFaPtr(),   // source
+                        baseFaPtr(),   // target
+                        faDistMap(),
+                        masterOnlyHandler   // Write on master only
+                    )
+                );
+            };
+
+            rebuildFaDistributor();
 
 
             // Since we start from Times[0] and not runTime.timeName() we
@@ -2543,17 +2266,9 @@ int main(int argc, char *argv[])
 
                     lagrangianDistributorPtr.reset();
 
-                    if (areaBaseMeshPtrs.count_nonnull())
-                    {
-                        InfoOrPout
-                            << "    Discarding finite-area addressing"
-                            << " (TODO)" << nl << endl;
-
-                        areaBaseMeshPtrs.clear();
-                        areaMeshPtrs.clear();
-                        areaDistMaps.clear();
-                        faDistributors.clear();
-                    }
+                    // Rebuild the finite-area addressing/distributor against
+                    // the changed parent topology.
+                    rebuildFaDistributor();
                 }
 
 
@@ -2581,17 +2296,26 @@ int main(int argc, char *argv[])
                     //masterOnlyHandler
                 );
 
-                // The finite-area fields, per active area region
-                for (const auto& faDistrib : faDistributors)
+                // The finite-area fields (finiteArea): reduced-order vol/
+                // surface fields gathered by value through the FA reconstruct
+                // map. No FA topology is written.
+                if (faFieldDistributorPtr)
                 {
+                    // FA fields are ordinary vol/surface fields registered on
+                    // the faMesh, whose path already resolves the "finite-area"
+                    // dbDir -- so scan with the faMesh db and no extra local.
                     IOobjectList faObjs
                     (
-                        faDistrib.sourceMesh(),  // proc mesh
+                        procFaPtr(),        // proc FA mesh
                         runTime.timeName(),
                         IOobjectOption::NO_REGISTER
                     );
 
-                    faDistrib.distributeAllFields(faObjs, selectedFields);
+                    faFieldDistributorPtr().distributeAllFields
+                    (
+                        faObjs,
+                        selectedFields
+                    );
                 }
 
 
@@ -2662,6 +2386,9 @@ int main(int argc, char *argv[])
         // Save old time name (since might be incremented)
         const word oldTimeName(runTime.timeName());
 
+        // Warn only once about pending finiteArea decompose/redistribute
+        bool warnedFaBranch = false;
+
         forAll(regionNames, regioni)
         {
             const auto& regionName = regionNames[regioni];
@@ -2691,15 +2418,9 @@ int main(int argc, char *argv[])
 
             // Where meshes are
             fileName volMeshMasterInstance;
-            fileNameList areaMeshMasterInstances(areaRegionNames.size());
 
             // Assume to be true
             bool volMeshHaveUndecomposed = true;
-            boolList areaMeshesHaveUndecomposed
-            (
-                areaRegionNames.size(),
-                false
-            );
 
             if (UPstream::master())
             {
@@ -2721,33 +2442,6 @@ int main(int argc, char *argv[])
                     IOobjectOption::READ_IF_PRESENT
                 );
 
-                forAll(areaRegionNames, areai)
-                {
-                    const word& areaName = areaRegionNames[areai];
-                    auto& areaInstance = areaMeshMasterInstances[areai];
-
-                    areaInstance = runTime.findInstance
-                    (
-                        faMesh::meshDir(regionName, areaName),
-                        "faceLabels",
-                        IOobjectOption::READ_IF_PRESENT,
-                        word::null, // no stop instance
-                        false       // constant fallback = false
-                    );
-
-                    if (areaInstance.empty())
-                    {
-                        // No undecomposed mesh
-                        areaMeshesHaveUndecomposed[areai] = false;
-                        areaInstance = "constant";  // fallback
-                    }
-                    else
-                    {
-                        // Master has undecomposed mesh
-                        areaMeshesHaveUndecomposed[areai] = true;
-                    }
-                }
-
                 fileHandler().constCast().nProcs(oldNumProcs);
                 UPstream::parRun(oldParRun);  // Restore parallel state
 
@@ -2756,18 +2450,7 @@ int main(int argc, char *argv[])
                     InfoOrPout
                         << "    volume mesh ["
                         << volMeshHaveUndecomposed << "] : "
-                        << volMeshMasterInstance << nl;
-
-                    forAll(areaRegionNames, areai)
-                    {
-                        InfoOrPout
-                            << "    area   mesh ["
-                            << areaMeshesHaveUndecomposed[areai] << "] : "
-                            << areaMeshMasterInstances[areai]
-                            << " (" << areaRegionNames[areai] << ')' << nl;
-                    }
-
-                    InfoOrPout<< nl << nl;
+                        << volMeshMasterInstance << nl << nl << nl;
 
                     // Restoring caseName
                     InfoOrPout<< "Restoring caseName" << endl;
@@ -2780,16 +2463,12 @@ int main(int argc, char *argv[])
             (
                 UPstream::worldComm,
                 volMeshHaveUndecomposed,
-                areaMeshesHaveUndecomposed,
-                volMeshMasterInstance,
-                areaMeshMasterInstances
+                volMeshMasterInstance
             );
 
             // Check processors have meshes
             // - check for 'faces' file (polyMesh)
-            // - check for 'faceLabels' file (faMesh)
             boolList volMeshOnProc;
-            List<boolList> areaMeshesOnProc(areaRegionNames.size());
 
             if (decompose)
             {
@@ -2824,48 +2503,6 @@ int main(int argc, char *argv[])
             (
                 BitOps::count(volMeshOnProc, true)
             );
-
-
-            // -> if (doFiniteArea)
-            forAll(areaRegionNames, areai)
-            {
-                const auto& areaName = areaRegionNames[areai];
-                auto& meshOnProc = areaMeshesOnProc[areai];
-                auto& areaReadHandler = areaMeshReadHandlers[areai];
-
-                if (decompose)
-                {
-                    // Already determined above that master can read
-                    // 'faceLabels' file.
-                    meshOnProc.resize(UPstream::nProcs(), false);
-                    meshOnProc[UPstream::masterNo()] =
-                        areaMeshesHaveUndecomposed[areai];
-                }
-                else
-                {
-                    meshOnProc = haveMeshFile
-                    (
-                        "faceLabels",
-                        areaMeshMasterInstances[areai],
-                        faMesh::meshDir(regionName, areaName),
-                        runTime
-                    );
-                }
-
-                // Create handler for reading
-                if (meshOnProc == volMeshOnProc)
-                {
-                    if (volMeshReadHandler)
-                    {
-                        // Use same reader for faMesh as for fvMesh
-                        areaReadHandler.ref(volMeshReadHandler.ref());
-                    }
-                }
-                else
-                {
-                    newHandler(meshOnProc, areaReadHandler);
-                }
-            }
 
 
             // Prior to loadOrCreateMesh, note which meshes already exist
@@ -2910,54 +2547,6 @@ int main(int argc, char *argv[])
             }
 
 
-            List<fileNameList> areaMeshDirs(areaRegionNames.size());
-            // -> if (doFiniteArea)
-            forAll(areaRegionNames, areai)
-            {
-                const auto& areaName = areaRegionNames[areai];
-                const auto& meshOnProc = areaMeshesOnProc[areai];
-                const auto& areaInstance = areaMeshMasterInstances[areai];
-                auto& areaMeshDir = areaMeshDirs[areai];
-
-                areaMeshDir.resize(UPstream::nProcs());
-                areaMeshDir[UPstream::myProcNo()] =
-                (
-                    fileHandler().objectPath
-                    (
-                        IOobject
-                        (
-                            "faceLabels",
-                            areaInstance,
-                            faMesh::meshDir(regionName, areaName),
-                            runTime
-                        ),
-                        word::null
-                    ).path()
-                );
-
-                Pstream::allGatherList(areaMeshDir);
-
-                if (optVerbose && UPstream::master())
-                {
-                    Info<< "Per processor faceLabels dirs:" << nl
-                        << '(' << nl;
-
-                    for (const int proci : UPstream::allProcs())
-                    {
-                        Info<< "    "
-                            << runTime.relativePath(areaMeshDir[proci]);
-
-                        if (!meshOnProc[proci])
-                        {
-                            Info<< " [missing]";
-                        }
-                        Info<< nl;
-                    }
-                    Info<< ')' << nl << endl;
-                }
-            }
-
-
             // Load mesh (or create dummy one)
             // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -2982,50 +2571,6 @@ int main(int argc, char *argv[])
                 volMeshReadHandler
             );
             fvMesh& mesh = volMeshPtr();
-
-
-            // Area meshes
-            PtrList<faMesh> areaMeshPtrs(areaRegionNames.size());
-
-            // Decomposing: must have an undecomposed mesh
-            // Redistributing: have any proc mesh
-
-            // -> if (doFiniteArea)
-            forAll(areaRegionNames, areai)
-            {
-                const auto& areaName = areaRegionNames[areai];
-                const auto& areaInstance = areaMeshMasterInstances[areai];
-                auto& areaReadHandler = areaMeshReadHandlers[areai];
-
-                if
-                (
-                    decompose
-                  ? areaMeshesHaveUndecomposed[areai]
-                  : areaMeshesOnProc[areai].contains(true)
-                )
-                {
-                    autoPtr<faMesh> areaMeshPtr =
-                        faMeshTools::loadOrCreateMesh
-                        (
-                            areaName,
-                            // IOobject for the polyMesh
-                            IOobject
-                            (
-                                regionName,
-                                areaInstance,
-                                runTime,
-                                IOobjectOption::MUST_READ
-                            ),
-                            mesh,  // <- The referenced polyMesh (from above)
-                            areaReadHandler
-                        );
-
-                    faMeshTools::forceDemandDriven(*areaMeshPtr);
-                    faMeshTools::unregisterMesh(*areaMeshPtr);
-
-                    areaMeshPtrs.set(areai, std::move(areaMeshPtr));
-                }
-            }
 
             if (decompose)
             {
@@ -3068,39 +2613,6 @@ int main(int argc, char *argv[])
                     << endl;
                 newHandler(isWriteProc, writeHandler);
             }
-
-            // Area fields first. Read and deregister
-
-            PtrList<parFaFieldDistributorCache> areaFields
-            (
-                areaRegionNames.size()
-            );
-
-            forAll(areaRegionNames, areai)
-            {
-                const auto& meshOnProc = areaMeshesOnProc[areai];
-                auto& areaReadHandler = areaMeshReadHandlers[areai];
-                const auto& areaMasterInstance =
-                    areaMeshMasterInstances[areai];
-
-                if (auto* areaMeshPtr = areaMeshPtrs.get(areai))
-                {
-                    auto& cache = areaFields.emplace_set(areai);
-
-                    cache.read
-                    (
-                        baseRunTime,
-                        proc0CaseName,
-                        decompose,
-
-                        meshOnProc,
-                        areaReadHandler,
-                        areaMasterInstance,
-                        (*areaMeshPtr)
-                    );
-                }
-            }
-
 
             // Detect lagrangian fields
             if (decompose)
@@ -3178,125 +2690,221 @@ int main(int argc, char *argv[])
             );
 
 
-            // Redistribute area fields
-            forAll(areaRegionNames, areai)
+            // finiteArea field decompose (1->N): the reduced-order area/edge
+            // fields are ordinary vol/surface fields. Build the complete
+            // (master) + per-proc reduced-order faMesh, derive the FA
+            // {cell,face,point,boundary}ProcAddressing from the parent
+            // decomposition via faMeshProcAddressing, and scatter the field
+            // VALUES with fvMeshTools::createDecomposeMap + parFvFieldDistributor
+            // (mirror of the reconstruct branch, inverted). No FA topology is
+            // written; processor-patch (cut-edge) values are left for the solver
+            // to recompute via the coupled boundary conditions, as usual.
             {
-                const auto* areaMeshPtr = areaMeshPtrs.get(areai);
-                if (!areaMeshPtr)
-                {
-                    continue;
-                }
-
-                const auto& areaMesh = *areaMeshPtr;
-
-                autoPtr<faMesh> areaProcMeshPtr;
-
-                mapDistributePolyMesh faDistMap
+                IOobject faDefIO
                 (
-                    faMeshDistributor::distribute
-                    (
-                        areaMesh,
-                        distMap(),  // The polyMesh distMap
-                        areaProcMeshPtr
-                    )
+                    "faMeshDefinition",
+                    runTime.system(),
+                    faMesh::prefix(),
+                    mesh.thisDb(),
+                    IOobjectOption::READ_IF_PRESENT,
+                    IOobjectOption::NO_WRITE,
+                    IOobjectOption::NO_REGISTER
                 );
+                bool haveFa = faDefIO.typeHeaderOk<IOdictionary>(false);
+                Pstream::broadcast(haveFa);
 
-                // Force recreation of everything that might vaguely
-                // be used by patches:
-
-                faMeshTools::forceDemandDriven(areaProcMeshPtr());
-
-                const auto& areaProcMesh = areaProcMeshPtr();
-
-                if (reconstruct)
+                if (haveFa && decompose && doFiniteArea)
                 {
-                    if (UPstream::master())
-                    {
-                        InfoOrPout
-                            << "Setting caseName to " << baseRunTime.caseName()
-                            << " to write reconstructed mesh (and fields)."
-                            << endl;
-                        runTime.caseName() = baseRunTime.caseName();
-                        const auto oldProcCase = runTime.processorCase(false);
-                        const auto oldParRun = UPstream::parRun(false);
-                        const auto oldNumProcs = fileHandler().nProcs();
+                    InfoOrPout
+                        << "Decomposing finite-area fields" << nl << endl;
 
-                        areaProcMesh.write();
+                    const IOdictionary faMeshDefinition(faDefIO);
 
-                        // Now we've written all. Reset caseName on master
-                        InfoOrPout<< "Restoring caseName" << endl;
-                        fileHandler().constCast().nProcs(oldNumProcs);
-                        UPstream::parRun(oldParRun);
-                        runTime.caseName() = proc0CaseName;
-                        runTime.processorCase(oldProcCase);
-                    }
-                }
-                else if
-                (
-                    // With override fileHandler, or all ranks use default
-                    bool(writeHandler) == returnReduceOr(bool(writeHandler))
-                )
-                {
-                    auto oldHandler = writeHandler.shallowClone();
-                    oldHandler = fileOperation::fileHandler(oldHandler);
-
-                    IOmapDistributePolyMesh::writeContents
-                    (
-                        IOobject
+                    // Complete (undecomposed) parent on master, dummy elsewhere
+                    autoPtr<fvMesh> completeParentPtr =
+                        fvMeshTools::loadOrCreateMesh
                         (
-                            "procAddressing",
-                            areaProcMesh.facesInstance(),
-                            faMesh::meshSubDir,
-                            areaProcMesh.thisDb()
-                        ),
-                        faDistMap
+                            IOobject
+                            (
+                                regionName,
+                                baseRunTime.timeName(),
+                                baseRunTime,
+                                IOobjectOption::MUST_READ
+                            ),
+                            masterOnlyHandler   // read on master only
+                        );
+
+                    // Reduced-order FA region on the complete parent (master)
+                    // and on this rank's redistributed parent. Both builds are
+                    // collective and empty-subdomain safe.
+                    faMesh completeFa
+                    (
+                        word::null, completeParentPtr(), faMeshDefinition
+                    );
+                    faMesh procFa(word::null, mesh, faMeshDefinition);
+
+                    // Serial FA key-data (built on master, broadcast to all)
+                    faMeshProcAddressing faAddr(completeFa);
+                    faAddr.broadcast();
+
+                    // Parent proc->complete addressing written by the
+                    // redistribute above (per-rank, at the new instance)
+                    IOobject ioAddr
+                    (
+                        "faceProcAddressing",
+                        mesh.facesInstance(),
+                        polyMesh::meshSubDir,
+                        mesh.thisDb(),
+                        IOobjectOption::READ_IF_PRESENT,
+                        IOobjectOption::NO_WRITE,
+                        IOobjectOption::NO_REGISTER
+                    );
+                    labelIOList parentFaceAddr(ioAddr);
+                    ioAddr.resetHeader("pointProcAddressing");
+                    labelIOList parentPointAddr(ioAddr);
+
+                    // A destination subdomain that carries part of the area
+                    // region needs valid parent processor addressing; guard
+                    // against a missing/short file (clear error vs a crash in
+                    // calc()). An empty region here indexes neither list.
+                    if
+                    (
+                        procFa.nFaces()
+                     && (
+                            parentFaceAddr.size() < mesh.nFaces()
+                         || parentPointAddr.size() < mesh.nPoints()
+                        )
+                    )
+                    {
+                        FatalErrorInFunction
+                            << "Incomplete parent processor addressing for a"
+                            << " non-empty finite-area region on this"
+                            << " subdomain." << nl
+                            << "    faceProcAddressing: "
+                            << parentFaceAddr.size()
+                            << " (need >= " << mesh.nFaces() << ")" << nl
+                            << "    pointProcAddressing: "
+                            << parentPointAddr.size()
+                            << " (need >= " << mesh.nPoints() << ")" << nl
+                            << "Cannot decompose finite-area fields."
+                            << exit(FatalError);
+                    }
+
+                    // Derive the FA {cell,face,point,boundary}ProcAddressing
+                    labelList faCellAddr, faFaceAddr, faPointAddr, faBndAddr;
+                    faAddr.calc
+                    (
+                        procFa,
+                        parentFaceAddr,
+                        parentPointAddr,
+                        faCellAddr, faFaceAddr, faPointAddr, faBndAddr
                     );
 
-                    areaProcMesh.write();
-
-                    // Restore
-                    (void)fileOperation::fileHandler(oldHandler);
-
-                    if (decompose)
-                    {
-                        faMeshTools::writeProcAddressing
+                    // Decompose (1->many) scatter map for the FA region
+                    autoPtr<mapDistributePolyMesh> faDistMap =
+                        fvMeshTools::createDecomposeMap
                         (
-                            areaProcMesh,
-                            faDistMap,
-                            decompose,
-                            writeHandler
+                            procFa,
+                            &completeFa,
+                            faCellAddr, faFaceAddr, faPointAddr, faBndAddr
+                        );
+
+                    // Write control: use the restricting handler when present
+                    // (fewer dest procs than ranks); otherwise every rank is a
+                    // destination and writes its own processor directory via the
+                    // current file handler (mirrors the parent mesh write).
+                    autoPtr<parFvFieldDistributor> faDistPtr;
+                    if (writeHandler)
+                    {
+                        faDistPtr.reset
+                        (
+                            new parFvFieldDistributor
+                            (
+                                completeFa, procFa, faDistMap(), writeHandler
+                            )
                         );
                     }
-                }
+                    else
+                    {
+                        faDistPtr.reset
+                        (
+                            new parFvFieldDistributor
+                            (
+                                completeFa, procFa, faDistMap(),
+                                true    // isWriteProc (all ranks are dest)
+                            )
+                        );
+                    }
+                    parFvFieldDistributor& faDist = faDistPtr();
 
-                // Not so nice. In faMeshDistributor it uses fileHandler
-                // to decide writeOnProc, but when decomposing there will not
-                // be a special write handler - just the regular one.
-                // So reference the write handler or the global handler
-                // for that case...
+                    // Only the master holds the complete FA fields
+                    boolList faOnProc(UPstream::nProcs(), false);
+                    faOnProc[UPstream::masterNo()] = true;
 
-                auto defltHandler = writeHandler.shallowClone();
-                if (!returnReduceOr(bool(writeHandler)))
-                {
-                    // Use default if no ranks specified an override
-                    defltHandler.cref(Foam::fileHandler());
-                }
-
-                InfoOrPout
-                    << "Written redistributed mesh to "
-                    << areaProcMesh.facesInstance() << nl << endl;
-
-                if (auto* cache = areaFields.get(areai))
-                {
-                    faMeshDistributor distributor
+                    // Zero-sized subset to broadcast empty fields to the ranks
+                    // that do not hold the complete field (see fieldsDistributor)
+                    autoPtr<fvMeshSubset> faSubsetterPtr
                     (
-                        areaMesh,       // source
-                        areaProcMesh,   // target
-                        faDistMap,
-                        defltHandler    //<- writeHandler
+                        new fvMeshSubset(completeFa, Foam::zero{})
                     );
+                    {
+                        auto& subMesh = faSubsetterPtr().subMesh();
+                        subMesh.init(true);
+                        subMesh.globalData();
+                        subMesh.tetBasePtIs();
+                        subMesh.geometricD();
+                    }
 
-                    cache->redistributeAndWrite(distributor);
+                    // Complete FA field objects (undecomposed case, master only)
+                    IOobjectList faObjects;
+                    if (UPstream::master())
+                    {
+                        faObjects =
+                            IOobjectList(completeFa, baseRunTime.timeName());
+                    }
+
+                    // Read (master), scatter and write per known field type
+                    #undef  doFaDecompose
+                    #define doFaDecompose(GeoField)                           \
+                    {                                                         \
+                        PtrList<GeoField> flds;                               \
+                        fieldsDistributor::readFields                         \
+                        (                                                     \
+                            faOnProc, masterOnlyHandler, completeFa,          \
+                            faSubsetterPtr, faObjects, flds, false            \
+                        );                                                    \
+                        for (const auto& fld : flds)                          \
+                        {                                                     \
+                            faDist.writeField(faDist.distributeField(fld)()); \
+                        }                                                     \
+                    }
+
+                    doFaDecompose(volScalarField);
+                    doFaDecompose(volVectorField);
+                    doFaDecompose(volSphericalTensorField);
+                    doFaDecompose(volSymmTensorField);
+                    doFaDecompose(volTensorField);
+
+                    doFaDecompose(surfaceScalarField);
+                    doFaDecompose(surfaceVectorField);
+                    doFaDecompose(surfaceSphericalTensorField);
+                    doFaDecompose(surfaceSymmTensorField);
+                    doFaDecompose(surfaceTensorField);
+
+                    #undef doFaDecompose
+                }
+                else if (haveFa && doFiniteArea && !warnedFaBranch)
+                {
+                    // N->M redistribute path not yet wired (route field values
+                    // through the serial reference: reconstruct-in-memory, then
+                    // decompose). Warn once; finite-volume is unaffected.
+                    warnedFaBranch = true;
+                    WarningInFunction
+                        << "finiteArea (finiteArea) field redistribution"
+                        << " (N->M) is not yet implemented in redistributePar;"
+                        << " finite-area fields will not be written."
+                        << " Finite-volume fields are unaffected."
+                        << nl << endl;
                 }
             }
 

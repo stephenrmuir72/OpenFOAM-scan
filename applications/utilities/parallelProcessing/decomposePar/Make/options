@@ -6,8 +6,7 @@ EXE_INC = \
     -I$(LIB_SRC)/lagrangian/basic/lnInclude \
     -I$(LIB_SRC)/dynamicMesh/lnInclude \
     -I$(LIB_SRC)/parallel/decompose/decompositionMethods/lnInclude \
-    -I$(LIB_SRC)/parallel/decompose/decompose/lnInclude \
-    -I$(LIB_SRC)/parallel/decompose/faDecompose/lnInclude
+    -I$(LIB_SRC)/parallel/decompose/decompose/lnInclude
 
 EXE_LIBS = \
     -lfiniteArea \
@@ -19,6 +18,5 @@ EXE_LIBS = \
     -lgenericPatchFields \
     -ldecompositionMethods \
     -ldecompose \
-    -lfaDecompose \
     -L$(FOAM_LIBBIN)/dummy \
     -lkahipDecomp -lmetisDecomp -lscotchDecomp

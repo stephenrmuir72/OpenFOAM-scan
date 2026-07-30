@@ -92,10 +92,6 @@ class parFvFieldDistributor
         //- Construct per-patch addressing
         void createPatchFaceMaps();
 
-        //- Write using writeHandler_ or isWriteProc_ to guide the output
-        template<class FieldType>
-        void writeField(const FieldType& fld) const;
-
 
 public:
 
@@ -149,6 +145,11 @@ public:
         //- Helper: reconstruct and write mesh points
         //  (note: should be moved to something like processorMeshes class)
         void reconstructPoints();
+
+        //- Write using writeHandler_ or isWriteProc_ to guide the output
+        //  (writeOpt on the field is ignored: an explicit write() is issued)
+        template<class FieldType>
+        void writeField(const FieldType& fld) const;
 
         //- Distribute all fields for known field types
         void distributeAllFields
