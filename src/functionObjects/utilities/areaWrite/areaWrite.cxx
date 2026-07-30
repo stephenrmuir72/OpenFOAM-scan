@@ -313,8 +313,8 @@ bool Foam::areaWrite::write()
 
             if
             (
-                Foam::fieldTypes::is_area(clsName)
-             || Foam::fieldTypes::is_area_internal(clsName)
+                Foam::fieldTypes2::is_area(clsName)
+             || Foam::fieldTypes2::is_area_internal(clsName)
             )
             {
                 nAreaFields += n;

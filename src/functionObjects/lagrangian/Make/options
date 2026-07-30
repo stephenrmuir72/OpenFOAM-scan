@@ -26,5 +26,4 @@ LIB_LIBS = \
     -lregionModels \
     -lsurfaceFilmModels \
     -lregionFaModels \
-    -lfiniteArea \
     -lfaOptions
