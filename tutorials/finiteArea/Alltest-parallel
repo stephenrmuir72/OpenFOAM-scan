@@ -1,0 +1,286 @@
+#!/bin/sh
+#------------------------------------------------------------------------------
+# finiteArea tutorial PARALLEL (MPI) parity / CI harness
+#
+# Companion to the serial driver ./Alltest. For every migrated finiteArea
+# tutorial that supports a validated parallel path this driver:
+#   1. decomposes the case, runs the *2 solver under mpirun on a modest number
+#      of ranks and hard-gates on run-to-completion (mpirun exit 0, a solver
+#      "End" marker and the absence of "FOAM FATAL"),
+#   2. reconstructs the parallel result (reconstructPar) and compares the
+#      reconstructed key output field against the SERIAL stored reference
+#      (case/validation/<field>) within an explicit, documented tolerance via
+#      tutorials/finiteArea/test/faFieldDiff.py.
+#
+# The tolerances here are LOOSER than the serial ones (./Alltest): a parallel
+# run differs from serial by linear-solver ordering (domain-decomposed
+# preconditioner / reduction order), a benign non-determinism that accumulates
+# over the run. The gate therefore certifies serial-equivalence to solver
+# ordering tolerance, not bit-identity.
+#
+# Parallel pipeline + tolerance per case
+#
+#   surfactantFoam/planeTransport            Cs @ endTime   np=4
+#       blockMesh; makeFaMesh (serial, for the reference-comparable ordering);
+#       decomposePar -force (FA2-aware: splits the FA fields); makeFaMesh
+#       -parallel (persists the per-rank reduced-order FA mesh); mpirun
+#       surfactantFoam -parallel (the ensight areaWrite FO now runs in
+#       parallel); reconstructPar -latestTime.
+#       relTol 1e-4 (observed relL2 ~7.3e-6, Linf ~3.3e-5).
+#
+#   liquidFilmFoam/cylinder                  h  @ endTime   np=4
+#       blockMesh; collapse2DMesh film; setFields -region film; decomposePar
+#       -force (base); decomposePar -region film (region); mpirun
+#       liquidFilmFoam -parallel; reconstructPar -region film -latestTime.
+#       The film FA mesh is demand-built by the solver from the collapsed film
+#       fvMesh region, so no makeFaMesh is involved. relTol 3e-3 (observed
+#       relL2 ~6.4e-4, Linf ~7.7e-7 over 500 steps).
+#
+#   sphereSurfactantFoam/sphereTransport     Cs @ endTime   np=8
+#       CLOSED surface (the whole `outer` sphere patch). Two defects are FIXED:
+#       (1) the parallel FA MESH CONSTRUCTION defect (previously the per-
+#       neighbour processor patches were not symmetric/consistently ordered
+#       across ranks, so the inherited processorPolyPatch::order segfaulted
+#       exchanging mismatched face-centre buffers); and (2) the parallel
+#       POINT-COUPLING defect that made the curved-manifold corrected Laplacian
+#       decomposition-dependent -- pointAreaNormals were summed through the
+#       reduced-order mesh's own (collapsed) point coupling, corrupting the
+#       normal at multiply-shared points (the poles, shared by 4 non-adjacent
+#       ranks at a 2x2x2 corner). The sum is now routed through the PARENT
+#       mesh's global point coupling (faMesh::registerParentPointMap +
+#       basicFvGeometryScheme::calcPointAreaNormals). Reconstructed Cs now
+#       matches serial to solver-ordering tolerance (relL2 ~7e-6, Linf ~1e-5),
+#       so the field-parity leg is gated PASS at relTol 1e-4 like the plane
+#       leg -- see the block below.
+#
+# FA parallel post-processing output now works: the planeTransport leg runs the
+# ensight areaWrite FO in parallel (FA area/edge fields route through the stock
+# surfaceWriter parallel merge). The film/sphere legs keep
+# -noFunctionObjects (they ship no FA function object); the CI gate itself only
+# needs the raw reconstructed field.
+#
+# Usage:  tutorials/finiteArea/Alltest-parallel
+#
+# Exit status: 0 if every non-skipped case passes every gate, 1 otherwise.
+# If no MPI launcher is found every case is reported SKIP and the exit is 0.
+#------------------------------------------------------------------------------
+cd "${0%/*}" || exit 1
+here="$PWD"
+. "${WM_PROJECT_DIR:?}/bin/tools/RunFunctions"
+
+DIFF="$here/test/faFieldDiff.py"
+
+nPass=0
+nFail=0
+nSkip=0
+summary=""
+
+record()
+{
+    status="$1"; label="$2"; gate="$3"; detail="$4"
+    case "$status" in
+        PASS) nPass=$((nPass+1)) ;;
+        FAIL) nFail=$((nFail+1)) ;;
+        SKIP) nSkip=$((nSkip+1)) ;;
+    esac
+    summary="${summary}$(printf '  %-4s  %-34s  %-13s  %s' \
+        "$status" "$label" "$gate" "$detail")
+"
+    echo "[$status] $label ($gate) $detail"
+}
+
+latestTime()
+{
+    # latest numeric time directory name under $1
+    ls -d "$1"/[0-9]* 2>/dev/null | sed 's#.*/##' \
+        | grep -E '^[0-9]+(\.[0-9]+)?$' | sort -g | tail -1
+}
+
+# fieldGate <label> <ref> <new> <absTol> <relTol>
+fieldGate()
+{
+    label="$1"; ref="$2"; new="$3"; absTol="$4"; relTol="$5"
+    if [ ! -f "$ref" ]; then
+        record FAIL "$label" "field-parity" "missing reference $ref"
+        return 1
+    fi
+    if [ ! -f "$new" ]; then
+        record FAIL "$label" "field-parity" "missing result $new"
+        return 1
+    fi
+    out=$(python3 "$DIFF" "$ref" "$new" --abs-tol "$absTol" --rel-tol "$relTol" \
+            --name "$label" 2>&1)
+    rc=$?
+    detail=$(echo "$out" | sed 's/^\[faFieldDiff\] \(PASS\|FAIL\) [^:]*: //')
+    [ "$rc" -eq 0 ] && record PASS "$label" "field-parity" "$detail" \
+                    || record FAIL "$label" "field-parity" "$detail"
+}
+
+# Locate an MPI launcher; without one there is nothing to gate.
+MPIRUN=$(command -v mpirun 2>/dev/null)
+if [ -z "$MPIRUN" ]; then
+    echo "No mpirun found -- reporting all parallel cases as SKIP."
+    record SKIP "surfactantFoam/planeTransport"      "parallel" "no mpirun"
+    record SKIP "liquidFilmFoam/cylinder"            "parallel" "no mpirun"
+    record SKIP "sphereSurfactantFoam/sphereTransport" "parallel" "no mpirun"
+    echo
+    echo "========================== finiteArea CI (parallel) ========================="
+    printf '%s' "$summary"
+    echo "------------------------------------------------------------------------------"
+    echo "  PASS=$nPass  FAIL=$nFail  SKIP=$nSkip"
+    echo "=============================================================================="
+    exit 0
+fi
+
+# nProcs from a case decomposeParDict (falls back to the supplied default)
+nProcs()
+{
+    n=$(foamDictionary -entry numberOfSubdomains -value "$1" 2>/dev/null)
+    case "$n" in (''|*[!0-9]*) echo "$2" ;; (*) echo "$n" ;; esac
+}
+
+#------------------------------------------------------------------------------
+# 1) surfactantFoam / planeTransport  (standalone makeFaMesh FA region)
+#------------------------------------------------------------------------------
+C=surfactantFoam/planeTransport
+(
+    cd "$C" || exit 1
+    ./Allclean >/dev/null 2>&1
+    restore0Dir >/dev/null 2>&1
+    np=$(nProcs system/decomposeParDict 4)
+    blockMesh                                   > log.blockMesh 2>&1        || exit 2
+    makeFaMesh                                 > log.makeFaMesh 2>&1      || exit 2
+    decomposePar -force                         > log.decomposePar 2>&1     || exit 2
+    mpirun -np "$np" makeFaMesh -parallel      > log.makeFaMesh.par 2>&1  || exit 3
+    # areaWrite ensight FO now runs in parallel: FA
+    # area/edge output goes through the stock surfaceWriter parallel merge.
+    mpirun -np "$np" surfactantFoam -parallel \
+                                                > log.surfactantFoam 2>&1  || exit 4
+    reconstructPar -latestTime                  > log.reconstructPar 2>&1   || exit 5
+)
+rc=$?
+if [ "$rc" -ne 0 ]; then
+    record FAIL "$C" "par-completion" "pipeline stage exit ($rc)"
+elif grep -ql "FOAM FATAL" "$C"/log.* 2>/dev/null; then
+    record FAIL "$C" "par-completion" "FOAM FATAL in a log"
+elif ! grep -ql "^End" "$C/log.surfactantFoam" 2>/dev/null; then
+    record FAIL "$C" "par-completion" "no End marker in log.surfactantFoam"
+else
+    record PASS "$C" "par-completion" "mpirun End, reconstructed"
+    t=$(latestTime "$C")
+    fieldGate "$C Cs@$t (par)" "$C/validation/Cs" "$C/$t/finite-area/Cs" 1e-8 1e-4
+fi
+( cd "$C" && ./Allclean >/dev/null 2>&1 )
+
+#------------------------------------------------------------------------------
+# 2) liquidFilmFoam / cylinder  (film region; solver demand-builds the FA mesh)
+#------------------------------------------------------------------------------
+C=liquidFilmFoam/cylinder
+(
+    cd "$C" || exit 1
+    ./Allclean >/dev/null 2>&1
+    restore0Dir >/dev/null 2>&1
+    np=$(nProcs system/decomposeParDict 4)
+    blockMesh                                   > log.blockMesh 2>&1        || exit 2
+    collapse2DMesh film                         > log.collapse2DMesh 2>&1   || exit 2
+    setFields -region film                      > log.setFields 2>&1        || exit 2
+    decomposePar -force                         > log.decomposePar 2>&1     || exit 2
+    # The film region has no system/film/decomposeParDict; reuse the top-level.
+    decomposePar -region film -force -decomposeParDict system/decomposeParDict \
+                                                > log.decomposePar.film 2>&1 || exit 2
+    mpirun -np "$np" liquidFilmFoam -parallel -noFunctionObjects \
+                                                > log.liquidFilmFoam 2>&1  || exit 4
+    reconstructPar -region film -latestTime     > log.reconstructPar 2>&1   || exit 5
+)
+rc=$?
+if [ "$rc" -ne 0 ]; then
+    record FAIL "$C" "par-completion" "pipeline stage exit ($rc)"
+elif grep -ql "FOAM FATAL" "$C"/log.* 2>/dev/null; then
+    record FAIL "$C" "par-completion" "FOAM FATAL in a log"
+elif ! grep -ql "^End" "$C/log.liquidFilmFoam" 2>/dev/null; then
+    record FAIL "$C" "par-completion" "no End marker in log.liquidFilmFoam"
+else
+    record PASS "$C" "par-completion" "mpirun End, reconstructed"
+    t=$(latestTime "$C")
+    fieldGate "$C h@$t (par)" "$C/validation/h" "$C/$t/film/h" 1e-8 3e-3
+fi
+( cd "$C" && ./Allclean >/dev/null 2>&1 )
+
+#------------------------------------------------------------------------------
+# 3) sphereSurfactantFoam / sphereTransport  (closed surface)
+#
+# The closed-manifold parallel FA MESH CONSTRUCTION defect (asymmetric per-
+# neighbour processor patches -> processorPolyPatch::order segfault) is FIXED
+# (faMesh::buildRegionMeshFromDefinition: neighbour-identity patchMap +
+# syncParallel=false; see src/finiteArea/faMesh/faMesh.C).
+# The case now builds and runs to completion on every rank and conserves mass
+# exactly -- gated below.
+#
+# The parallel POINT-COUPLING defect that made the curved-manifold corrected
+# Laplacian decomposition-dependent is ALSO FIXED. calcPointAreaNormals summed
+# each shared point's normal through the reduced-order mesh's OWN point
+# coupling, which is collapsed (edges-as-faces): a shared point was treated as
+# coupled to every processor-boundary point, so the summed normal was corrupted
+# at multiply-shared points (the poles, shared by 4 non-adjacent ranks at a
+# 2x2x2 domain corner -- a unit seed summed to 30 instead of 4). max|grad(1)|
+# was ~1.9 in parallel vs ~0.01 serial. The sum is now routed through the
+# PARENT mesh's (correct) global point coupling via the reduced->parent point
+# map faMesh publishes in its registry (faMesh::registerParentPointMap ->
+# basicFvGeometryScheme::calcPointAreaNormals), the parent-global analogue of
+# the legacy faMesh::calcPointAreaNormals processor exchange + sharedPoints
+# combineReduce. Parallel grad(1) is now bit-identical to serial (~0.00995) and
+# reconstructed Cs matches serial to solver-ordering tolerance (relL2 ~7e-6,
+# Linf ~1e-5). The field-parity leg is therefore gated PASS at relTol 1e-4.
+#------------------------------------------------------------------------------
+C=sphereSurfactantFoam/sphereTransport
+(
+    cd "$C" || exit 1
+    ./Allclean >/dev/null 2>&1
+    restore0Dir >/dev/null 2>&1
+    np=$(nProcs system/decomposeParDict 4)
+    makeFaMesh                                 > log.makeFaMesh 2>&1       || exit 2
+    decomposePar -force                         > log.decomposePar 2>&1      || exit 2
+    mpirun -np "$np" makeFaMesh -parallel      > log.makeFaMesh.par 2>&1   || exit 3
+    mpirun -np "$np" sphereSurfactantFoam -parallel -noFunctionObjects \
+                                                > log.sphereSurfactantFoam 2>&1 || exit 4
+    reconstructPar -latestTime                  > log.reconstructPar 2>&1    || exit 5
+)
+rc=$?
+if [ "$rc" -ne 0 ]; then
+    record FAIL "$C" "par-completion" "pipeline stage exit ($rc)"
+elif grep -ql "FOAM FATAL" "$C"/log.* 2>/dev/null; then
+    record FAIL "$C" "par-completion" "FOAM FATAL in a log"
+elif ! grep -ql "^End" "$C/log.sphereSurfactantFoam" 2>/dev/null; then
+    record FAIL "$C" "par-completion" "no End marker in log.sphereSurfactantFoam"
+else
+    # Closed-manifold parallel construction fixed: builds + runs to completion.
+    record PASS "$C" "par-completion" "mpirun End (closed-manifold construction fixed), reconstructed"
+
+    # Physical invariant: closed-surface mass conservation (parallel).
+    slog="$C/log.sphereSurfactantFoam"
+    m0=$(grep "Total mass" "$slog" | head -1 | awk '{print $NF}')
+    m1=$(grep "Total mass" "$slog" | tail -1 | awk '{print $NF}')
+    ok=$(awk -v a="$m0" -v b="$m1" \
+        'BEGIN{d=a-b;d=(d<0?-d:d);r=(a!=0?d/a:d);printf "%.3e %d",r,(r<=1e-4)}')
+    rel=${ok% *}; pass=${ok#* }
+    [ "$pass" = 1 ] \
+        && record PASS "$C mass" "invariant" "sum(Cs*V) relDrift=$rel (m0=$m0 m1=$m1)" \
+        || record FAIL "$C mass" "invariant" "sum(Cs*V) relDrift=$rel (m0=$m0 m1=$m1)"
+
+    # Corrected field-parity: now parallel-consistent (point-coupling fixed).
+    # Reconstructed Cs vs the serial reference within solver-ordering tolerance.
+    t=$(latestTime "$C")
+    fieldGate "$C Cs@$t (par)" "$C/validation/Cs" "$C/$t/finite-area/Cs" 1e-8 1e-4
+fi
+( cd "$C" && ./Allclean >/dev/null 2>&1 )
+
+#------------------------------------------------------------------------------
+echo
+echo "========================== finiteArea CI (parallel) ========================="
+printf '%s' "$summary"
+echo "------------------------------------------------------------------------------"
+echo "  PASS=$nPass  FAIL=$nFail  SKIP=$nSkip"
+echo "=============================================================================="
+
+[ "$nFail" -eq 0 ]
+#------------------------------------------------------------------------------

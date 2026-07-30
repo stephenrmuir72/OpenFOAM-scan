@@ -2,31 +2,34 @@
 cd "${0%/*}" || exit                                # Run from this directory
 . ${WM_PROJECT_DIR:?}/bin/tools/RunFunctions        # Tutorial run functions
 #------------------------------------------------------------------------------
-
-fileHandler="-fileHandler collated"
-unset reconstruct
-# reconstruct=true
-convertVTK=true
+# finiteArea PARALLEL run for the CLOSED sphere surface.
+#
+# Both former residuals are now fixed (plan §12.D B5):
+#   * FA mesh CONSTRUCTION on a closed manifold decomposed across ranks
+#     (symmetric per-neighbour processor patches), and
+#   * parallel POINT COUPLING for pointAreaNormals -- the reduced-order mesh's
+#     own point coupling is collapsed (edges-as-faces) and corrupts the normal
+#     at multiply-shared points (the poles, shared by 4 non-adjacent ranks);
+#     the point-normal sum is now routed through the PARENT mesh's global point
+#     coupling, so fac::grad and the curved-manifold corrected Laplacian are
+#     parallel-consistent (parallel grad(const) ~= serial; reconstructed Cs vs
+#     serial relL2 ~7e-6).
+#
+# Pipeline mirrors the validated planeTransport parallel run.
+#------------------------------------------------------------------------------
 
 restore0Dir
 
 #NO blockMesh (pre-meshed geometry and pre-calculated U field)
 
-runApplication decomposePar $fileHandler -no-finite-area
+runApplication makeFaMesh
 
-runParallel makeFaMesh $fileHandler
+runApplication decomposePar -force
 
-runParallel $(getApplication) $fileHandler
+runParallel makeFaMesh
 
-if [ "$convertVTK" = true ]
-then
-    runParallel foamToVTK $fileHandler -no-internal -no-boundary
-fi
+runParallel $(getApplication) -noFunctionObjects
 
-case "$reconstruct" in
-    (true)      runApplication reconstructPar $fileHandler ;;
-    (latest*)   runApplication reconstructPar $fileHandler -latestTime ;;
-    (*)         echo "Skipping reconstructPar $fileHandler" ;;
-esac
+runApplication reconstructPar -latestTime
 
 #------------------------------------------------------------------------------

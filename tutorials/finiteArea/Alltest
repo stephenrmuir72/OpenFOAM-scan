@@ -1,0 +1,185 @@
+#!/bin/sh
+#------------------------------------------------------------------------------
+# finiteArea tutorial parity / CI harness
+#
+# For every migrated finiteArea tutorial this driver:
+#   1. runs the case to completion (Allclean + Allrun) and hard-gates on
+#      exit 0, a solver "End" marker and the absence of "FOAM FATAL",
+#   2. where a reference solution is available, compares a key output field
+#      against the stored reference (case/validation/<field>) within explicit,
+#      documented tolerances using tutorials/finiteArea/test/faFieldDiff.py,
+#   3. applies any case-specific physical-invariant gate (e.g. closed-surface
+#      mass conservation).
+#
+# Reference provenance and tolerances:
+#
+#   surfactantFoam/planeTransport   Cs @ endTime   LEGACY reference
+#       legacy surfactantFoam on the identical blockMesh + faMeshDefinition;
+#       legacy makeFaMesh and makeFaMesh emit identical faceLabels, so the
+#       comparison is index-wise exact. Flat manifold => bit-identical
+#       (observed Linf = 0). tol: absTol 1e-8 / relTol 1e-6.
+#
+#   sphereSurfactantFoam/sphereTransport   Cs @ endTime   LEGACY reference
+#       legacy sphereSurfactantFoam on the identical shipped polyMesh
+#       (faceLabels identical). Curved manifold: the finiteArea flat-chord
+#       deltaCoeffs convention differs from legacy's geodesic one by
+#       O(curvature*h) -- the documented-benign difference from the §12.A
+#       parity study -- so the transport solution differs by a small,
+#       time-stationary amount (observed relL2 ~ 2.1e-3, stable from the first
+#       write). tol: relTol 5e-3.  Plus a closed-surface mass-conservation
+#       invariant (relTol 1e-6; observed exactly conserved).
+#
+#   liquidFilmFoam/cylinder   h @ endTime   REGRESSION reference
+#       liquidFilmFoam is film-region-only (it builds the finite-area mesh on
+#       a collapse2DMesh 'film' fvMesh, not a standalone makeFaMesh region), so
+#       a like-for-like legacy field comparison is not structurally meaningful.
+#       The authoritative legacy equivalence for the film solver is the §12.A
+#       serial+parallel E2E gate (.faE2Es/.faE2Epc) plus the machine-epsilon
+#       operator parity (Test-faParity2). This harness gates the film case on
+#       run-to-completion plus a self-regression reference for h. tol: relTol
+#       1e-6.  (~4 min wall; the two surfactant cases are a few seconds each.)
+#
+# This is the single CI entry point: it runs the SERIAL gates below and then,
+# unless invoked with --serial-only, hands off to the sibling ./Alltest-parallel
+# driver which adds the PARALLEL (MPI) leg (decompose -> mpirun -> reconstruct ->
+# reconstructed-vs-serial field parity). The overall exit status is nonzero if
+# EITHER leg reports a failure.
+#
+# Usage:  tutorials/finiteArea/Alltest [--serial-only]
+#
+# Exit status: 0 if every case passes every gate (serial + parallel), 1 otherwise.
+#------------------------------------------------------------------------------
+cd "${0%/*}" || exit 1
+here="$PWD"
+. "${WM_PROJECT_DIR:?}/bin/tools/RunFunctions"
+
+serialOnly=false
+for arg in "$@"; do
+    case "$arg" in
+        (--serial-only) serialOnly=true ;;
+    esac
+done
+
+DIFF="$here/test/faFieldDiff.py"
+
+nPass=0
+nFail=0
+summary=""
+
+record()
+{
+    status="$1"; label="$2"; gate="$3"; detail="$4"
+    if [ "$status" = PASS ]; then nPass=$((nPass+1)); else nFail=$((nFail+1)); fi
+    summary="${summary}$(printf '  %-4s  %-34s  %-13s  %s' \
+        "$status" "$label" "$gate" "$detail")
+"
+    echo "[$status] $label ($gate) $detail"
+}
+
+latestTime()
+{
+    # latest numeric time directory name under $1
+    ls -d "$1"/[0-9]* 2>/dev/null | sed 's#.*/##' \
+        | grep -E '^[0-9]+(\.[0-9]+)?$' | sort -g | tail -1
+}
+
+# completionGate <caseDir> <label> <solverApp>
+completionGate()
+{
+    caseDir="$1"; label="$2"; app="$3"
+    ( cd "$caseDir" && ./Allclean >/dev/null 2>&1; ./Allrun > log.Alltest 2>&1 )
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+        record FAIL "$label" "completion" "Allrun exit=$rc"
+        return 1
+    fi
+    if grep -ql "FOAM FATAL" "$caseDir"/log.* 2>/dev/null; then
+        record FAIL "$label" "completion" "FOAM FATAL in a log"
+        return 1
+    fi
+    if ! grep -ql "^End" "$caseDir/log.$app" 2>/dev/null; then
+        record FAIL "$label" "completion" "no End marker in log.$app"
+        return 1
+    fi
+    record PASS "$label" "completion" "log.$app reached End"
+    return 0
+}
+
+# fieldGate <label> <ref> <new> <absTol> <relTol>
+fieldGate()
+{
+    label="$1"; ref="$2"; new="$3"; absTol="$4"; relTol="$5"
+    if [ ! -f "$ref" ]; then
+        record FAIL "$label" "field-parity" "missing reference $ref"
+        return 1
+    fi
+    if [ ! -f "$new" ]; then
+        record FAIL "$label" "field-parity" "missing result $new"
+        return 1
+    fi
+    out=$(python3 "$DIFF" "$ref" "$new" --abs-tol "$absTol" --rel-tol "$relTol" \
+            --name "$label" 2>&1)
+    rc=$?
+    detail=$(echo "$out" | sed 's/^\[faFieldDiff\] \(PASS\|FAIL\) [^:]*: //')
+    [ "$rc" -eq 0 ] && record PASS "$label" "field-parity" "$detail" \
+                    || record FAIL "$label" "field-parity" "$detail"
+}
+
+#------------------------------------------------------------------------------
+# 1) surfactantFoam / planeTransport  (flat manifold, legacy-exact)
+#------------------------------------------------------------------------------
+C=surfactantFoam/planeTransport
+if completionGate "$C" "$C" surfactantFoam; then
+    t=$(latestTime "$C")
+    fieldGate "$C Cs@$t" "$C/validation/Cs" "$C/$t/finite-area/Cs" 1e-8 1e-6
+fi
+
+#------------------------------------------------------------------------------
+# 2) sphereSurfactantFoam / sphereTransport  (curved manifold + mass invariant)
+#------------------------------------------------------------------------------
+C=sphereSurfactantFoam/sphereTransport
+if completionGate "$C" "$C" sphereSurfactantFoam; then
+    t=$(latestTime "$C")
+    fieldGate "$C Cs@$t" "$C/validation/Cs" "$C/$t/finite-area/Cs" 1e-8 5e-3
+    slog="$C/log.sphereSurfactantFoam"
+    m0=$(grep "Total mass" "$slog" | head -1 | awk '{print $NF}')
+    m1=$(grep "Total mass" "$slog" | tail -1 | awk '{print $NF}')
+    ok=$(awk -v a="$m0" -v b="$m1" \
+        'BEGIN{d=a-b;d=(d<0?-d:d);r=(a!=0?d/a:d);printf "%.3e %d",r,(r<=1e-6)}')
+    rel=${ok% *}; pass=${ok#* }
+    [ "$pass" = 1 ] \
+        && record PASS "$C mass" "invariant" "sum(Cs*V) relDrift=$rel (m0=$m0 m1=$m1)" \
+        || record FAIL "$C mass" "invariant" "sum(Cs*V) relDrift=$rel (m0=$m0 m1=$m1)"
+fi
+
+#------------------------------------------------------------------------------
+# 3) liquidFilmFoam / cylinder  (film-region; completion + h regression)
+#------------------------------------------------------------------------------
+C=liquidFilmFoam/cylinder
+if completionGate "$C" "$C" liquidFilmFoam; then
+    t=$(latestTime "$C")
+    fieldGate "$C h@$t" "$C/validation/h" "$C/$t/film/h" 1e-8 1e-6
+fi
+
+#------------------------------------------------------------------------------
+echo
+echo "=========================== finiteArea CI (serial) =========================="
+printf '%s' "$summary"
+echo "------------------------------------------------------------------------------"
+echo "  PASS=$nPass  FAIL=$nFail"
+echo "=============================================================================="
+
+serialFail=$nFail
+
+#------------------------------------------------------------------------------
+# Parallel (MPI) leg -- delegated to the sibling driver so it is also runnable
+# standalone. Its own PASS/FAIL/SKIP table is printed below the serial one.
+#------------------------------------------------------------------------------
+parFail=0
+if [ "$serialOnly" != true ]; then
+    "$here/Alltest-parallel"
+    parFail=$?
+fi
+
+[ "$serialFail" -eq 0 ] && [ "$parFail" -eq 0 ]
+#------------------------------------------------------------------------------

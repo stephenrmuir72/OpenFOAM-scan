@@ -1,7 +1,7 @@
 /*--------------------------------*- C++ -*----------------------------------*\
 | =========                 |                                                 |
 | \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
-|  \\    /   O peration     | Version:  v2312                                 |
+|  \\    /   O peration     | Version:  v2606                                 |
 |   \\  /    A nd           | Website:  www.openfoam.com                      |
 |    \\/     M anipulation  |                                                 |
 \*---------------------------------------------------------------------------*/
@@ -9,44 +9,43 @@ FoamFile
 {
     version     2.0;
     format      ascii;
-    class       areaScalarField;
-    object      h;
+    class       dictionary;
+    object      fvSolution;
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-dimensions          [0 1 0 0 0 0 0];
-
-internalField       uniform 0.000141;
-
-boundaryField
+solvers
 {
-    #includeEtc "caseDicts/setConstraintTypes"
-
-    inlet
+    Cs
     {
-        type         fixedValue;
-        value        $internalField;
+        solver          PBiCG;
+        preconditioner  DILU;
+        minIter         0;
+        maxIter         2000;
+        tolerance       1e-06;
+        relTol          0;
     }
+}
 
-    outlet
-    {
-        type         zeroGradient;
-    }
+PISO
+{
+    nCorrectors                2;
+    nNonOrthogonalCorrectors   0;
+}
 
-    side
-    {
-        type        zeroGradient;
-    }
+SIMPLE
+{
+    nTimeCorrectors             6;
+    nNonOrthogonalCorrectors    1;
+}
 
-    film
-    {
-        type        symmetry;
-    }
-
-    cylinder
-    {
-        type        zeroGradient;
-    }
+relaxationFactors
+{
+    p               0.7;
+    U               0.7;
+    k               0.7;
+    epsilon         0.7;
+    R               0.7;
 }
 
 
