@@ -176,7 +176,7 @@ bool Foam::functionObjects::surfaceCourantNumber::execute()
             ),
             *faMeshPtr_,
             dimensionedScalar(dimless, Zero),
-            faPatchFieldBase::zeroGradientType()
+            fvPatchFieldBase::zeroGradientType()
         );
         regIOobject::store(resultPtr);
     }

@@ -127,7 +127,7 @@ void regionFaIBM::setFaceTypes()
     surface_.getVolumeType(aMesh_.areaCentres(), volTypeID);
 
     // Initialise faceTypes_ to 'outside'
-    faceTypes_.resize_nocopy(aMesh_.nFaces());
+    faceTypes_.resize_nocopy(aMesh_.nCells());
     faceTypes_ = 0;
 
     DynamicList<label> forcingFaceIDs;
@@ -184,7 +184,7 @@ void regionFaIBM::setFaceTypes()
             (
                 "faceType",
                 aMesh_.time().timeName(),
-                aMesh_.mesh(),
+                aMesh_.parentMesh()(),
                 IOobjectOption::NO_READ,
                 IOobjectOption::NO_WRITE,
                 IOobjectOption::NO_REGISTER
@@ -192,7 +192,7 @@ void regionFaIBM::setFaceTypes()
             aMesh_,
             Foam::zero{},
             dimless,
-            faPatchFieldBase::zeroGradientType()
+            fvPatchFieldBase::zeroGradientType()
         );
 
         auto& faceTypeFieldi = faceTypeField.primitiveFieldRef();
@@ -269,7 +269,7 @@ void regionFaIBM::setStencilAddressing
     Pstream::allGatherList(procBoundingBoxes);
 
     PstreamBuffers pBufs(UPstream::defaultCommsType);
-    const globalIndex globalFaces(aMesh_.nFaces(), UPstream::worldComm);
+    const globalIndex globalFaces(aMesh_.nCells(), UPstream::worldComm);
 
     // Send forcing face IDs (in global addressing) and extended face centres
     forAll(procBoundingBoxes, proci)
@@ -299,7 +299,7 @@ void regionFaIBM::setStencilAddressing
 
     // Reverse stencil
     // - identify forcing face for each outside/donor face
-    List<DynamicList<label>> rStencil0(aMesh_.nFaces());
+    List<DynamicList<label>> rStencil0(aMesh_.nCells());
     forAll(procBoundingBoxes, proci)
     {
         UIPstream is(proci, pBufs);
@@ -358,7 +358,7 @@ void regionFaIBM::setStencilAddressing
     (
         UPstream::commsTypes::nonBlocking,
         UList<labelPair>::null(),
-        aMesh_.nFaces(),
+        aMesh_.nCells(),
         rmap.constructMap(),
         false, // subHasFlip
         rmap.subMap(),
@@ -577,7 +577,7 @@ regionFaIBM::regionFaIBM
 
 void regionFaIBM::updateMesh()
 {
-    treeBoundBox bb(aMesh_.mesh().bounds());
+    treeBoundBox bb(aMesh_.parentMesh()().bounds());
     bb.inflate(0.01);
 
     treePtr_.reset

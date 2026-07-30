@@ -118,7 +118,7 @@ void injectionModelList::correct
         patchIds.size() == 1
      &&
         (
-            film().regionMesh().nFaces()
+            film().regionMesh().nCells()
          == massToInject.boundaryField()[patchi].size()
         )
     )

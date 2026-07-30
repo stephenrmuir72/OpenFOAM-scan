@@ -27,7 +27,7 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "OwenRyleyModel.H"
-#include "processorFaPatch.H"
+#include "processorFvPatch.H"
 #include "addToRunTimeSelectionTable.H"
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
@@ -93,7 +93,7 @@ tmp<scalarField> OwenRyleyModel::calcCosAngle
     const labelUList& own = mesh.edgeOwner();
     const labelUList& nbr = mesh.edgeNeighbour();
 
-    scalarField phiMax(mesh.nFaces(), -GREAT);
+    scalarField phiMax(mesh.nCells(), -GREAT);
     scalarField cosAngle(UHat.size(), Zero);
 
     // Internal edges
@@ -118,9 +118,9 @@ tmp<scalarField> OwenRyleyModel::calcCosAngle
     // Processor edges
     for (const auto& phip : phi.boundaryField())
     {
-        if (isA<processorFaPatch>(phip.patch()))
+        if (isA<processorFvPatch>(phip.patch()))
         {
-            const auto& edgeFaces = phip.patch().edgeFaces();
+            const auto& edgeFaces = phip.patch().faceCells();
             const auto& UHatp = UHat.boundaryField()[phip.patch().index()];
             forAll(phip, edgei)
             {
@@ -184,7 +184,7 @@ tmp<scalarField> OwenRyleyModel::netForce() const
     const scalar magG = mag(film().g().value());
 
     // Initialize the net-force magnitude
-    auto tFnet = tmp<scalarField>::New(mesh.nFaces(), Zero);
+    auto tFnet = tmp<scalarField>::New(mesh.nCells(), Zero);
     auto& Fnet = tFnet.ref();
 
     forAll(Fnet, i)
@@ -260,7 +260,7 @@ tmp<scalarField> OwenRyleyModel::separatedMassRatio() const
     const auto& Fnet = tFnet.cref();
 
     // Initialize the mass ratio of film separation
-    auto tseparated = tmp<scalarField>::New(mesh.nFaces(), Zero);
+    auto tseparated = tmp<scalarField>::New(mesh.nCells(), Zero);
     auto& separated = tseparated.ref();
 
     forAll(Fnet, i)

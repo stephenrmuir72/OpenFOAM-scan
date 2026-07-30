@@ -69,7 +69,7 @@ BrunDrippingInjection::BrunDrippingInjection
     ),
     dCoeff_(coeffDict_.getOrDefault<scalar>("dCoeff", 3.3)),
     deltaStable_(coeffDict_.getOrDefault<scalar>("deltaStable", 0)),
-    diameter_(film.regionMesh().nFaces(), -1.0)
+    diameter_(film.regionMesh().nCells(), -1.0)
 {}
 
 

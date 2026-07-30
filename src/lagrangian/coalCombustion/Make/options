@@ -45,5 +45,4 @@ LIB_LIBS = \
     -lsurfaceFilmModels \
     -ldynamicMesh \
     -ldynamicFvMesh \
-    -lregionFaModels \
-    -lfiniteArea
+    -lregionFaModels

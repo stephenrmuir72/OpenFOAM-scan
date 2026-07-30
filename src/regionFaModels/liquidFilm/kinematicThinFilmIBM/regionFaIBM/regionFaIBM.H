@@ -70,6 +70,7 @@ SourceFiles
 #ifndef Foam_FA_regionFaIBM_H
 #define Foam_FA_regionFaIBM_H
 
+#include "faMesh.H"
 #include "areaFields.H"
 #include "triSurfaceMesh.H"
 #include "indexedOctree.H"

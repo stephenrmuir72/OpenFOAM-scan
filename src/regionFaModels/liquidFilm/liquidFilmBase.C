@@ -231,7 +231,7 @@ scalar liquidFilmBase::CourantNumber() const
 
     edgeScalarField SfUfbyDelta
     (
-        regionMesh().edgeInterpolation::deltaCoeffs()*mag(phif_)
+        regionMesh().deltaCoeffs()*mag(phif_)
     );
 
     CoNum =

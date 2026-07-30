@@ -26,7 +26,7 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "FriedrichModel.H"
-#include "processorFaPatch.H"
+#include "processorFvPatch.H"
 #include "unitConversion.H"
 #include "addToRunTimeSelectionTable.H"
 
@@ -55,7 +55,7 @@ FriedrichModel::separationTypeNames
 
 bitSet FriedrichModel::calcCornerEdges() const
 {
-    bitSet cornerEdges(mesh().nEdges(), false);
+    bitSet cornerEdges(mesh().nFaces(), false);
 
     const areaVectorField& faceCentres = mesh().areaCentres();
     const areaVectorField& faceNormals = mesh().faceAreaNormals();
@@ -85,14 +85,14 @@ bitSet FriedrichModel::calcCornerEdges() const
 
     // Check if processor face-normal vectors diverge (no separation)
     // or converge (separation may occur)
-    const faBoundaryMesh& patches = mesh().boundary();
+    const fvBoundaryMesh& patches = mesh().boundary();
 
     for (const faPatch& fap : patches)
     {
-        if (isA<processorFaPatch>(fap))
+        if (isA<processorFvPatch>(fap))
         {
             const label patchi = fap.index();
-            const auto& edgeFaces = fap.edgeFaces();
+            const auto& edgeFaces = fap.faceCells();
             const label internalEdgei = fap.start();
 
             const auto& faceCentresp = faceCentres.boundaryField()[patchi];
@@ -139,7 +139,7 @@ bool FriedrichModel::isCornerEdgeSharp
 
 scalarList FriedrichModel::calcCornerAngles() const
 {
-    scalarList cornerAngles(mesh().nEdges(), Zero);
+    scalarList cornerAngles(mesh().nFaces(), Zero);
 
     const areaVectorField& faceNormals = mesh().faceAreaNormals();
 
@@ -166,14 +166,14 @@ scalarList FriedrichModel::calcCornerAngles() const
     if (!Pstream::parRun()) return cornerAngles;
 
     // Process processor edges
-    const faBoundaryMesh& patches = mesh().boundary();
+    const fvBoundaryMesh& patches = mesh().boundary();
 
     for (const faPatch& fap : patches)
     {
-        if (isA<processorFaPatch>(fap))
+        if (isA<processorFvPatch>(fap))
         {
             const label patchi = fap.index();
-            const auto& edgeFaces = fap.edgeFaces();
+            const auto& edgeFaces = fap.faceCells();
             const label internalEdgei = fap.start();
 
             const auto& faceNormalsp = faceNormals.boundaryField()[patchi];
@@ -247,14 +247,14 @@ bitSet FriedrichModel::calcSeparationFaces() const
     if (!Pstream::parRun()) return separationFaces;
 
     // Process processor faces
-    const faBoundaryMesh& patches = mesh().boundary();
+    const fvBoundaryMesh& patches = mesh().boundary();
 
     for (const faPatch& fap : patches)
     {
-        if (isA<processorFaPatch>(fap))
+        if (isA<processorFvPatch>(fap))
         {
             const label patchi = fap.index();
-            const auto& edgeFaces = fap.edgeFaces();
+            const auto& edgeFaces = fap.faceCells();
             const label internalEdgei = fap.start();
 
             const auto& phisp = phis.boundaryField()[patchi];
@@ -337,14 +337,14 @@ scalarList FriedrichModel::calcSeparationAngles
 
     // Process processor faces
     const edgeScalarField& phis = film().phi2s();
-    const faBoundaryMesh& patches = mesh().boundary();
+    const fvBoundaryMesh& patches = mesh().boundary();
 
     for (const faPatch& fap : patches)
     {
-        if (isA<processorFaPatch>(fap))
+        if (isA<processorFvPatch>(fap))
         {
             const label patchi = fap.index();
-            const auto& edgeFaces = fap.edgeFaces();
+            const auto& edgeFaces = fap.faceCells();
             const label internalEdgei = fap.start();
 
             const auto& phisp = phis.boundaryField()[patchi];
@@ -424,11 +424,11 @@ tmp<scalarField> FriedrichModel::Fratio() const
     if (!Pstream::parRun()) return tFratio;
 
     // Process processor faces
-    const faBoundaryMesh& patches = mesh().boundary();
+    const fvBoundaryMesh& patches = mesh().boundary();
 
     for (const faPatch& fap : patches)
     {
-        if (isA<processorFaPatch>(fap))
+        if (isA<processorFvPatch>(fap))
         {
             const label patchi = fap.index();
             const label internalEdgei = fap.start();

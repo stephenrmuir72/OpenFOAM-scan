@@ -139,7 +139,7 @@ tmp<faVectorMatrix> contactAngleForce::correct(areaVectorField& U)
 
         if (!p.coupled())
         {
-            const labelUList& faces = p.edgeFaces();
+            const labelUList& faces = p.faceCells();
 
             forAll(sigmaBf, edgei)
             {

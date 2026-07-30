@@ -47,7 +47,7 @@ regionFaIBMList::regionFaIBMList(const Time& runTime, const faMesh& aMesh)
         (
             "regionFaIBMProperties",
             runTime.constant(),
-            aMesh.mesh(),
+            aMesh.parentMesh()(),
             IOobjectOption::MUST_READ,
             IOobjectOption::NO_WRITE,
             IOobjectOption::REGISTER
@@ -67,7 +67,7 @@ regionFaIBMList::regionFaIBMList(const Time& runTime, const faMesh& aMesh)
         aMesh,
         Foam::zero{},
         dimVelocity,
-        faPatchFieldBase::zeroGradientType()
+        fvPatchFieldBase::zeroGradientType()
     )
 {
     const auto& dict = static_cast<IOdictionary&>(*this);
