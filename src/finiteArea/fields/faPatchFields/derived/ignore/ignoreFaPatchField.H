@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2023 OpenCFD Ltd.
+    Copyright (C) 2026 OpenCFD Ltd.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -35,29 +36,20 @@ Usage
     \verbatim
     <patchName>
     {
-        // Mandatory entries (unmodifiable)
         type    ignore;
-
-        // Mandatory/Optional (inherited) entries
-        ...
     }
     \endverbatim
 
-    where the entries mean:
-    \table
-      Property | Description               | Type  | Reqd | Dflt
-      type     | Type name: ignore         | word  | yes  | -
-    \endtable
-
-    The inherited entries are elaborated in:
-      - \link faPatchFields.H \endlink
+SourceFiles
+    ignoreFaPatchField.H
 
 \*---------------------------------------------------------------------------*/
 
 #ifndef Foam_ignoreFaPatchField_H
 #define Foam_ignoreFaPatchField_H
 
-#include "zeroGradientFaPatchField.H"
+#include "zeroGradientFvPatchField.H"
+#include "areaFieldsFwd.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -65,16 +57,16 @@ namespace Foam
 {
 
 /*---------------------------------------------------------------------------*\
-                      Class ignoreFaPatch Declaration
+                       Class ignoreFaPatchField Declaration
 \*---------------------------------------------------------------------------*/
 
 template<class Type>
 class ignoreFaPatchField
 :
-    public zeroGradientFaPatchField<Type>
+    public zeroGradientFvPatchField<Type>
 {
     typedef ignoreFaPatchField<Type> this_bctype;
-    typedef zeroGradientFaPatchField<Type> parent_bctype;
+    typedef zeroGradientFvPatchField<Type> parent_bctype;
 
 public:
 
@@ -117,6 +109,14 @@ public:
             parent_bctype(ptf, p, iF, mapper)
         {}
 
+        //- Copy construct
+        ignoreFaPatchField(const this_bctype& ptf)
+        #ifdef Foam_fvPatchField_copyConstruct
+        : ignoreFaPatchField<Type>(ptf, ptf.internalField()) {}
+        #else
+        = delete;
+        #endif
+
         //- Copy construct with internal field reference
         ignoreFaPatchField
         (
@@ -126,9 +126,6 @@ public:
         :
             parent_bctype(ptf, iF)
         {}
-
-        //- No copy without an internal field
-        ignoreFaPatchField(const this_bctype&) = delete;
 
         //- Clone with an internal field reference
         virtual tmp<faPatchField<Type>> clone
@@ -142,7 +139,6 @@ public:
 
     //- Destructor
     virtual ~ignoreFaPatchField() = default;
-
 
 
     // Member Operators

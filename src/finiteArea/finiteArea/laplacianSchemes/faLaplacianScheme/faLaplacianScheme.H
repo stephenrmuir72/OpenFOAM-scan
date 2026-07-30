@@ -42,15 +42,13 @@ SourceFiles
 #include "edgeFieldsFwd.H"
 #include "correctedLnGrad.H"
 #include "runTimeSelectionTables.H"
+#include "fvMesh.H"
+#include "faMatrices.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 namespace Foam
 {
-
-// Forward Declarations
-template<class Type> class faMatrix;
-class faMesh;
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -70,7 +68,7 @@ protected:
 
     // Protected Data
 
-        const faMesh& mesh_;
+        const fvMesh& mesh_;
 
         tmp<edgeInterpolationScheme<scalar>> tinterpGammaScheme_;
         tmp<lnGradScheme<Type>> tlnGradScheme_;
@@ -85,7 +83,7 @@ public:
             tmp,
             laplacianScheme,
             Istream,
-            (const faMesh& mesh, Istream& schemeData),
+            (const fvMesh& mesh, Istream& schemeData),
             (mesh, schemeData)
         );
 
@@ -102,7 +100,7 @@ public:
     // Constructors
 
         //- Construct from mesh
-        laplacianScheme(const faMesh& mesh)
+        laplacianScheme(const fvMesh& mesh)
         :
             mesh_(mesh),
             tinterpGammaScheme_(new linearEdgeInterpolation<scalar>(mesh)),
@@ -110,7 +108,7 @@ public:
         {}
 
         //- Construct from mesh and Istream
-        laplacianScheme(const faMesh& mesh, Istream& is)
+        laplacianScheme(const fvMesh& mesh, Istream& is)
         :
             mesh_(mesh)
         {
@@ -146,7 +144,7 @@ public:
         //- Return a pointer to a new laplacianScheme created on freestore
         static tmp<laplacianScheme<Type>> New
         (
-            const faMesh& mesh,
+            const fvMesh& mesh,
             Istream& schemeData
         );
 
@@ -158,7 +156,7 @@ public:
     // Member Functions
 
         //- Return mesh reference
-        const faMesh& mesh() const
+        const fvMesh& mesh() const
         {
             return mesh_;
         }
@@ -166,30 +164,30 @@ public:
         virtual tmp<faMatrix<Type>> famLaplacian
         (
             const edgeScalarField&,
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         ) = 0;
 
         virtual tmp<faMatrix<Type>> famLaplacian
         (
             const areaScalarField&,
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         );
 
-        virtual tmp<GeometricField<Type, faPatchField, areaMesh>> facLaplacian
+        virtual tmp<GeometricField<Type, fvPatchField, areaMesh>> facLaplacian
         (
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         ) = 0;
 
-        virtual tmp<GeometricField<Type, faPatchField, areaMesh>> facLaplacian
+        virtual tmp<GeometricField<Type, fvPatchField, areaMesh>> facLaplacian
         (
             const edgeScalarField&,
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         ) = 0;
 
-        virtual tmp<GeometricField<Type, faPatchField, areaMesh>> facLaplacian
+        virtual tmp<GeometricField<Type, fvPatchField, areaMesh>> facLaplacian
         (
             const areaScalarField&,
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         );
 };
 

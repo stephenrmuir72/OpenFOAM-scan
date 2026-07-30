@@ -80,13 +80,13 @@ public:
     // Constructors
 
         //- Construct from mesh
-        leastSquaresFaGrad(const faMesh& mesh)
+        leastSquaresFaGrad(const fvMesh& mesh)
         :
             gradScheme<Type>(mesh)
         {}
 
         //- Construct from Istream
-        leastSquaresFaGrad(const faMesh& mesh, Istream&)
+        leastSquaresFaGrad(const fvMesh& mesh, Istream&)
         :
             gradScheme<Type>(mesh)
         {}
@@ -99,10 +99,10 @@ public:
         virtual tmp
         <
             GeometricField
-            <typename outerProduct<vector, Type>::type, faPatchField, areaMesh>
+            <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>
         > calcGrad
         (
-            const GeometricField<Type, faPatchField, areaMesh>& vsf,
+            const GeometricField<Type, fvPatchField, areaMesh>& vsf,
             const word& name
         ) const;
 };

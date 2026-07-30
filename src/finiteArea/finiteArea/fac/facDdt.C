@@ -26,8 +26,8 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "facDdt.H"
-#include "faMesh.H"
-#include "faDdtScheme.H"
+#include "fvMesh.H"
+#include "fvcDdt.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -41,72 +41,55 @@ namespace fac
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
+// The reduced-order faMesh is an fvMesh (areaMesh == volMesh) and the ddt
+// discretisation is purely temporal, so the finite-area explicit first time
+// derivative is identical to the finite-volume one. Forward to fvc::ddt
+// rather than duplicate the scheme hierarchy.
+
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 ddt
 (
     const dimensioned<Type> dt,
-    const faMesh& mesh
+    const fvMesh& mesh
 )
 {
-    return fa::faDdtScheme<Type>::New
-    (
-        mesh,
-        mesh.ddtScheme("ddt(" + dt.name() + ')')
-    ).ref().facDdt(dt);
+    return fvc::ddt(dt, mesh);
 }
 
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 ddt
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
-    return fa::faDdtScheme<Type>::New
-    (
-        vf.mesh(),
-        vf.mesh().ddtScheme("ddt(" + vf.name() + ')')
-    ).ref().facDdt(vf);
+    return fvc::ddt(vf);
 }
 
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 ddt
 (
     const dimensionedScalar& rho,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
-    return fa::faDdtScheme<Type>::New
-    (
-        vf.mesh(),
-        vf.mesh().ddtScheme
-        (
-            "ddt(" + rho.name() + ',' + vf.name() + ')'
-        )
-    ).ref().facDdt(rho, vf);
+    return fvc::ddt(rho, vf);
 }
 
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 ddt
 (
     const areaScalarField& rho,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
-    return fa::faDdtScheme<Type>::New
-    (
-        vf.mesh(),
-        vf.mesh().ddtScheme
-        (
-            "ddt(" + rho.name() + ',' + vf.name() + ')'
-        )
-    ).ref().facDdt(rho, vf);
+    return fvc::ddt(rho, vf);
 }
 
 

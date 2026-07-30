@@ -86,13 +86,13 @@ public:
     // Constructors
 
         //- Construct from mesh
-        leastSquaresEdgeInterpolation(const faMesh& mesh)
+        leastSquaresEdgeInterpolation(const fvMesh& mesh)
         :
             edgeInterpolationScheme<Type>(mesh)
         {}
 
         //- Construct from Istream
-        leastSquaresEdgeInterpolation(const faMesh& mesh, Istream&)
+        leastSquaresEdgeInterpolation(const fvMesh& mesh, Istream&)
         :
             edgeInterpolationScheme<Type>(mesh)
         {}
@@ -100,7 +100,7 @@ public:
         //- Construct from faceFlux and Istream
         leastSquaresEdgeInterpolation
         (
-            const faMesh& mesh,
+            const fvMesh& mesh,
             const edgeScalarField&,
             Istream&
         )
@@ -112,36 +112,36 @@ public:
     // Member Functions
 
         //- Return the edge-interpolate of the given face field
-        tmp<GeometricField<Type, faePatchField, edgeMesh>>
+        tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
         interpolate
         (
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         ) const;
 
         //- Return the interpolation weighting factors
         tmp<edgeScalarField> weights
         (
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         ) const
         {
-            return this->mesh().edgeInterpolation::weights();
+            return this->mesh().surfaceInterpolation::weights();
         }
 };
 
 
 template<class Type>
-tmp<GeometricField<Type, faePatchField, edgeMesh>>
+tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
 leastSquaresEdgeInterpolation<Type>::interpolate
 (
-    const GeometricField<Type, faPatchField, areaMesh>& af
+    const GeometricField<Type, fvPatchField, areaMesh>& af
 ) const
 {
     typedef typename outerProduct<vector, Type>::type GradType;
-    typedef GeometricField<GradType, faPatchField, areaMesh> GradFieldType;
-    typedef GeometricField<Type, faePatchField, edgeMesh> EdgeFieldType;
+    typedef GeometricField<GradType, fvPatchField, areaMesh> GradFieldType;
+    typedef GeometricField<Type, fvsPatchField, edgeMesh> EdgeFieldType;
     typedef Field<Type> FieldType;
 
-    const faMesh& mesh = af.mesh();
+    const fvMesh& mesh = af.mesh();
 
     const labelList& meshPts = mesh.patch().meshPoints();
     const labelListList& pointFaceAddr = mesh.patch().pointFaces();

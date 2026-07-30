@@ -26,8 +26,8 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "vectorFamDiv.H"
-#include "faMesh.H"
-#include "faMatrix.H"
+#include "fvMesh.H"
+#include "faMatrices.H"
 #include "faConvectionScheme.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -47,7 +47,7 @@ tmp<faMatrix<scalar>>
 div
 (
     const edgeScalarField& flux,
-    const GeometricField<scalar, faPatchField, areaMesh>& vf,
+    const GeometricField<scalar, fvPatchField, areaMesh>& vf,
     const word& name
 )
 {

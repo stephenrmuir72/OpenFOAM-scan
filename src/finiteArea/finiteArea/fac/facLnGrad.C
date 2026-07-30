@@ -26,7 +26,7 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "facLnGrad.H"
-#include "faMesh.H"
+#include "fvMesh.H"
 #include "lnGradScheme.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -42,10 +42,10 @@ namespace fac
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 template<class Type>
-tmp<GeometricField<Type, faePatchField, edgeMesh>>
+tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
 lnGrad
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf,
+    const GeometricField<Type, fvPatchField, areaMesh>& vf,
     const word& name
 )
 {
@@ -58,14 +58,14 @@ lnGrad
 
 
 template<class Type>
-tmp<GeometricField<Type, faePatchField, edgeMesh>>
+tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
 lnGrad
 (
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf,
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf,
     const word& name
 )
 {
-    tmp<GeometricField<Type, faePatchField, edgeMesh>> LnGrad
+    tmp<GeometricField<Type, fvsPatchField, edgeMesh>> LnGrad
     (
         fac::lnGrad(tvf(), name)
     );
@@ -75,10 +75,10 @@ lnGrad
 
 
 template<class Type>
-tmp<GeometricField<Type, faePatchField, edgeMesh>>
+tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
 lnGrad
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     return fac::lnGrad(vf, "lnGrad(" + vf.name() + ')');
@@ -86,13 +86,13 @@ lnGrad
 
 
 template<class Type>
-tmp<GeometricField<Type, faePatchField, edgeMesh>>
+tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
 lnGrad
 (
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf
 )
 {
-    tmp<GeometricField<Type, faePatchField, edgeMesh>> LnGrad
+    tmp<GeometricField<Type, fvsPatchField, edgeMesh>> LnGrad
     (
         fac::lnGrad(tvf())
     );

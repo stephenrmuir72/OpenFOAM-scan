@@ -26,9 +26,8 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "areaFields.H"
-#include "edgeFields.H"
-#include "faMatrix.H"
-#include "faDdtScheme.H"
+#include "faMatrices.H"
+#include "fvmDdt.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -42,18 +41,19 @@ namespace fam
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
+// The reduced-order faMesh is an fvMesh (areaMesh == volMesh,
+// faMatrix == fvMatrix) and the ddt discretisation is purely temporal, so the
+// finite-area first time derivative is identical to the finite-volume one.
+// Forward to fvm::ddt rather than duplicate the scheme hierarchy.
+
 template<class Type>
 tmp<faMatrix<Type>>
 ddt
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
-    return fa::faDdtScheme<Type>::New
-    (
-        vf.mesh(),
-        vf.mesh().ddtScheme("ddt(" + vf.name() + ')')
-    ).ref().famDdt(vf);
+    return fvm::ddt(vf);
 }
 
 
@@ -62,17 +62,10 @@ tmp<faMatrix<Type>>
 ddt
 (
     const dimensionedScalar& rho,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
-    return fa::faDdtScheme<Type>::New
-    (
-        vf.mesh(),
-        vf.mesh().ddtScheme
-        (
-            "ddt(" + rho.name() + ',' + vf.name() + ')'
-        )
-    ).ref().famDdt(rho, vf);
+    return fvm::ddt(rho, vf);
 }
 
 
@@ -81,17 +74,10 @@ tmp<faMatrix<Type>>
 ddt
 (
     const areaScalarField& rho,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
-    return fa::faDdtScheme<Type>::New
-    (
-        vf.mesh(),
-        vf.mesh().ddtScheme
-        (
-            "ddt(" + rho.name() + ',' + vf.name() + ')'
-        )
-    ).ref().famDdt(rho, vf);
+    return fvm::ddt(rho, vf);
 }
 
 

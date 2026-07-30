@@ -40,7 +40,7 @@ SourceFiles
 #include "areaFieldsFwd.H"
 #include "edgeFieldsFwd.H"
 #include "edgeInterpolationScheme.H"
-#include "faMatrix.H"
+#include "faMatrices.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -57,7 +57,7 @@ namespace fam
     tmp<faMatrix<Type>> ndiv
     (
         const edgeScalarField&,
-        GeometricField<Type, faPatchField, areaMesh>&,
+        GeometricField<Type, fvPatchField, areaMesh>&,
         const word& name
     );
 
@@ -65,7 +65,7 @@ namespace fam
     tmp<faMatrix<Type>> ndiv
     (
         const tmp<edgeScalarField>&,
-        GeometricField<Type, faPatchField, areaMesh>&,
+        GeometricField<Type, fvPatchField, areaMesh>&,
         const word& name
     );
 
@@ -73,14 +73,14 @@ namespace fam
     tmp<faMatrix<Type>> ndiv
     (
         const edgeScalarField&,
-        GeometricField<Type, faPatchField, areaMesh>&
+        GeometricField<Type, fvPatchField, areaMesh>&
     );
 
     template<class Type>
     tmp<faMatrix<Type>> ndiv
     (
         const tmp<edgeScalarField>&,
-        GeometricField<Type, faPatchField, areaMesh>&
+        GeometricField<Type, fvPatchField, areaMesh>&
     );
 }
 

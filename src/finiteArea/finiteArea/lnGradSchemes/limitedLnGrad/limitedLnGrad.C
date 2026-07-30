@@ -41,16 +41,23 @@ namespace Foam
 namespace fa
 {
 
+// * * * * * * * * * * * * * *< * * Destructor  * * * * * * * * * * * * * * * //
+
+template<class Type>
+limitedLnGrad<Type>::~limitedLnGrad()
+{}
+
+
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
 
 template<class Type>
-tmp<GeometricField<Type, faePatchField, edgeMesh>>
+tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
 limitedLnGrad<Type>::correction
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 ) const
 {
-    const GeometricField<Type, faePatchField, edgeMesh> corr
+    const GeometricField<Type, fvsPatchField, edgeMesh> corr
     (
         correctedLnGrad<Type>(this->mesh()).correction(vf)
     );

@@ -6,7 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2016-2017 Wikki Ltd
-    Copyright (C) 2018-2025 OpenCFD Ltd.
+    Copyright (C) 2018-2024 OpenCFD Ltd.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -27,25 +27,44 @@ License
 Description
     Forwards and collection of common area field types
 
+SourceFiles
+    areaFields.C
+
 \*---------------------------------------------------------------------------*/
 
 #ifndef Foam_areaFieldsFwd_H
 #define Foam_areaFieldsFwd_H
 
 #include "fieldTypes.H"
-#include "GeometricFieldFwd.H"
+#include "volFieldsFwd.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 namespace Foam
 {
 
+// Forward Declarations
+class fvPatch;
+class fvPatchFieldMapper;
+class fvPatchFieldBase;
+
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-// Forward Declarations
-class areaMesh;
-template<class Type> class faPatchField;
+typedef volMesh areaMesh;
 
+//- An area patch reuses the finite-volume patch (edge <-> face)
+typedef fvPatch faPatch;
+
+//- The (non-templated) area patch-field base reuses the finite-volume base
+//  (carries the run-time type-name helpers, e.g. zeroGradientType()).
+typedef fvPatchFieldBase faPatchFieldBase;
+
+//- An area patch-field mapper reuses the finite-volume mapper
+typedef fvPatchFieldMapper faPatchFieldMapper;
+
+//- An area patch field for a given type
+template<class Type>
+using faPatchField = fvPatchField<Type>;
 
 //- An area field for a given type
 template<class Type>
@@ -63,46 +82,53 @@ using AreaInternalField = DimensionedField<Type, areaMesh>;
 // Typedefs
 
 typedef
-    GeometricField<scalar, faPatchField, areaMesh>
+    GeometricField<scalar, fvPatchField, areaMesh>
     areaScalarField;
 
 typedef
-    GeometricField<vector, faPatchField, areaMesh>
+    GeometricField<vector, fvPatchField, areaMesh>
     areaVectorField;
 
 typedef
-    GeometricField<sphericalTensor, faPatchField, areaMesh>
+    GeometricField<sphericalTensor, fvPatchField, areaMesh>
     areaSphericalTensorField;
 
 typedef
-    GeometricField<symmTensor, faPatchField, areaMesh>
+    GeometricField<symmTensor, fvPatchField, areaMesh>
     areaSymmTensorField;
 
 typedef
-    GeometricField<tensor, faPatchField, areaMesh>
+    GeometricField<tensor, fvPatchField, areaMesh>
     areaTensorField;
+
+typedef faPatchField<scalar> faPatchScalarField;
+typedef faPatchField<vector> faPatchVectorField;
+typedef faPatchField<sphericalTensor> faPatchSphericalTensorField;
+typedef faPatchField<symmTensor> faPatchSymmTensorField;
+typedef faPatchField<tensor> faPatchTensorField;
 
 
 /*---------------------------------------------------------------------------*\
                        Namespace fieldTypes Declaration
 \*---------------------------------------------------------------------------*/
 
-namespace fieldTypes
+namespace fieldTypes2
 {
+    //- Standard area field types (scalar, vector, tensor, etc)
+    extern const wordList area;
 
-//- Standard area field types (scalar, vector, tensor, etc)
-extern const wordList area;
+    //- Standard dimensioned field types (scalar, vector, tensor, etc)
+    extern const wordList area_internal;
 
-//- Standard area internal field types (scalar, vector, tensor, etc)
-extern const wordList area_internal;
+    //- True if clsName is one of the standard area field types
+    bool is_area(const word& clsName);
 
-//- Test if the class name appears to be an area field
-bool is_area(const word& clsName);
-
-//- Test if the class name appears to be an area internal field
-bool is_area_internal(const word& clsName);
+    //- True if clsName is one of the standard area internal (::Internal)
+    //- field types
+    bool is_area_internal(const word& clsName);
 
 } // End namespace fieldTypes
+
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 

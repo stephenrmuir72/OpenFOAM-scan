@@ -33,7 +33,7 @@ Description
 #define Foam_faPatchFieldMacros_H
 
 #include "fieldTypes.H"
-#include "faPatchField.H"
+#include "areaFieldsFwd.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 // Runtime selection macros

@@ -47,23 +47,23 @@ tmp
     GeometricField
     <
         typename outerProduct<vector, Type>::type,
-        faPatchField,
+        fvPatchField,
         areaMesh
     >
 >
 leastSquaresFaGrad<Type>::calcGrad
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vsf,
+    const GeometricField<Type, fvPatchField, areaMesh>& vsf,
     const word& name
 ) const
 {
     typedef typename outerProduct<vector, Type>::type GradType;
 
-    const faMesh& mesh = vsf.mesh();
+    const fvMesh& mesh = vsf.mesh();
 
-    tmp<GeometricField<GradType, faPatchField, areaMesh>> tlsGrad
+    tmp<GeometricField<GradType, fvPatchField, areaMesh>> tlsGrad
     (
-        new GeometricField<GradType, faPatchField, areaMesh>
+        new GeometricField<GradType, fvPatchField, areaMesh>
         (
             IOobject
             (
@@ -75,10 +75,10 @@ leastSquaresFaGrad<Type>::calcGrad
             ),
             mesh,
             dimensioned<GradType>(vsf.dimensions()/dimLength, Zero),
-            faPatchFieldBase::zeroGradientType()
+            fvPatchFieldBase::zeroGradientType()
         )
     );
-    GeometricField<GradType, faPatchField, areaMesh>& lsGrad = tlsGrad.ref();
+    GeometricField<GradType, fvPatchField, areaMesh>& lsGrad = tlsGrad.ref();
 
     // Get reference to least square vectors
     const leastSquaresFaVectors& lsv = leastSquaresFaVectors::New(mesh);
@@ -103,19 +103,21 @@ leastSquaresFaGrad<Type>::calcGrad
     // Boundary edges
     forAll(vsf.boundaryField(), patchi)
     {
-        const faPatchField<Type>& bf = vsf.boundaryField()[patchi];
+        const fvPatchField<Type>& bf = vsf.boundaryField()[patchi];
 
-        tmp<Field<Type>> tvsfp(bf);
-
-        if (bf.coupled())
-        {
-            tvsfp = bf.patchNeighbourField();
-        }
-        const auto& vsfp = tvsfp();
+        // Keep the coupled neighbour field (a tmp) alive for the loop; for a
+        // non-coupled patch reference the patch field itself (it is-a Field).
+        const tmp<Field<Type>> tvsfp
+        (
+            bf.coupled()
+          ? bf.patchNeighbourField()
+          : tmp<Field<Type>>(bf)
+        );
+        const Field<Type>& vsfp = tvsfp();
 
         const faePatchVectorField& ownLsp = ownLs.boundaryField()[patchi];
         const labelUList& edgeFaces =
-            lsGrad.boundaryField()[patchi].patch().edgeFaces();
+            lsGrad.boundaryField()[patchi].patch().faceCells();
 
         forAll(vsfp, pEdgei)
         {

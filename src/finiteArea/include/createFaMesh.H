@@ -25,10 +25,27 @@ Provided Variables
 Foam::Info << "Create finite-area mesh";
 Foam::Info << Foam::nl;
 
+//// "getRegionOption.H"
+//Foam::word aRegionName
+//(
+//    args.getOrDefault<word>("region", Foam::polyMesh::defaultRegion)
+//);
+
 Foam::faMesh aMesh
 (
-    mesh
+    Foam::IOobject
+    (
+        aRegionName,
+        runTime.timeName(),
+        mesh,   //runTime,
+        Foam::IOobject::MUST_READ
+    ),
+    false
 );
+aMesh.init(true);   // initialise all (lower levels and current)
 
+// Note: the reduced-order (2D) mesh natively constructs Sf() with
+// dimLength and V() with dimArea (see fvMesh::makeSf()/V()), so no
+// dimension fix-up is required here.
 
 // ************************************************************************* //

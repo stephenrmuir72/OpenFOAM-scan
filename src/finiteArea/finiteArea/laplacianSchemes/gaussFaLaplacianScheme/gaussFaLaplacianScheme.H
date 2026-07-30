@@ -77,13 +77,13 @@ public:
     // Constructors
 
         //- Construct from mesh
-        gaussLaplacianScheme(const faMesh& mesh)
+        gaussLaplacianScheme(const fvMesh& mesh)
         :
             laplacianScheme<Type>(mesh)
         {}
 
         //- Construct from Istream
-        gaussLaplacianScheme(const faMesh& mesh, Istream& is)
+        gaussLaplacianScheme(const fvMesh& mesh, Istream& is)
         :
             laplacianScheme<Type>(mesh, is)
         {}
@@ -94,18 +94,18 @@ public:
         tmp<faMatrix<Type>> famLaplacian
         (
             const edgeScalarField&,
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         );
 
-        tmp<GeometricField<Type, faPatchField, areaMesh>> facLaplacian
+        tmp<GeometricField<Type, fvPatchField, areaMesh>> facLaplacian
         (
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         );
 
-        tmp<GeometricField<Type, faPatchField, areaMesh>> facLaplacian
+        tmp<GeometricField<Type, fvPatchField, areaMesh>> facLaplacian
         (
             const edgeScalarField&,
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         );
 };
 

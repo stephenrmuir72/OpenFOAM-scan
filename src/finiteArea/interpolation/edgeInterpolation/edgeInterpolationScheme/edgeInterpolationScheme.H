@@ -37,6 +37,7 @@ SourceFiles
 #ifndef edgeInterpolationScheme_H
 #define edgeInterpolationScheme_H
 
+#include "fvMesh.H"
 #include "areaFieldsFwd.H"
 #include "edgeFieldsFwd.H"
 #include "runTimeSelectionTables.H"
@@ -45,8 +46,6 @@ SourceFiles
 
 namespace Foam
 {
-
-class faMesh;
 
 /*---------------------------------------------------------------------------*\
                    Class edgeInterpolationScheme Declaration
@@ -60,7 +59,7 @@ class edgeInterpolationScheme
     // Private Data
 
         //- Reference to mesh
-        const faMesh& mesh_;
+        const fvMesh& mesh_;
 
 
 public:
@@ -73,7 +72,7 @@ public:
             edgeInterpolationScheme,
             Mesh,
             (
-                const faMesh& mesh,
+                const fvMesh& mesh,
                 Istream& schemeData
             ),
             (mesh, schemeData)
@@ -85,8 +84,8 @@ public:
             edgeInterpolationScheme,
             MeshFlux,
             (
-                const faMesh& mesh,
-                const edgeScalarField& faceFlux,
+                const fvMesh& mesh,
+                const surfaceScalarField& faceFlux,
                 Istream& schemeData
             ),
             (mesh, faceFlux, schemeData)
@@ -105,7 +104,7 @@ public:
     // Constructors
 
         //- Construct from mesh
-        edgeInterpolationScheme(const faMesh& mesh)
+        edgeInterpolationScheme(const fvMesh& mesh)
         :
             mesh_(mesh)
         {}
@@ -116,15 +115,15 @@ public:
         //- Return new tmp interpolation scheme
         static tmp<edgeInterpolationScheme<Type>> New
         (
-            const faMesh& mesh,
+            const fvMesh& mesh,
             Istream& schemeData
         );
 
         //- Return new tmp interpolation scheme
         static tmp<edgeInterpolationScheme<Type>> New
         (
-            const faMesh& mesh,
-            const edgeScalarField& faceFlux,
+            const fvMesh& mesh,
+            const surfaceScalarField& faceFlux,
             Istream& schemeData
         );
 
@@ -137,7 +136,7 @@ public:
     // Member Functions
 
         //- Return mesh reference
-        const faMesh& mesh() const
+        const fvMesh& mesh() const
         {
             return mesh_;
         }
@@ -145,38 +144,38 @@ public:
 
         //- Return the face-interpolate of the given cell field
         //  with the given owner and neighbour weighting factors
-        static tmp<GeometricField<Type, faePatchField, edgeMesh>>
+        static tmp<GeometricField<Type, fvsPatchField, surfaceMesh>>
         interpolate
         (
-            const GeometricField<Type, faPatchField, areaMesh>&,
-            const tmp<edgeScalarField>&,
-            const tmp<edgeScalarField>&
+            const GeometricField<Type, fvPatchField, volMesh>&,
+            const tmp<surfaceScalarField>&,
+            const tmp<surfaceScalarField>&
         );
 
         //- Return the face-interpolate of the given cell field
         //  with the given weighting factors
-        static tmp<GeometricField<Type, faePatchField, edgeMesh>>
+        static tmp<GeometricField<Type, fvsPatchField, surfaceMesh>>
         interpolate
         (
-            const GeometricField<Type, faPatchField, areaMesh>&,
-            const tmp<edgeScalarField>&
+            const GeometricField<Type, fvPatchField, volMesh>&,
+            const tmp<surfaceScalarField>&
         );
 
 
         //- Return the euclidian edge-interpolate of the given area field
         //  with the given weighting factors
-        static tmp<GeometricField<Type, faePatchField, edgeMesh>>
+        static tmp<GeometricField<Type, fvsPatchField, surfaceMesh>>
         euclidianInterpolate
         (
-            const GeometricField<Type, faPatchField, areaMesh>&,
-            const tmp<edgeScalarField>&
+            const GeometricField<Type, fvPatchField, volMesh>&,
+            const tmp<surfaceScalarField>&
         );
 
 
         //- Return the interpolation weighting factors for the given field
-        virtual tmp<edgeScalarField> weights
+        virtual tmp<surfaceScalarField> weights
         (
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, volMesh>&
         ) const = 0;
 
         //- Return true if this scheme uses an explicit correction
@@ -184,31 +183,31 @@ public:
 
         //- Return the explicit correction to the face-interpolate
         //  for the given field
-        virtual tmp<GeometricField<Type, faePatchField, edgeMesh>>
-        correction(const GeometricField<Type, faPatchField, areaMesh>&) const
+        virtual tmp<GeometricField<Type, fvsPatchField, surfaceMesh>>
+        correction(const GeometricField<Type, fvPatchField, volMesh>&) const
         {
             return nullptr;
         }
 
         //- Return the face-interpolate of the given cell field
         //  with explicit correction
-        virtual tmp<GeometricField<Type, faePatchField, edgeMesh>>
-        interpolate(const GeometricField<Type, faPatchField, areaMesh>&) const;
+        virtual tmp<GeometricField<Type, fvsPatchField, surfaceMesh>>
+        interpolate(const GeometricField<Type, fvPatchField, volMesh>&) const;
 
         //- Return the euclidian edge-interpolate of the given area field
         //  without explicit correction
-        virtual tmp<GeometricField<Type, faePatchField, edgeMesh>>
+        virtual tmp<GeometricField<Type, fvsPatchField, surfaceMesh>>
         euclidianInterpolate
         (
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, volMesh>&
         ) const;
 
         //- Return the face-interpolate of the given tmp cell field
         //  with explicit correction
-        tmp<GeometricField<Type, faePatchField, edgeMesh>>
+        tmp<GeometricField<Type, fvsPatchField, surfaceMesh>>
         interpolate
         (
-            const tmp<GeometricField<Type, faPatchField, areaMesh>>&
+            const tmp<GeometricField<Type, fvPatchField, volMesh>>&
         ) const;
 };
 

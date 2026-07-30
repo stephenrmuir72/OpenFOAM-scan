@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2016-2017 Wikki Ltd
+    Copyright (C) 2026 OpenCFD Ltd.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -27,20 +28,30 @@ Class
     Foam::fixedValueOutflowFaPatchField
 
 Description
+    A fixed-value outflow finite-area boundary condition. It fixes the patch
+    value but contributes an outflow (upwind-style) matrix coefficient so the
+    fixed value is only enforced where flow leaves the domain.
 
-Author
-    Zeljko Tukovic, FMENA
-    Hrvoje Jasak, Wikki Ltd.
+Usage
+    Example of the boundary condition specification:
+    \verbatim
+    <patchName>
+    {
+        type            fixedValueOutflow;
+        value           uniform 0;  // Example for scalar field usage
+    }
+    \endverbatim
 
 SourceFiles
-    fixedValueOutflowFaPatchField.txx
+    fixedValueOutflowFaPatchField.C
 
 \*---------------------------------------------------------------------------*/
 
 #ifndef Foam_fixedValueOutflowFaPatchField_H
 #define Foam_fixedValueOutflowFaPatchField_H
 
-#include "faPatchField.H"
+#include "fvPatchField.H"
+#include "areaFieldsFwd.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -48,7 +59,7 @@ namespace Foam
 {
 
 /*---------------------------------------------------------------------------*\
-                  Class fixedValueOutflowFaPatch Declaration
+                Class fixedValueOutflowFaPatchField Declaration
 \*---------------------------------------------------------------------------*/
 
 template<class Type>
@@ -92,15 +103,20 @@ public:
             const faPatchFieldMapper&
         );
 
+        //- Copy construct
+        fixedValueOutflowFaPatchField(const this_bctype& ptf)
+        #ifdef Foam_fvPatchField_copyConstruct
+        : fixedValueOutflowFaPatchField<Type>(ptf, ptf.internalField()) {}
+        #else
+        = delete;
+        #endif
+
         //- Construct as copy setting internal field reference
         fixedValueOutflowFaPatchField
         (
             const this_bctype&,
             const DimensionedField<Type, areaMesh>&
         );
-
-        //- No copy without an internal field
-        fixedValueOutflowFaPatchField(const this_bctype&) = delete;
 
         //- Clone with an internal field reference
         virtual tmp<faPatchField<Type>> clone
@@ -110,6 +126,10 @@ public:
         {
             return faPatchField<Type>::Clone(*this, iF);
         }
+
+
+    //- Destructor
+    virtual ~fixedValueOutflowFaPatchField() = default;
 
 
     // Member Functions
@@ -178,7 +198,7 @@ public:
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 #ifdef NoRepository
-    #include "fixedValueOutflowFaPatchField.txx"
+    #include "fixedValueOutflowFaPatchField.C"
 #endif
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //

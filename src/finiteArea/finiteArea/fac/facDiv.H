@@ -39,6 +39,7 @@ SourceFiles
 
 #include "areaFieldsFwd.H"
 #include "edgeFieldsFwd.H"
+#include "edgeFaMesh.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -52,38 +53,15 @@ namespace Foam
 namespace fac
 {
     template<class Type>
-    tmp<GeometricField<Type, faPatchField, areaMesh>> div
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> div
     (
-        const GeometricField<Type, faePatchField, edgeMesh>&
+        const GeometricField<Type, fvsPatchField, edgeMesh>&
     );
 
     template<class Type>
-    tmp<GeometricField<Type, faPatchField, areaMesh>> div
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> div
     (
-        const tmp<GeometricField<Type, faePatchField, edgeMesh>>&
-    );
-
-
-    template<class Type>
-    tmp
-    <
-        GeometricField
-        <typename innerProduct<vector, Type>::type, faPatchField, areaMesh>
-    > div
-    (
-        const GeometricField<Type, faPatchField, areaMesh>&,
-        const word& name
-    );
-
-    template<class Type>
-    tmp
-    <
-        GeometricField
-        <typename innerProduct<vector, Type>::type, faPatchField, areaMesh>
-    > div
-    (
-        const tmp<GeometricField<Type, faPatchField, areaMesh>>&,
-        const word& name
+        const tmp<GeometricField<Type, fvsPatchField, edgeMesh>>&
     );
 
 
@@ -91,82 +69,105 @@ namespace fac
     tmp
     <
         GeometricField
-        <typename innerProduct<vector, Type>::type, faPatchField, areaMesh>
+        <typename innerProduct<vector, Type>::type, fvPatchField, areaMesh>
     > div
     (
-        const GeometricField<Type, faPatchField, areaMesh>&
+        const GeometricField<Type, fvPatchField, areaMesh>&,
+        const word& name
     );
 
     template<class Type>
     tmp
     <
         GeometricField
-        <typename innerProduct<vector, Type>::type, faPatchField, areaMesh>
+        <typename innerProduct<vector, Type>::type, fvPatchField, areaMesh>
     > div
     (
-        const tmp<GeometricField<Type, faPatchField, areaMesh>>&
-    );
-
-
-    template<class Type>
-    tmp<GeometricField<Type, faPatchField, areaMesh>> div
-    (
-        const edgeScalarField&,
-        const GeometricField<Type, faPatchField, areaMesh>&,
-        const word& name
-    );
-
-    template<class Type>
-    tmp<GeometricField<Type, faPatchField, areaMesh>> div
-    (
-        const tmp<edgeScalarField>&,
-        const GeometricField<Type, faPatchField, areaMesh>&,
-        const word& name
-    );
-
-    template<class Type>
-    tmp<GeometricField<Type, faPatchField, areaMesh>> div
-    (
-        const edgeScalarField&,
-        const tmp<GeometricField<Type, faPatchField, areaMesh>>&,
-        const word& name
-    );
-
-    template<class Type>
-    tmp<GeometricField<Type, faPatchField, areaMesh>> div
-    (
-        const tmp<edgeScalarField>&,
-        const tmp<GeometricField<Type, faPatchField, areaMesh>>&,
+        const tmp<GeometricField<Type, fvPatchField, areaMesh>>&,
         const word& name
     );
 
 
     template<class Type>
-    tmp<GeometricField<Type, faPatchField, areaMesh>> div
+    tmp
+    <
+        GeometricField
+        <typename innerProduct<vector, Type>::type, fvPatchField, areaMesh>
+    > div
+    (
+        const GeometricField<Type, fvPatchField, areaMesh>&
+    );
+
+    template<class Type>
+    tmp
+    <
+        GeometricField
+        <typename innerProduct<vector, Type>::type, fvPatchField, areaMesh>
+    > div
+    (
+        const tmp<GeometricField<Type, fvPatchField, areaMesh>>&
+    );
+
+
+    template<class Type>
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> div
     (
         const edgeScalarField&,
-        const GeometricField<Type, faPatchField, areaMesh>&
+        const GeometricField<Type, fvPatchField, areaMesh>&,
+        const word& name
     );
 
     template<class Type>
-    tmp<GeometricField<Type, faPatchField, areaMesh>> div
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> div
     (
         const tmp<edgeScalarField>&,
-        const GeometricField<Type, faPatchField, areaMesh>&
+        const GeometricField<Type, fvPatchField, areaMesh>&,
+        const word& name
     );
 
     template<class Type>
-    tmp<GeometricField<Type, faPatchField, areaMesh>> div
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> div
     (
         const edgeScalarField&,
-        const tmp<GeometricField<Type, faPatchField, areaMesh>>&
+        const tmp<GeometricField<Type, fvPatchField, areaMesh>>&,
+        const word& name
     );
 
     template<class Type>
-    tmp<GeometricField<Type, faPatchField, areaMesh>> div
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> div
     (
         const tmp<edgeScalarField>&,
-        const tmp<GeometricField<Type, faPatchField, areaMesh>>&
+        const tmp<GeometricField<Type, fvPatchField, areaMesh>>&,
+        const word& name
+    );
+
+
+    template<class Type>
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> div
+    (
+        const edgeScalarField&,
+        const GeometricField<Type, fvPatchField, areaMesh>&
+    );
+
+    template<class Type>
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> div
+    (
+        const tmp<edgeScalarField>&,
+        const GeometricField<Type, fvPatchField, areaMesh>&
+    );
+
+    template<class Type>
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> div
+    (
+        const edgeScalarField&,
+        const tmp<GeometricField<Type, fvPatchField, areaMesh>>&
+    );
+
+    template<class Type>
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> div
+    (
+        const tmp<edgeScalarField>&,
+        const tmp<GeometricField<Type, fvPatchField, areaMesh>>&
     );
 }
 

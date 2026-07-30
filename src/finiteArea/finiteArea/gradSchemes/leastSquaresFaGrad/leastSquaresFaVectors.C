@@ -40,7 +40,7 @@ namespace Foam
 
 // * * * * * * * * * * * * * * * * Constructors * * * * * * * * * * * * * * //
 
-Foam::leastSquaresFaVectors::leastSquaresFaVectors(const faMesh& mesh)
+Foam::leastSquaresFaVectors::leastSquaresFaVectors(const fvMesh& mesh)
 :
     MeshObject_type(mesh)
 {}
@@ -119,7 +119,7 @@ void Foam::leastSquaresFaVectors::makeLeastSquaresVectors() const
     for (const auto& patchLsP : lsP.boundaryField())
     {
         const faPatch& p = patchLsP.patch();
-        const labelUList& edgeFaces = p.edgeFaces();
+        const labelUList& edgeFaces = p.faceCells();
 
         // Build the d-vectors
         const vectorField pd(p.delta());
@@ -168,7 +168,7 @@ void Foam::leastSquaresFaVectors::makeLeastSquaresVectors() const
     for (auto& patchLsP : lsP.boundaryFieldRef())
     {
         const faPatch& p = patchLsP.patch();
-        const labelUList& edgeFaces = p.edgeFaces();
+        const labelUList& edgeFaces = p.faceCells();
 
         // Build the d-vectors
         const vectorField pd(p.delta());

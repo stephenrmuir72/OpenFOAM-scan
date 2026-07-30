@@ -86,15 +86,6 @@ bool Foam::faMeshesRegistry::writeObject
     const bool writeOnProc
 ) const
 {
-    // Could also restrict to faMesh only...
-    //
-    // for (const faMesh& m : objects_.csorted<faMesh>())
-    // {
-    //     m.write(writeOnProc);
-    // }
-    //
-    // return true;
-
     return objects_.writeObject(streamOpt, writeOnProc);
 }
 

@@ -41,14 +41,12 @@ SourceFiles
 
 #include "areaFieldsFwd.H"
 #include "edgeFieldsFwd.H"
+#include "fvMesh.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 namespace Foam
 {
-
-// Forward Declarations
-class faMesh;
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -67,7 +65,7 @@ class gradScheme
     // Private Data
 
         //- Reference to mesh
-        const faMesh& mesh_;
+        const fvMesh& mesh_;
 
 
 public:
@@ -79,7 +77,7 @@ public:
             tmp,
             gradScheme,
             Istream,
-            (const faMesh& mesh, Istream& schemeData),
+            (const fvMesh& mesh, Istream& schemeData),
             (mesh, schemeData)
         );
 
@@ -96,7 +94,7 @@ public:
     // Constructors
 
         //- Construct from mesh
-        gradScheme(const faMesh& mesh)
+        gradScheme(const fvMesh& mesh)
         :
             mesh_(mesh)
         {}
@@ -107,7 +105,7 @@ public:
         //- Return a pointer to a new gradScheme created on freestore
         static tmp<gradScheme<Type>> New
         (
-            const faMesh& mesh,
+            const fvMesh& mesh,
             Istream& schemeData
         );
 
@@ -119,7 +117,7 @@ public:
     // Member Functions
 
         //- Return mesh reference
-        const faMesh& mesh() const noexcept { return mesh_; }
+        const fvMesh& mesh() const noexcept { return mesh_; }
 
         //- Calculate and return the grad of the given field.
         //  Used by grad either to recalculate the cached gradient when it is
@@ -127,10 +125,10 @@ public:
         virtual tmp
         <
             GeometricField
-            <typename outerProduct<vector, Type>::type, faPatchField, areaMesh>
+            <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>
         > calcGrad
         (
-            const GeometricField<Type, faPatchField, areaMesh>&,
+            const GeometricField<Type, fvPatchField, areaMesh>&,
             const word& name
         ) const = 0;
 
@@ -139,10 +137,10 @@ public:
         tmp
         <
             GeometricField
-            <typename outerProduct<vector, Type>::type, faPatchField, areaMesh>
+            <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>
         > grad
         (
-            const GeometricField<Type, faPatchField, areaMesh>&,
+            const GeometricField<Type, fvPatchField, areaMesh>&,
             const word& name
         ) const;
 
@@ -152,10 +150,10 @@ public:
         tmp
         <
             GeometricField
-            <typename outerProduct<vector, Type>::type, faPatchField, areaMesh>
+            <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>
         > grad
         (
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         ) const;
 
         //- Calculate and return the grad of the given field
@@ -164,10 +162,10 @@ public:
         tmp
         <
             GeometricField
-            <typename outerProduct<vector, Type>::type, faPatchField, areaMesh>
+            <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>
         > grad
         (
-            const tmp<GeometricField<Type, faPatchField, areaMesh>>&
+            const tmp<GeometricField<Type, fvPatchField, areaMesh>>&
         ) const;
 };
 

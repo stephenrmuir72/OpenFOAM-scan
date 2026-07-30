@@ -96,7 +96,7 @@ tmp<areaVectorField> faceLimitedGrad<scalar>::calcGrad
     const word& name
 ) const
 {
-    const faMesh& mesh = vsf.mesh();
+    const fvMesh& mesh = vsf.mesh();
 
     tmp<areaVectorField> tGrad = basicGradScheme_().calcGrad(vsf, name);
 
@@ -135,7 +135,7 @@ tmp<areaVectorField> faceLimitedGrad<scalar>::calcGrad
     // Lambda expression to update limiter for boundary edges
     auto updateLimiter = [&](const label patchi, const scalarField& fld) -> void
     {
-        const labelUList& pOwner = mesh.boundary()[patchi].edgeFaces();
+        const labelUList& pOwner = mesh.boundary()[patchi].faceCells();
 
         forAll(pOwner, facei)
         {
@@ -202,7 +202,7 @@ tmp<areaVectorField> faceLimitedGrad<scalar>::calcGrad
 
     forAll(bsf, patchi)
     {
-        const labelUList& pOwner = mesh.boundary()[patchi].edgeFaces();
+        const labelUList& pOwner = mesh.boundary()[patchi].faceCells();
         const vectorField& pCf = Cf.boundaryField()[patchi];
 
         forAll(pOwner, pFacei)
@@ -221,13 +221,10 @@ tmp<areaVectorField> faceLimitedGrad<scalar>::calcGrad
 
     if (fa::debug)
     {
-        auto limits = gMinMax(limiter);
-        auto avg = gAverage(limiter);
-
         Info<< "gradient limiter for: " << vsf.name()
-            << " min = " << limits.min()
-            << " max = " << limits.max()
-            << " average: " << avg << endl;
+            << " max = " << gMax(limiter)
+            << " min = " << gMin(limiter)
+            << " average: " << gAverage(limiter) << endl;
     }
 
     g.primitiveFieldRef() *= limiter;
@@ -245,7 +242,7 @@ tmp<areaTensorField> faceLimitedGrad<vector>::calcGrad
     const word& name
 ) const
 {
-    const faMesh& mesh = vsf.mesh();
+    const fvMesh& mesh = vsf.mesh();
 
     tmp<areaTensorField> tGrad = basicGradScheme_().grad(vsf, name);
 
@@ -284,7 +281,7 @@ tmp<areaTensorField> faceLimitedGrad<vector>::calcGrad
     // Lambda expression to update limiter for boundary edges
     auto updateLimiter = [&](const label patchi, const vectorField& fld) -> void
     {
-        const labelUList& pOwner = mesh.boundary()[patchi].edgeFaces();
+        const labelUList& pOwner = mesh.boundary()[patchi].faceCells();
 
         forAll(pOwner, facei)
         {
@@ -354,7 +351,7 @@ tmp<areaTensorField> faceLimitedGrad<vector>::calcGrad
 
     forAll(bsf, patchi)
     {
-        const labelUList& pOwner = mesh.boundary()[patchi].edgeFaces();
+        const labelUList& pOwner = mesh.boundary()[patchi].faceCells();
         const vectorField& pCf = Cf.boundaryField()[patchi];
 
         forAll(pOwner, pFacei)
@@ -373,13 +370,10 @@ tmp<areaTensorField> faceLimitedGrad<vector>::calcGrad
 
     if (fa::debug)
     {
-        auto limits = gMinMax(limiter);
-        auto avg = gAverage(limiter);
-
         Info<< "gradient limiter for: " << vsf.name()
-            << " min = " << limits.min()
-            << " max = " << limits.max()
-            << " average: " << avg << endl;
+            << " max = " << gMax(limiter)
+            << " min = " << gMin(limiter)
+            << " average: " << gAverage(limiter) << endl;
     }
 
     tensorField& gIf = g.primitiveFieldRef();

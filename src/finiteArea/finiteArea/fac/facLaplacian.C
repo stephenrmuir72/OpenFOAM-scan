@@ -26,7 +26,7 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "facLaplacian.H"
-#include "faMesh.H"
+#include "fvMesh.H"
 #include "faLaplacianScheme.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -42,10 +42,10 @@ namespace fac
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 laplacian
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf,
+    const GeometricField<Type, fvPatchField, areaMesh>& vf,
     const word& name
 )
 {
@@ -57,14 +57,14 @@ laplacian
 }
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 laplacian
 (
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf,
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf,
     const word& name
 )
 {
-    tmp<GeometricField<Type, faPatchField, areaMesh>> Laplacian
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> Laplacian
     (
         fac::laplacian(tvf(), name)
     );
@@ -74,23 +74,23 @@ laplacian
 
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 laplacian
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     return fac::laplacian(vf, "laplacian(" + vf.name() + ')');
 }
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 laplacian
 (
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf
 )
 {
-    tmp<GeometricField<Type, faPatchField, areaMesh>> Laplacian
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> Laplacian
     (
         fac::laplacian(tvf())
     );
@@ -100,11 +100,11 @@ laplacian
 
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 laplacian
 (
     const dimensionedScalar& gamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf,
+    const GeometricField<Type, fvPatchField, areaMesh>& vf,
     const word& name
 )
 {
@@ -112,15 +112,15 @@ laplacian
 }
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 laplacian
 (
     const dimensionedScalar& gamma,
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf,
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf,
     const word& name
 )
 {
-    tmp<GeometricField<Type, faPatchField, areaMesh>> Laplacian
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> Laplacian
     (
         fac::laplacian(gamma, tvf(), name)
     );
@@ -130,11 +130,11 @@ laplacian
 
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 laplacian
 (
     const dimensionedScalar& gamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     return gamma*fac::laplacian
@@ -144,14 +144,14 @@ laplacian
 }
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 laplacian
 (
     const dimensionedScalar& gamma,
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf
 )
 {
-    tmp<GeometricField<Type, faPatchField, areaMesh>> Laplacian
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> Laplacian
     (
         fac::laplacian(gamma, tvf())
     );
@@ -161,11 +161,11 @@ laplacian
 
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 laplacian
 (
     const areaScalarField& gamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf,
+    const GeometricField<Type, fvPatchField, areaMesh>& vf,
     const word& name
 )
 {
@@ -177,15 +177,15 @@ laplacian
 }
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 laplacian
 (
     const tmp<areaScalarField>& tgamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf,
+    const GeometricField<Type, fvPatchField, areaMesh>& vf,
     const word& name
 )
 {
-    tmp<GeometricField<Type, faPatchField, areaMesh>> Laplacian
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> Laplacian
     (
         fac::laplacian(tgamma(), vf, name)
     );
@@ -194,15 +194,15 @@ laplacian
 }
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 laplacian
 (
     const areaScalarField& gamma,
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf,
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf,
     const word& name
 )
 {
-    tmp<GeometricField<Type, faPatchField, areaMesh>> Laplacian
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> Laplacian
     (
         fac::laplacian(gamma, tvf(), name)
     );
@@ -211,15 +211,15 @@ laplacian
 }
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 laplacian
 (
     const tmp<areaScalarField>& tgamma,
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf,
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf,
     const word& name
 )
 {
-    tmp<GeometricField<Type, faPatchField, areaMesh>> Laplacian
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> Laplacian
     (
         fac::laplacian(tgamma(), tvf(), name)
     );
@@ -230,11 +230,11 @@ laplacian
 
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 laplacian
 (
     const areaScalarField& gamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     return fac::laplacian
@@ -246,11 +246,11 @@ laplacian
 }
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 laplacian
 (
     const tmp<areaScalarField>& tgamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     return fac::laplacian
@@ -262,11 +262,11 @@ laplacian
 }
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 laplacian
 (
     const areaScalarField& gamma,
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf
 )
 {
     return fac::laplacian
@@ -278,11 +278,11 @@ laplacian
 }
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 laplacian
 (
     const tmp<areaScalarField>& tgamma,
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf
 )
 {
     return fac::laplacian
@@ -295,11 +295,11 @@ laplacian
 
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 laplacian
 (
     const edgeScalarField& gamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf,
+    const GeometricField<Type, fvPatchField, areaMesh>& vf,
     const word& name
 )
 {
@@ -311,15 +311,15 @@ laplacian
 }
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 laplacian
 (
     const tmp<edgeScalarField>& tgamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf,
+    const GeometricField<Type, fvPatchField, areaMesh>& vf,
     const word& name
 )
 {
-    tmp<GeometricField<Type, faPatchField, areaMesh>> Laplacian
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> Laplacian
     (
         fac::laplacian(tgamma(), vf, name)
     );
@@ -328,15 +328,15 @@ laplacian
 }
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 laplacian
 (
     const edgeScalarField& gamma,
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf,
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf,
     const word& name
 )
 {
-    tmp<GeometricField<Type, faPatchField, areaMesh>> Laplacian
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> Laplacian
     (
         fac::laplacian(gamma, tvf(), name)
     );
@@ -345,14 +345,14 @@ laplacian
 }
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>> laplacian
+tmp<GeometricField<Type, fvPatchField, areaMesh>> laplacian
 (
     const tmp<edgeScalarField>& tgamma,
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf,
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf,
     const word& name
 )
 {
-    tmp<GeometricField<Type, faPatchField, areaMesh>> Laplacian
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> Laplacian
     (
         fac::laplacian(tgamma(), tvf(), name)
     );
@@ -363,11 +363,11 @@ tmp<GeometricField<Type, faPatchField, areaMesh>> laplacian
 
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 laplacian
 (
     const edgeScalarField& gamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     return fac::laplacian
@@ -379,14 +379,14 @@ laplacian
 }
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 laplacian
 (
     const tmp<edgeScalarField>& tgamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
-    tmp<GeometricField<Type, faPatchField, areaMesh>> Laplacian
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> Laplacian
     (
         fac::laplacian(tgamma(), vf)
     );
@@ -395,14 +395,14 @@ laplacian
 }
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 laplacian
 (
     const edgeScalarField& gamma,
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf
 )
 {
-    tmp<GeometricField<Type, faPatchField, areaMesh>> Laplacian
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> Laplacian
     (
         fac::laplacian(gamma, tvf())
     );
@@ -411,13 +411,13 @@ laplacian
 }
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>> laplacian
+tmp<GeometricField<Type, fvPatchField, areaMesh>> laplacian
 (
     const tmp<edgeScalarField>& tgamma,
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf
 )
 {
-    tmp<GeometricField<Type, faPatchField, areaMesh>> Laplacian
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> Laplacian
     (
         fac::laplacian(tgamma(), tvf())
     );
@@ -429,14 +429,14 @@ tmp<GeometricField<Type, faPatchField, areaMesh>> laplacian
 
 /*
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 laplacian
 (
     const areaTensorField& gamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
-    const faMesh& mesh = tvf().mesh();
+    const fvMesh& mesh = tvf().mesh();
     return fac::laplacian
     (
         (
@@ -447,14 +447,14 @@ laplacian
 }
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 laplacian
 (
     const areaTensorField& gamma,
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf
 )
 {
-    tmp<GeometricField<Type, faPatchField, areaMesh>> Laplacian
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> Laplacian
     (
         fac::laplacian(gamma, tvf())
     );
@@ -463,14 +463,14 @@ laplacian
 }
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 laplacian
 (
     const tmp<areaTensorField>& tgamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
-    tmp<GeometricField<Type, faPatchField, areaMesh>> Laplacian
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> Laplacian
     (
         fac::laplacian(tgamma(), vf)
     );
@@ -479,14 +479,14 @@ laplacian
 }
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 laplacian
 (
     const tmp<areaTensorField>& tgamma,
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf
 )
 {
-    tmp<GeometricField<Type, faPatchField, areaMesh>> Laplacian
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> Laplacian
     (
         fac::laplacian(tgamma(), tvf())
     );
@@ -497,13 +497,13 @@ laplacian
 
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>> laplacian
+tmp<GeometricField<Type, fvPatchField, areaMesh>> laplacian
 (
     const edgeTensorField& gamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
-    const faMesh& mesh = tvf().mesh();
+    const fvMesh& mesh = tvf().mesh();
 
     return fac::laplacian
     (
@@ -517,14 +517,14 @@ tmp<GeometricField<Type, faPatchField, areaMesh>> laplacian
 }
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 laplacian
 (
     const edgeTensorField& gamma,
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf
 )
 {
-    tmp<GeometricField<Type, faPatchField, areaMesh>> Laplacian
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> Laplacian
     (
         fac::laplacian(gamma, tvf())
     );
@@ -533,14 +533,14 @@ laplacian
 }
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 laplacian
 (
     const tmp<edgeTensorField>& tgamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
-    tmp<GeometricField<Type, faPatchField, areaMesh>> Laplacian
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> Laplacian
     (
         fac::laplacian(tgamma(), tvf())
     );
@@ -549,14 +549,14 @@ laplacian
 }
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 laplacian
 (
     const tmp<edgeTensorField>& tgamma,
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf
 )
 {
-    tmp<GeometricField<Type, faPatchField, areaMesh>> Laplacian
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> Laplacian
     (
         fac::laplacian(tgamma(), tvf())
     );

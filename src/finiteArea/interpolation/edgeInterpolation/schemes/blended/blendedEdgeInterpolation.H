@@ -82,7 +82,7 @@ public:
         //- Construct from mesh, faceFlux and blendingFactor
         blendedEdgeInterpolation
         (
-            const faMesh& mesh,
+            const fvMesh& mesh,
             const edgeScalarField& faceFlux,
             const scalar blendingFactor
         )
@@ -98,7 +98,7 @@ public:
         //  from the database
         blendedEdgeInterpolation
         (
-            const faMesh& mesh,
+            const fvMesh& mesh,
             Istream& is
         )
         :
@@ -118,7 +118,7 @@ public:
         //- Construct from mesh, faceFlux and Istream
         blendedEdgeInterpolation
         (
-            const faMesh& mesh,
+            const fvMesh& mesh,
             const edgeScalarField& faceFlux,
             Istream& is
         )
@@ -135,7 +135,7 @@ public:
         //- Return the interpolation weighting factors
         virtual tmp<edgeScalarField> weights
         (
-            const GeometricField<Type, faPatchField, areaMesh>& vf
+            const GeometricField<Type, fvPatchField, areaMesh>& vf
         ) const
         {
             return

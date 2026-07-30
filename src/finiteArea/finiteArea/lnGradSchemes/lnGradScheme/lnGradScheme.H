@@ -40,6 +40,8 @@ SourceFiles
 #include "areaFieldsFwd.H"
 #include "edgeFieldsFwd.H"
 #include "runTimeSelectionTables.H"
+#include "fvMesh.H"
+#include "edgeFaMesh.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -47,7 +49,7 @@ namespace Foam
 {
 
 // Forward Declarations
-class faMesh;
+//class fvMesh;
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -66,7 +68,7 @@ class lnGradScheme
     // Private Data
 
         //- Hold reference to mesh
-        const faMesh& mesh_;
+        const fvMesh& mesh_;
 
 
 public:
@@ -78,7 +80,7 @@ public:
             tmp,
             lnGradScheme,
             Mesh,
-            (const faMesh& mesh, Istream& schemeData),
+            (const fvMesh& mesh, Istream& schemeData),
             (mesh, schemeData)
         );
 
@@ -95,7 +97,7 @@ public:
     // Constructors
 
         //- Construct from mesh
-        lnGradScheme(const faMesh& mesh)
+        lnGradScheme(const fvMesh& mesh)
         :
             mesh_(mesh)
         {}
@@ -106,7 +108,7 @@ public:
         //- Return new tmp interpolation scheme
         static tmp<lnGradScheme<Type>> New
         (
-            const faMesh& mesh,
+            const fvMesh& mesh,
             Istream& schemeData
         );
 
@@ -118,14 +120,14 @@ public:
     // Member Functions
 
         //- Return mesh reference
-        const faMesh& mesh() const noexcept { return mesh_; }
+        const fvMesh& mesh() const noexcept { return mesh_; }
 
         //- Return the lnGrad of the given cell field
         //  with the given weighting factors
-        static tmp<GeometricField<Type, faePatchField, edgeMesh>>
+        static tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
         lnGrad
         (
-            const GeometricField<Type, faPatchField, areaMesh>&,
+            const GeometricField<Type, fvPatchField, areaMesh>&,
             const tmp<edgeScalarField>&,
             const word& snGradName = "lnGrad"
         );
@@ -133,7 +135,7 @@ public:
         //- Return the interpolation weighting factors for the given field
         virtual tmp<edgeScalarField> deltaCoeffs
         (
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         ) const = 0;
 
         //- Return true if this scheme uses an explicit correction
@@ -141,23 +143,23 @@ public:
 
         //- Return the explicit correction to the lnGrad
         //  for the given field
-        virtual tmp<GeometricField<Type, faePatchField, edgeMesh>>
-        correction(const GeometricField<Type, faPatchField, areaMesh>&) const
+        virtual tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
+        correction(const GeometricField<Type, fvPatchField, areaMesh>&) const
         {
             return nullptr;
         }
 
         //- Return the lnGrad of the given cell field
         //  with explicit correction
-        virtual tmp<GeometricField<Type, faePatchField, edgeMesh>>
-        lnGrad(const GeometricField<Type, faPatchField, areaMesh>&) const;
+        virtual tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
+        lnGrad(const GeometricField<Type, fvPatchField, areaMesh>&) const;
 
         //- Return the lnGrad of the given tmp cell field
         //  with explicit correction
-        tmp<GeometricField<Type, faePatchField, edgeMesh>>
+        tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
         lnGrad
         (
-            const tmp<GeometricField<Type, faPatchField, areaMesh>>&
+            const tmp<GeometricField<Type, fvPatchField, areaMesh>>&
         ) const;
 };
 

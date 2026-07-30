@@ -45,17 +45,17 @@ template<class Type>
 tmp
 <
     GeometricField
-    <typename innerProduct<vector, Type>::type, faPatchField, areaMesh>
+    <typename innerProduct<vector, Type>::type, fvPatchField, areaMesh>
 >
 gaussDivScheme<Type>::facDiv
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     tmp
     <
         GeometricField
-        <typename innerProduct<vector, Type>::type, faPatchField, areaMesh>
+        <typename innerProduct<vector, Type>::type, fvPatchField, areaMesh>
     > tDiv
     (
         fac::edgeIntegrate

@@ -27,7 +27,7 @@ License
 
 #include "areaFields.H"
 #include "edgeFields.H"
-#include "faMatrix.H"
+#include "faMatrices.H"
 #include "faLaplacianScheme.H"
 #include "edgeInterpolate.H"
 
@@ -47,7 +47,7 @@ template<class Type>
 tmp<faMatrix<Type>>
 laplacian
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     edgeScalarField Gamma
@@ -71,7 +71,7 @@ template<class Type>
 tmp<faMatrix<Type>>
 laplacian
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf,
+    const GeometricField<Type, fvPatchField, areaMesh>& vf,
     const word& name
 )
 {
@@ -97,7 +97,7 @@ tmp<faMatrix<Type>>
 laplacian
 (
     const dimensionedScalar& gamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     edgeScalarField Gamma
@@ -122,7 +122,7 @@ tmp<faMatrix<Type>>
 laplacian
 (
     const dimensionedScalar& gamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf,
+    const GeometricField<Type, fvPatchField, areaMesh>& vf,
     const word& name
 )
 {
@@ -148,7 +148,7 @@ tmp<faMatrix<Type>>
 laplacian
 (
     const areaScalarField& gamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     return fam::laplacian
@@ -165,7 +165,7 @@ tmp<faMatrix<Type>>
 laplacian
 (
     const areaScalarField& gamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf,
+    const GeometricField<Type, fvPatchField, areaMesh>& vf,
     const word& name
 )
 {
@@ -182,7 +182,7 @@ tmp<faMatrix<Type>>
 laplacian
 (
     const tmp<areaScalarField>& tgamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     tmp<faMatrix<Type>> Laplacian(fam::laplacian(tgamma(), vf));
@@ -196,7 +196,7 @@ tmp<faMatrix<Type>>
 laplacian
 (
     const tmp<areaScalarField>& tgamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf,
+    const GeometricField<Type, fvPatchField, areaMesh>& vf,
     const word& name
 )
 {
@@ -211,7 +211,7 @@ tmp<faMatrix<Type>>
 laplacian
 (
     const edgeScalarField& gamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf,
+    const GeometricField<Type, fvPatchField, areaMesh>& vf,
     const word& name
 )
 {
@@ -228,7 +228,7 @@ tmp<faMatrix<Type>>
 laplacian
 (
     const tmp<edgeScalarField>& tgamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf,
+    const GeometricField<Type, fvPatchField, areaMesh>& vf,
     const word& name
 )
 {
@@ -243,7 +243,7 @@ tmp<faMatrix<Type>>
 laplacian
 (
     const edgeScalarField& gamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     return fam::laplacian
@@ -259,7 +259,7 @@ tmp<faMatrix<Type>>
 laplacian
 (
     const tmp<edgeScalarField>& tgamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     tmp<faMatrix<Type>> tfam(fam::laplacian(tgamma(), vf));
@@ -273,10 +273,10 @@ tmp<faMatrix<Type>>
 laplacian
 (
     const areaTensorField& gamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
-    const faMesh& mesh = vf.mesh();
+    const fvMesh& mesh = vf.mesh();
 
     return fam::laplacian
     (
@@ -291,7 +291,7 @@ tmp<faMatrix<Type>>
 laplacian
 (
     const tmp<areaTensorField>& tgamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     tmp<faMatrix<Type>> Laplacian = fam::laplacian(tgamma(), vf);
@@ -305,10 +305,10 @@ tmp<faMatrix<Type>>
 laplacian
 (
     const edgeTensorField& gamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
-    const faMesh& mesh = vf.mesh();
+    const fvMesh& mesh = vf.mesh();
 
     return fam::laplacian
     (
@@ -322,7 +322,7 @@ tmp<faMatrix<Type>>
 laplacian
 (
     const tmp<edgeTensorField>& tgamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     tmp<faMatrix<Type>> Laplacian = fam::laplacian(tgamma(), vf);
@@ -336,11 +336,11 @@ tmp<faMatrix<Type>>
 laplacian
 (
     const edgeTensorField& gamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf,
+    const GeometricField<Type, fvPatchField, areaMesh>& vf,
     const word& name
 )
 {
-    const faMesh& mesh = vf.mesh();
+    const fvMesh& mesh = vf.mesh();
 
     return fam::laplacian
     (
@@ -355,7 +355,7 @@ tmp<faMatrix<Type>>
 laplacian
 (
     const tmp<edgeTensorField>& tgamma,
-    const GeometricField<Type, faPatchField, areaMesh>& vf,
+    const GeometricField<Type, fvPatchField, areaMesh>& vf,
     const word& name
 )
 {

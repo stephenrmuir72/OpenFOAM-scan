@@ -81,7 +81,7 @@ public:
         //- Construct from faceFlux
         upwindEdgeInterpolation
         (
-            const faMesh& mesh,
+            const fvMesh& mesh,
             const edgeScalarField& faceFlux
         )
         :
@@ -94,7 +94,7 @@ public:
         //  from the database
         upwindEdgeInterpolation
         (
-            const faMesh& mesh,
+            const fvMesh& mesh,
             Istream& is
         )
         :
@@ -111,7 +111,7 @@ public:
         //- Construct from faceFlux and Istream
         upwindEdgeInterpolation
         (
-            const faMesh& mesh,
+            const fvMesh& mesh,
             const edgeScalarField& faceFlux,
             Istream&
         )
@@ -124,9 +124,9 @@ public:
     // Member Functions
 
         //- Return the interpolation weighting factors
-        virtual tmp<edgeScalarField> weights
+        virtual tmp<surfaceScalarField> weights
         (
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         ) const
         {
             return pos(faceFlux_);

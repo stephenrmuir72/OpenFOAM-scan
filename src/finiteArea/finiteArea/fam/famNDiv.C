@@ -26,8 +26,8 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "famNDiv.H"
-#include "faMesh.H"
-#include "faMatrix.H"
+#include "fvMesh.H"
+#include "faMatrices.H"
 #include "faConvectionScheme.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -47,16 +47,29 @@ tmp<faMatrix<Type>>
 ndiv
 (
     const edgeScalarField& flux,
-    GeometricField<Type, faPatchField, areaMesh>& vf,
+    GeometricField<Type, fvPatchField, areaMesh>& vf,
     const word& name
 )
 {
+    // Implicit normal-divergence.
+    //
+    // The explicit counterpart fac::ndiv projects the divergence onto the
+    // surface normal, result = n*(n & div). That projection is the tensor
+    // P = (n (x) n) applied to a Type field. faMatrix<Type> (like
+    // fvMatrix<Type>) carries *scalar* coefficients that act identically on
+    // every component, so P cannot be represented implicitly without a
+    // block-coupled matrix (which faMatrix does not provide): applying n & (.)
+    // couples the components. We therefore return the unprojected implicit
+    // divergence (identical to upstream finiteArea), leaving the normal
+    // constraint to be enforced explicitly / via the field boundary
+    // conditions. Do not "project" the scalar coefficients here - that would
+    // be numerically incorrect.
     return fa::convectionScheme<Type>::New
     (
         vf.mesh(),
         flux,
         vf.mesh().divScheme(name)
-    ).ref().famDiv(flux, vf);//TODO calculate normal
+    ).ref().famDiv(flux, vf);
 }
 
 
@@ -65,7 +78,7 @@ tmp<faMatrix<Type>>
 ndiv
 (
     const tmp<edgeScalarField>& tflux,
-    GeometricField<Type, faPatchField, areaMesh>& vf,
+    GeometricField<Type, fvPatchField, areaMesh>& vf,
     const word& name
 )
 {
@@ -81,7 +94,7 @@ tmp<faMatrix<Type>>
 ndiv
 (
     const edgeScalarField& flux,
-    GeometricField<Type, faPatchField, areaMesh>& vf
+    GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     return fam::ndiv(flux, vf, "div("+flux.name()+','+vf.name()+')');
@@ -93,7 +106,7 @@ tmp<faMatrix<Type>>
 ndiv
 (
     const tmp<edgeScalarField>& tflux,
-    GeometricField<Type, faPatchField, areaMesh>& vf
+    GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     tmp<faMatrix<Type>> Div(fam::ndiv(tflux(), vf));

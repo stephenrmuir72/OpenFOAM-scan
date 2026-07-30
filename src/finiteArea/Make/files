@@ -1,109 +1,39 @@
-faMesh/faGlobalMeshData/faGlobalMeshData.C
+/* -------------------------------------------------------------------------
+ * libfiniteArea is a thin specialisation of libfiniteVolume:
+ *   - areaMesh   == volMesh,     faPatchField<T>  == fvPatchField<T>
+ *   - edgeMesh   == surfaceMesh, faePatchField<T> == fvsPatchField<T>
+ *   - faMatrix<T> == fvMatrix<T>
+ * so area/edge fields ARE vol/surface fields and every FV boundary condition
+ * works on them directly. Consequently there are NO FA patch-field, matrix,
+ * mesh-mapper, subset, distributor or ensight translation units here - those
+ * are all reused from libfiniteVolume. Only the genuinely FA-specific pieces
+ * are compiled: the reduced-order faMesh builder, one plate-specific BC, and
+ * the manifold differential operators / edge-interpolation schemes (which
+ * carry the tangential projection that flat FV does not).
+ * ------------------------------------------------------------------------- */
+
 faMesh/faMeshesRegistry.C
-faMesh/faMeshRegistry.C
 faMesh/faMesh.C
 faMesh/faMeshNew.C
-faMesh/faMeshDemandDrivenData.C
-faMesh/faMeshPatches.C
-faMesh/faMeshTopology.C
-faMesh/faMeshUpdate.C
-faMesh/faMeshBoundaryHalo.C
-faMesh/faBoundaryMesh/faBoundaryMesh.C
-faMesh/faBoundaryMesh/faBoundaryMeshEntries.C
+faMesh/faMeshProcAddressing/faMeshProcAddressing.C
+faMesh/faMeshTools/faMeshToolsChecks.C
 
-faceZone = faMesh/zones/faceZone/faFaceZone.cxx
+/* FA-specific derived BCs. Most BCs reuse FV directly; these are the ones
+   that either encode FA-specific numerics (fixedValueOutflow, ignore) or
+   preserve a legacy FA dictionary type-name. edgeNormalFixedValue is a thin
+   backward-compat alias over the FV surfaceNormalFixedValue (identical on the
+   reduced-order mesh, since fvPatch::nf() == the legacy faPatch::edgeNormals()). */
+fields/faPatchFields/derived/clampedPlate/clampedPlateFaPatchFields.C
+fields/faPatchFields/derived/edgeNormalFixedValue/edgeNormalFixedValueFaPatchVectorField.C
+fields/faPatchFields/derived/fixedValueOutflow/fixedValueOutflowFaPatchFields.C
+fields/faPatchFields/derived/ignore/ignoreFaPatchFields.C
 
-faMesh/faMeshSubset/faMeshSubset.cxx
-faMesh/faMeshTools/faMeshTools.cxx
-faMesh/faMeshTools/faMeshToolsChecks.cxx
-faMesh/faMeshTools/faMeshToolsProcAddr.cxx
-
-faPatches = faMesh/faPatches
-$(faPatches)/faPatch/faPatch.C
-$(faPatches)/faPatch/faPatchData.C
-$(faPatches)/faPatch/faPatchNew.C
-$(faPatches)/basic/coupled/coupledFaPatch.C
-$(faPatches)/constraint/empty/emptyFaPatch.C
-$(faPatches)/constraint/processor/processorFaPatch.C
-$(faPatches)/constraint/wedge/wedgeFaPatch.C
-$(faPatches)/constraint/cyclic/cyclicFaPatch.C
-$(faPatches)/constraint/symmetry/symmetryFaPatch.C
-$(faPatches)/other/ignore/ignoreFaPatch.C
-
-distributed/faMeshDistributor.cxx
-distributed/faMeshDistributorNew.cxx
-
-ensight = output/ensight
-$(ensight)/ensightFaMesh.C
-
-faMeshMapper = faMesh/faMeshMapper
-$(faMeshMapper)/faMeshMapper.C
-$(faMeshMapper)/faAreaMapper.C
-$(faMeshMapper)/faEdgeMapper.C
-$(faMeshMapper)/faPatchMapper.C
-
-faPatchFields = fields/faPatchFields
-$(faPatchFields)/faPatchField/faPatchFieldBase.cxx
-$(faPatchFields)/faPatchField/faPatchFields.cxx
-
-basicFaPatchFields = $(faPatchFields)/basic
-$(basicFaPatchFields)/calculated/calculatedFaPatchFields.cxx
-$(basicFaPatchFields)/extrapolatedCalculated/extrapolatedCalculatedFaPatchFields.cxx
-$(basicFaPatchFields)/coupled/coupledFaPatchFields.cxx
-$(basicFaPatchFields)/fixedValue/fixedValueFaPatchFields.cxx
-$(basicFaPatchFields)/fixedGradient/fixedGradientFaPatchFields.cxx
-$(basicFaPatchFields)/mixed/mixedFaPatchFields.cxx
-$(basicFaPatchFields)/sliced/slicedFaPatchFields.cxx
-$(basicFaPatchFields)/transform/transformFaPatchFields.cxx
-$(basicFaPatchFields)/zeroGradient/zeroGradientFaPatchFields.cxx
-$(basicFaPatchFields)/zeroValue/zeroValueFaPatchFields.cxx
-
-constraintFaPatchFields = $(faPatchFields)/constraint
-$(constraintFaPatchFields)/empty/emptyFaPatchFields.cxx
-$(constraintFaPatchFields)/processor/processorFaPatchFields.cxx
-$(constraintFaPatchFields)/wedge/wedgeFaPatchFields.cxx
-$(constraintFaPatchFields)/cyclic/cyclicFaPatchFields.cxx
-$(constraintFaPatchFields)/symmetry/symmetryFaPatchFields.cxx
-
-derivedFaPatchFields = $(faPatchFields)/derived
-$(derivedFaPatchFields)/fixedValueOutflow/fixedValueOutflowFaPatchFields.cxx
-$(derivedFaPatchFields)/inletOutlet/inletOutletFaPatchFields.cxx
-$(derivedFaPatchFields)/outletInlet/outletInletFaPatchFields.cxx
-$(derivedFaPatchFields)/slip/slipFaPatchFields.cxx
-$(derivedFaPatchFields)/edgeNormalFixedValue/edgeNormalFixedValueFaPatchVectorField.cxx
-$(derivedFaPatchFields)/timeVaryingUniformFixedValue/timeVaryingUniformFixedValueFaPatchFields.cxx
-$(derivedFaPatchFields)/uniformFixedGradient/uniformFixedGradientFaPatchFields.cxx
-$(derivedFaPatchFields)/uniformFixedValue/uniformFixedValueFaPatchFields.cxx
-$(derivedFaPatchFields)/uniformMixed/uniformMixedFaPatchFields.cxx
-$(derivedFaPatchFields)/ignore/ignoreFaPatchFields.cxx
-$(derivedFaPatchFields)/clampedPlate/clampedPlateFaPatchFields.cxx
-
-faePatchFields = fields/faePatchFields
-$(faePatchFields)/faePatchField/faePatchFieldBase.cxx
-$(faePatchFields)/faePatchField/faePatchFields.cxx
-
-basicFaePatchFields = $(faePatchFields)/basic
-$(basicFaePatchFields)/calculated/calculatedFaePatchFields.cxx
-$(basicFaePatchFields)/coupled/coupledFaePatchFields.cxx
-$(basicFaePatchFields)/fixedValue/fixedValueFaePatchFields.cxx
-$(basicFaePatchFields)/sliced/slicedFaePatchFields.cxx
-$(basicFaePatchFields)/zeroValue/zeroValueFaePatchFields.cxx
-
-constraintFaePatchFields = $(faePatchFields)/constraint
-$(constraintFaePatchFields)/empty/emptyFaePatchFields.cxx
-$(constraintFaePatchFields)/processor/processorFaePatchFields.cxx
-$(constraintFaePatchFields)/wedge/wedgeFaePatchFields.cxx
-$(constraintFaePatchFields)/cyclic/cyclicFaePatchFields.cxx
-$(constraintFaePatchFields)/symmetry/symmetryFaePatchFields.cxx
-
-fields/areaFields/areaFields.cxx
-fields/edgeFields/edgeFields.cxx
-
-faMatrices/faMatrices.C
-faMatrices/faScalarMatrix/faScalarMatrix.C
+/* areaScalarField&c are typedefs of the FV vol fields (see areaFieldsFwd.H);
+   only the field name/type-string lists are compiled here. edgeFields have no
+   TU - edgeScalarField&c are aliases of the FV surface fields. */
+fields/areaFields/areaFields.C
 
 edgeInterpolation = interpolation/edgeInterpolation
-$(edgeInterpolation)/edgeInterpolation.C
 $(edgeInterpolation)/edgeInterpolationScheme/edgeInterpolationSchemes.C
 
 schemes = $(edgeInterpolation)/schemes
@@ -113,20 +43,21 @@ $(schemes)/linearUpwind/linearUpwindEdgeInterpolationMake.C
 $(schemes)/Gamma/GammaEdgeInterpolationMake.C
 $(schemes)/blended/blendedEdgeInterpolationMake.C
 $(schemes)/skewCorrected/skewCorrectedEdgeInterpolationMake.C
+/*
+Deferred: leastSquaresEdgeInterpolation::interpolate() still relies on the
+removed faMesh point-topology API (mesh.patch().meshPoints()/pointFaces()),
+so it needs a proper port to the reduced-order fvMesh point addressing.
 $(schemes)/leastSquares/leastSquaresEdgeInterpolationMake.C
+*/
 
 finiteArea/fa/fa.C
 
-ddtSchemes = finiteArea/ddtSchemes
-$(ddtSchemes)/faDdtScheme/faDdtSchemes.C
-$(ddtSchemes)/steadyStateFaDdtScheme/steadyStateFaDdtSchemes.C
-$(ddtSchemes)/EulerFaDdtScheme/EulerFaDdtSchemes.C
-$(ddtSchemes)/backwardFaDdtScheme/backwardFaDdtSchemes.C
-$(ddtSchemes)/boundedBackwardFaDdtScheme/boundedBackwardFaDdtScheme.C
-
-d2dt2Schemes = finiteArea/d2dt2Schemes
-$(d2dt2Schemes)/faD2dt2Scheme/faD2dt2Schemes.C
-$(d2dt2Schemes)/EulerFaD2dt2Scheme/EulerFaD2dt2Schemes.C
+/* ddt/d2dt2 schemes are NOT reimplemented for finite-area. Being purely
+   temporal they are identical to the finite-volume schemes on the reduced-
+   order faMesh (areaMesh == volMesh, faMatrix == fvMatrix, S() == V()), so the
+   fam::ddt/fac::ddt/fam::d2dt2/fac::d2dt2 operators forward to fvm::/fvc::.
+   The fv::ddtScheme runtime table (Euler/backward/steadyState/CrankNicolson/
+   ...) is reused directly via the faMesh's fvSchemes ddtSchemes entry. */
 
 divSchemes = finiteArea/divSchemes
 finiteArea/fam/vectorFamDiv.C
@@ -145,8 +76,8 @@ $(limitedGradSchemes)/edgeLimitedFaGrad/edgeLimitedFaGrads.C
 
 lnGradSchemes = finiteArea/lnGradSchemes
 $(lnGradSchemes)/lnGradScheme/lnGradSchemes.C
-$(lnGradSchemes)/uncorrectedLnGrad/uncorrectedLnGrads.C
 $(lnGradSchemes)/correctedLnGrad/correctedLnGrads.C
+$(lnGradSchemes)/uncorrectedLnGrad/uncorrectedLnGrads.C
 $(lnGradSchemes)/limitedLnGrad/limitedLnGrads.C
 $(lnGradSchemes)/fourthLnGrad/fourthLnGrads.C
 
@@ -157,5 +88,6 @@ $(laplacianSchemes)/gaussFaLaplacianScheme/gaussFaLaplacianSchemes.C
 convectionSchemes = finiteArea/convectionSchemes
 $(convectionSchemes)/faConvectionScheme/faConvectionSchemes.C
 $(convectionSchemes)/gaussFaConvectionScheme/gaussFaConvectionSchemes.C
+
 
 LIB = $(FOAM_LIBBIN)/libfiniteArea

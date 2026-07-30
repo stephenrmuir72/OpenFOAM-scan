@@ -30,7 +30,7 @@ License
 #include "areaFields.H"
 #include "edgeFields.H"
 #include "facEdgeIntegrate.H"
-#include "faMesh.H"
+#include "fvMesh.H"
 #include "faGradScheme.H"
 #include "gaussFaGrad.H"
 
@@ -51,12 +51,12 @@ tmp
 <
     GeometricField
     <
-        typename outerProduct<vector, Type>::type, faPatchField, areaMesh
+        typename outerProduct<vector, Type>::type, fvPatchField, areaMesh
     >
 >
 grad
 (
-    const GeometricField<Type, faePatchField, edgeMesh>& ssf
+    const GeometricField<Type, fvsPatchField, edgeMesh>& ssf
 )
 {
     return fa::gaussGrad<Type>::gradf(ssf, "grad(" + ssf.name() + ')');
@@ -68,16 +68,16 @@ tmp
 <
     GeometricField
     <
-        typename outerProduct<vector,Type>::type, faPatchField, areaMesh
+        typename outerProduct<vector,Type>::type, fvPatchField, areaMesh
     >
 >
 grad
 (
-    const tmp<GeometricField<Type, faePatchField, edgeMesh>>& tssf
+    const tmp<GeometricField<Type, fvsPatchField, edgeMesh>>& tssf
 )
 {
     typedef typename outerProduct<vector, Type>::type GradType;
-    tmp<GeometricField<GradType, faPatchField, areaMesh>> Grad
+    tmp<GeometricField<GradType, fvPatchField, areaMesh>> Grad
     (
         fac::grad(tssf())
     );
@@ -91,17 +91,17 @@ tmp
 <
     GeometricField
     <
-        typename outerProduct<vector,Type>::type, faPatchField, areaMesh
+        typename outerProduct<vector,Type>::type, fvPatchField, areaMesh
     >
 >
 grad
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf,
+    const GeometricField<Type, fvPatchField, areaMesh>& vf,
     const word& name
 )
 {
     typedef typename outerProduct<vector,Type>::type GradType;
-    typedef GeometricField<GradType, faPatchField, areaMesh> GradFieldType;
+    typedef GeometricField<GradType, fvPatchField, areaMesh> GradFieldType;
 
     tmp<GradFieldType> tgGrad
     (
@@ -128,12 +128,12 @@ tmp
 <
     GeometricField
     <
-        typename outerProduct<vector,Type>::type, faPatchField, areaMesh
+        typename outerProduct<vector,Type>::type, fvPatchField, areaMesh
     >
 >
 grad
 (
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf,
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf,
     const word& name
 )
 {
@@ -141,7 +141,7 @@ grad
     <
         GeometricField
         <
-            typename outerProduct<vector, Type>::type, faPatchField, areaMesh
+            typename outerProduct<vector, Type>::type, fvPatchField, areaMesh
         >
     > tGrad
     (
@@ -157,12 +157,12 @@ tmp
 <
     GeometricField
     <
-        typename outerProduct<vector,Type>::type, faPatchField, areaMesh
+        typename outerProduct<vector,Type>::type, fvPatchField, areaMesh
     >
 >
 grad
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     return fac::grad(vf, "grad(" + vf.name() + ')');
@@ -174,16 +174,16 @@ tmp
 <
     GeometricField
     <
-        typename outerProduct<vector,Type>::type, faPatchField, areaMesh
+        typename outerProduct<vector,Type>::type, fvPatchField, areaMesh
     >
 >
 grad
 (
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf
 )
 {
     typedef typename outerProduct<vector, Type>::type GradType;
-    tmp<GeometricField<GradType, faPatchField, areaMesh>> Grad
+    tmp<GeometricField<GradType, fvPatchField, areaMesh>> Grad
     (
         fac::grad(tvf())
     );

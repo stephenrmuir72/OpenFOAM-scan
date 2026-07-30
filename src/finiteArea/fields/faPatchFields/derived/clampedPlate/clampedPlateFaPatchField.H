@@ -52,14 +52,15 @@ Usage
       - \link faPatchFields.H \endlink
 
 SourceFiles
-    clampedPlateFaPatchField.txx
+    clampedPlateFaPatchField.C
 
 \*---------------------------------------------------------------------------*/
 
-#ifndef Foam_clampedPlateFaPatchField_H
-#define Foam_clampedPlateFaPatchField_H
+#ifndef clampedPlateFaPatchField_H
+#define clampedPlateFaPatchField_H
 
-#include "faPatchField.H"
+#include "fvPatchField.H"
+#include "areaFieldsFwd.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -67,7 +68,7 @@ namespace Foam
 {
 
 /*---------------------------------------------------------------------------*\
-                      Class clampedPlateFaPatch Declaration
+                      Class clampedPlateFvPatchField Declaration
 \*---------------------------------------------------------------------------*/
 
 template<class Type>
@@ -75,9 +76,6 @@ class clampedPlateFaPatchField
 :
     public faPatchField<Type>
 {
-    typedef clampedPlateFaPatchField<Type> this_bctype;
-    typedef faPatchField<Type> parent_bctype;
-
 public:
 
     //- Runtime type information
@@ -102,24 +100,30 @@ public:
             const dictionary&
         );
 
-        //- Construct by mapping onto a new patch
+        //- Construct by mapping the given clampedPlate patch field
+        //- onto a new patch
         clampedPlateFaPatchField
         (
-            const this_bctype&,
+            const clampedPlateFaPatchField<Type>&,
             const faPatch&,
             const DimensionedField<Type, areaMesh>&,
             const faPatchFieldMapper&
         );
 
+        //- Copy construct
+        clampedPlateFaPatchField(const clampedPlateFaPatchField<Type>& ptf)
+        #ifdef Foam_fvPatchField_copyConstruct
+        : clampedPlateFaPatchField<Type>(ptf, ptf.internalField()) {}
+        #else
+        = delete;
+        #endif
+
         //- Construct as copy setting internal field reference
         clampedPlateFaPatchField
         (
-            const this_bctype&,
+            const clampedPlateFaPatchField<Type>&,
             const DimensionedField<Type, areaMesh>&
         );
-
-        //- No copy without an internal field
-        clampedPlateFaPatchField(const this_bctype&) = delete;
 
         //- Clone with an internal field reference
         virtual tmp<faPatchField<Type>> clone
@@ -143,12 +147,6 @@ public:
             virtual tmp<Field<Type>> snGrad() const
             {
                 return tmp<Field<Type>>::New(this->size(), Foam::zero{});
-            }
-
-            //- Retrieve patch-normal gradient [contiguous storage]
-            virtual void snGrad(UList<Type>& result) const
-            {
-                result = Foam::zero{};
             }
 
             //- Evaluate the patch field
@@ -184,12 +182,6 @@ public:
 
             //- Write includes "value" entry
             virtual void write(Ostream&) const;
-
-
-    // Member Operators
-
-        //- Inherit assignment
-        using parent_bctype::operator=;
 };
 
 
@@ -200,7 +192,7 @@ public:
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 #ifdef NoRepository
-    #include "clampedPlateFaPatchField.txx"
+#   include "clampedPlateFaPatchField.C"
 #endif
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //

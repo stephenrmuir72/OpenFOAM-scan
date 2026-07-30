@@ -41,7 +41,7 @@ SourceFiles
 #define leastSquaresFaVectors_H
 
 #include "MeshObject.H"
-#include "faMesh.H"
+#include "fvMesh.H"
 #include "edgeFieldsFwd.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -55,13 +55,13 @@ namespace Foam
 
 class leastSquaresFaVectors
 :
-    public MeshObject<faMesh, MoveableMeshObject, leastSquaresFaVectors>
+    public MeshObject<fvMesh, MoveableMeshObject, leastSquaresFaVectors>
 {
     // Private Typedefs
 
         typedef MeshObject
         <
-            faMesh,
+            fvMesh,
             MoveableMeshObject,
             leastSquaresFaVectors
         > MeshObject_type;
@@ -88,8 +88,8 @@ public:
 
     // Constructors
 
-        //- Construct given an faMesh
-        explicit leastSquaresFaVectors(const faMesh&);
+        //- Construct given an fvMesh
+        explicit leastSquaresFaVectors(const fvMesh&);
 
 
     //- Destructor

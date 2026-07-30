@@ -27,9 +27,10 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "edgeInterpolationScheme.H"
-#include "areaFields.H"
-#include "edgeFields.H"
-#include "coupledFaPatchField.H"
+#include "volFields.H"
+#include "surfaceFields.H"
+#include "surfaceInterpolation.H"
+//#include "coupledFvPatchField.H"
 
 // * * * * * * * * * * * * * * * * * Selectors * * * * * * * * * * * * * * * //
 
@@ -37,11 +38,11 @@ template<class Type>
 Foam::tmp<Foam::edgeInterpolationScheme<Type>>
 Foam::edgeInterpolationScheme<Type>::New
 (
-    const faMesh& mesh,
+    const fvMesh& mesh,
     Istream& schemeData
 )
 {
-    if (edgeInterpolation::debug)
+    if (surfaceInterpolation::debug)
     {
         InfoInFunction
             << "constructing edgeInterpolationScheme<Type>"
@@ -80,12 +81,12 @@ template<class Type>
 Foam::tmp<Foam::edgeInterpolationScheme<Type>>
 Foam::edgeInterpolationScheme<Type>::New
 (
-    const faMesh& mesh,
-    const edgeScalarField& faceFlux,
+    const fvMesh& mesh,
+    const surfaceScalarField& faceFlux,
     Istream& schemeData
 )
 {
-    if (edgeInterpolation::debug)
+    if (surfaceInterpolation::debug)
     {
         InfoInFunction
             << "constructing edgeInterpolationScheme<Type>"
@@ -131,15 +132,15 @@ Foam::edgeInterpolationScheme<Type>::~edgeInterpolationScheme()
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
 
 template<class Type>
-Foam::tmp<Foam::GeometricField<Type, Foam::faePatchField, Foam::edgeMesh>>
+Foam::tmp<Foam::GeometricField<Type, Foam::fvsPatchField, Foam::surfaceMesh>>
 Foam::edgeInterpolationScheme<Type>::interpolate
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf,
-    const tmp<edgeScalarField>& tlambdas,
-    const tmp<edgeScalarField>& tys
+    const GeometricField<Type, fvPatchField, volMesh>& vf,
+    const tmp<surfaceScalarField>& tlambdas,
+    const tmp<surfaceScalarField>& tys
 )
 {
-    if (edgeInterpolation::debug)
+    if (surfaceInterpolation::debug)
     {
         InfoInFunction
             << "interpolating "
@@ -150,20 +151,20 @@ Foam::edgeInterpolationScheme<Type>::interpolate
             << endl;
     }
 
-    const edgeScalarField& lambdas = tlambdas();
-    const edgeScalarField& ys = tys();
+    const surfaceScalarField& lambdas = tlambdas();
+    const surfaceScalarField& ys = tys();
 
     const Field<Type>& vfi = vf.internalField();
     const scalarField& lambda = lambdas.internalField();
     const scalarField& y = ys.internalField();
 
-    const faMesh& mesh = vf.mesh();
+    const fvMesh& mesh = vf.mesh();
     const labelUList& P = mesh.owner();
     const labelUList& N = mesh.neighbour();
 
-    tmp<GeometricField<Type, faePatchField, edgeMesh>> tsf
+    tmp<GeometricField<Type, fvsPatchField, surfaceMesh>> tsf
     (
-        new GeometricField<Type, faePatchField, edgeMesh>
+        new GeometricField<Type, fvsPatchField, surfaceMesh>
         (
             IOobject
             (
@@ -175,7 +176,7 @@ Foam::edgeInterpolationScheme<Type>::interpolate
             vf.dimensions()
         )
     );
-    GeometricField<Type, faePatchField, edgeMesh>& sf = tsf.ref();
+    GeometricField<Type, fvsPatchField, surfaceMesh>& sf = tsf.ref();
 
     Field<Type>& sfi = sf.primitiveFieldRef();
 
@@ -201,16 +202,16 @@ Foam::edgeInterpolationScheme<Type>::interpolate
 
     forAll(lambdas.boundaryField(), pi)
     {
-        const faePatchScalarField& pLambda = lambdas.boundaryField()[pi];
-        const faePatchScalarField& pY = ys.boundaryField()[pi];
+        const fvsPatchScalarField& pLambda = lambdas.boundaryField()[pi];
+        const fvsPatchScalarField& pY = ys.boundaryField()[pi];
 
         if (vf.boundaryField()[pi].coupled())
         {
             label size = vf.boundaryField()[pi].patch().size();
             label start = vf.boundaryField()[pi].patch().start();
 
-            Field<Type> pOwnVf(vf.boundaryField()[pi].patchInternalField());
-            Field<Type> pNgbVf(vf.boundaryField()[pi].patchNeighbourField());
+            Field<Type> pOwnVf = vf.boundaryField()[pi].patchInternalField();
+            Field<Type> pNgbVf = vf.boundaryField()[pi].patchNeighbourField();
 
             Field<Type>& pSf = sf.boundaryFieldRef()[pi];
 
@@ -250,14 +251,14 @@ Foam::edgeInterpolationScheme<Type>::interpolate
 
 
 template<class Type>
-Foam::tmp<Foam::GeometricField<Type, Foam::faePatchField, Foam::edgeMesh>>
+Foam::tmp<Foam::GeometricField<Type, Foam::fvsPatchField, Foam::surfaceMesh>>
 Foam::edgeInterpolationScheme<Type>::interpolate
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf,
-    const tmp<edgeScalarField>& tlambdas
+    const GeometricField<Type, fvPatchField, volMesh>& vf,
+    const tmp<surfaceScalarField>& tlambdas
 )
 {
-    if (edgeInterpolation::debug)
+    if (surfaceInterpolation::debug)
     {
         InfoInFunction
             << "interpolating "
@@ -268,18 +269,18 @@ Foam::edgeInterpolationScheme<Type>::interpolate
             << endl;
     }
 
-    const edgeScalarField& lambdas = tlambdas();
+    const surfaceScalarField& lambdas = tlambdas();
 
     const Field<Type>& vfi = vf.internalField();
     const scalarField& lambda = lambdas.internalField();
 
-    const faMesh& mesh = vf.mesh();
+    const fvMesh& mesh = vf.mesh();
     const labelUList& P = mesh.owner();
     const labelUList& N = mesh.neighbour();
 
-    tmp<GeometricField<Type, faePatchField, edgeMesh>> tsf
+    tmp<GeometricField<Type, fvsPatchField, surfaceMesh>> tsf
     (
-        new GeometricField<Type, faePatchField, edgeMesh>
+        new GeometricField<Type, fvsPatchField, surfaceMesh>
         (
             IOobject
             (
@@ -291,7 +292,7 @@ Foam::edgeInterpolationScheme<Type>::interpolate
             vf.dimensions()
         )
     );
-    GeometricField<Type, faePatchField, edgeMesh>& sf = tsf.ref();
+    GeometricField<Type, fvsPatchField, surfaceMesh>& sf = tsf.ref();
 
     Field<Type>& sfi = sf.primitiveFieldRef();
 
@@ -319,7 +320,7 @@ Foam::edgeInterpolationScheme<Type>::interpolate
 
     forAll(lambdas.boundaryField(), pi)
     {
-        const faePatchScalarField& pLambda = lambdas.boundaryField()[pi];
+        const fvsPatchScalarField& pLambda = lambdas.boundaryField()[pi];
 
         if (vf.boundaryField()[pi].coupled())
         {
@@ -366,14 +367,14 @@ Foam::edgeInterpolationScheme<Type>::interpolate
 
 
 template<class Type>
-Foam::tmp<Foam::GeometricField<Type, Foam::faePatchField, Foam::edgeMesh>>
+Foam::tmp<Foam::GeometricField<Type, Foam::fvsPatchField, Foam::surfaceMesh>>
 Foam::edgeInterpolationScheme<Type>::euclidianInterpolate
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf,
-    const tmp<edgeScalarField>& tlambdas
+    const GeometricField<Type, fvPatchField, volMesh>& vf,
+    const tmp<surfaceScalarField>& tlambdas
 )
 {
-    if (edgeInterpolation::debug)
+    if (surfaceInterpolation::debug)
     {
         InfoInFunction
             << "interpolating "
@@ -384,18 +385,18 @@ Foam::edgeInterpolationScheme<Type>::euclidianInterpolate
             << endl;
     }
 
-    const edgeScalarField& lambdas = tlambdas();
+    const surfaceScalarField& lambdas = tlambdas();
 
     const Field<Type>& vfi = vf.internalField();
     const scalarField& lambda = lambdas.internalField();
 
-    const faMesh& mesh = vf.mesh();
+    const fvMesh& mesh = vf.mesh();
     const labelUList& P = mesh.owner();
     const labelUList& N = mesh.neighbour();
 
-    tmp<GeometricField<Type, faePatchField, edgeMesh>> tsf
+    tmp<GeometricField<Type, fvsPatchField, surfaceMesh>> tsf
     (
-        new GeometricField<Type, faePatchField, edgeMesh>
+        new GeometricField<Type, fvsPatchField, surfaceMesh>
         (
             IOobject
             (
@@ -407,7 +408,7 @@ Foam::edgeInterpolationScheme<Type>::euclidianInterpolate
             vf.dimensions()
         )
     );
-    GeometricField<Type, faePatchField, edgeMesh>& sf = tsf.ref();
+    GeometricField<Type, fvsPatchField, surfaceMesh>& sf = tsf.ref();
 
     Field<Type>& sfi = sf.primitiveFieldRef();
 
@@ -421,7 +422,7 @@ Foam::edgeInterpolationScheme<Type>::euclidianInterpolate
 
     forAll(lambdas.boundaryField(), pi)
     {
-        const faePatchScalarField& pLambda = lambdas.boundaryField()[pi];
+        const fvsPatchScalarField& pLambda = lambdas.boundaryField()[pi];
 
         if (vf.boundaryField()[pi].coupled())
         {
@@ -442,13 +443,13 @@ Foam::edgeInterpolationScheme<Type>::euclidianInterpolate
 
 
 template<class Type>
-Foam::tmp<Foam::GeometricField<Type, Foam::faePatchField, Foam::edgeMesh>>
+Foam::tmp<Foam::GeometricField<Type, Foam::fvsPatchField, Foam::surfaceMesh>>
 Foam::edgeInterpolationScheme<Type>::interpolate
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, volMesh>& vf
 ) const
 {
-    if (edgeInterpolation::debug)
+    if (surfaceInterpolation::debug)
     {
         InfoInFunction
             << "interpolating "
@@ -458,7 +459,7 @@ Foam::edgeInterpolationScheme<Type>::interpolate
             << endl;
     }
 
-    tmp<GeometricField<Type, faePatchField, edgeMesh>> tsf =
+    tmp<GeometricField<Type, fvsPatchField, surfaceMesh>> tsf =
         interpolate(vf, weights(vf));
 
     if (corrected())
@@ -471,13 +472,13 @@ Foam::edgeInterpolationScheme<Type>::interpolate
 
 
 template<class Type>
-Foam::tmp<Foam::GeometricField<Type, Foam::faePatchField, Foam::edgeMesh>>
+Foam::tmp<Foam::GeometricField<Type, Foam::fvsPatchField, Foam::surfaceMesh>>
 Foam::edgeInterpolationScheme<Type>::euclidianInterpolate
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, volMesh>& vf
 ) const
 {
-    if (edgeInterpolation::debug)
+    if (surfaceInterpolation::debug)
     {
         InfoInFunction
             << "interpolating "
@@ -487,7 +488,7 @@ Foam::edgeInterpolationScheme<Type>::euclidianInterpolate
             << endl;
     }
 
-    tmp<GeometricField<Type, faePatchField, edgeMesh>> tsf =
+    tmp<GeometricField<Type, fvsPatchField, surfaceMesh>> tsf =
         euclidianInterpolate(vf, weights(vf));
 
     return tsf;
@@ -495,13 +496,13 @@ Foam::edgeInterpolationScheme<Type>::euclidianInterpolate
 
 
 template<class Type>
-Foam::tmp<Foam::GeometricField<Type, Foam::faePatchField, Foam::edgeMesh>>
+Foam::tmp<Foam::GeometricField<Type, Foam::fvsPatchField, Foam::surfaceMesh>>
 Foam::edgeInterpolationScheme<Type>::interpolate
 (
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf
+    const tmp<GeometricField<Type, fvPatchField, volMesh>>& tvf
 ) const
 {
-    tmp<GeometricField<Type, faePatchField, edgeMesh>> tinterpVf =
+    tmp<GeometricField<Type, fvsPatchField, surfaceMesh>> tinterpVf =
         interpolate(tvf());
     tvf.clear();
     return tinterpVf;

@@ -39,6 +39,7 @@ SourceFiles
 
 #include "edgeInterpolationScheme.H"
 #include "areaFields.H"
+#include "edgeFields.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -72,13 +73,13 @@ public:
     // Constructors
 
         //- Construct from mesh
-        linearEdgeInterpolation(const faMesh& mesh)
+        linearEdgeInterpolation(const fvMesh& mesh)
         :
             edgeInterpolationScheme<Type>(mesh)
         {}
 
         //- Construct from Istream
-        linearEdgeInterpolation(const faMesh& mesh, Istream&)
+        linearEdgeInterpolation(const fvMesh& mesh, Istream&)
         :
             edgeInterpolationScheme<Type>(mesh)
         {}
@@ -86,7 +87,7 @@ public:
         //- Construct from faceFlux and Istream
         linearEdgeInterpolation
         (
-            const faMesh& mesh,
+            const fvMesh& mesh,
             const edgeScalarField&,
             Istream&
         )
@@ -98,36 +99,36 @@ public:
     // Member Functions
 
         //- Return the interpolation weighting factors
-        tmp<edgeScalarField> weights
+        tmp<surfaceScalarField> weights
         (
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         ) const
         {
-            return this->mesh().edgeInterpolation::weights();
+            return this->mesh().surfaceInterpolation::weights();
         }
 };
 
 
 template<class Type>
-tmp<GeometricField<Type, faePatchField, edgeMesh>>
-linearEdgeInterpolate(const GeometricField<Type, faPatchField, areaMesh>& vf)
+tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
+linearEdgeInterpolate(const GeometricField<Type, fvPatchField, areaMesh>& vf)
 {
     return edgeInterpolationScheme<Type>::interpolate
     (
         vf,
-        vf.mesh().edgeInterpolation::weights()
+        vf.mesh().surfaceInterpolation::weights()
     );
 }
 
 
 template<class Type>
-tmp<GeometricField<Type, faePatchField, edgeMesh>>
+tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
 linearEdgeInterpolate
 (
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf
 )
 {
-    tmp<GeometricField<Type, faePatchField, edgeMesh>> tinterp =
+    tmp<GeometricField<Type, fvsPatchField, edgeMesh>> tinterp =
         linearEdgeInterpolate(tvf());
     tvf.clear();
     return tinterp;

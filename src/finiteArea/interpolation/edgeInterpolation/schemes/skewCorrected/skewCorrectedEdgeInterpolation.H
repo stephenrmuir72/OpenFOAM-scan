@@ -35,10 +35,11 @@ SourceFiles
 
 \*---------------------------------------------------------------------------*/
 
-#ifndef Foam_skewCorrectedEdgeInterpolation_H
-#define Foam_skewCorrectedEdgeInterpolation_H
+#ifndef skewCorrectedEdgeInterpolation_H
+#define skewCorrectedEdgeInterpolation_H
 
 #include "edgeInterpolationScheme.H"
+#include "skewCorrectionVectors.H"
 #include "gaussFaGrad.H"
 #include "areaFields.H"
 
@@ -81,7 +82,7 @@ public:
     // Constructors
 
         //- Construct from Istream
-        skewCorrectedEdgeInterpolation(const faMesh& mesh, Istream& is)
+        skewCorrectedEdgeInterpolation(const fvMesh& mesh, Istream& is)
         :
             edgeInterpolationScheme<Type>(mesh),
             tScheme_
@@ -93,7 +94,7 @@ public:
         //- Construct from mesh, faceFlux and blendingFactor
         skewCorrectedEdgeInterpolation
         (
-            const faMesh& mesh,
+            const fvMesh& mesh,
             const edgeScalarField& faceFlux,
             Istream& is
         )
@@ -109,9 +110,9 @@ public:
     // Member Functions
 
         //- Return the interpolation weighting factors
-        virtual tmp<edgeScalarField> weights
+        virtual tmp<surfaceScalarField> weights
         (
-            const GeometricField<Type, faPatchField, areaMesh>& vf
+            const GeometricField<Type, fvPatchField, areaMesh>& vf
         ) const
         {
             return tScheme_().weights(vf);
@@ -121,21 +122,23 @@ public:
         virtual bool corrected() const
         {
             return
-                tScheme_().corrected() || (this->mesh()).skew();
+                tScheme_().corrected()
+             || skewCorrectionVectors::New(this->mesh()).skew();
         }
 
-        tmp<GeometricField<Type, faePatchField, edgeMesh>>
+        tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
         skewCorrection
         (
-            const GeometricField<Type, faPatchField, areaMesh>& vf
+            const GeometricField<Type, fvPatchField, areaMesh>& vf
         ) const
         {
-            const faMesh& mesh = this->mesh();
+            const fvMesh& mesh = this->mesh();
 
-            const edgeVectorField& scv = mesh.skewCorrectionVectors();
+            const skewCorrectionVectors& scv = skewCorrectionVectors::New(mesh);
 
-            auto tsfCorr =
-                tmp<GeometricField<Type, faePatchField, edgeMesh>>::New
+            tmp<GeometricField<Type, fvsPatchField, edgeMesh>> tsfCorr
+            (
+                new GeometricField<Type, fvsPatchField, edgeMesh>
                 (
                     IOobject
                     (
@@ -145,16 +148,17 @@ public:
                     ),
                     mesh,
                     dimensioned<Type>(vf.dimensions(), Zero)
-                );
-            auto& corr = tsfCorr.ref();
-            corr.setOriented();
+                )
+            );
+
+            GeometricField<Type, fvsPatchField, edgeMesh>& corr = tsfCorr.ref();
 
             for (direction cmpt=0; cmpt<pTraits<Type>::nComponents; ++cmpt)
             {
                 corr.replace
                 (
                     cmpt,
-                    scv & linearEdgeInterpolation
+                    scv() & linearEdgeInterpolation
                     <
                         typename outerProduct
                         <
@@ -174,16 +178,16 @@ public:
 
 
         //- Return the explicit correction to the face-interpolate
-        virtual tmp<GeometricField<Type, faePatchField, edgeMesh>>
+        virtual tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
         correction
         (
-            const GeometricField<Type, faPatchField, areaMesh>& vf
+            const GeometricField<Type, fvPatchField, areaMesh>& vf
         ) const
         {
             if
             (
                 tScheme_().corrected()
-             && (this->mesh()).skew()
+             && skewCorrectionVectors::New(this->mesh()).skew()
             )
             {
                 return tScheme_().correction(vf) + skewCorrection(vf);
@@ -192,13 +196,17 @@ public:
             {
                 return tScheme_().correction(vf);
             }
-            else if ((this->mesh()).skew())
+            else if (skewCorrectionVectors::New(this->mesh()).skew())
             {
                 return skewCorrection(vf);
             }
             else
             {
-                return nullptr;
+                return
+                    tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
+                    (
+                        nullptr
+                    );
             }
         }
 };

@@ -26,6 +26,7 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "edgeInterpolate.H"
+#include "surfaceInterpolation.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -64,7 +65,7 @@ Foam::tmp<Foam::edgeInterpolationScheme<Type>> Foam::fac::scheme
 template<class Type>
 Foam::tmp<Foam::edgeInterpolationScheme<Type>> Foam::fac::scheme
 (
-    const faMesh& mesh,
+    const fvMesh& mesh,
     Istream& streamData
 )
 {
@@ -79,7 +80,7 @@ Foam::tmp<Foam::edgeInterpolationScheme<Type>> Foam::fac::scheme
 template<class Type>
 Foam::tmp<Foam::edgeInterpolationScheme<Type>> Foam::fac::scheme
 (
-    const faMesh& mesh,
+    const fvMesh& mesh,
     const word& name
 )
 {
@@ -92,19 +93,19 @@ Foam::tmp<Foam::edgeInterpolationScheme<Type>> Foam::fac::scheme
 
 
 template<class Type>
-Foam::tmp<Foam::GeometricField<Type, Foam::faePatchField, Foam::edgeMesh>>
+Foam::tmp<Foam::GeometricField<Type, Foam::fvsPatchField, Foam::edgeMesh>>
 Foam::fac::interpolate
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf,
+    const GeometricField<Type, fvPatchField, areaMesh>& vf,
     const edgeScalarField& faceFlux,
     Istream& schemeData
 )
 {
     #ifdef DEBUGInterpolations
-    if (edgeInterpolation::debug)
+    if (surfaceInterpolation::debug)
     {
         InfoInFunction
-            << "interpolating GeometricField<Type, faPatchField, areaMesh> "
+            << "interpolating GeometricField<Type, fvPatchField, areaMesh> "
             << endl;
     }
     #endif
@@ -114,19 +115,19 @@ Foam::fac::interpolate
 
 
 template<class Type>
-Foam::tmp<Foam::GeometricField<Type, Foam::faePatchField, Foam::edgeMesh>>
+Foam::tmp<Foam::GeometricField<Type, Foam::fvsPatchField, Foam::edgeMesh>>
 Foam::fac::interpolate
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf,
+    const GeometricField<Type, fvPatchField, areaMesh>& vf,
     const edgeScalarField& faceFlux,
     const word& name
 )
 {
     #ifdef DEBUGInterpolations
-    if (edgeInterpolation::debug)
+    if (surfaceInterpolation::debug)
     {
         InfoInFunction
-            << "interpolating GeometricField<Type, faPatchField, areaMesh> "
+            << "interpolating GeometricField<Type, fvPatchField, areaMesh> "
             << "using " << name
             << endl;
     }
@@ -137,15 +138,15 @@ Foam::fac::interpolate
 
 
 template<class Type>
-Foam::tmp<Foam::GeometricField<Type, Foam::faePatchField, Foam::edgeMesh>>
+Foam::tmp<Foam::GeometricField<Type, Foam::fvsPatchField, Foam::edgeMesh>>
 Foam::fac::interpolate
 (
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf,
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf,
     const edgeScalarField& faceFlux,
     const word& name
 )
 {
-    tmp<GeometricField<Type, faePatchField, edgeMesh>> tsf =
+    tmp<GeometricField<Type, fvsPatchField, edgeMesh>> tsf =
         interpolate(tvf(), faceFlux, name);
 
     tvf.clear();
@@ -155,15 +156,15 @@ Foam::fac::interpolate
 
 
 template<class Type>
-Foam::tmp<Foam::GeometricField<Type, Foam::faePatchField, Foam::edgeMesh>>
+Foam::tmp<Foam::GeometricField<Type, Foam::fvsPatchField, Foam::edgeMesh>>
 Foam::fac::interpolate
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf,
+    const GeometricField<Type, fvPatchField, areaMesh>& vf,
     const tmp<edgeScalarField>& tFaceFlux,
     const word& name
 )
 {
-    tmp<GeometricField<Type, faePatchField, edgeMesh>> tsf =
+    tmp<GeometricField<Type, fvsPatchField, edgeMesh>> tsf =
         interpolate(vf, tFaceFlux(), name);
 
     tFaceFlux.clear();
@@ -173,15 +174,15 @@ Foam::fac::interpolate
 
 
 template<class Type>
-Foam::tmp<Foam::GeometricField<Type, Foam::faePatchField, Foam::edgeMesh>>
+Foam::tmp<Foam::GeometricField<Type, Foam::fvsPatchField, Foam::edgeMesh>>
 Foam::fac::interpolate
 (
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf,
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf,
     const tmp<edgeScalarField>& tFaceFlux,
     const word& name
 )
 {
-    tmp<GeometricField<Type, faePatchField, edgeMesh>> tsf =
+    tmp<GeometricField<Type, fvsPatchField, edgeMesh>> tsf =
         interpolate(tvf(), tFaceFlux(), name);
 
     tvf.clear();
@@ -192,18 +193,18 @@ Foam::fac::interpolate
 
 
 template<class Type>
-Foam::tmp<Foam::GeometricField<Type, Foam::faePatchField, Foam::edgeMesh>>
+Foam::tmp<Foam::GeometricField<Type, Foam::fvsPatchField, Foam::edgeMesh>>
 Foam::fac::interpolate
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf,
+    const GeometricField<Type, fvPatchField, areaMesh>& vf,
     Istream& schemeData
 )
 {
     #ifdef DEBUGInterpolations
-    if (edgeInterpolation::debug)
+    if (surfaceInterpolation::debug)
     {
         InfoInFunction
-            << "interpolating GeometricField<Type, faPatchField, areaMesh> "
+            << "interpolating GeometricField<Type, fvPatchField, areaMesh> "
             << endl;
     }
     #endif
@@ -213,18 +214,18 @@ Foam::fac::interpolate
 
 
 template<class Type>
-Foam::tmp<Foam::GeometricField<Type, Foam::faePatchField, Foam::edgeMesh>>
+Foam::tmp<Foam::GeometricField<Type, Foam::fvsPatchField, Foam::edgeMesh>>
 Foam::fac::interpolate
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf,
+    const GeometricField<Type, fvPatchField, areaMesh>& vf,
     const word& name
 )
 {
     #ifdef DEBUGInterpolations
-    if (edgeInterpolation::debug)
+    if (surfaceInterpolation::debug)
     {
         InfoInFunction
-            << "interpolating GeometricField<Type, faPatchField, areaMesh> "
+            << "interpolating GeometricField<Type, fvPatchField, areaMesh> "
             << "using " << name
             << endl;
     }
@@ -234,14 +235,14 @@ Foam::fac::interpolate
 }
 
 template<class Type>
-Foam::tmp<Foam::GeometricField<Type, Foam::faePatchField, Foam::edgeMesh>>
+Foam::tmp<Foam::GeometricField<Type, Foam::fvsPatchField, Foam::edgeMesh>>
 Foam::fac::interpolate
 (
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf,
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf,
     const word& name
 )
 {
-    tmp<GeometricField<Type, faePatchField, edgeMesh>> tsf =
+    tmp<GeometricField<Type, fvsPatchField, edgeMesh>> tsf =
         interpolate(tvf(), name);
 
     tvf.clear();
@@ -251,17 +252,17 @@ Foam::fac::interpolate
 
 
 template<class Type>
-Foam::tmp<Foam::GeometricField<Type, Foam::faePatchField, Foam::edgeMesh>>
+Foam::tmp<Foam::GeometricField<Type, Foam::fvsPatchField, Foam::edgeMesh>>
 Foam::fac::interpolate
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
     #ifdef DEBUGInterpolations
-    if (edgeInterpolation::debug)
+    if (surfaceInterpolation::debug)
     {
         InfoInFunction
-            << "interpolating GeometricField<Type, faPatchField, areaMesh> "
+            << "interpolating GeometricField<Type, fvPatchField, areaMesh> "
             << "using run-time selected scheme"
             << endl;
     }
@@ -272,13 +273,13 @@ Foam::fac::interpolate
 
 
 template<class Type>
-Foam::tmp<Foam::GeometricField<Type, Foam::faePatchField, Foam::edgeMesh>>
+Foam::tmp<Foam::GeometricField<Type, Foam::fvsPatchField, Foam::edgeMesh>>
 Foam::fac::interpolate
 (
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf
 )
 {
-    tmp<GeometricField<Type, faePatchField, edgeMesh>> tsf =
+    tmp<GeometricField<Type, fvsPatchField, edgeMesh>> tsf =
         interpolate(tvf());
     tvf.clear();
 

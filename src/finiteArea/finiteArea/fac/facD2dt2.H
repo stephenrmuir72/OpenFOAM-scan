@@ -54,30 +54,16 @@ namespace Foam
 namespace fac
 {
     template<class Type>
-    tmp<GeometricField<Type, faPatchField, areaMesh>> d2dt2
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> d2dt2
     (
-        const dimensioned<Type>,
-        const faMesh&
+        const GeometricField<Type, fvPatchField, areaMesh>&
     );
 
     template<class Type>
-    tmp<GeometricField<Type, faPatchField, areaMesh>> d2dt2
-    (
-        const GeometricField<Type, faPatchField, areaMesh>&
-    );
-
-    template<class Type>
-    tmp<GeometricField<Type, faPatchField, areaMesh>> d2dt2
-    (
-        const dimensionedScalar&,
-        const GeometricField<Type, faPatchField, areaMesh>&
-    );
-
-    template<class Type>
-    tmp<GeometricField<Type, faPatchField, areaMesh>> d2dt2
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> d2dt2
     (
         const areaScalarField&,
-        const GeometricField<Type, faPatchField, areaMesh>&
+        const GeometricField<Type, fvPatchField, areaMesh>&
     );
 }
 

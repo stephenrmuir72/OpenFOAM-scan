@@ -94,7 +94,7 @@ public:
     // Constructors
 
         //- Construct from mesh and schemeData
-        faceLimitedGrad(const faMesh& mesh, Istream& schemeData)
+        faceLimitedGrad(const fvMesh& mesh, Istream& schemeData)
         :
             gradScheme<Type>(mesh),
             basicGradScheme_(fa::gradScheme<Type>::New(mesh, schemeData)),
@@ -125,10 +125,10 @@ public:
         virtual tmp
         <
             GeometricField
-            <typename outerProduct<vector, Type>::type, faPatchField, areaMesh>
+            <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>
         > calcGrad
         (
-            const GeometricField<Type, faPatchField, areaMesh>& vsf,
+            const GeometricField<Type, fvPatchField, areaMesh>& vsf,
             const word& name
         ) const;
 };

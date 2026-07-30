@@ -42,7 +42,7 @@ SourceFile
 #include "PtrList.H"
 #include "GeometricField.H"
 #include "geometricOneField.H"
-#include "faPatchField.H"
+#include "areaFieldsFwd.H"
 #include "fvMesh.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //

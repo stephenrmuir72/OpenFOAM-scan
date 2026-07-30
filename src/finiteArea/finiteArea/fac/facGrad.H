@@ -55,30 +55,30 @@ namespace fac
     tmp
     <
         GeometricField
-        <typename outerProduct<vector, Type>::type, faPatchField, areaMesh>
+        <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>
     > grad
     (
-        const GeometricField<Type, faePatchField, edgeMesh>&
+        const GeometricField<Type, fvsPatchField, edgeMesh>&
     );
 
     template<class Type>
     tmp
     <
         GeometricField
-        <typename outerProduct<vector, Type>::type, faPatchField, areaMesh>
+        <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>
     > grad
     (
-        const tmp<GeometricField<Type, faePatchField, edgeMesh>>&
+        const tmp<GeometricField<Type, fvsPatchField, edgeMesh>>&
     );
 
     template<class Type>
     tmp
     <
         GeometricField
-        <typename outerProduct<vector, Type>::type, faPatchField, areaMesh>
+        <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>
     > grad
     (
-        const GeometricField<Type, faPatchField, areaMesh>&,
+        const GeometricField<Type, fvPatchField, areaMesh>&,
         const word& name
     );
 
@@ -86,10 +86,10 @@ namespace fac
     tmp
     <
         GeometricField
-        <typename outerProduct<vector, Type>::type, faPatchField, areaMesh>
+        <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>
     > grad
     (
-        const tmp<GeometricField<Type, faPatchField, areaMesh>>&,
+        const tmp<GeometricField<Type, fvPatchField, areaMesh>>&,
         const word& name
     );
 
@@ -97,20 +97,20 @@ namespace fac
     tmp
     <
         GeometricField
-        <typename outerProduct<vector, Type>::type, faPatchField, areaMesh>
+        <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>
     > grad
     (
-        const GeometricField<Type, faPatchField, areaMesh>&
+        const GeometricField<Type, fvPatchField, areaMesh>&
     );
 
     template<class Type>
     tmp
     <
         GeometricField
-        <typename outerProduct<vector, Type>::type, faPatchField, areaMesh>
+        <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>
     > grad
     (
-        const tmp<GeometricField<Type, faPatchField, areaMesh>>&
+        const tmp<GeometricField<Type, fvPatchField, areaMesh>>&
     );
 }
 

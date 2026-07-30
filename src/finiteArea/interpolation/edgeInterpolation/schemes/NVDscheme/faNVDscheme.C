@@ -57,14 +57,14 @@ inline tmp<areaScalarField> limiter(const areaTensorField& phi)
 template<class Type, class NVDweight>
 Foam::tmp<Foam::edgeScalarField> Foam::faNVDscheme<Type,NVDweight>::weights
 (
-    const GeometricField<Type, faPatchField, areaMesh>& phi
+    const GeometricField<Type, fvPatchField, areaMesh>& phi
 ) const
 {
-    const faMesh& mesh = this->mesh();
+    const fvMesh& mesh = this->mesh();
 
     tmp<edgeScalarField> tWeightingFactors
     (
-        new edgeScalarField(mesh.edgeInterpolation::weights())
+        new edgeScalarField(mesh.surfaceInterpolation::weights())
     );
     edgeScalarField& weightingFactors = tWeightingFactors.ref();
 
@@ -75,23 +75,11 @@ Foam::tmp<Foam::edgeScalarField> Foam::faNVDscheme<Type,NVDweight>::weights
 
     const areaVectorField gradc(fac::grad(vf));
 
-//     edgeVectorField d
-//     (
-//         mesh.Le()
-//        /(mesh.magLe()*mesh.edgeInterpolation::deltaCoeffs())
-//     );
-
-//     if (!mesh.orthogonal())
-//     {
-//         d -=
-//             mesh.edgeInterpolation::correctionVectors()
-//            /mesh.edgeInterpolation::deltaCoeffs();
-//     }
-
     const labelUList& owner = mesh.owner();
     const labelUList& neighbour = mesh.neighbour();
     const vectorField& n = mesh.faceAreaNormals().internalField();
     const vectorField& c = mesh.areaCentres().internalField();
+    const vectorField& Cf = mesh.Cf().internalField();
 
     forAll(weights, edge)
     {
@@ -106,7 +94,12 @@ Foam::tmp<Foam::edgeScalarField> Foam::faNVDscheme<Type,NVDweight>::weights
             d.removeCollinear(n[neighbour[edge]]);
         }
         d.normalise();
-        d *= mesh.edgeInterpolation::lPN().internalField()[edge];
+
+        // Geodesic P->N distance (owner -> edge centre -> neighbour),
+        // formerly edgeInterpolation::lPN(), scales the direction vector.
+        d *=
+            mag(Cf[edge] - c[owner[edge]])
+          + mag(c[neighbour[edge]] - Cf[edge]);
 
         // No zero-length vectors (after normalise)
         if (d.magSqr() < ROOTSMALL)
@@ -176,10 +169,7 @@ Foam::tmp<Foam::edgeScalarField> Foam::faNVDscheme<Type,NVDweight>::weights
                .patchNeighbourField()
             );
 
-            scalarField pLPN
-            (
-                mesh.edgeInterpolation::lPN().boundaryField()[patchI]
-            );
+            const vectorField& Cfb = mesh.Cf().boundaryField()[patchI];
 
             forAll(pWeights, edgeI)
             {
@@ -194,7 +184,12 @@ Foam::tmp<Foam::edgeScalarField> Foam::faNVDscheme<Type,NVDweight>::weights
                     d.removeCollinear(nN[edgeI]);
                 }
                 d.normalise();
-                d *= pLPN[edgeI];
+
+                // Geodesic P->N distance (owner -> edge centre ->
+                // neighbour), formerly edgeInterpolation::lPN().
+                d *=
+                    mag(Cfb[edgeI] - CP[edgeI])
+                  + mag(CN[edgeI] - Cfb[edgeI]);
 
                 // No zero-length vectors (after normalise)
                 if (d.magSqr() < ROOTSMALL)

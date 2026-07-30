@@ -27,7 +27,7 @@ License
 
 #include "facAverage.H"
 #include "facEdgeIntegrate.H"
-#include "faMesh.H"
+#include "fvMesh.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -42,17 +42,17 @@ namespace fac
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 average
 (
-    const GeometricField<Type,  faePatchField, edgeMesh>& ssf
+    const GeometricField<Type,  fvsPatchField, edgeMesh>& ssf
 )
 {
-    const faMesh& mesh = ssf.mesh();
+    const fvMesh& mesh = ssf.mesh();
 
-    tmp<GeometricField<Type, faPatchField, areaMesh>> taverage
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> taverage
     (
-        new GeometricField<Type, faPatchField, areaMesh>
+        new GeometricField<Type, fvPatchField, areaMesh>
         (
             IOobject
             (
@@ -67,7 +67,7 @@ average
         )
     );
 
-    GeometricField<Type, faPatchField, areaMesh>& av = taverage.ref();
+    GeometricField<Type, fvPatchField, areaMesh>& av = taverage.ref();
 
     av.ref() =
     (
@@ -86,13 +86,13 @@ average
 
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 average
 (
-    const tmp<GeometricField<Type,  faePatchField, edgeMesh>>& tssf
+    const tmp<GeometricField<Type,  fvsPatchField, edgeMesh>>& tssf
 )
 {
-    tmp<GeometricField<Type, faPatchField, areaMesh>> taverage
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> taverage
     (
         fac::average(tssf())
     );
@@ -102,10 +102,10 @@ average
 
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 average
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vtf
+    const GeometricField<Type, fvPatchField, areaMesh>& vtf
 )
 {
     return fac::average(linearEdgeInterpolate(vtf));
@@ -113,13 +113,13 @@ average
 
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 average
 (
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvtf
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvtf
 )
 {
-    tmp<GeometricField<Type, faPatchField, areaMesh>> taverage
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> taverage
     (
         fac::average(tvtf())
     );

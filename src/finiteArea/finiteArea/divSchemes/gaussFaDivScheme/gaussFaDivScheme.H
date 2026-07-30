@@ -77,13 +77,13 @@ public:
     // Constructors
 
         //- Construct from mesh
-        gaussDivScheme(const faMesh& mesh)
+        gaussDivScheme(const fvMesh& mesh)
         :
             divScheme<Type>(mesh)
         {}
 
         //- Construct from Istream
-        gaussDivScheme(const faMesh& mesh, Istream& is)
+        gaussDivScheme(const fvMesh& mesh, Istream& is)
         :
             divScheme<Type>(mesh, is)
         {}
@@ -94,10 +94,10 @@ public:
         tmp
         <
             GeometricField
-            <typename innerProduct<vector, Type>::type, faPatchField, areaMesh>
+            <typename innerProduct<vector, Type>::type, fvPatchField, areaMesh>
         > facDiv
         (
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         );
 };
 

@@ -76,21 +76,21 @@ public:
     // Constructors
 
         //- Construct from mesh
-        fourthLnGrad(const faMesh& mesh)
+        fourthLnGrad(const fvMesh& mesh)
         :
             lnGradScheme<Type>(mesh)
         {}
 
 
         //- Construct from mesh and data stream
-        fourthLnGrad(const faMesh& mesh, Istream&)
+        fourthLnGrad(const fvMesh& mesh, Istream&)
         :
             lnGradScheme<Type>(mesh)
         {}
 
 
     //- Destructor
-    virtual ~fourthLnGrad() = default;
+    virtual ~fourthLnGrad();
 
 
     // Member Functions
@@ -98,10 +98,12 @@ public:
         //- Return the interpolation weighting factors for the given field
         virtual tmp<edgeScalarField> deltaCoeffs
         (
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         ) const
         {
-            return this->mesh().deltaCoeffs();
+            // Over-relaxed coefficients (fvMesh::deltaCoeffs() is the
+            // orthogonal 1/|d| variant, unlike legacy faMesh).
+            return this->mesh().nonOrthDeltaCoeffs();
         }
 
         //- Return true if this scheme uses an explicit correction
@@ -109,8 +111,8 @@ public:
 
         //- Return the explicit correction to the fourthLnGrad
         //  for the given field
-        virtual tmp<GeometricField<Type, faePatchField, edgeMesh>>
-        correction(const GeometricField<Type, faPatchField, areaMesh>&) const;
+        virtual tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
+        correction(const GeometricField<Type, fvPatchField, areaMesh>&) const;
 };
 
 

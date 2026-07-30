@@ -35,7 +35,7 @@ Foam::zeroField
 Foam::fam::Su
 (
     const Foam::zero,
-    const GeometricField<Type, faPatchField, areaMesh>& fld
+    const GeometricField<Type, fvPatchField, areaMesh>& fld
 )
 {
     return zeroField();
@@ -47,7 +47,7 @@ Foam::tmp<Foam::faMatrix<Type>>
 Foam::fam::Su
 (
     const dimensioned<Type>& su,
-    const GeometricField<Type, faPatchField, areaMesh>& fld
+    const GeometricField<Type, fvPatchField, areaMesh>& fld
 )
 {
     auto tmat = tmp<faMatrix<Type>>::New
@@ -72,7 +72,7 @@ Foam::tmp<Foam::faMatrix<Type>>
 Foam::fam::Su
 (
     const DimensionedField<Type, areaMesh>& su,
-    const GeometricField<Type, faPatchField, areaMesh>& fld
+    const GeometricField<Type, fvPatchField, areaMesh>& fld
 )
 {
     auto tmat = tmp<faMatrix<Type>>::New
@@ -94,7 +94,7 @@ Foam::tmp<Foam::faMatrix<Type>>
 Foam::fam::Su
 (
     const tmp<DimensionedField<Type, areaMesh>>& tsu,
-    const GeometricField<Type, faPatchField, areaMesh>& fld
+    const GeometricField<Type, fvPatchField, areaMesh>& fld
 )
 {
     tmp<faMatrix<Type>> tmat = fam::Su(tsu(), fld);
@@ -107,8 +107,8 @@ template<class Type>
 Foam::tmp<Foam::faMatrix<Type>>
 Foam::fam::Su
 (
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tsu,
-    const GeometricField<Type, faPatchField, areaMesh>& fld
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tsu,
+    const GeometricField<Type, fvPatchField, areaMesh>& fld
 )
 {
     tmp<faMatrix<Type>> tmat = fam::Su(tsu(), fld);
@@ -124,7 +124,7 @@ Foam::zeroField
 Foam::fam::Sp
 (
     const Foam::zero,
-    const GeometricField<Type, faPatchField, areaMesh>& fld
+    const GeometricField<Type, fvPatchField, areaMesh>& fld
 )
 {
     return zeroField();
@@ -136,7 +136,7 @@ Foam::tmp<Foam::faMatrix<Type>>
 Foam::fam::Sp
 (
     const dimensionedScalar& sp,
-    const GeometricField<Type, faPatchField, areaMesh>& fld
+    const GeometricField<Type, fvPatchField, areaMesh>& fld
 )
 {
     auto tmat = tmp<faMatrix<Type>>::New
@@ -161,7 +161,7 @@ Foam::tmp<Foam::faMatrix<Type>>
 Foam::fam::Sp
 (
     const DimensionedField<scalar, areaMesh>& sp,
-    const GeometricField<Type, faPatchField, areaMesh>& fld
+    const GeometricField<Type, fvPatchField, areaMesh>& fld
 )
 {
     auto tmat = tmp<faMatrix<Type>>::New
@@ -183,7 +183,7 @@ Foam::tmp<Foam::faMatrix<Type>>
 Foam::fam::Sp
 (
     const tmp<DimensionedField<scalar, areaMesh>>& tsp,
-    const GeometricField<Type, faPatchField, areaMesh>& fld
+    const GeometricField<Type, fvPatchField, areaMesh>& fld
 )
 {
     tmp<faMatrix<Type>> tmat = fam::Sp(tsp(), fld);
@@ -197,7 +197,7 @@ Foam::tmp<Foam::faMatrix<Type>>
 Foam::fam::Sp
 (
     const tmp<areaScalarField>& tsp,
-    const GeometricField<Type, faPatchField, areaMesh>& fld
+    const GeometricField<Type, fvPatchField, areaMesh>& fld
 )
 {
     tmp<faMatrix<Type>> tmat = fam::Sp(tsp(), fld);
@@ -213,7 +213,7 @@ Foam::zeroField
 Foam::fam::SuSp
 (
     const Foam::zero,
-    const GeometricField<Type, faPatchField, areaMesh>& fld
+    const GeometricField<Type, fvPatchField, areaMesh>& fld
 )
 {
     return zeroField();
@@ -225,7 +225,7 @@ Foam::tmp<Foam::faMatrix<Type>>
 Foam::fam::SuSp
 (
     const dimensionedScalar& susp,
-    const GeometricField<Type, faPatchField, areaMesh>& fld
+    const GeometricField<Type, fvPatchField, areaMesh>& fld
 )
 {
     auto tmat = tmp<faMatrix<Type>>::New
@@ -254,7 +254,7 @@ Foam::tmp<Foam::faMatrix<Type>>
 Foam::fam::SuSp
 (
     const DimensionedField<scalar, areaMesh>& susp,
-    const GeometricField<Type, faPatchField, areaMesh>& fld
+    const GeometricField<Type, fvPatchField, areaMesh>& fld
 )
 {
     auto tmat = tmp<faMatrix<Type>>::New
@@ -278,7 +278,7 @@ Foam::tmp<Foam::faMatrix<Type>>
 Foam::fam::SuSp
 (
     const tmp<DimensionedField<scalar, areaMesh>>& tsusp,
-    const GeometricField<Type, faPatchField, areaMesh>& fld
+    const GeometricField<Type, fvPatchField, areaMesh>& fld
 )
 {
     tmp<faMatrix<Type>> tmat = fam::SuSp(tsusp(), fld);
@@ -292,7 +292,7 @@ Foam::tmp<Foam::faMatrix<Type>>
 Foam::fam::SuSp
 (
     const tmp<areaScalarField>& tsusp,
-    const GeometricField<Type, faPatchField, areaMesh>& fld
+    const GeometricField<Type, fvPatchField, areaMesh>& fld
 )
 {
     tmp<faMatrix<Type>> tmat = fam::SuSp(tsusp(), fld);

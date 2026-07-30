@@ -5,7 +5,7 @@
     \\  /    A nd           | www.openfoam.com
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
-    Copyright (C) 2022-2026 OpenCFD Ltd.
+    Copyright (C) 2026 OpenCFD Ltd.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -27,13 +27,17 @@ Class
     Foam::faMeshTools
 
 Description
-    A collection of tools for operating on an faMesh.
+    A collection of tools for operating on a finiteArea faMesh (a
+    reduced-order 2D fvMesh: FA "faces" are fvMesh cells, FA "edges" are
+    fvMesh faces).
+
+    Currently exposes the mesh-check reporting used by the makeFaMesh
+    utility. The legacy finiteArea decompose/reconstruct helpers are not
+    ported: decomposition of finiteArea meshes is handled by
+    decomposePar / redistributePar directly.
 
 SourceFiles
-    faMeshTools.cxx
-    faMeshTools.txx
-    faMeshToolsChecks.cxx
-    faMeshToolsProcAddr.cxx
+    faMeshToolsChecks.C
 
 \*---------------------------------------------------------------------------*/
 
@@ -41,7 +45,6 @@ SourceFiles
 #define Foam_faMeshTools_H
 
 #include "faMesh.H"
-#include "areaFieldsFwd.H"
 #include "edgeFieldsFwd.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -49,281 +52,41 @@ SourceFiles
 namespace Foam
 {
 
-// Forward Declarations
-class fileOperation;
-class mapDistributePolyMesh;
-class polyMesh;
-class IOobject;
-
 /*---------------------------------------------------------------------------*\
                          Class faMeshTools Declaration
 \*---------------------------------------------------------------------------*/
 
 class faMeshTools
 {
-    // Private Member Functions
-
-    // Read mesh if available. Otherwise create empty mesh with same non-proc
-    // patches as proc0 mesh.
-    //  Has two modes of operation.
-    //  If the readHandler is non-nullptr, use it to decide on availability.
-    //  Requires:
-    //  - all processors to have all patches (and in same order).
-    //  - io.instance() set to facesInstance
-    static autoPtr<faMesh> loadOrCreateMesh_impl
-    (
-        const word& areaName,
-        const IOobject& io,  // Describes the base polyMesh
-        const refPtr<fileOperation>* readHandlerPtr,  // Can be nullptr
-        const polyMesh& pMesh,
-        const bool decompose,  // Only used if readHandlerPtr == nullptr
-        const bool verbose = false
-    );
-
-
-    //- Flatten an area or edge boundary field into linear addressing
-    template<class Type, template<class> class PatchField, class GeoMesh>
-    static void flatBoundaryField_impl
-    (
-        UList<Type>& result,
-        const GeometricField<Type, PatchField, GeoMesh>& fld,
-        //! Use primitive patch edge ordering instead of faMesh ordering
-        const bool primitiveOrdering = false
-    );
-
-
 public:
 
-    //- Unregister the faMesh from its associated polyMesh
-    //- to prevent triggering on polyMesh changes etc.
-    static void unregisterMesh(const faMesh& mesh);
-
-    //- Force creation of everything that might vaguely be used by patches.
-    //  This is fairly horrible.
-    static void forceDemandDriven(faMesh& mesh);
-
-
-    //- Read mesh or create dummy mesh (0 faces, >0 patches).
-    //  Works in two modes according to masterOnlyReading:
-    //  true : create a dummy mesh for all procs
-    //  false: checks locally for mesh directories and only creates dummy mesh
-    //         if not present
-    static autoPtr<faMesh> newMesh
-    (
-        //! The area region
-        const word& areaName,
-        //! The IOobject describes the base polyMesh
-        const IOobject& io,
-        const polyMesh& pMesh,
-        const bool masterOnlyReading,
-        const bool verbose = false
-    );
-
-    //- Read mesh or create dummy mesh (0 faces, >0 patches).
-    //  Works in two modes according to masterOnlyReading:
-    //  true : create a dummy mesh for all procs
-    //  false: checks locally for mesh directories and only creates dummy mesh
-    //         if not present
-    static inline autoPtr<faMesh> newMesh
-    (
-        //! The IOobject describes the base polyMesh
-        const IOobject& io,
-        const polyMesh& pMesh,
-        const bool masterOnlyReading,
-        const bool verbose = false
-    )
-    {
-        return faMeshTools::newMesh
-        (
-            word::null,  // == defaultRegion
-            io,
-            pMesh,
-            masterOnlyReading,
-            verbose
-        );
-    }
-
-    // Read mesh if available. Otherwise create empty mesh with same non-proc
-    // patches as proc0 mesh. Requires:
-    //  - all processors to have all patches (and in same order).
-    //  - io.instance() set to facesInstance
-    static autoPtr<faMesh> loadOrCreateMesh
-    (
-        //! The area region
-        const word& areaName,
-        //! The IOobject describes the base polyMesh
-        const IOobject& io,
-        const polyMesh& pMesh,
-        const bool decompose,
-        const bool verbose = false
-    );
-
-    // Read mesh if available. Otherwise create empty mesh with same non-proc
-    // patches as proc0 mesh. Requires:
-    //  - all processors to have all patches (and in same order).
-    //  - io.instance() set to facesInstance
-    static inline autoPtr<faMesh> loadOrCreateMesh
-    (
-        //! The IOobject describes the base polyMesh
-        const IOobject& io,
-        const polyMesh& pMesh,
-        const bool decompose,
-        const bool verbose = false
-    )
-    {
-        return faMeshTools::loadOrCreateMesh
-        (
-            word::null,  // == defaultRegion
-            io,
-            pMesh,
-            decompose,
-            verbose
-        );
-    }
-
-    // Read mesh if available. Otherwise create empty mesh with same non-proc
-    // patches as proc0 mesh. Requires:
-    //  - all processors to have all patches (and in same order).
-    //  - io.instance() set to facesInstance
-    static autoPtr<faMesh> loadOrCreateMesh
-    (
-        //! The area region
-        const word& areaName,
-        //! The IOobject describes the base polyMesh
-        const IOobject& io,
-        const polyMesh& pMesh,
-        //! Non-null reference if a mesh exists on given processor
-        const refPtr<fileOperation>& readHandler,
-        const bool verbose = false
-    );
-
-    // Read mesh if available. Otherwise create empty mesh with same non-proc
-    // patches as proc0 mesh. Requires:
-    //  - all processors to have all patches (and in same order).
-    //  - io.instance() set to facesInstance
-    static inline autoPtr<faMesh> loadOrCreateMesh
-    (
-        //! The IOobject describes the base polyMesh
-        const IOobject& io,
-        const polyMesh& pMesh,
-        //! Non-null reference if a mesh exists on given processor
-        const refPtr<fileOperation>& readHandler,
-        const bool verbose = false
-    )
-    {
-        return faMeshTools::loadOrCreateMesh
-        (
-            word::null,  // == defaultRegion
-            io,
-            pMesh,
-            readHandler,
-            verbose
-        );
-    }
-
-
-    //- Read decompose/reconstruct addressing
-    static mapDistributePolyMesh readProcAddressing
-    (
-        const faMesh& mesh,
-        const faMesh* baseMeshPtr
-    );
-
-    //- Write decompose/reconstruct addressing
-    //
-    //  \note Since the faMesh holds a reference to a polyMesh,
-    //  in reconstruct mode it will refer to the base mesh, but
-    //  we need a means to proc addressing into the processor locations.
-    //  This is the purpose of the additional procMesh reference
-    static void writeProcAddressing
-    (
-        const faMesh& mesh,
-        const mapDistributePolyMesh& faDistMap,
-        //! running in decompose vs reconstruct mode
-        const bool decompose,
-        //! The output file handler
-        const refPtr<fileOperation>& writeHandler,
-        //! optional processor mesh in reconstruct mode
-        const faMesh* procMesh = nullptr
-    );
-
-
-    //- Extract and return the (primitive patch) edge labels of the faMesh
-    static labelList edgeLabels(const faMesh& mesh);
-
-    //- Flatten an area boundary field into linear addressing
-    template<class Type>
-    static void flatBoundaryField
-    (
-        UList<Type>& result,
-        const GeometricField<Type, faPatchField, areaMesh>& fld,
-        //! Use primitive patch edge ordering instead of faMesh ordering
-        const bool primitiveOrdering = false
-    );
-
-    //- Flatten an area boundary field into linear addressing
-    template<class Type>
-    static tmp<Field<Type>> flatBoundaryField
-    (
-        const GeometricField<Type, faPatchField, areaMesh>& fld,
-        //! Use primitive patch edge ordering instead of faMesh ordering
-        const bool primitiveOrdering = false
-    );
-
-    //- Flatten an edge boundary field into linear addressing
-    template<class Type>
-    static void flatBoundaryField
-    (
-        UList<Type>& result,
-        const GeometricField<Type, faePatchField, edgeMesh>& fld,
-        //! Use primitive patch edge ordering instead of faMesh ordering
-        const bool primitiveOrdering = false
-    );
-
-    //- Flatten an edge boundary field into linear addressing
-    template<class Type>
-    static tmp<Field<Type>> flatBoundaryField
-    (
-        const GeometricField<Type, faePatchField, edgeMesh>& fld,
-        //! Use primitive patch edge ordering instead of faMesh ordering
-        const bool primitiveOrdering = false
-    );
-
-    //- Flatten an edge field (internal and boundary) into linear addressing
-    template<class Type>
-    static void flattenEdgeField
-    (
-        UList<Type>& result,
-        const GeometricField<Type, faePatchField, edgeMesh>& fld,
-        //! Use primitive patch edge ordering instead of faMesh ordering
-        const bool primitiveOrdering = false
-    );
-
-    //- Flatten an edge field (internal and boundary) into linear addressing
-    template<class Type>
-    static tmp<Field<Type>> flattenEdgeField
-    (
-        const GeometricField<Type, faePatchField, edgeMesh>& fld,
-        //! Use primitive patch edge ordering instead of faMesh ordering
-        const bool primitiveOrdering = false
-    );
-
-    //- Report mesh information
+    //- Report mesh information (counts, patches, geometry ranges).
+    //  Human-facing labels match the legacy finiteArea output; the
+    //  underlying quantities are read from the reduced-order fvMesh.
     static void printMeshChecks
     (
         const faMesh& mesh,
         const int verbose = 1
     );
 
+    //- Flatten an edge field (internal and boundary) into a single linear
+    //  field addressed by reduced-order face (edge) index.
+    //  In finiteArea an edge field IS a surfaceField, so this concatenates
+    //  the internal-face values with the boundary-face values in mesh-face
+    //  ordering (length == mesh.nFaces()).
+    template<class Type>
+    static void flattenEdgeField
+    (
+        UList<Type>& result,
+        const GeometricField<Type, faePatchField, edgeMesh>& fld
+    );
 
-    // Housekeeping
-
-        //- Read decompose/reconstruct addressing
-        static mapDistributePolyMesh readProcAddressing
-        (
-            const faMesh& procMesh,
-            const autoPtr<faMesh>& baseMeshPtr
-        );
+    //- Flatten an edge field (internal and boundary) into linear addressing
+    template<class Type>
+    static tmp<Field<Type>> flattenEdgeField
+    (
+        const GeometricField<Type, faePatchField, edgeMesh>& fld
+    );
 };
 
 

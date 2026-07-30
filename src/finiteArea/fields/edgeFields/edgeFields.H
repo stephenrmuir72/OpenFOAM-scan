@@ -34,19 +34,20 @@ Author
     Hrvoje Jasak, Wikki Ltd.
 
 SourceFiles
-    edgeFields.cxx
+    edgeFields.C
 
 \*---------------------------------------------------------------------------*/
 
-#ifndef Foam_edgeFields_H
-#define Foam_edgeFields_H
+#ifndef edgeFields_H
+#define edgeFields_H
 
 #include "objectRegistry.H"
 #include "GeometricFields.H"
 #include "edgeFaMesh.H"
-#include "fieldTypes.H"
-#include "faMesh.H"
-#include "faePatchFields.H"
+//#include "fieldTypes.H"
+#include "fvMesh.H"
+//#include "faePatchFields.H"
+#include "fvsPatchFields.H"
 #include "edgeFieldsFwd.H"
 
 #endif

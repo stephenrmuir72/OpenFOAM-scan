@@ -40,17 +40,14 @@ SourceFiles
 #include "areaFieldsFwd.H"
 #include "edgeFieldsFwd.H"
 #include "runTimeSelectionTables.H"
+#include "edgeFaMesh.H"
+#include "fvMesh.H"
+#include "faMatrices.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 namespace Foam
 {
-
-// Forward Declarations
-template<class Type>
-class faMatrix;
-
-class faMesh;
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -69,7 +66,7 @@ class convectionScheme
     // Private Data
 
         //- Reference to mesh
-        const faMesh& mesh_;
+        const fvMesh& mesh_;
 
 
 public:
@@ -82,7 +79,7 @@ public:
             convectionScheme,
             Istream,
             (
-                const faMesh& mesh,
+                const fvMesh& mesh,
                 const edgeScalarField& faceFlux,
                 Istream& schemeData
             ),
@@ -104,7 +101,7 @@ public:
         //- Construct from mesh, flux and Istream
         convectionScheme
         (
-            const faMesh& mesh,
+            const fvMesh& mesh,
             const edgeScalarField& faceFlux
         )
         :
@@ -117,7 +114,7 @@ public:
         //- Return a pointer to a new convectionScheme created on freestore
         static tmp<convectionScheme<Type>> New
         (
-            const faMesh& mesh,
+            const fvMesh& mesh,
             const edgeScalarField& faceFlux,
             Istream& schemeData
         );
@@ -130,24 +127,24 @@ public:
     // Member Functions
 
         //- Return mesh reference
-        const faMesh& mesh() const noexcept { return mesh_; }
+        const fvMesh& mesh() const noexcept { return mesh_; }
 
-        virtual tmp<GeometricField<Type, faePatchField, edgeMesh>> flux
+        virtual tmp<GeometricField<Type, fvsPatchField, edgeMesh>> flux
         (
             const edgeScalarField&,
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         ) const = 0;
 
         virtual tmp<faMatrix<Type>> famDiv
         (
             const edgeScalarField&,
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         ) const = 0;
 
-        virtual tmp<GeometricField<Type, faPatchField, areaMesh>> facDiv
+        virtual tmp<GeometricField<Type, fvPatchField, areaMesh>> facDiv
         (
             const edgeScalarField&,
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         ) const = 0;
 };
 

@@ -29,6 +29,7 @@ License
 #define Foam_clampedPlateFaPatchFields_H
 
 #include "clampedPlateFaPatchField.H"
+#include "faPatchFieldMacros.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 

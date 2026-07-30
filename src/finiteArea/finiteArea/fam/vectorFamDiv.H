@@ -56,7 +56,7 @@ tmp<faMatrix<scalar>>
 div
 (
     const edgeScalarField& flux,
-    const GeometricField<scalar, faPatchField, areaMesh>& vf,
+    const GeometricField<scalar, fvPatchField, areaMesh>& vf,
     const word& name
 );
 

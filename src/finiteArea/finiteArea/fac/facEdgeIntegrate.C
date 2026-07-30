@@ -26,8 +26,8 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "facEdgeIntegrate.H"
-#include "faMesh.H"
-#include "zeroGradientFaPatchFields.H"
+#include "fvMesh.H"
+#include "zeroGradientFvPatchFields.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -42,17 +42,17 @@ namespace fac
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 edgeIntegrate
 (
-    const GeometricField<Type, faePatchField, edgeMesh>& ssf
+    const GeometricField<Type, fvsPatchField, edgeMesh>& ssf
 )
 {
-    const faMesh& mesh = ssf.mesh();
+    const fvMesh& mesh = ssf.mesh();
 
-    tmp<GeometricField<Type, faPatchField, areaMesh>> tvf
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> tvf
     (
-        new GeometricField<Type, faPatchField, areaMesh>
+        new GeometricField<Type, fvPatchField, areaMesh>
         (
             IOobject
             (
@@ -62,10 +62,10 @@ edgeIntegrate
             ),
             mesh,
             dimensioned<Type>(ssf.dimensions()/dimArea, Zero),
-            faPatchFieldBase::zeroGradientType()
+            fvPatchFieldBase::zeroGradientType()
         )
     );
-    GeometricField<Type, faPatchField, areaMesh>& vf = tvf.ref();
+    GeometricField<Type, fvPatchField, areaMesh>& vf = tvf.ref();
 
 
     const labelUList& owner = mesh.owner();
@@ -80,9 +80,9 @@ edgeIntegrate
     forAll(mesh.boundary(), patchI)
     {
         const labelUList& pEdgeFaces =
-            mesh.boundary()[patchI].edgeFaces();
+            mesh.boundary()[patchI].faceCells();
 
-        const faePatchField<Type>& pssf = ssf.boundaryField()[patchI];
+        const fvsPatchField<Type>& pssf = ssf.boundaryField()[patchI];
 
         forAll(mesh.boundary()[patchI], faceI)
         {
@@ -98,13 +98,13 @@ edgeIntegrate
 
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 edgeIntegrate
 (
-    const tmp<GeometricField<Type, faePatchField, edgeMesh>>& tssf
+    const tmp<GeometricField<Type, fvsPatchField, edgeMesh>>& tssf
 )
 {
-    tmp<GeometricField<Type, faPatchField, areaMesh>> tvf
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> tvf
     (
         fac::edgeIntegrate(tssf())
     );
@@ -114,17 +114,17 @@ edgeIntegrate
 
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>>
+tmp<GeometricField<Type, fvPatchField, areaMesh>>
 edgeSum
 (
-    const GeometricField<Type, faePatchField, edgeMesh>& ssf
+    const GeometricField<Type, fvsPatchField, edgeMesh>& ssf
 )
 {
-    const faMesh& mesh = ssf.mesh();
+    const fvMesh& mesh = ssf.mesh();
 
-    tmp<GeometricField<Type, faPatchField, areaMesh>> tvf
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> tvf
     (
-        new GeometricField<Type, faPatchField, areaMesh>
+        new GeometricField<Type, fvPatchField, areaMesh>
         (
             IOobject
             (
@@ -134,10 +134,10 @@ edgeSum
             ),
             mesh,
             dimensioned<Type>(ssf.dimensions(), Zero),
-            faPatchFieldBase::zeroGradientType()
+            fvPatchFieldBase::zeroGradientType()
         )
     );
-    GeometricField<Type, faPatchField, areaMesh>& vf = tvf.ref();
+    GeometricField<Type, fvPatchField, areaMesh>& vf = tvf.ref();
 
     const labelUList& owner = mesh.owner();
     const labelUList& neighbour = mesh.neighbour();
@@ -151,9 +151,9 @@ edgeSum
     forAll(mesh.boundary(), patchI)
     {
         const labelUList& pEdgeFaces =
-            mesh.boundary()[patchI].edgeFaces();
+            mesh.boundary()[patchI].faceCells();
 
-        const faePatchField<Type>& pssf = ssf.boundaryField()[patchI];
+        const fvsPatchField<Type>& pssf = ssf.boundaryField()[patchI];
 
         forAll(mesh.boundary()[patchI], faceI)
         {
@@ -168,12 +168,12 @@ edgeSum
 
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>> edgeSum
+tmp<GeometricField<Type, fvPatchField, areaMesh>> edgeSum
 (
-    const tmp<GeometricField<Type, faePatchField, edgeMesh>>& tssf
+    const tmp<GeometricField<Type, fvsPatchField, edgeMesh>>& tssf
 )
 {
-    tmp<GeometricField<Type, faPatchField, areaMesh>> tvf =
+    tmp<GeometricField<Type, fvPatchField, areaMesh>> tvf =
         edgeSum(tssf());
     tssf.clear();
     return tvf;

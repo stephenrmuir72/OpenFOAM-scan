@@ -26,7 +26,7 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "gaussFaConvectionScheme.H"
-#include "faMesh.H"
+#include "fvMesh.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 

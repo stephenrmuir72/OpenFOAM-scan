@@ -37,15 +37,30 @@ void Foam::volSurfaceMapping::mapToSurface
     Field<Type>& result
 ) const
 {
-    // The polyPatch/local-face for each of the faceLabels
-    const List<labelPair>& patchFaces = mesh_.whichPatchFaces();
+    //// The polyPatch/local-face for each of the faceLabels
+    //const List<labelPair>& patchFaces = mesh_.whichPatchFaces();
+    //
+    //// FULLDEBUG: checkSize ?
+    //// or simply result.resize(mesh_.nFaces());
+    //
+    //forAll(patchFaces, i)
+    //{
+    //    const labelPair& patchAndFace = patchFaces[i];
+    //
+    //    if (patchAndFace.first() >= 0)
+    //    {
+    //        result[i] = bfld[patchAndFace];
+    //    }
+    //}
 
-    // FULLDEBUG: checkSize ?
-    // or simply result.resize(mesh_.nFaces());
+    const faMesh& aMesh = mesh_;
+    const refPtr<fvMesh> vMeshRef(aMesh.parentMesh());
+    const fvMesh& vMesh = vMeshRef();
+    const auto& pbm = vMesh.boundaryMesh();
 
-    forAll(patchFaces, i)
+    forAll(meshFaces_, i)
     {
-        const labelPair& patchAndFace = patchFaces[i];
+        const labelPair patchAndFace(pbm.whichPatchFace(meshFaces_[i]));
 
         if (patchAndFace.first() >= 0)
         {
@@ -121,15 +136,36 @@ void Foam::volSurfaceMapping::mapToSurface
 {
     const auto& bfld = fld.boundaryField();
 
-    // The polyPatch/local-face for each of the faceLabels
-    const List<labelPair>& patchFaces = mesh_.whichPatchFaces();
+    //// The polyPatch/local-face for each of the faceLabels
+    //const List<labelPair>& patchFaces = mesh_.whichPatchFaces();
+    //
+    //// FULLDEBUG: checkSize ?
+    //// or simply result.resize(mesh_.nFaces());
+    //
+    //forAll(patchFaces, i)
+    //{
+    //    const labelPair& patchAndFace = patchFaces[i];
+    //
+    //    if (patchAndFace.first() >= 0)
+    //    {
+    //        // Value from boundary
+    //        result[i] = bfld[patchAndFace];
+    //    }
+    //    else if (patchAndFace.second() >= 0)
+    //    {
+    //        // Value from internal
+    //        result[i] = fld[patchAndFace.second()];
+    //    }
+    //}
 
-    // FULLDEBUG: checkSize ?
-    // or simply result.resize(mesh_.nFaces());
+    const faMesh& aMesh = mesh_;
+    const refPtr<fvMesh> vMeshRef(aMesh.parentMesh());
+    const fvMesh& vMesh = vMeshRef();
+    const auto& pbm = vMesh.boundaryMesh();
 
-    forAll(patchFaces, i)
+    forAll(meshFaces_, i)
     {
-        const labelPair& patchAndFace = patchFaces[i];
+        const labelPair patchAndFace(pbm.whichPatchFace(meshFaces_[i]));
 
         if (patchAndFace.first() >= 0)
         {
@@ -188,16 +224,35 @@ void Foam::volSurfaceMapping::mapToSurface
     Field<Type>& result
 ) const
 {
-    // The polyPatch/local-face for each of the faceLabels
-    const List<labelPair>& patchFaces = mesh_.whichPatchFaces();
+    //// The polyPatch/local-face for each of the faceLabels
+    //const List<labelPair>& patchFaces = mesh_.whichPatchFaces();
+    //
+    //// FULLDEBUG: checkSize ?
+    //// or simply result.resize(mesh_.nFaces());
+    //
+    //forAll(patchFaces, i)
+    //{
+    //    const label patchi = patchFaces[i].first();
+    //    const label facei = patchFaces[i].second();
+    //
+    //    const auto* pfld = patchFields.get(patchi);
+    //
+    //    if (pfld)
+    //    {
+    //        result[i] = (*pfld)[facei];
+    //    }
+    //}
 
-    // FULLDEBUG: checkSize ?
-    // or simply result.resize(mesh_.nFaces());
+    const faMesh& aMesh = mesh_;
+    const refPtr<fvMesh> vMeshRef(aMesh.parentMesh());
+    const fvMesh& vMesh = vMeshRef();
+    const auto& pbm = vMesh.boundaryMesh();
 
-    forAll(patchFaces, i)
+    forAll(meshFaces_, i)
     {
-        const label patchi = patchFaces[i].first();
-        const label facei = patchFaces[i].second();
+        const labelPair patchAndFace(pbm.whichPatchFace(meshFaces_[i]));
+        const label patchi = patchAndFace.first();
+        const label facei = patchAndFace.second();
 
         const auto* pfld = patchFields.get(patchi);
 
@@ -206,6 +261,7 @@ void Foam::volSurfaceMapping::mapToSurface
             result[i] = (*pfld)[facei];
         }
     }
+
 }
 
 
@@ -216,16 +272,35 @@ void Foam::volSurfaceMapping::mapToSurface
     Field<Type>& result
 ) const
 {
-    // The polyPatch/local-face for each of the faceLabels
-    const List<labelPair>& patchFaces = mesh_.whichPatchFaces();
+    //// The polyPatch/local-face for each of the faceLabels
+    //const List<labelPair>& patchFaces = mesh_.whichPatchFaces();
+    //
+    //// FULLDEBUG: checkSize ?
+    //// or simply result.resize(mesh_.nFaces());
+    //
+    //forAll(patchFaces, i)
+    //{
+    //    const label patchi = patchFaces[i].first();
+    //    const label facei = patchFaces[i].second();
+    //
+    //    const auto* pfld = patchFields.get(patchi);
+    //
+    //    if (pfld)
+    //    {
+    //        result[i] = (*pfld)[facei];
+    //    }
+    //}
 
-    // FULLDEBUG: checkSize ?
-    // or simply result.resize(mesh_.nFaces());
+    const faMesh& aMesh = mesh_;
+    const refPtr<fvMesh> vMeshRef(aMesh.parentMesh());
+    const fvMesh& vMesh = vMeshRef();
+    const auto& pbm = vMesh.boundaryMesh();
 
-    forAll(patchFaces, i)
+    forAll(meshFaces_, i)
     {
-        const label patchi = patchFaces[i].first();
-        const label facei = patchFaces[i].second();
+        const labelPair patchAndFace(pbm.whichPatchFace(meshFaces_[i]));
+        const label patchi = patchAndFace.first();
+        const label facei = patchAndFace.second();
 
         const auto* pfld = patchFields.get(patchi);
 
@@ -268,19 +343,26 @@ void Foam::volSurfaceMapping::mapInternalToSurface
     Field<Type>& result
 ) const
 {
-    PtrList<Field<Type>> patchFields;
+    //PtrList<Field<Type>> patchFields;
+    //
+    //// All referenced polyPatches (sorted order)
+    //const labelList& patches = mesh_.whichPolyPatches();
+    //
+    //if (!patches.empty())
+    //{
+    //    // maxPolyPatch+1
+    //    patchFields.resize(patches.last()+1);
+    //}
+    //
+    //// Populate patchInternalField
+    //for (const label patchi : patches)
+    //{
+    //    patchFields.set(patchi, bfld[patchi].patchInternalField());
+    //}
 
-    // All referenced polyPatches (sorted order)
-    const labelList& patches = mesh_.whichPolyPatches();
-
-    if (!patches.empty())
-    {
-        // maxPolyPatch+1
-        patchFields.resize(patches.last()+1);
-    }
-
-    // Populate patchInternalField
-    for (const label patchi : patches)
+    // Flatten complete boundary field. Expensive! TBD.
+    PtrList<Field<Type>> patchFields(bfld.size());
+    forAll(bfld, patchi)
     {
         patchFields.set(patchi, bfld[patchi].patchInternalField());
     }
@@ -356,13 +438,31 @@ void Foam::volSurfaceMapping::mapToVolume
     const label destPatchi
 ) const
 {
-    // The polyPatch/local-face for each of the faceLabels
-    const List<labelPair>& patchFaces = mesh_.whichPatchFaces();
+    //// The polyPatch/local-face for each of the faceLabels
+    //const List<labelPair>& patchFaces = mesh_.whichPatchFaces();
+    //
+    //forAll(patchFaces, i)
+    //{
+    //    const labelPair& patchAndFace = patchFaces[i];
+    //
+    //    if
+    //    (
+    //        patchAndFace.first() >= 0
+    //     && (patchAndFace.first() == destPatchi || destPatchi < 0)
+    //    )
+    //    {
+    //        dest[patchAndFace] = af[i];
+    //    }
+    //}
 
-    forAll(patchFaces, i)
+    const faMesh& aMesh = mesh_;
+    const refPtr<fvMesh> vMeshRef(aMesh.parentMesh());
+    const fvMesh& vMesh = vMeshRef();
+    const auto& pbm = vMesh.boundaryMesh();
+
+    forAll(meshFaces_, i)
     {
-        const labelPair& patchAndFace = patchFaces[i];
-
+        const labelPair patchAndFace(pbm.whichPatchFace(meshFaces_[i]));
         if
         (
             patchAndFace.first() >= 0
@@ -415,7 +515,7 @@ void Foam::volSurfaceMapping::mapToVolume
 template<class Type>
 void Foam::volSurfaceMapping::mapToVolume
 (
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& taf,
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& taf,
     GeometricBoundaryField<Type, fvPatchField, volMesh>& dest,
     const label destPatchi
 ) const
@@ -428,7 +528,7 @@ void Foam::volSurfaceMapping::mapToVolume
 template<class Type>
 void Foam::volSurfaceMapping::mapToVolume
 (
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& taf,
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& taf,
     GeometricField<Type, fvPatchField, volMesh>& dest,
     const label destPatchi
 ) const
@@ -446,13 +546,31 @@ void Foam::volSurfaceMapping::mapToVolumePatch
     const label destPatchi
 ) const
 {
-    // The polyPatch/local-face for each of the faceLabels
-    const List<labelPair>& patchFaces = mesh_.whichPatchFaces();
+    //// The polyPatch/local-face for each of the faceLabels
+    //const List<labelPair>& patchFaces = mesh_.whichPatchFaces();
+    //
+    //forAll(patchFaces, i)
+    //{
+    //    const label patchi = patchFaces[i].first();
+    //    const label facei = patchFaces[i].second();
+    //
+    //    if (patchi >= 0 && patchi == destPatchi)
+    //    {
+    //        dest[facei] = af[i];
+    //    }
+    //}
 
-    forAll(patchFaces, i)
+
+    const faMesh& aMesh = mesh_;
+    const refPtr<fvMesh> vMeshRef(aMesh.parentMesh());
+    const fvMesh& vMesh = vMeshRef();
+    const auto& pbm = vMesh.boundaryMesh();
+
+    forAll(meshFaces_, i)
     {
-        const label patchi = patchFaces[i].first();
-        const label facei = patchFaces[i].second();
+        const labelPair patchAndFace(pbm.whichPatchFace(meshFaces_[i]));
+        const label patchi = patchAndFace.first();
+        const label facei = patchAndFace.second();
 
         if (patchi >= 0 && patchi == destPatchi)
         {
@@ -478,7 +596,7 @@ void Foam::volSurfaceMapping::mapToVolumePatch
 template<class Type>
 void Foam::volSurfaceMapping::mapToVolumePatch
 (
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& taf,
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& taf,
     Field<Type>& dest,
     const label destPatchi
 ) const

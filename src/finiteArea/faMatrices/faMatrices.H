@@ -41,7 +41,8 @@ Author
 #ifndef faMatrices_H
 #define faMatrices_H
 
-#include "faScalarMatrix.H"
+#include "fieldTypes.H"
+#include "fvMatrices.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -49,6 +50,10 @@ namespace Foam
 {
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+//- An faMatrix for a given type
+template<class Type>
+using faMatrix = fvMatrix<Type>;
 
 typedef faMatrix<scalar> faScalarMatrix;
 typedef faMatrix<vector> faVectorMatrix;

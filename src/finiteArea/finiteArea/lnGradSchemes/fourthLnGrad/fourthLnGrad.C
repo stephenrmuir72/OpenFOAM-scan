@@ -31,29 +31,49 @@ License
 #include "correctedLnGrad.H"
 #include "gaussFaGrad.H"
 
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+namespace Foam
+{
+
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+namespace fa
+{
+
+// * * * * * * * * * * * * * * * * Destructor  * * * * * * * * * * * * * * * //
+
+template<class Type>
+fourthLnGrad<Type>::~fourthLnGrad()
+{}
+
+
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
 
 template<class Type>
-Foam::tmp<Foam::GeometricField<Type, Foam::faePatchField, Foam::edgeMesh>>
-Foam::fa::fourthLnGrad<Type>::correction
+tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
+fourthLnGrad<Type>::correction
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 ) const
 {
-    const faMesh& mesh = this->mesh();
+    const fvMesh& mesh = this->mesh();
 
-    auto tcorr = tmp<GeometricField<Type, faePatchField, edgeMesh>>::New
+    tmp<GeometricField<Type, fvsPatchField, edgeMesh>> tcorr
     (
-        IOobject
+        new GeometricField<Type, fvsPatchField, edgeMesh>
         (
-            "lnGradCorr("+vf.name()+')',
-            vf.instance(),
-            vf.db()
-        ),
-        mesh,
-        vf.dimensions()*this->mesh().deltaCoeffs().dimensions()
+            IOobject
+            (
+                "lnGradCorr("+vf.name()+')',
+                vf.instance(),
+                vf.db()
+            ),
+            mesh,
+            vf.dimensions()*this->mesh().deltaCoeffs().dimensions()
+        )
     );
-    auto& corr = tcorr.ref();
+    GeometricField<Type, fvsPatchField, edgeMesh>& corr = tcorr.ref();
     corr.setOriented();
 
     edgeVectorField m(mesh.Le()/mesh.magLe());
@@ -79,7 +99,7 @@ Foam::fa::fourthLnGrad<Type>::correction
     corr += (1.0/15.0)*correctedLnGrad<Type>(mesh).lnGrad(vf);
 
 
-//     tmp<GeometricField<Type, faePatchField, edgeMesh>> tcorr
+//     tmp<GeometricField<Type, fvsPatchField, edgeMesh>> tcorr
 //     (
 //         (1.0/15.0)
 //        *(
@@ -90,8 +110,6 @@ Foam::fa::fourthLnGrad<Type>::correction
 //             )/mesh.magLe()
 //         )
 //     );
-//     tcorr.ref().setOriented();
-
 
     if (correctedLnGrad<Type>(mesh).corrected())
     {
@@ -101,5 +119,13 @@ Foam::fa::fourthLnGrad<Type>::correction
     return tcorr;
 }
 
+
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+} // End namespace fa
+
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+} // End namespace Foam
 
 // ************************************************************************* //

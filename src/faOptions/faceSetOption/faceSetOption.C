@@ -150,7 +150,7 @@ void Foam::fa::faceSetOption::setFaceSelection()
         case smAll:
         {
             Info<< indent << "- selecting all faces" << endl;
-            faces_ = identity(regionMesh().nFaces());
+            faces_ = identity(regionMesh().nCells());
 
             break;
         }

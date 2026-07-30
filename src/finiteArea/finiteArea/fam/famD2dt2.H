@@ -38,7 +38,7 @@ SourceFiles
 #define famD2dt2_H
 
 #include "areaFieldsFwd.H"
-#include "faMatrix.H"
+#include "faMatrices.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -54,21 +54,21 @@ namespace fam
     template<class Type>
     tmp<faMatrix<Type>> d2dt2
     (
-        const GeometricField<Type, faPatchField, areaMesh>&
+        const GeometricField<Type, fvPatchField, areaMesh>&
     );
 
     template<class Type>
     tmp<faMatrix<Type>> d2dt2
     (
         const dimensionedScalar&,
-        const GeometricField<Type, faPatchField, areaMesh>&
+        const GeometricField<Type, fvPatchField, areaMesh>&
     );
 
     template<class Type>
     tmp<faMatrix<Type>> d2dt2
     (
         const areaScalarField&,
-        const GeometricField<Type, faPatchField, areaMesh>&
+        const GeometricField<Type, fvPatchField, areaMesh>&
     );
 }
 

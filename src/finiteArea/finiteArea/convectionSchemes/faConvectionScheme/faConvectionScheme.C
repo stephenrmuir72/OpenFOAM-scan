@@ -35,7 +35,7 @@ template<class Type>
 Foam::tmp<Foam::fa::convectionScheme<Type>>
 Foam::fa::convectionScheme<Type>::New
 (
-    const faMesh& mesh,
+    const fvMesh& mesh,
     const edgeScalarField& faceFlux,
     Istream& schemeData
 )

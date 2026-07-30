@@ -76,21 +76,21 @@ public:
     // Constructors
 
         //- Construct from mesh
-        correctedLnGrad(const faMesh& mesh)
+        correctedLnGrad(const fvMesh& mesh)
         :
             lnGradScheme<Type>(mesh)
         {}
 
 
         //- Construct from mesh and data stream
-        correctedLnGrad(const faMesh& mesh, Istream&)
+        correctedLnGrad(const fvMesh& mesh, Istream&)
         :
             lnGradScheme<Type>(mesh)
         {}
 
 
     //- Destructor
-    virtual ~correctedLnGrad() = default;
+    virtual ~correctedLnGrad();
 
 
     // Member Functions
@@ -98,22 +98,31 @@ public:
         //- Return the interpolation weighting factors for the given field
         virtual tmp<edgeScalarField> deltaCoeffs
         (
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         ) const
         {
-            return this->mesh().deltaCoeffs();
+            // Over-relaxed (non-orthogonal) coefficients: these pair with the
+            // nonOrthCorrectionVectors used in correction() so that the scheme
+            // is exact for linear fields.  NB: fvMesh::deltaCoeffs() is the
+            // orthogonal 1/|d| variant (unlike legacy faMesh, whose
+            // deltaCoeffs() was already over-relaxed).
+            return this->mesh().nonOrthDeltaCoeffs();
         }
 
         //- Return true if this scheme uses an explicit correction
         virtual bool corrected() const
         {
-            return !this->mesh().orthogonal();
+            // Match FV correctedSnGrad: always apply the explicit
+            // non-orthogonal correction (it is ~zero on an orthogonal mesh).
+            // Avoids the parallel edgeInterpolation MeshObject whose only
+            // purpose here was the orthogonal() short-circuit.
+            return true;
         }
 
         //- Return the explicit correction to the correctedLnGrad
         //  for the given field
-        virtual tmp<GeometricField<Type, faePatchField, edgeMesh>>
-        correction(const GeometricField<Type, faPatchField, areaMesh>&) const;
+        virtual tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
+        correction(const GeometricField<Type, fvPatchField, areaMesh>&) const;
 };
 
 

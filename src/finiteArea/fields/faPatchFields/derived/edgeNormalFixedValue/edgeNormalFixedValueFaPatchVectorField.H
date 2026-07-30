@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2016-2017 Wikki Ltd
+    Copyright (C) 2026 OpenCFD Ltd.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -27,25 +28,45 @@ Class
     Foam::edgeNormalFixedValueFaPatchVectorField
 
 Description
-    Edge normal fixed value vector field finite area boundary condition
+    Edge-normal fixed value vector finite-area boundary condition.
 
-    Describes a surface normal vector boundary condition by its magnitude.
-    Note: The value is positive for outward-pointing vectors
+    Describes a surface-normal vector boundary condition by its magnitude.
+    Note: The value is positive for outward-pointing vectors.
 
-Author
-    Zeljko Tukovic, FMENA
-    Hrvoje Jasak, Wikki Ltd.
+    In the finiteArea refactor this is a thin backward-compatibility alias
+    that preserves the legacy dictionary type-name "edgeNormalFixedValue".
+    All numerics are inherited unchanged from the finite-volume
+    \c surfaceNormalFixedValue boundary condition: both store a scalar
+    reference magnitude and set the patch value to
+    \c refValue*(outward patch normal). On the reduced-order fvMesh the
+    finite-area edge normal equals the finite-volume face normal
+    (\c patch().nf() == Sf/|Sf| == the legacy \c edgeNormals()), so the two
+    are numerically identical. New cases should prefer
+    \c surfaceNormalFixedValue directly.
+
+Usage
+    Example of the boundary condition specification:
+    \verbatim
+    <patchName>
+    {
+        type            edgeNormalFixedValue;
+        refValue        uniform -1;   // 1 INTO the domain
+    }
+    \endverbatim
+
+See also
+    Foam::surfaceNormalFixedValueFvPatchVectorField
 
 SourceFiles
-    edgeNormalFixedValueFaPatchVectorField.cxx
+    edgeNormalFixedValueFaPatchVectorField.C
 
 \*---------------------------------------------------------------------------*/
 
 #ifndef Foam_edgeNormalFixedValueFaPatchVectorField_H
 #define Foam_edgeNormalFixedValueFaPatchVectorField_H
 
-#include "faPatchFields.H"
-#include "fixedValueFaPatchFields.H"
+#include "surfaceNormalFixedValueFvPatchVectorField.H"
+#include "areaFieldsFwd.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -53,21 +74,15 @@ namespace Foam
 {
 
 /*---------------------------------------------------------------------------*\
-                 Class edgeNormalFixedValueFaPatch Declaration
+             Class edgeNormalFixedValueFaPatchVectorField Declaration
 \*---------------------------------------------------------------------------*/
 
 class edgeNormalFixedValueFaPatchVectorField
 :
-    public fixedValueFaPatchVectorField
+    public surfaceNormalFixedValueFvPatchVectorField
 {
     typedef edgeNormalFixedValueFaPatchVectorField this_bctype;
-    typedef fixedValueFaPatchVectorField parent_bctype;
-
-    // Private Data
-
-        //- Edge-normal velocity value
-        scalarField refValue_;
-
+    typedef surfaceNormalFixedValueFvPatchVectorField parent_bctype;
 
 public:
 
@@ -82,14 +97,6 @@ public:
         (
             const faPatch&,
             const DimensionedField<vector, areaMesh>&
-        );
-
-        //- Construct from patch, internal field and reference value
-        edgeNormalFixedValueFaPatchVectorField
-        (
-            const faPatch&,
-            const DimensionedField<vector, areaMesh>&,
-            const scalar refValue
         );
 
         //- Construct from patch, internal field and dictionary
@@ -116,8 +123,13 @@ public:
             const DimensionedField<vector, areaMesh>&
         );
 
-        //- No copy without an internal field
-        edgeNormalFixedValueFaPatchVectorField(const this_bctype&) = delete;
+        //- Copy construct
+        edgeNormalFixedValueFaPatchVectorField(const this_bctype& ptf)
+        #ifdef Foam_fvPatchField_copyConstruct
+        : this_bctype(ptf, ptf.internalField()) {}
+        #else
+        = delete;
+        #endif
 
         //- Clone with an internal field reference
         virtual tmp<faPatchField<vector>> clone
@@ -127,26 +139,6 @@ public:
         {
             return faPatchField<vector>::Clone(*this, iF);
         }
-
-
-    // Member Functions
-
-    // Mapping Functions
-
-        //- Map (and resize as needed) from self given a mapping object
-        virtual void autoMap(const faPatchFieldMapper&);
-
-        //- Reverse map the given faPatchField onto this faPatchField
-        virtual void rmap(const faPatchVectorField&, const labelList&);
-
-
-    // Member Functions
-
-        //- Update the coefficients associated with the patch field
-        virtual void updateCoeffs();
-
-        //- Write includes "value" entry
-        virtual void write(Ostream&) const;
 
 
     // Member Operators

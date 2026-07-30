@@ -34,7 +34,7 @@ Author
     Hrvoje Jasak, Wikki Ltd.
 
 SourceFiles
-    areaFields.cxx
+    areaFields.C
 
 \*---------------------------------------------------------------------------*/
 
@@ -43,9 +43,10 @@ SourceFiles
 
 #include "objectRegistry.H"
 #include "GeometricFields.H"
-#include "areaFaMesh.H"
-#include "faMesh.H"
-#include "faPatchFields.H"
+#include "fvMesh.H"
+// Area fields are volume fields on the reduced-order (2D) fvMesh, so pull in
+// the full volMesh/volField definitions (not just the forward declarations).
+#include "volFields.H"
 #include "areaFieldsFwd.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -55,53 +56,31 @@ namespace Foam
 
 // Specializations
 
-template<>
-tmp<GeometricField<scalar, faPatchField, areaMesh>>
-GeometricField<scalar, faPatchField, areaMesh>::component
-(
-    const direction
-) const;
-
-template<>
-void GeometricField<scalar, faPatchField, areaMesh>::replace
-(
-    const direction,
-    const GeometricField<scalar, faPatchField, areaMesh>& sf
-);
-
-
-// Local consistency checks
+//template<>
+//tmp<GeometricField<scalar, faPatchField, areaMesh>>
+//GeometricField<scalar, faPatchField, areaMesh>::component
+//(
+//    const direction
+//) const;
 //
-// template<class Type>
-// bool GeometricBoundaryField<Type, faPatchField, areaMesh>::check() const
-// {
-//     return checkConsistency<coupledFaPatchField<Type>>
-//     (
-//         FieldBase::localBoundaryTolerance_,
-//        !(debug&4)       // make into warning if debug&4
-//     );
-// }
-
-template<>
-bool GeometricBoundaryField<scalar, faPatchField, areaMesh>::
-check() const;
-
-template<>
-bool GeometricBoundaryField<vector, faPatchField, areaMesh>::
-check() const;
-
-template<>
-bool GeometricBoundaryField<sphericalTensor, faPatchField, areaMesh>::
-check() const;
-
-template<>
-bool GeometricBoundaryField<symmTensor, faPatchField, areaMesh>::
-check() const;
-
-template<>
-bool GeometricBoundaryField<tensor, faPatchField, areaMesh>::
-check() const;
-
+//template<>
+//void GeometricField<scalar, faPatchField, areaMesh>::replace
+//(
+//    const direction,
+//    const GeometricField<scalar, faPatchField, areaMesh>& sf
+//);
+//
+//template<>
+//bool GeometricBoundaryField<scalar, faPatchField, areaMesh>::check() const;
+//template<>
+//bool GeometricBoundaryField<vector, faPatchField, areaMesh>::check() const;
+//template<>
+//bool GeometricBoundaryField<sphericalTensor, faPatchField, areaMesh>::check
+//() const;
+//template<>
+//bool GeometricBoundaryField<symmTensor, faPatchField, areaMesh>::check() const;
+//template<>
+//bool GeometricBoundaryField<tensor, faPatchField, areaMesh>::check() const;
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 

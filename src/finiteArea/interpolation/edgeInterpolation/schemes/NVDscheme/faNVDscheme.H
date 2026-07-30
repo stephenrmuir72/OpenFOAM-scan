@@ -97,7 +97,7 @@ public:
         //- Construct from mesh and edgeFlux and blendingFactor
         faNVDscheme
         (
-            const faMesh& mesh,
+            const fvMesh& mesh,
             const edgeScalarField& edgeFlux,
             const NVDweight& weight
         )
@@ -112,7 +112,7 @@ public:
         //  from the database
         faNVDscheme
         (
-            const faMesh& mesh,
+            const fvMesh& mesh,
             Istream& is
         )
         :
@@ -130,7 +130,7 @@ public:
         //- Construct from mesh, edgeFlux and Istream
         faNVDscheme
         (
-            const faMesh& mesh,
+            const fvMesh& mesh,
             const edgeScalarField& edgeFlux,
             Istream& is
         )
@@ -146,7 +146,7 @@ public:
         //- Return the interpolation weighting factors
         virtual tmp<edgeScalarField> weights
         (
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         ) const;
 };
 

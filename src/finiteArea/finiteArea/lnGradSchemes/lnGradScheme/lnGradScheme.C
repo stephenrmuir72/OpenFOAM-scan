@@ -30,6 +30,7 @@ License
 #include "lnGradScheme.H"
 #include "areaFields.H"
 #include "edgeFields.H"
+#include "volFields.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -46,7 +47,7 @@ namespace fa
 template<class Type>
 tmp<lnGradScheme<Type>> lnGradScheme<Type>::New
 (
-    const faMesh& mesh,
+    const fvMesh& mesh,
     Istream& schemeData
 )
 {
@@ -95,31 +96,34 @@ lnGradScheme<Type>::~lnGradScheme()
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
 
 template<class Type>
-tmp<GeometricField<Type, faePatchField, edgeMesh>>
+tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
 lnGradScheme<Type>::lnGrad
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf,
+    const GeometricField<Type, fvPatchField, areaMesh>& vf,
     const tmp<edgeScalarField>& tdeltaCoeffs,
     const word& lnGradName
 )
 {
-    const faMesh& mesh = vf.mesh();
+    const fvMesh& mesh = vf.mesh();
 
-    // construct GeometricField<Type, faePatchField, edgeMesh>
-    auto tssf = tmp<GeometricField<Type, faePatchField, edgeMesh>>::New
+    // construct GeometricField<Type, fvsPatchField, edgeMesh>
+    tmp<GeometricField<Type, fvsPatchField, edgeMesh>> tssf
     (
-        IOobject
+        new GeometricField<Type, fvsPatchField, edgeMesh>
         (
-            lnGradName + "("+vf.name()+')',
-            vf.instance(),
-            vf.db(),
-            IOobject::NO_READ,
-            IOobject::NO_WRITE
-        ),
-        mesh,
-        vf.dimensions()*tdeltaCoeffs().dimensions()
+            IOobject
+            (
+                lnGradName + "("+vf.name()+')',
+                vf.instance(),
+                vf.db(),
+                IOobject::NO_READ,
+                IOobject::NO_WRITE
+            ),
+            mesh,
+            vf.dimensions()*tdeltaCoeffs().dimensions()
+        )
     );
-    auto& ssf = tssf.ref();
+    GeometricField<Type, fvsPatchField, edgeMesh>& ssf = tssf.ref();
     ssf.setOriented();
 
     // set reference to difference factors array
@@ -135,11 +139,28 @@ lnGradScheme<Type>::lnGrad
             deltaCoeffs[faceI]*(vf[neighbour[faceI]] - vf[owner[faceI]]);
     }
 
+    // Sign of contribution depends on owner/neighbour so ssf is oriented
+    ssf.setOriented();
+
     auto& ssfb = ssf.boundaryFieldRef();
 
     forAll(vf.boundaryField(), patchI)
     {
-        ssfb[patchI] = vf.boundaryField()[patchI].snGrad();
+        const fvPatchField<Type>& pvf = vf.boundaryField()[patchI];
+
+        if (pvf.coupled())
+        {
+            // Coupled (e.g. processor) patches: the no-arg snGrad() is a
+            // NotImplemented stub on coupledFvPatchField. Use the delta-coeff
+            // form, which evaluates deltaCoeffs*(neighbour - internal) via the
+            // patch-neighbour exchange - exactly as fv::snGradScheme does.
+            ssfb[patchI] =
+                pvf.snGrad(tdeltaCoeffs().boundaryField()[patchI]);
+        }
+        else
+        {
+            ssfb[patchI] = pvf.snGrad();
+        }
     }
 
     return tssf;
@@ -147,13 +168,13 @@ lnGradScheme<Type>::lnGrad
 
 
 template<class Type>
-tmp<GeometricField<Type, faePatchField, edgeMesh>>
+tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
 lnGradScheme<Type>::lnGrad
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 ) const
 {
-    tmp<GeometricField<Type, faePatchField, edgeMesh>> tsf =
+    tmp<GeometricField<Type, fvsPatchField, edgeMesh>> tsf =
         lnGrad(vf, deltaCoeffs(vf));
 
     if (corrected())
@@ -166,13 +187,13 @@ lnGradScheme<Type>::lnGrad
 
 
 template<class Type>
-tmp<GeometricField<Type, faePatchField, edgeMesh>>
+tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
 lnGradScheme<Type>::lnGrad
 (
-    const tmp<GeometricField<Type, faPatchField, areaMesh>>& tvf
+    const tmp<GeometricField<Type, fvPatchField, areaMesh>>& tvf
 ) const
 {
-    tmp<GeometricField<Type, faePatchField, edgeMesh>> tinterpVf =
+    tmp<GeometricField<Type, fvsPatchField, edgeMesh>> tinterpVf =
         lnGrad(tvf());
     tvf.clear();
     return tinterpVf;

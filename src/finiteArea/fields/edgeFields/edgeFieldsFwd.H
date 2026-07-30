@@ -6,7 +6,6 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2016-2017 Wikki Ltd
-    Copyright (C) 2026 OpenCFD Ltd.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -36,7 +35,8 @@ Description
 #define Foam_edgeFieldsFwd_H
 
 #include "fieldTypes.H"
-#include "GeometricFieldFwd.H"
+//#include "GeometricFieldFwd.H"
+#include "surfaceFieldsFwd.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -45,54 +45,74 @@ namespace Foam
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
+typedef surfaceMesh edgeMesh;
+
 // Forward Declarations
-class edgeMesh;
-template<class Type> class faePatchField;
 
+//- An edge patch field for a given type
+template<class Type>
+using faePatchField = fvsPatchField<Type>;
 
-/// Future? (TBD)
-/// //- An (area) edge field for a given type
-/// template<class Type>
-/// using EdgeField = GeometricField<Type, faePatchField, edgeMesh>;
-
-
-// Typedefs
-
+//
+//
+///// Future? (TBD)
+///// //- An (area) edge field for a given type
+///// template<class Type>
+///// using EdgeField = GeometricField<Type, faePatchField, edgeMesh>;
+//
+//
+//// Typedefs
+//
 typedef
-    GeometricField<scalar, faePatchField, edgeMesh>
+    GeometricField<scalar, fvsPatchField, edgeMesh>
     edgeScalarField;
 
 typedef
-    GeometricField<vector, faePatchField, edgeMesh>
+    GeometricField<vector, fvsPatchField, edgeMesh>
     edgeVectorField;
 
 typedef
-    GeometricField<sphericalTensor, faePatchField, edgeMesh>
+    GeometricField<sphericalTensor, fvsPatchField, edgeMesh>
     edgeSphericalTensorField;
 
 typedef
-    GeometricField<symmTensor, faePatchField, edgeMesh>
+    GeometricField<symmTensor, fvsPatchField, edgeMesh>
     edgeSymmTensorField;
 
 typedef
-    GeometricField<tensor, faePatchField, edgeMesh>
+    GeometricField<tensor, fvsPatchField, edgeMesh>
     edgeTensorField;
+
+typedef faePatchField<scalar> faePatchScalarField;
+typedef faePatchField<vector> faePatchVectorField;
+typedef faePatchField<sphericalTensor> faePatchSphericalTensorField;
+typedef faePatchField<symmTensor> faePatchSymmTensorField;
+typedef faePatchField<tensor> faePatchTensorField;
 
 
 /*---------------------------------------------------------------------------*\
                        Namespace fieldTypes Declaration
 \*---------------------------------------------------------------------------*/
 
-namespace fieldTypes
+namespace fieldTypes2
 {
+    //- Standard (finite-area) edge field types (scalar, vector, tensor, etc).
+    //  In finiteArea an edge field IS a surfaceField, so these are the
+    //  surface* class names carried on disk.
+    extern const wordList edge;
 
-//- Standard (finite-area) edge field types (scalar, vector, tensor, etc)
-extern const wordList edge;
+    //- Standard (finite-area) edge internal (::Internal) field types
+    extern const wordList edge_internal;
 
-//- Test if the class name appears to be a (finite-area) edge field
-bool is_edge(const word& clsName);
+    //- True if clsName is one of the standard (finite-area) edge field types
+    bool is_edge(const word& clsName);
 
-} // End namespace fieldTypes
+    //- True if clsName is one of the standard (finite-area) edge internal
+    //- (::Internal) field types
+    bool is_edge_internal(const word& clsName);
+
+} // End namespace fieldTypes2
+
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 

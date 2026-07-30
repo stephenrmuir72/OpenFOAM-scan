@@ -30,54 +30,10 @@ Description
     A MeshObject registry on top of a polyMesh that provides
     an objectRegistry for holding multiple faMesh objects.
 
-    Directory structure for fields/meshes (default region):
-    \verbatim
-    .
-    |-- constant
-    |   `-- finite-area
-    |       `-- faMesh
-    |           |-- faceLabels
-    |           |-- ...
-    |           `-- faBoundary
-    |-- system
-    |   `-- finite-area
-    |       |-- faMeshDefiniton
-    |       |-- faSchemes
-    |       `-- faSolution
-    `-- instance
-        `-- finite-area
-            |-- U
-            |-- p
-            `-- ...
-    \endverbatim
-
-    Directory structure for fields/meshes (multi-regions):
-    \verbatim
-    .
-    |-- constant
-    |   `-- finite-area
-    |       |-- regionName1
-    |       |   `-- faMesh
-    |       |       `-- ...
-    |       `-- regionNameN
-    |           `-- faMesh
-    |               `-- ...
-    |-- system
-    |   `-- finite-area
-    |       |-- regionName1
-    |       |   |-- faMeshDefiniton
-    |       |   |-- faSchemes
-    |       |   `-- faSolution
-    |       `-- regionNameN
-    |           `-- ...
-    |
-    `-- instance
-        `-- finite-area
-            |-- regionName1
-            |   `-- ...
-            `-- regionNameN
-                `-- ...
-    \endverbatim
+    This is the finiteArea counterpart of the legacy faMeshesRegistry:
+    it provides the singleton "finite-area" sub-registry anchored on the
+    parent polyMesh, which is where the reduced-order faMesh regions are
+    registered and looked up.
 
 SourceFiles
     faMeshesRegistry.C

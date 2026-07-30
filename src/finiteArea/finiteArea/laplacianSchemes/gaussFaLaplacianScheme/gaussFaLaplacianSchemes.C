@@ -26,7 +26,7 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "gaussFaLaplacianScheme.H"
-#include "faMesh.H"
+#include "fvMesh.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 

@@ -76,13 +76,13 @@ public:
     // Constructors
 
         //- Construct from mesh
-        uncorrectedLnGrad(const faMesh& mesh)
+        uncorrectedLnGrad(const fvMesh& mesh)
         :
             lnGradScheme<Type>(mesh)
         {}
 
         //- Construct from mesh and data stream
-        uncorrectedLnGrad(const faMesh& mesh, Istream&)
+        uncorrectedLnGrad(const fvMesh& mesh, Istream&)
         :
             lnGradScheme<Type>(mesh)
         {}
@@ -97,10 +97,12 @@ public:
         //- Return the interpolation weighting factors for the given field
         virtual tmp<edgeScalarField> deltaCoeffs
         (
-            const GeometricField<Type, faPatchField, areaMesh>&
+            const GeometricField<Type, fvPatchField, areaMesh>&
         ) const
         {
-            return this->mesh().deltaCoeffs();
+            // Match FV uncorrectedSnGrad: use the over-relaxed coefficients
+            // (fvMesh::deltaCoeffs() is the orthogonal 1/|d| variant).
+            return this->mesh().nonOrthDeltaCoeffs();
         }
 
         //- Return true if this scheme uses an explicit correction
@@ -108,8 +110,8 @@ public:
 
         //- Return the explicit correction to the uncorrectedLnGrad
         //- for the given field
-        virtual tmp<GeometricField<Type, faePatchField, edgeMesh>>
-        correction(const GeometricField<Type, faPatchField, areaMesh>&) const;
+        virtual tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
+        correction(const GeometricField<Type, fvPatchField, areaMesh>&) const;
 };
 
 

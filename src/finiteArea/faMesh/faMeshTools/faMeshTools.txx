@@ -5,7 +5,7 @@
     \\  /    A nd           | www.openfoam.com
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
-    Copyright (C) 2022-2026 OpenCFD Ltd.
+    Copyright (C) 2026 OpenCFD Ltd.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -27,160 +27,40 @@ License
 
 #include "edgeFields.H"
 
-// * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
-
-template<class Type, template<class> class PatchField, class GeoMesh>
-void Foam::faMeshTools::flatBoundaryField_impl
-(
-    UList<Type>& result,
-    const GeometricField<Type, PatchField, GeoMesh>& fld,
-    const bool primitiveOrdering
-)
-{
-    const auto& mesh = fld.mesh();
-
-    #ifdef FULLDEBUG
-    if (FOAM_UNLIKELY(result.size() != mesh.nBoundaryEdges()))
-    {
-        FatalErrorInFunction
-            << "mesh nBoundaryEdges = " << mesh.nBoundaryEdges()
-            << " but result size = " << result.size()
-            << abort(FatalError);
-    }
-    #endif
-
-    // Some patches (eg empty) may not contribute values. Init to zero
-    result = Foam::zero{};
-
-    // Destination index. Starts at 0 since this is a boundary slice.
-    label start = 0;
-
-    // Offset (for primitiveOrdering)
-    const label nInternal = mesh.nInternalEdges();
-
-    // Boundary fields
-    const auto& bfields = fld.boundaryField();
-
-    forAll(bfields, patchi)
-    {
-        const auto& edgeLabels = mesh.boundary()[patchi].edgeLabels();
-        const auto count = edgeLabels.size();
-        const auto& pfld = fld.boundaryField()[patchi];
-
-        // Only assign when field size matches underlying patch size
-        // ie, skip 'empty' patches etc
-
-        if (count == pfld.size())
-        {
-            if (primitiveOrdering)
-            {
-                // In primitive patch order
-                forAll(edgeLabels, i)
-                {
-                    label edgeLocation = (edgeLabels[i] - nInternal);
-                    result[edgeLocation] = pfld[i];
-                }
-            }
-            else
-            {
-                // In sub-list (slice) order
-                result.slice(start, count) = pfld;
-            }
-        }
-
-        start += count;
-    }
-}
-
-
-template<class Type>
-void Foam::faMeshTools::flatBoundaryField
-(
-    UList<Type>& result,
-    const GeometricField<Type, faPatchField, areaMesh>& fld,
-    const bool primitiveOrdering
-)
-{
-    flatBoundaryField_impl(result, fld, primitiveOrdering);
-}
-
-
-template<class Type>
-void Foam::faMeshTools::flatBoundaryField
-(
-    UList<Type>& result,
-    const GeometricField<Type, faePatchField, edgeMesh>& fld,
-    const bool primitiveOrdering
-)
-{
-    flatBoundaryField_impl(result, fld, primitiveOrdering);
-}
-
-
-template<class Type>
-Foam::tmp<Foam::Field<Type>> Foam::faMeshTools::flatBoundaryField
-(
-    const GeometricField<Type, faPatchField, areaMesh>& fld,
-    const bool primitiveOrdering
-)
-{
-    auto tresult = tmp<Field<Type>>::New(fld.mesh().nBoundaryEdges());
-    flatBoundaryField_impl(tresult.ref(), fld, primitiveOrdering);
-    return tresult;
-}
-
-
-template<class Type>
-Foam::tmp<Foam::Field<Type>> Foam::faMeshTools::flatBoundaryField
-(
-    const GeometricField<Type, faePatchField, edgeMesh>& fld,
-    const bool primitiveOrdering
-)
-{
-    auto tresult = tmp<Field<Type>>::New(fld.mesh().nBoundaryEdges());
-    flatBoundaryField_impl(tresult.ref(), fld, primitiveOrdering);
-    return tresult;
-}
-
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 template<class Type>
 void Foam::faMeshTools::flattenEdgeField
 (
     UList<Type>& result,
-    const GeometricField<Type, faePatchField, edgeMesh>& fld,
-    const bool primitiveOrdering
+    const GeometricField<Type, faePatchField, edgeMesh>& fld
 )
 {
-    const auto& mesh = fld.mesh();
+    // In finiteArea an edge field is a surfaceField on the reduced-order
+    // fvMesh: internal-face values followed by the boundary-face values,
+    // laid out in mesh-face order (length == nFaces()).
+    const fvMesh& mesh = fld.mesh();
 
-    #ifdef FULLDEBUG
-    if (FOAM_UNLIKELY(result.size() != mesh.nEdges()))
-    {
-        FatalErrorInFunction
-            << "mesh nEdges = " << mesh.nEdges()
-            << " but result size = " << result.size()
-            << abort(FatalError);
-    }
-    #endif
-
-    // Internal field
+    // Internal field (internal faces)
     result.slice(0, fld.size()) = fld.primitiveField();
 
-    // Boundary fields
-    auto bfields = result.slice(mesh.nInternalEdges(), mesh.nBoundaryEdges());
-    flatBoundaryField(bfields, fld, primitiveOrdering);
+    // Boundary fields (boundary faces, in patch order)
+    result.slice(mesh.nInternalFaces()) = Foam::zero{};
+    for (const auto& pfld : fld.boundaryField())
+    {
+        result.slice(pfld.patch().start(), pfld.size()) = pfld;
+    }
 }
 
 
 template<class Type>
 Foam::tmp<Foam::Field<Type>> Foam::faMeshTools::flattenEdgeField
 (
-    const GeometricField<Type, faePatchField, edgeMesh>& fld,
-    const bool primitiveOrdering
+    const GeometricField<Type, faePatchField, edgeMesh>& fld
 )
 {
-    auto tresult = tmp<Field<Type>>::New(fld.mesh().nEdges());
-    flattenEdgeField(tresult.ref(), fld, primitiveOrdering);
+    auto tresult = tmp<Field<Type>>::New(fld.mesh().nFaces());
+    flattenEdgeField(tresult.ref(), fld);
     return tresult;
 }
 

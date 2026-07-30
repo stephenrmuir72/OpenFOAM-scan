@@ -82,7 +82,7 @@ SourceFiles
 #ifndef Foam_fa_option_H
 #define Foam_fa_option_H
 
-#include "faMatricesFwd.H"
+#include "faMatrices.H"
 #include "areaFieldsFwd.H"
 #include "dictionary.H"
 #include "fvMesh.H"

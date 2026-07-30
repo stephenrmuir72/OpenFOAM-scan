@@ -74,7 +74,7 @@ tmp<areaVectorField> edgeLimitedGrad<scalar>::calcGrad
     const word& name
 ) const
 {
-    const faMesh& mesh = vsf.mesh();
+    const fvMesh& mesh = vsf.mesh();
 
     tmp<areaVectorField> tGrad = basicGradScheme_().calcGrad(vsf, name);
 
@@ -132,7 +132,7 @@ tmp<areaVectorField> edgeLimitedGrad<scalar>::calcGrad
     // Lambda expression to update limiter for boundary edges
     auto updateLimiter = [&](const label patchi, const scalarField& fld) -> void
     {
-        const labelUList& pOwner = mesh.boundary()[patchi].edgeFaces();
+        const labelUList& pOwner = mesh.boundary()[patchi].faceCells();
         const vectorField& pCf = Cf.boundaryField()[patchi];
 
         forAll(pOwner, edgei)
@@ -175,13 +175,10 @@ tmp<areaVectorField> edgeLimitedGrad<scalar>::calcGrad
 
     if (fa::debug)
     {
-        auto limits = gMinMax(limiter);
-        auto avg = gAverage(limiter);
-
         Info<< "gradient limiter for: " << vsf.name()
-            << " min = " << limits.min()
-            << " max = " << limits.max()
-            << " average: " << avg << endl;
+            << " max = " << gMax(limiter)
+            << " min = " << gMin(limiter)
+            << " average: " << gAverage(limiter) << endl;
     }
 
     g.primitiveFieldRef() *= limiter;
@@ -199,7 +196,7 @@ tmp<areaTensorField> edgeLimitedGrad<vector>::calcGrad
     const word& name
 ) const
 {
-    const faMesh& mesh = vvf.mesh();
+    const fvMesh& mesh = vvf.mesh();
 
     tmp<areaTensorField> tGrad = basicGradScheme_().grad(vvf, name);
 
@@ -269,7 +266,7 @@ tmp<areaTensorField> edgeLimitedGrad<vector>::calcGrad
     // Lambda expression to update limiter for boundary edges
     auto updateLimiter = [&](const label patchi, const vectorField& fld) -> void
     {
-        const labelUList& pOwner = mesh.boundary()[patchi].edgeFaces();
+        const labelUList& pOwner = mesh.boundary()[patchi].faceCells();
         const vectorField& pCf = Cf.boundaryField()[patchi];
 
         forAll(pOwner, edgei)
@@ -315,13 +312,10 @@ tmp<areaTensorField> edgeLimitedGrad<vector>::calcGrad
 
     if (fa::debug)
     {
-        auto limits = gMinMax(limiter);
-        auto avg = gAverage(limiter);
-
         Info<< "gradient limiter for: " << vvf.name()
-            << " min = " << limits.min()
-            << " max = " << limits.max()
-            << " average: " << avg << endl;
+            << " max = " << gMax(limiter)
+            << " min = " << gMin(limiter)
+            << " average: " << gAverage(limiter) << endl;
     }
 
     g.primitiveFieldRef() *= limiter;

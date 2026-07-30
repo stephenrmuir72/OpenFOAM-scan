@@ -1,7 +1,10 @@
 common/genericPatchFieldBase.cxx
 
-genericFaPatchField/genericFaPatchFields.cxx
-/* not yet needed:  genericFaePatchField/genericFaePatchFields.cxx */
+/* finiteArea: faPatchField == fvPatchField, so the generic fvPatchField below
+ * already registers the "generic" type for finite-area fields. The separate
+ * genericFaPatchField (which pulled the legacy libfiniteArea) is therefore
+ * redundant and dropped, keeping libgenericPatchFields finite-area-agnostic so
+ * it can be linked by finiteArea utilities without an ODR clash. */
 genericFvPatchField/genericFvPatchFields.cxx
 genericFvsPatchField/genericFvsPatchFields.cxx
 genericPointPatchField/genericPointPatchFields.cxx

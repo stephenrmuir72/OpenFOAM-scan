@@ -27,8 +27,8 @@ License
 
 #include "externalFileSource.H"
 #include "fam.H"
-#include "faScalarMatrix.H"
-#include "zeroGradientFaPatchFields.H"
+#include "faMatrices.H"
+#include "zeroGradientFvPatchFields.H"
 #include "addToRunTimeSelectionTable.H"
 
 // * * * * * * * * * * * * * Static Member Functions * * * * * * * * * * * * //

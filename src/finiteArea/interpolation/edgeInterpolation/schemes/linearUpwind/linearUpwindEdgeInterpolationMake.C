@@ -25,7 +25,7 @@ License
 
 \*---------------------------------------------------------------------------*/
 
-#include "faMesh.H"
+#include "fvMesh.H"
 #include "faNVDscheme.H"
 #include "linearUpwind.H"
 

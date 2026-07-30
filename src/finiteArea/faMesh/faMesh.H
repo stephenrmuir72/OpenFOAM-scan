@@ -5,8 +5,7 @@
     \\  /    A nd           | www.openfoam.com
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
-    Copyright (C) 2016-2017 Wikki Ltd
-    Copyright (C) 2021-2025 OpenCFD Ltd.
+    Copyright (C) 2024-2026 OpenCFD Ltd.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -28,51 +27,36 @@ Class
     Foam::faMesh
 
 Description
-    Finite area mesh (used for 2-D non-Euclidian finite area method)
-    defined using a \em patch of faces on a polyMesh
-    (ie, uindirectPrimitivePatch).
+    Finite area mesh (used for 2-D non-Euclidian finite area method).
 
-    The ordering of faces and points on the faMesh corresponds to
-    the localFaces and localPoints as per Foam::PrimitivePatch but
-    the edge addressing is handled slightly differently.
-    The internal edges of the faMesh will generally correspond identically
-    to the internalEdges of the PrimitivePatch (may change in the future)
-    but the boundaryEdges will be reordered compared to the PrimitivePatch
-    to allow edge boundary slices to be obtained.
+    In the finiteArea refactor an faMesh is a reduced-order (2D) manifold
+    fvMesh whose "cells" are the surface polygons and whose "faces" are the
+    bounding edges. Being a thin fvMesh subclass it reuses the entire
+    finite-volume container/matrix/interpolation/boundary/parallel machinery
+    directly; the finite-area schemes operate on it through the fvMesh
+    interface.
+
+    In addition it owns the (optional) coupling addressing that links the
+    area mesh back to the boundary faces of a parent volume mesh. This
+    provides a stable home for the mapping used by volSurfaceMapping and
+    film/shell applications, which the pure fvMesh does not have.
 
 SourceFiles
     faMesh.C
-    faMeshDemandDrivenData.C
-    faMeshPatches.C
-    faMeshTopology.C
-    faMeshUpdate.C
-    faMeshI.H
-
-Author
-    Zeljko Tukovic, FMENA
-    Hrvoje Jasak, Wikki Ltd.
 
 \*---------------------------------------------------------------------------*/
 
 #ifndef Foam_faMesh_H
 #define Foam_faMesh_H
 
-#include "polyMesh.H"
-#include "lduMesh.H"
-#include "faBoundaryMesh.H"
-#include "edgeList.H"
-#include "faceList.H"
-#include "primitiveFieldsFwd.H"
-#include "DimensionedField.H"
-#include "areaFieldsFwd.H"
-#include "edgeFieldsFwd.H"
-#include "indirectPrimitivePatch.H"
-#include "edgeInterpolation.H"
-#include "labelIOList.H"
-#include "FieldFields.H"
-#include "faGlobalMeshData.H"
-#include "faSchemes.H"
-#include "faSolution.H"
+#include "fvMesh.H"
+#include "labelList.H"
+#include "labelPair.H"
+#include "boolList.H"
+#include "vectorField.H"
+#include "scalarField.H"
+#include "uindirectPrimitivePatch.H"
+#include <memory>
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -80,45 +64,8 @@ namespace Foam
 {
 
 // Forward Declarations
-class faMeshBoundaryHalo;
-class faMeshLduAddressing;
-class faMeshMapper;
-class faPatchData;
-
-/*---------------------------------------------------------------------------*\
-                       Class faMeshRegistry Declaration
-\*---------------------------------------------------------------------------*/
-
-//- The objectRegistry for faMesh.
-//  This is a separate class to ensure it will be fully constructed before
-//  other data members use it, which ensures that its virtual methods are
-//  callable during construction (gcc).
-class faMeshRegistry
-:
-    public objectRegistry
-{
-public:
-
-    // Constructors
-
-        //- Construct an objectRegistry for given area region name.
-        //- Treat an empty name like polyMesh::defaultRegion
-        faMeshRegistry(const word& areaName, const polyMesh& mesh);
-
-
-    // Member Functions
-
-        //- True - thisDb() is a valid registry
-        virtual bool hasDb() const { return true; }
-
-        //- Reference to the mesh database
-        virtual const objectRegistry& thisDb() const { return *this; }
-
-        //- Local directory path of the objectRegistry relative to Time
-        //- with override for the single-region case
-        virtual const fileName& dbDir() const;
-};
-
+class polyBoundaryMesh;
+class wordRes;
 
 /*---------------------------------------------------------------------------*\
                            Class faMesh Declaration
@@ -126,445 +73,236 @@ public:
 
 class faMesh
 :
-    public faMeshRegistry,
-    public lduMesh,
-    public faSchemes,
-    public faSolution,
-    public edgeInterpolation  // may need input from faSchemes
+    public fvMesh
 {
-    // Private (internal) classes/structures
-
-        //- A (proc, patchi, patchEdgei, meshFacei) tuple used internally
-        //- for managing patch/patch bookkeeping during construction.
-        //  Finite-area patches are stored with negated indices (offset -2),
-        //  which makes them readily identifiable and always sort before normal
-        //  patches.
-        struct patchTuple
-        :
-            public FixedList<label, 4>
-        {
-
-        // Constructors
-
-            // Inherit constructors
-            using FixedList<label, 4>::FixedList;
-
-            //- Default construct as 'invalid'
-            patchTuple()
-            {
-                clear();
-            }
-
-
-        // Static Member Functions
-
-            // Globally consistent ordering
-            //
-            // 1. sort left/right as lower/higher processor connection
-            // 2. sort by proc/patch/patch index
-            static void sort(UList<Pair<patchTuple>>& list)
-            {
-                for (auto& tuples : list)
-                {
-                    tuples.sort();
-                }
-                Foam::stableSort(list);
-            }
-
-
-        // Member Functions
-
-            //- Reset to 'invalid'
-            void clear()
-            {
-                procNo(-1);
-                patchi(labelMax);
-                patchEdgei(-1);
-                meshFacei(-1);
-            }
-
-            //- Valid if proc and patch (or patch edge) are non-negative
-            bool valid() const
-            {
-                return (procNo() >= 0 && patchi() != -1);
-            }
-
-            // Processor is the first sort index
-            label procNo() const { return (*this)[0]; }
-            void procNo(label val) { (*this)[0] = val; }
-
-            // PatchId is the second sort index (finiteArea patches are < -1)
-            label patchi() const { return (*this)[1]; }
-            void patchi(label val) { (*this)[1] = val; }
-
-            // The patch edge index (on the finiteArea patch)
-            // is the third sort index
-            label patchEdgei() const { return (*this)[2]; }
-            void patchEdgei(label val) { (*this)[2] = val; }
-
-            // The processor-local mesh face is the fourth sort index
-            label meshFacei() const { return (*this)[3]; }
-            void meshFacei(label val) { (*this)[3] = val; }
-
-            //- Return the real patchId
-            label realPatchi() const
-            {
-                const label id = patchi();
-                return (id < -1 ? -(id + 2) : id);
-            }
-
-            //- Set patchId as finiteArea
-            void faPatchi(label val)
-            {
-                patchi(-(val + 2));
-            }
-
-            //- Considered to be finiteArea if (patchi < -1)
-            bool is_finiteArea() const noexcept
-            {
-                return (patchi() < -1);
-            }
-
-            //- Considered to be processor local
-            bool is_localProc() const
-            {
-                return (procNo() == UPstream::myProcNo());
-            }
-        };
-
-
     // Private Data
 
-        //- Face labels
-        labelIOList faceLabels_;
+        //- The area-region name
+        word areaName_;
 
-        //- Boundary mesh
-        faBoundaryMesh boundary_;
+        //- Parent-mesh face labels that this area mesh maps onto (optional;
+        //  empty for a standalone area region)
+        labelList meshFaces_;
 
-
-    // Primitive mesh data
-
-        //- Edges, addressing into local point list
-        edgeList edges_;
-
-        //- Edge owner
-        labelList edgeOwner_;
-
-        //- Edge neighbour
-        labelList edgeNeighbour_;
+        //- Parent-mesh point label for each area-mesh point (optional; empty
+        //  for a standalone area region). Used by the parallel addressing shim
+        //  to derive pointProcAddressing from the parent decomposition.
+        labelList meshPointLabels_;
 
 
-    // Primitive size data
+    // Demand-driven coupling data
 
-        //- Total number of points
-        mutable label nPoints_;
-
-        //- Total number of edges
-        mutable label nEdges_;
-
-        //- Number of internal edges
-        mutable label nInternalEdges_;
-
-        //- Number of faces
-        mutable label nFaces_;
-
-
-    // Communication support, updating
-
-        //- Communicator used for parallel communication
-        label comm_;
-
-        //- Current time index for motion
-        //  Note.  The whole mechanism will be replaced once the
-        //  dimensionedField is created and the dimensionedField
-        //  will take care of the old-time levels.
-        mutable label curTimeIndex_;
-
-
-    // Demand-driven data
-
-        //- Primitive patch
-        mutable std::unique_ptr<uindirectPrimitivePatch> patchPtr_;
-
-        //- List of poly patch/patch-face for faceLabels
+        //- The polyPatch/local-face for each of the meshFaces()
         mutable std::unique_ptr<List<labelPair>> polyPatchFacesPtr_;
 
-        //- List of polyPatch ids used by the area mesh
+        //- Sorted list of parent polyPatch ids referenced by meshFaces()
         mutable std::unique_ptr<labelList> polyPatchIdsPtr_;
 
-        //- List of proc/mesh-face for boundary edge neighbours
-        mutable std::unique_ptr<List<labelPair>> bndConnectPtr_;
+        //- Demand-driven area patch (reduced-order face polygons) on the
+        //- parent mesh, addressed by meshFaces()
+        mutable std::unique_ptr<uindirectPrimitivePatch> patchPtr_;
 
-        //- Ldu addressing data
-        mutable std::unique_ptr<faMeshLduAddressing> lduPtr_;
+        //- Per finite-area boundary edge (reduced-order boundary face), the
+        //  parent-mesh neighbour boundary face across that edge (-1 if none,
+        //  e.g. an inter-processor edge whose neighbour area face is on another
+        //  rank). Indexed by reduced-order boundary-face index
+        //  (facei - nInternalFaces()). Drives the ngbPolyPatch* accessors.
+        mutable std::unique_ptr<labelList> ngbPolyPatchFacesPtr_;
 
-
-    // Geometric Data
-
-        //- Face areas
-        mutable std::unique_ptr<DimensionedField<scalar, areaMesh>> SPtr_;
-
-        //- Face areas old time level
-        mutable std::unique_ptr<DimensionedField<scalar, areaMesh>> S0Ptr_;
-
-        //- Face areas old-old time level
-        mutable std::unique_ptr<DimensionedField<scalar, areaMesh>> S00Ptr_;
-
-        //- Patch starts in the edge list
-        mutable std::unique_ptr<labelList> patchStartsPtr_;
-
-        //- Edge length vectors
-        mutable std::unique_ptr<edgeVectorField> LePtr_;
-
-        //- Mag edge length vectors
-        mutable std::unique_ptr<edgeScalarField> magLePtr_;
-
-        //- Face centres
-        mutable std::unique_ptr<areaVectorField> faceCentresPtr_;
-
-        //- Edge centres
-        mutable std::unique_ptr<edgeVectorField> edgeCentresPtr_;
-
-        //- Face area normals
-        mutable std::unique_ptr<areaVectorField> faceAreaNormalsPtr_;
-
-        //- Edge area normals
-        mutable std::unique_ptr<edgeVectorField> edgeAreaNormalsPtr_;
-
-        //- Point area normals
-        mutable std::unique_ptr<vectorField> pointAreaNormalsPtr_;
-
-        //- Face curvatures
-        mutable std::unique_ptr<areaScalarField> faceCurvaturesPtr_;
-
-        //- Edge transformation tensors
-        mutable std::unique_ptr<FieldField<Field, tensor>>
-            edgeTransformTensorsPtr_;
-
-        //- Whether point normals must be corrected for a patch
+        //- Point-normal-correction flag per boundary patch (finiteArea compat
+        //  hook, see correctPatchPointNormals())
         mutable std::unique_ptr<boolList> correctPatchPointNormalsPtr_;
 
+        //- Per parent finite-area patch edge (patch().edges() index), the
+        //  reduced-order boundary face (global mesh-face id) coincident with
+        //  it, or -1 for an internal edge. Bridges the parent-patch edge
+        //  topology to the reduced-order boundary patches.
+        mutable std::unique_ptr<labelList> patchEdgeToBndFacePtr_;
 
-    // Other mesh-related data
-
-        //- Parallel info
-        mutable autoPtr<faGlobalMeshData> globalMeshDataPtr_;
-
-        //- Mapping/swapping for boundary edge halo neighbours
-        mutable std::unique_ptr<faMeshBoundaryHalo> haloMapPtr_;
-
-        //- Face centres for boundary edge halo neighbours
-        mutable std::unique_ptr<pointField> haloFaceCentresPtr_;
-
-        //- Face normals for boundary edge halo neighbours
-        mutable std::unique_ptr<vectorField> haloFaceNormalsPtr_;
+        //- Per reduced-order point, the corresponding patch() local point
+        //  index. The reduced-order mesh and patch() enumerate the same
+        //  free-surface points (both keyed on parent-mesh points) but not
+        //  necessarily in the same order, so this map is required whenever a
+        //  reduced-order face's point labels index a patch-local field
+        //  (points, oldPoints, ...). Identity for a standalone/consistent
+        //  region.
+        mutable std::unique_ptr<labelList> patchPointMapPtr_;
 
 
-    // Static Private Data
+    // Private Static Data
 
-        //- The prefix to local: %finite-area
+        //- The prefix to the parent registry name: "finite-area"
         static const word prefix_;
-
-        //- Quadrics fit for pointAreaNormals (experimental)
-        static const int quadricsFit_;
 
 
     // Private Member Functions
 
-        //- Set indirect patch, removing any old one.
-        //  No communication
-        void initPatch() const;
+        //- Calculate the whichPatchFaces()/whichPolyPatches() addressing
+        void calcWhichPatchFaces() const;
 
-        //- Set primitive mesh data.
-        //  No communication
-        void setPrimitiveMeshData();
+        //- Calculate ngbPolyPatchFacesPtr_: for each finite-area boundary edge
+        //  the parent-mesh neighbour boundary face across it. The neighbour of
+        //  a genuine (e.g. wall) rim edge is a boundary face of the SAME parent
+        //  domain (the area faces are boundary faces of the local domain, and a
+        //  wall face sharing a rim edge is local too), so no off-processor
+        //  exchange is needed. No-op (all -1) for a standalone area region.
+        void calcNgbPolyPatchFaces() const;
 
-        //- Get list of (proc/patchi/patchEdgei/meshFacei) tuple pairs in an
-        //- globally consistent ordering
-        List<Pair<patchTuple>> getBoundaryEdgeConnections() const;
+        //- Calculate patchEdgeToBndFacePtr_ (parent-patch edge -> reduced-order
+        //  boundary face)
+        void calcPatchEdgeToBoundaryFace() const;
 
-        //- Determine the boundary edge neighbour connections
-        void calcBoundaryConnections() const;
+        //- Calculate patchPointMapPtr_ (reduced-order point -> patch() local
+        //  point index)
+        void calcPatchPointMap() const;
 
-        //- Define boundary edge neighbours (proc/face) based on
-        //- gathered topology information
-        void setBoundaryConnections
-        (
-            const List<Pair<patchTuple>>& bndEdgeConnections
-        ) const;
+        //- Publish, in this mesh's registry, the parent-mesh point label of
+        //  each reduced-order point (a labelIOList named
+        //  "pointAreaNormalsParentMap"), so the reduced-order (2D) geometry
+        //  scheme can sum point-area-normal contributions through the PARENT
+        //  mesh's correct global point coupling instead of the reduced-order
+        //  mesh's own (degenerate) coupling. See
+        //  basicFvGeometryScheme::calcPointAreaNormals for why the reduced-order
+        //  mesh's own coupling corrupts the normal at multiply-shared points
+        //  (e.g. the poles of a decomposed sphere). No-op when standalone (no
+        //  parent) or when the parent point addressing is unavailable.
+        void registerParentPointMap();
 
+        //- (Re)publish, in this mesh's registry, the per-reduced-order-point
+        //  neighbour (wall) polyPatch face normal to be removed from the
+        //  point-area normal at contact-line points (a vectorIOField named
+        //  "pointAreaNormalsBoundaryCorrection"), for patches opted in via
+        //  correctPatchPointNormals(). The reduced-order pointAreaNormals scheme
+        //  (basicFvGeometryScheme::calcPointAreaNormals, finiteVolume) applies it
+        //  inside the point-normal build so it reaches faceCurvatures, mirroring
+        //  the legacy faMesh::calcPointAreaNormals haloFaceNormals correction.
+        //  No-op when standalone or when no patch requests the correction.
+        void updatePointNormalsBoundaryCorrection() const;
 
-        // Private Member Functions to calculate demand driven data
+        //- Finalise the reduced-order boundary in a parallel-safe order.
+        //  Drives the boundary topology/geometry collectives explicitly and
+        //  uniformly on every rank, so an empty area subdomain issues the
+        //  same worldComm collectives as the ranks that carry the region
+        //  (see the implementation for the deadlock this avoids).
+        void finaliseParallelBoundary();
 
-            //- Calculate ldu addressing
-            void calcLduAddressing() const;
+        //- Repopulate meshFaces_/meshPointLabels_ from the persisted
+        //- finite-area[/<region>]/faMesh/{faceLabels,pointLabels} written by
+        //- writeObject(). Needed by the IOobject (read) constructor - whose
+        //  fvMesh base only reads the reduced-order polyMesh, not the parent
+        //  coupling addressing - so that faceLabels()/pointLabels()/patch()
+        //  (and hence volSurfaceMapping / faMeshProcAddressing) work after a
+        //  createFaMesh-style read. No-op when standalone (no parent) or when
+        //  the addressing is already populated. pointLabels is read
+        //  READ_IF_PRESENT so meshes written before it was persisted still
+        //  load (with an empty meshPointLabels_, as before).
+        void readCouplingAddressing();
 
-            //- Calculate patch starts in the edge list
-            void calcPatchStarts() const;
-
-            //- Calculate which polyPatches, polyPatch/local-face
-            //- are related to the areaMesh
-            void calcWhichPatchFaces() const;
-
-            //- Calculate the edge normals (direct calculation)
-            //- with flat boundary addressing
-            //  Possible communication
-            tmp<vectorField> calcRawEdgeNormals(int calcType) const;
-
-            //- Calculate edge lengths
-            //  Triggers communication via calcEdgeAreaNormals
-            void calcLe() const;
-
-            //- Calculate mag edge lengths
-            //  No communication
-            void calcMagLe() const;
-
-            //- Calculate face centres
-            //  No communication
-            void calcFaceCentres() const;
-
-            //- Calculate edge centres
-            //  No communication
-            void calcEdgeCentres() const;
-
-            //- Calculate face areas
-            //  No communication
-            void calcS() const;
-
-            //- Calculate face area normals
-            //  Triggers communication via calcEdgeAreaNormals
-            void calcFaceAreaNormals() const;
-
-            //- Calculate edge area normals
-            //  Triggers communication via pointAreaNormals
-            void calcEdgeAreaNormals() const;
-
-            //- Calculate point area normals
-            //  Triggers communication for processor patches
-            void calcPointAreaNormals(vectorField& result) const;
-
-            //- Calculate point area normals by quadrics fit
-            void calcPointAreaNormalsByQuadricsFit(vectorField& result) const;
-
-            //- Calculate face curvatures
-            //  Triggers communication via edgeLengthCorrection
-            void calcFaceCurvatures() const;
-
-            //- Calculate edge transformation tensors
-            void calcEdgeTransformTensors() const;
-
-            //- Clear geometry but not the face areas
-            void clearGeomNotAreas() const;
-
-            //- Has halo face centers/normals
-            bool hasHaloFaceGeometry() const noexcept;
-
-            //- Clear boundary halo information
-            void clearHalo() const;
-
-            //- Clear geometry
-            void clearGeom() const;
-
-            //- Clear addressing
-            void clearAddressing() const;
-
-            //- Clear demand-driven data
-            void clearOut() const;
-
-
-    // Halo handling
-
-        //- Calculate halo centres/normals
-        void calcHaloFaceGeometry() const;
-
-
-    // Helpers
-
-        //- Create a single patch
-        faPatchList createOnePatch
-        (
-            const word& patchName,
-            const word& patchType = ""
-        ) const;
-
-        //- Create list of patches from boundary definition
-        faPatchList createPatchList
-        (
-            const dictionary& bndDict,
-            const word& emptyPatchName = "",
-            const dictionary* defaultPatchDefinition = nullptr
-        ) const;
-
-
-        //- Fatal error if edge labels are out of range
-        void checkBoundaryEdgeLabelRange(const labelUList& edgeLabels) const;
-
-        //- Extract list from contiguous (unordered) boundary data
-        //- to the locally sorted order.
-        template<class T>
-        List<T> boundarySubset
-        (
-            const UList<T>& bndField,
-            const labelUList& edgeLabels
-        ) const
+        //- Bundle used to build the fvMesh base + coupling in one ctor
+        struct meshData
         {
-            #ifdef FULLDEBUG
-            checkBoundaryEdgeLabelRange(edgeLabels);
-            #endif
-            // Like UIndirectList but with an offset
-            List<T> result(edgeLabels.size());
-            forAll(edgeLabels, i)
-            {
-                result[i] = bndField[edgeLabels[i] - nInternalEdges_];
-            }
-            return result;
-        }
+            autoPtr<fvMesh> region;
+            labelList faceLabels;
 
+            //- Parent-mesh point label for each area-mesh point
+            labelList pointLabels;
 
-    // Static Functions
+            //- Optional definition-derived boundary patch names/types
+            //  (ordered by the region boundary patch index). When non-empty
+            //  the delegated ctor builds named/typed patches instead of
+            //  cloning the parent-derived region patches.
+            wordList patchNames;
+            wordList patchTypes;
 
-        //- Test if faSchemes/faSolution files are available
-        static bool hasSystemFiles
+            //- Neighbour processor for each emitted patch (-1 for a
+            //  non-processor patch). For patchTypes[i] == "processor" this is
+            //  the rank on the other side of the inter-domain edges, used to
+            //  build a genuine fvMesh processorPolyPatch on the reduced-order
+            //  region.
+            labelList patchNeighbProcs;
+        };
+
+        //- Read the parent-mesh faceLabels for the given area region
+        static labelList readFaceLabels
         (
             const word& areaName,
             const polyMesh& pMesh
         );
 
-        //- Test if mesh files needed for read construction are available
-        static bool hasMeshFiles
+        //- Select the parent boundary faceLabels matching the given patches
+        static labelList selectPatchFaces
+        (
+            const polyBoundaryMesh& pbm,
+            const wordRes& patchNames
+        );
+
+        //- Build a temporary reduced-order fvMesh from the parent mesh and
+        //- the selected parent faceLabels
+        static autoPtr<fvMesh> buildRegionMesh
+        (
+            const word& areaName,
+            const polyMesh& pMesh,
+            const labelList& faceLabels,
+            labelList& pointLabels
+        );
+
+        //- Build a temporary reduced-order fvMesh, grouping the boundary
+        //- faces (edges) into the named/typed patches declared in the
+        //- faMeshDefinition "boundary" sub-dictionary. The resulting patch
+        //- names/types (ordered by region boundary patch index) are returned
+        //- via \p patchNames / \p patchTypes.
+        static autoPtr<fvMesh> buildRegionMeshFromDefinition
+        (
+            const word& areaName,
+            const polyMesh& pMesh,
+            const labelList& faceLabels,
+            const dictionary& faMeshDefinition,
+            wordList& patchNames,
+            wordList& patchTypes,
+            labelList& patchNeighbProcs,
+            labelList& pointLabels
+        );
+
+        //- Read faceLabels + build the reduced-order region mesh
+        static meshData buildMeshData
         (
             const word& areaName,
             const polyMesh& pMesh
         );
 
-public:
+        //- Generate faceLabels + reduced-order region mesh from a definition
+        static meshData buildMeshDataFromDefinition
+        (
+            const word& areaName,
+            const polyMesh& pMesh,
+            const dictionary& faMeshDefinition
+        );
 
-    // Public Typedefs
+        //- The IOobject used to register the area region on the parent
+        static IOobject regionIO
+        (
+            const word& areaName,
+            const polyMesh& pMesh
+        );
 
-        //- The mesh type
-        typedef faMesh Mesh;
+        //- Read a legacy finiteArea control dictionary
+        //- (system/finite-area/<faDictName>) as fallback content for the
+        //- fvSchemes/fvSolution controls. Returns an empty dictionary when
+        //- the file is absent. Used to preserve backward compatibility with
+        //- cases that ship faSchemes/faSolution (D2).
+        static dictionary readLegacyControlDict
+        (
+            const word& faDictName,
+            const objectRegistry& db
+        );
 
-        //- The boundary type associated with the mesh
-        typedef faBoundaryMesh BoundaryMesh;
-
-
-    // Tuning switches
-
-        //- Geometry treatment
-        static int geometryOrder_;
-
-
-    //- Runtime type information
-    TypeName("faMesh");
-
-        //- The prefix to the parent registry name: %finite-area
-        static const word& prefix() noexcept;
-
-        //- The mesh sub-directory name (usually "faMesh")
-        static word meshSubDir;
-
-
-    // Generated Methods
+        //- Delegated constructor: build fvMesh base + record coupling
+        faMesh
+        (
+            const word& areaName,
+            const polyMesh& pMesh,
+            meshData&& data
+        );
 
         //- No copy construct
         faMesh(const faMesh&) = delete;
@@ -573,106 +311,53 @@ public:
         void operator=(const faMesh&) = delete;
 
 
+public:
+
+    // Public Typedefs
+
+        //- The mesh type
+        typedef faMesh Mesh;
+
+
+    // Static Data
+
+        //- The mesh sub-directory name (usually "faMesh")
+        static word meshSubDir;
+
+
     // Constructors
 
-        //- Construct zero-sized from polyMesh
-        //  Boundary is added using addFaPatches() member function
-        faMesh(const word& areaName, const polyMesh&, Foam::zero);
+        //- Construct from IOobject (standalone area region, no parent).
+        //  Reads the region fvSchemes/fvSolution if present, otherwise falls
+        //  back to legacy system/finite-area/faSchemes|faSolution (D2 compat).
+        explicit faMesh(const IOobject& io, const bool doInit = true);
 
-        //- Construct zero-sized from polyMesh
-        //  Boundary is added using addFaPatches() member function
-        faMesh(const polyMesh&, Foam::zero);
+        //- Construct from IOobject, capturing the parent-mesh coupling faces
+        faMesh
+        (
+            const IOobject& io,
+            const labelUList& meshFaces,
+            const bool doInit = true
+        )
+        :
+            fvMesh(io, doInit),
+            areaName_(io.name()),
+            meshFaces_(meshFaces)
+        {}
 
-        //- Read construct from polyMesh, using its IOobject properties
-        faMesh(const word& areaName, const polyMesh&, const bool doInit = true);
-
-        //- Read construct from polyMesh, using its IOobject properties
-        explicit faMesh(const polyMesh&, const bool doInit = true);
-
-        //- Construct from components (face labels) without boundary,
-        //- using specified read properties.
-        //  Boundary is added using addFaPatches() member function.
+        //- Construct as a reduced-order region on a parent volume mesh,
+        //- reading the parent-mesh faceLabels for the given area region
         faMesh
         (
             const word& areaName,
             const polyMesh& pMesh,
-            labelList&& faceLabels,
-            IOobjectOption ioOpt
-        );
-
-        //- Construct from components (face labels) without boundary,
-        //- using IOobject properties from polyMesh.
-        //  Boundary is added using addFaPatches() member function.
-        faMesh(const word& areaName, const polyMesh&, labelList&& faceLabels);
-
-        //- Construct from components (face labels) without boundary,
-        //- using specified read properties.
-        //  Boundary is added using addFaPatches() member function.
-        faMesh(const polyMesh&, labelList&& faceLabels, IOobjectOption ioOpt);
-
-        //- Construct from components (face labels) without boundary,
-        //- using IOobject properties from polyMesh.
-        //  Boundary is added using addFaPatches() member function.
-        faMesh(const polyMesh&, labelList&& faceLabels);
-
-        //- Construct as copy (for dictionaries) and zero-sized
-        //- without boundary.
-        //  Boundary is added using addFaPatches() member function
-        faMesh(const word& areaName, const faMesh& baseMesh, Foam::zero);
-
-        //- Construct as copy (for dictionaries) and zero-sized
-        //- without boundary, using IOobject properties from polyMesh.
-        //  Boundary is added using addFaPatches() member function
-        faMesh(const faMesh& baseMesh, Foam::zero);
-
-        //- Construct as copy (for dictionaries) and faceLabels
-        //- without boundary, using specified read properties.
-        //  Boundary is added using addFaPatches() member function
-        faMesh
-        (
-            const word& areaName,
-            const faMesh& baseMesh,
-            labelList&& faceLabels,
-            IOobjectOption ioOpt
-        );
-
-        //- Construct as copy (for dictionaries) and faceLabels
-        //- without boundary, using specified read properties.
-        //  Boundary is added using addFaPatches() member function
-        faMesh
-        (
-            const faMesh& baseMesh,
-            labelList&& faceLabels,
-            IOobjectOption ioOpt
-        );
-
-        //- Construct as copy (for dictionaries) and faceLabels
-        //- without boundary, using IOobject properties from polyMesh.
-        //  Boundary is added using addFaPatches() member function
-        faMesh
-        (
-            const word& areaName,
-            const faMesh& baseMesh,
-            labelList&& faceLabels
-        );
-
-        //- Construct as copy (for dictionaries) and faceLabels
-        //- without boundary, using read properties from baseMesh.
-        //  Boundary is added using addFaPatches() member function
-        faMesh(const faMesh& baseMesh, labelList&& faceLabels);
-
-        //- Construct from single polyPatch
-        faMesh
-        (
-            const word& areaName,
-            const polyPatch& pp,
             const bool doInit = true
         );
 
-        //- Construct from single polyPatch
-        explicit faMesh(const polyPatch& pp, const bool doInit = true);
-
-        //- Construct from definition
+        //- Construct as a reduced-order region on a parent volume mesh from
+        //- a faMeshDefinition dictionary (the makeFaMesh generation path).
+        //  Selects the area faces from "polyMeshPatches" and groups the
+        //  boundary edges into the named patches under "boundary".
         faMesh
         (
             const word& areaName,
@@ -681,515 +366,232 @@ public:
             const bool doInit = true
         );
 
-        //- Construct from definition
+        //- Construct the default (single) area region on a parent volume mesh
+        //- from a faMeshDefinition dictionary. Convenience overload that uses
+        //- the default area-region name (compat with the legacy 2-arg form).
         faMesh
         (
             const polyMesh& pMesh,
             const dictionary& faMeshDefinition,
             const bool doInit = true
-        );
+        )
+        :
+            faMesh(word::null, pMesh, faMeshDefinition, doInit)
+        {}
 
 
     //- Destructor
-    virtual ~faMesh();
+    virtual ~faMesh() = default;
 
 
-    // Static Functions
+    // Static Member Functions
 
-        //- Return the current geometry treatment
-        //  A zero level or negative is with restricted neighbour information
-        static int geometryOrder() noexcept
-        {
-            return geometryOrder_;
-        }
+        //- The prefix to the parent registry name: "finite-area"
+        static const word& prefix() noexcept { return prefix_; }
 
-        //- Set the preferred geometry treatment
-        //  \return the previous value
-        static int geometryOrder(int order) noexcept
-        {
-            int old(geometryOrder_);
-            geometryOrder_ = order;
-            return old;
-        }
+        //- Return the (optional) parent registry that contains all
+        //- finite-area objects on the polyMesh, or nullptr
+        static const objectRegistry* registry(const polyMesh& pMesh);
 
-        //- Read construction from polyMesh if all files are available
+        //- Return the singleton parent registry (on the polyMesh) that
+        //- contains all objects related to finite-area
+        static const objectRegistry& Registry(const polyMesh& pMesh);
+
+        //- The single-region or specified finite-area region on the polyMesh
+        static const faMesh& mesh
+        (
+            const polyMesh& pMesh,
+            const word& areaRegion = word::null
+        );
+
+        //- Read-construct an existing area region from the parent polyMesh
+        //- when its on-disk faceLabels are available, otherwise return
+        //- nullptr. Mirrors the legacy finiteArea faMesh::TryNew selector.
         static autoPtr<faMesh> TryNew
         (
             const word& areaName,
             const polyMesh& pMesh
         );
 
-        //- Read construction from polyMesh if all files are available
+        //- Read-construct the default (single) area region if available,
+        //- otherwise return nullptr.
         static autoPtr<faMesh> TryNew(const polyMesh& pMesh);
+
+        //- True if the on-disk faMesh addressing (faceLabels) for the given
+        //- area region exists on the parent polyMesh. Collective: the result
+        //- is reduced so all ranks agree.
+        static bool hasMeshFiles(const word& areaName, const polyMesh& pMesh);
 
 
     // Member Functions
 
-    // Topological Change
+        //- The area-region name
+        const word& areaName() const noexcept { return areaName_; }
 
-        //- Add boundary patches. Constructor helper
-        void addFaPatches
+        //- True if this area mesh is coupled to a parent volume mesh.
+        //  Uses the inherited fvMesh::parentMesh() registry lookup.
+        bool hasParent() const { return parentMesh().good(); }
+
+        // Keep the inherited fvMesh::movePoints(const pointField&) overload
+        // visible alongside the no-argument parent-tracking overload below.
+        using fvMesh::movePoints;
+
+        //- Re-slice the reduced-order point positions from the (moved) parent
+        //  boundary and propagate the motion to the base fvMesh, clearing and
+        //  lazily rebuilding the reduced-order geometry (areaCentres,
+        //  faceAreaNormals, pointAreaNormals, faceCurvatures, Le, ...).
+        //
+        //  The legacy finiteArea faMesh was a parent-polyMesh MoveableMeshObject
+        //  and received this automatically from polyMesh::movePoints(). The
+        //  finiteArea faMesh is a standalone (reduced-order) fvMesh, so a
+        //  moving-mesh consumer (e.g. the free-surface tracker) must call this
+        //  after the parent points move; otherwise the reduced-order geometry
+        //  and, critically, faceCurvatures() stay frozen at the construction
+        //  (flat) configuration. Returns false (no-op) for a standalone region
+        //  with no usable parent point map.
+        bool movePoints();
+
+        //- The parent-mesh face labels this area mesh maps onto
+        const labelList& meshFaces() const noexcept { return meshFaces_; }
+
+        //- The parent-mesh face labels this area mesh maps onto
+        //  (compatibility alias for meshFaces())
+        const labelList& faceLabels() const noexcept { return meshFaces_; }
+
+        //- The area-mesh face (reduced-order cell) index corresponding to the
+        //  given parent-mesh face, or -1 if that parent face is not part of
+        //  this area mesh. Inverse lookup into meshFaces()/faceLabels().
+        label whichFace(const label meshFacei) const
+        {
+            return meshFaces_.find(meshFacei);
+        }
+
+        //- The parent-mesh point label for each area-mesh point (may be empty
+        //  for a standalone area region)
+        const labelList& pointLabels() const noexcept
+        {
+            return meshPointLabels_;
+        }
+
+        //- Set the parent-mesh coupling face labels
+        void meshFaces(const labelUList& mf) { meshFaces_ = mf; }
+
+        //- The polyPatch/local-face for each of the meshFaces()
+        const List<labelPair>& whichPatchFaces() const;
+
+        //- The sorted parent polyPatch ids referenced by meshFaces()
+        const labelList& whichPolyPatches() const;
+
+        //- The area patch (reduced-order face polygons) on the parent mesh,
+        //  addressed by meshFaces(). Requires a coupled (parent) area mesh.
+        const uindirectPrimitivePatch& patch() const;
+
+
+    // Finite-area boundary <-> parent-polyPatch coupling
+    //
+    //  The finiteArea reduced-order boundary patches are genuine fvPatches
+    //  (processor/empty/wedge coupling is native FV). These accessors restore
+    //  the legacy finiteArea faPatch->parent-3D-patch coupling that the
+    //  free-surface tracker needs, derived from the parent-mesh addressing this
+    //  faMesh already owns rather than a separate boundary halo.
+
+        //- Per finite-area boundary edge (reduced-order boundary face), the
+        //  parent-mesh neighbour boundary face across it (-1 if none). Indexed
+        //  by reduced-order boundary-face index (facei - nInternalFaces()).
+        const labelList& ngbPolyPatchFaces() const;
+
+        //- Per parent finite-area patch edge (patch().edges() index), the
+        //  reduced-order boundary face (global mesh-face id) coincident with
+        //  it, or -1 for an internal edge. Lets consumers relate the
+        //  self-consistent parent-patch edge topology (pointEdges/edgeFaces)
+        //  to the reduced-order boundary patches and their coupling data.
+        const labelList& patchEdgeToBoundaryFace() const;
+
+        //- Per reduced-order point, the corresponding patch() local point
+        //  index. Required to translate a reduced-order face's point labels
+        //  (e.g. aMesh().faces()) into the patch-local numbering used by
+        //  patch().localPoints()/meshPoints() and fields built on them.
+        const labelList& patchPointMap() const;
+
+        //- The parent polyPatch neighbouring the given finite-area boundary
+        //  patch (the 3D patch its rim edges sit on), or -1 (e.g. a processor
+        //  patch, which has no parent-patch neighbour).
+        label ngbPolyPatchIndex(const label faPatchi) const;
+
+        //- Unit normals of the parent faces neighbouring the given finite-area
+        //  boundary patch, one per boundary edge (patch face). Zero where there
+        //  is no neighbour. Taken directly from the parent faces (local), the
+        //  parent-geometry analogue of the legacy faMesh boundary halo.
+        tmp<vectorField> ngbPolyPatchFaceNormals(const label faPatchi) const;
+
+        //- Neighbour parent-patch point normals for the given finite-area
+        //  boundary patch, one per patch point, summed over the rim edges
+        //  incident to each point (mirrors legacy faPatch::ngbPolyPatchPointNormals).
+        tmp<vectorField> ngbPolyPatchPointNormals(const label faPatchi) const;
+
+        //- Straight-line point-to-neighbour (P-N) distance per internal
+        //  finite-area edge (reduced-order internal face). Used for the
+        //  capillary Courant number estimate.
+        tmp<scalarField> lPN() const;
+
+        //- The finite-area (reduced-order) points not on the area-mesh boundary
+        labelList internalPoints() const;
+
+        //- The finite-area (reduced-order) points on the area-mesh boundary
+        labelList boundaryPoints() const;
+
+        //- Point-normal-correction flags per boundary patch (finiteArea compat).
+        //  Stored on the mesh so callers (e.g. interfaceTrackingFvMesh's
+        //  pointNormalsCorrectionPatches) can request per-patch correction.
+        //  Consumed by the reduced-order pointAreaNormals scheme: for a flagged,
+        //  non-coupled patch, updatePointNormalsBoundaryCorrection() publishes
+        //  the neighbour (wall) polyPatch normal per contact-line point and
+        //  basicFvGeometryScheme::calcPointAreaNormals removes it (removeCollinear)
+        //  inside the point-normal build, so the finite-area/neighbour-polyPatch
+        //  perpendicularity feeds curvature (the legacy haloFaceNormals correction).
+        boolList& correctPatchPointNormals() const;
+
+        //- Whether point-normal correction was requested for the given patch
+        bool correctPatchPointNormals(const label patchID) const;
+
+
+    // Finite-area geometry aliases (area == reduced-order cell "volume")
+
+        //- Face areas of the area mesh. On the reduced-order fvMesh the polygon
+        //  "cell volume" IS the finite-area face area, so S() aliases V().
+        const DimensionedField<scalar, volMesh>& S() const { return V(); }
+
+        //- Old-time face areas (alias for the reduced-order V0())
+        const DimensionedField<scalar, volMesh>& S0() const { return V0(); }
+
+        //- Old-old-time face areas (alias for the reduced-order V00())
+        const DimensionedField<scalar, volMesh>& S00() const { return V00(); }
+
+
+    // Finite-area compatibility (edge <-> reduced-order face) addressing
+
+        //- The owner (lower) addressing for the edges (reduced-order faces)
+        const labelUList& edgeOwner() const { return owner(); }
+
+        //- The neighbour (upper) addressing for the edges (reduced-order faces)
+        const labelUList& edgeNeighbour() const { return neighbour(); }
+
+
+    // Writing
+
+        //- Write the reduced-order mesh and, for a coupled (parent) area
+        //- mesh, the parent-mesh faceLabels addressing
+        virtual bool writeObject
         (
-            faPatchList& plist,
-            const bool validBoundary = true
-        );
-
-        //- Add boundary patches. Constructor helper
-        void addFaPatches
-        (
-            const List<faPatch*>& p,
-            const bool validBoundary = true
-        );
-
-        //- Initialise non-demand-driven data etc
-        bool init(const bool doInit);
-
-        //- Processor/processor synchronisation for geometry fields.
-        //  Largely internal use only (slightly hacky).
-        void syncGeom();
-
-
-    // Database
-
-        //- Find the singleton parent registry (on the polyMesh)
-        //- that contains all objects related to finite-area.
-        static const objectRegistry* registry(const polyMesh& pMesh);
-
-        //- Return the singleton parent registry (on the polyMesh)
-        //- that contains all objects related to finite-area.
-        static const objectRegistry& Registry(const polyMesh& pMesh);
-
-        //- The single-region finite-area region on the polyMesh.
-        //- Uses lookupObject semantics - Fatal if non-existent
-        static const faMesh& mesh(const polyMesh& pMesh);
-
-        //- The single-region or specified finite-area region on the polyMesh.
-        //- Uses lookupObject semantics - Fatal if non-existent
-        static const faMesh& mesh(const polyMesh&, const word& areaRegion);
-
-        //- Return access to polyMesh
-        const polyMesh& mesh() const;
-
-        //- Return the local mesh directory (dbDir()/meshSubDir)
-        fileName meshDir() const;
-
-        //- Return reference to time
-        const Time& time() const;
-
-        //- Return the current instance directory for points
-        //  Used in the construction of geometric mesh data dependent
-        //  on points
-        const fileName& pointsInstance() const;
-
-        //- Return the current instance directory for faces
-        const fileName& facesInstance() const;
-
-        //- Const reference to the mesh and solver state data
-        const meshState& data() const { return mesh().data(); }
-
-        //- Reference to the mesh and solver state data
-        meshState& data() { return const_cast<polyMesh&>(mesh()).data(); }
-
-
-    // Parallel
-
-        //- Return communicator used for parallel communication
-        label comm() const noexcept { return comm_; }
-
-        //- Return communicator used for parallel communication
-        label& comm() noexcept { return comm_; }
-
-        //- Is demand-driven parallel info available?
-        bool hasGlobalData() const noexcept;
-
-        //- Return parallel info (demand-driven)
-        const faGlobalMeshData& globalData() const;
-
-
-    // Solution Control
-
-        //- Non-null if faSchemes exists (can test as bool).
-        const faSchemes* hasSchemes() const;
-
-        //- Non-null if faSolution exists (can test as bool).
-        const faSolution* hasSolution() const;
-
-        //- Read-access to the faSchemes controls
-        const faSchemes& schemes() const;
-
-        //- Read/write-access to the faSchemes controls
-        faSchemes& schemes();
-
-        //- Read-access to the faSolution controls
-        const faSolution& solution() const;
-
-        //- Read/write-access to the faSolution controls
-        faSolution& solution();
-
-
-    // Access: Mesh size parameters
-
-        //- Number of local mesh points
-        inline label nPoints() const noexcept;
-
-        //- Number of local mesh edges
-        inline label nEdges() const noexcept;
-
-        //- Number of internal faces
-        inline label nInternalEdges() const noexcept;
-
-        //- Number of boundary edges (== nEdges - nInternalEdges)
-        inline label nBoundaryEdges() const noexcept;
-
-        //- Number of patch faces
-        inline label nFaces() const noexcept;
-
-
-    // Access: Primitive mesh data
-
-        //- Return local points
-        inline const pointField& points() const;
-
-        //- Return local edges with reordered boundary
-        inline const edgeList& edges() const noexcept;
-
-        //- Sub-list of local internal edges
-        inline const edgeList::subList internalEdges() const;
-
-        //- Return local faces
-        inline const faceList& faces() const;
-
-        //- Edge owner addressing
-        inline const labelList& edgeOwner() const noexcept;
-
-        //- Edge neighbour addressing
-        inline const labelList& edgeNeighbour() const noexcept;
-
-        //- True if the internalEdges use an ordering that does not
-        //- correspond 1-to-1 with the patch internalEdges.
-        inline bool hasInternalEdgeLabels() const noexcept;
-
-
-    // Database
-
-        //- True - thisDb() is a valid registry
-        virtual bool hasDb() const { return true; }
-
-        //- Reference to the mesh database
-        virtual const objectRegistry& thisDb() const
-        {
-            return faMeshRegistry::thisDb();
-        }
-
-        //- Local directory path of the objectRegistry relative to Time
-        //- with override for the single-region case
-        virtual const fileName& dbDir() const
-        {
-            return faMeshRegistry::dbDir();
-        }
-
-        //- The name of the area mesh
-        const word& name() const
-        {
-            return faMeshRegistry::thisDb().name();
-        }
-
-
-    // Regions
-
-        //- Local registry directory path (relative to Time) for specified
-        //- area mesh (of a single-region volume mesh)
-        static fileName dbDir(const word& areaRegion);
-
-        //- Local registry directory path (relative to Time) for specified
-        //- volume mesh and area mesh combination
-        static fileName dbDir(const word& volRegion, const word& areaRegion);
-
-        //- Local registry directory path (relative to Time) for specified
-        //- volume mesh and area mesh combination
-        static fileName dbDir
-        (
-            const polyMesh& pMesh,
-            const word& areaRegion = word::null
-        );
-
-        //- The local mesh directory name (eg, "faMesh") for specified
-        //- area mesh (of a single-region volume mesh)
-        static fileName meshDir(const word& areaRegion);
-
-        //- The local mesh directory name (eg, "faMesh") for specified
-        //- volume mesh and area mesh combination
-        static fileName meshDir(const word& volRegion, const word& areaRegion);
-
-        //- The local mesh directory name (eg, "faMesh") for specified
-        //- volume mesh and area mesh combination
-        static fileName meshDir
-        (
-            const polyMesh& pMesh,
-            const word& areaRegion = word::null
-        );
-
-        //- The region name or word::null if polyMesh::defaultRegion
-        const word& regionName() const;
-
-
-        // Access
-
-            //- Return constant reference to boundary mesh
-            inline const faBoundaryMesh& boundary() const noexcept;
-
-            //- Return the underlying polyMesh face labels
-            inline const labelList& faceLabels() const noexcept;
-
-            //- The area-face corresponding to the mesh-face, -1 if not found
-            inline label whichFace(const label meshFacei) const;
-
-            //- The polyPatches related to the areaMesh, in sorted order
-            inline const labelList& whichPolyPatches() const;
-
-            //- The polyPatch/local-face for each faceLabels()
-            inline const List<labelPair>& whichPatchFaces() const;
-
-            //- Return ldu addressing
-            virtual const lduAddressing& lduAddr() const;
-
-            //- Return a list of pointers for each patch
-            //  with only those pointing to interfaces being set
-            virtual lduInterfacePtrsList interfaces() const
-            {
-                return boundary().interfaces();
-            }
-
-            //- Internal face owner
-            const labelUList& owner() const
-            {
-                return lduAddr().lowerAddr();
-            }
-
-            //- Internal face neighbour
-            const labelUList& neighbour() const
-            {
-                return lduAddr().upperAddr();
-            }
-
-            //- True if given edge label is internal to the mesh
-            bool isInternalEdge(label edgeIndex) const noexcept
-            {
-                return (edgeIndex < nInternalEdges_);
-            }
-
-            //- List of proc/face for the boundary edge neighbours
-            //- using primitive patch edge numbering.
-            inline const List<labelPair>& boundaryConnections() const;
-
-            //- Boundary edge neighbour processors
-            //- (does not include own proc)
-            labelList boundaryProcs() const;
-
-            //- List of proc/size for the boundary edge neighbour processors
-            //- (does not include own proc)
-            List<labelPair> boundaryProcSizes() const;
-
-            //- Mapping/swapping for boundary halo neighbours
-            const faMeshBoundaryHalo& boundaryHaloMap() const;
-
-            //- Face centres of boundary halo neighbours
-            const pointField& haloFaceCentres() const;
-
-            //- Face unit-normals of boundary halo neighbours
-            const vectorField& haloFaceNormals() const;
-
-            //- Face centres of boundary halo neighbours for specified patch
-            tmp<pointField> haloFaceCentres(const label patchi) const;
-
-            //- Face unit-normals of boundary halo neighbours for specified patch
-            tmp<vectorField> haloFaceNormals(const label patchi) const;
-
-
-    // Interfacing
-
-        //- The volume (owner) cells associated with the area-mesh
-        labelList faceCells() const;
-
-
-    // Storage Management
-
-        //- Remove all files from mesh instance
-        void removeFiles(const fileName& instanceDir) const;
-
-        //- Remove all files from mesh instance()
-        void removeFiles() const;
-
-
-        //- Has face areas: S()
-        bool hasFaceAreas() const noexcept { return bool(SPtr_); }
-
-        //- Has face centres: areaCentres()
-        bool hasAreaCentres() const noexcept { return bool(faceCentresPtr_); }
-
-        //- Has edge centres: edgeCentres()
-        bool hasEdgeCentres() const noexcept { return bool(edgeCentresPtr_); }
-
-        //- Has edge length vectors: Le()
-        bool hasLe() const noexcept { return bool(LePtr_); }
-
-        //- Has edge length magnitudes: magLe()
-        bool hasMagLe() const noexcept { return bool(magLePtr_); }
-
-        //- Has face area normals: faceAreaNormals()
-        bool hasFaceAreaNormals() const noexcept
-        {
-            return bool(faceAreaNormalsPtr_);
-        }
-
-        //- Has edge area normals: edgeAreaNormals()
-        bool hasEdgeAreaNormals() const noexcept
-        {
-            return bool(edgeAreaNormalsPtr_);
-        }
-
-        //- Has point area normals: pointAreaNormals()
-        bool hasPointAreaNormals() const noexcept
-        {
-            return bool(pointAreaNormalsPtr_);
-        }
-
-        //- Has face curvatures: faceCurvatures()
-        bool hasFaceCurvatures() const noexcept
-        {
-            return bool(faceCurvaturesPtr_);
-        }
-
-        //- Has patch point normals corrections
-        bool hasPatchPointNormalsCorrection() const noexcept
-        {
-            return bool(correctPatchPointNormalsPtr_);
-        }
-
-
-    // Mesh motion and morphing
-
-        //- Is mesh moving
-        bool moving() const
-        {
-            return mesh().moving();
-        }
-
-        //- Update after mesh motion
-        virtual bool movePoints();
-
-        //- Update after topo change
-        virtual void updateMesh(const mapPolyMesh&);
-
-
-        // Mapping
-
-            //- Map all fields in time using given map.
-            virtual void mapFields(const faMeshMapper& mapper) const;
-
-            //- Map face areas in time using given map.
-            virtual void mapOldAreas(const faMeshMapper& mapper) const;
-
-
-        // Demand-driven data
-
-            //- Return constant reference to primitive patch
-            inline const uindirectPrimitivePatch& patch() const;
-
-            //- Return reference to primitive patch
-            inline uindirectPrimitivePatch& patch();
-
-            //- Return patch starts
-            const labelList& patchStarts() const;
-
-            //- Return edge length vectors
-            const edgeVectorField& Le() const;
-
-            //- Return edge length magnitudes
-            const edgeScalarField& magLe() const;
-
-            //- Return normalised edge length vectors
-            tmp<edgeVectorField> unitLe() const;
-
-            //- Return face centres as areaVectorField
-            const areaVectorField& areaCentres() const;
-
-            //- Return edge centres as edgeVectorField
-            const edgeVectorField& edgeCentres() const;
-
-            //- Return face areas
-            const DimensionedField<scalar, areaMesh>& S() const;
-
-            //- Return old-time face areas
-            const DimensionedField<scalar, areaMesh>& S0() const;
-
-            //- Return old-old-time face areas
-            const DimensionedField<scalar, areaMesh>& S00() const;
-
-            //- Return face area normals
-            const areaVectorField& faceAreaNormals() const;
-
-            //- Return edge area normals
-            const edgeVectorField& edgeAreaNormals() const;
-
-            //- Return point area normals
-            const vectorField& pointAreaNormals() const;
-
-            //- Return face curvatures
-            const areaScalarField& faceCurvatures() const;
-
-            //- Return edge transformation tensors
-            const FieldField<Field, tensor>& edgeTransformTensors() const;
-
-            //- Return internal point labels
-            labelList internalPoints() const;
-
-            //- Return boundary point labels
-            labelList boundaryPoints() const;
-
-            //- Return edge length correction
-            tmp<edgeScalarField> edgeLengthCorrection() const;
-
-            //- Whether point normals should be corrected for a patch
-            bool correctPatchPointNormals(const label patchID) const;
-
-            //- Set whether point normals should be corrected for a patch
-            boolList& correctPatchPointNormals() const;
-
-
-        // Storage management
-
-
-        //- Write mesh
-        virtual bool write(const bool writeOnProc = true) const;
-
-
-    // Member Operators
-
-        bool operator!=(const faMesh& m) const;
-
-        bool operator==(const faMesh& m) const;
-
-
-    // Housekeeping
-
-        //- No call operator. Prior to 2312 was used to obtain polyMesh
-        void operator()() const = delete;
+            IOstreamOption streamOpt,
+            const bool writeOnProc = true
+        ) const;
 };
 
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 } // End namespace Foam
-
-
-// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
-
-#include "faMeshI.H"
-
-#ifdef NoRepository
-    #include "faPatchFaMeshTemplates.C"
-#endif
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 

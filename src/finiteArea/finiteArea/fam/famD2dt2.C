@@ -26,9 +26,8 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "areaFields.H"
-#include "edgeFields.H"
-#include "faMatrix.H"
-#include "faD2dt2Scheme.H"
+#include "faMatrices.H"
+#include "fvmD2dt2.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -42,17 +41,18 @@ namespace fam
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
+// The reduced-order faMesh is an fvMesh (areaMesh == volMesh,
+// faMatrix == fvMatrix) and the d2dt2 discretisation is purely temporal, so
+// the finite-area second time derivative is identical to the finite-volume
+// one. Forward to fvm::d2dt2 rather than duplicate the scheme hierarchy.
+
 template<class Type>
 tmp<faMatrix<Type>> d2dt2
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
-    return fa::faD2dt2Scheme<Type>::New
-    (
-        vf.mesh(),
-        vf.mesh().d2dt2Scheme("d2dt2(" + vf.name() + ')')
-    ).ref().famD2dt2(vf);
+    return fvm::d2dt2(vf);
 }
 
 
@@ -60,17 +60,10 @@ template<class Type>
 tmp<faMatrix<Type>> d2dt2
 (
     const dimensionedScalar& rho,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
-    return fa::faD2dt2Scheme<Type>::New
-    (
-        vf.mesh(),
-        vf.mesh().d2dt2Scheme
-        (
-            "d2dt2(" + rho.name() + ',' + vf.name() + ')'
-        )
-    ).ref().famD2dt2(rho, vf);
+    return fvm::d2dt2(rho, vf);
 }
 
 
@@ -78,17 +71,10 @@ template<class Type>
 tmp<faMatrix<Type>> d2dt2
 (
     const areaScalarField& rho,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
-    return fa::faD2dt2Scheme<Type>::New
-    (
-        vf.mesh(),
-        vf.mesh().ddtScheme
-        (
-            "d2dt2(" + rho.name() + ',' + vf.name() + ')'
-        )
-    ).ref().famD2dt2(rho, vf);
+    return fvm::d2dt2(rho, vf);
 }
 
 

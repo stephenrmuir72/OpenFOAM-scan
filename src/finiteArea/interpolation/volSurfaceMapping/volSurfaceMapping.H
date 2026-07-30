@@ -42,6 +42,7 @@ SourceFiles
 #define Foam_volSurfaceMapping_H
 
 #include "areaFields.H"
+#include "faMesh.H"
 #include "volMesh.H"
 #include "surfaceMesh.H"
 #include "PtrList.H"
@@ -51,10 +52,6 @@ SourceFiles
 
 namespace Foam
 {
-
-// Forward Declarations
-template<class Type> class fvPatchField;
-template<class Type> class fvsPatchField;
 
 /*---------------------------------------------------------------------------*\
                       Class volSurfaceMapping Declaration
@@ -67,15 +64,30 @@ class volSurfaceMapping
         //- Reference to mesh
         const faMesh& mesh_;
 
+        //- Volume mesh faces per local cell
+        const labelList meshFaces_;
+
 
 public:
 
     // Constructors
 
-        //- Construct from mesh
+        //- Construct from area mesh, using its parent-mesh coupling faces
         explicit volSurfaceMapping(const faMesh& mesh)
         :
-            mesh_(mesh)
+            mesh_(mesh),
+            meshFaces_(mesh.faceLabels())
+        {}
+
+        //- Construct from mesh and explicit coupling faces
+        volSurfaceMapping
+        (
+            const faMesh& mesh,
+            const UList<label>& meshFaces
+        )
+        :
+            mesh_(mesh),
+            meshFaces_(meshFaces)
         {}
 
         //- No copy construct
@@ -292,7 +304,7 @@ public:
         template<class Type>
         void mapToVolume
         (
-            const tmp<GeometricField<Type, faPatchField, areaMesh>>&,
+            const tmp<GeometricField<Type, fvPatchField, areaMesh>>&,
             GeometricBoundaryField<Type, fvPatchField, volMesh>& dest,
             const label destPatchi = -1
         ) const;
@@ -302,7 +314,7 @@ public:
         template<class Type>
         void mapToVolume
         (
-            const tmp<GeometricField<Type, faPatchField, areaMesh>>&,
+            const tmp<GeometricField<Type, fvPatchField, areaMesh>>&,
             GeometricField<Type, fvPatchField, volMesh>& dest,
             const label destPatchi = -1
         ) const;
@@ -332,7 +344,7 @@ public:
         template<class Type>
         void mapToVolumePatch
         (
-            const tmp<GeometricField<Type, faPatchField, areaMesh>>& taf,
+            const tmp<GeometricField<Type, fvPatchField, areaMesh>>& taf,
             Field<Type>& dest,
             const label destPatchi
         ) const;

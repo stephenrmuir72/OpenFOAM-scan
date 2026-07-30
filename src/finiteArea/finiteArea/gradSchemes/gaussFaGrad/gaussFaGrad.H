@@ -87,14 +87,14 @@ public:
     // Constructors
 
         //- Construct from mesh
-        gaussGrad(const faMesh& mesh)
+        gaussGrad(const fvMesh& mesh)
         :
             gradScheme<Type>(mesh),
             tinterpScheme_(new linearEdgeInterpolation<Type>(mesh))
         {}
 
         //- Construct from Istream
-        gaussGrad(const faMesh& mesh, Istream& is)
+        gaussGrad(const fvMesh& mesh, Istream& is)
         :
             gradScheme<Type>(mesh)
         {
@@ -123,10 +123,10 @@ public:
         tmp
         <
             GeometricField
-            <typename outerProduct<vector, Type>::type, faPatchField, areaMesh>
+            <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>
         > gradf
         (
-            const GeometricField<Type, faePatchField, edgeMesh>&,
+            const GeometricField<Type, fvsPatchField, edgeMesh>&,
             const word& name
         );
 
@@ -135,10 +135,10 @@ public:
         virtual tmp
         <
             GeometricField
-            <typename outerProduct<vector, Type>::type, faPatchField, areaMesh>
+            <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>
         > calcGrad
         (
-            const GeometricField<Type, faPatchField, areaMesh>& vsf,
+            const GeometricField<Type, fvPatchField, areaMesh>& vsf,
             const word& name
         ) const;
 
@@ -147,9 +147,9 @@ public:
         // snGrad functions
         static void correctBoundaryConditions
         (
-            const GeometricField<Type, faPatchField, areaMesh>&,
+            const GeometricField<Type, fvPatchField, areaMesh>&,
             GeometricField
-            <typename outerProduct<vector, Type>::type, faPatchField, areaMesh>&
+            <typename outerProduct<vector, Type>::type, fvPatchField, areaMesh>&
         );
 };
 

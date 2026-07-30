@@ -26,8 +26,8 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "facD2dt2.H"
-#include "faMesh.H"
-#include "faD2dt2Scheme.H"
+#include "fvMesh.H"
+#include "fvcD2dt2.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -41,68 +41,34 @@ namespace fac
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
+// The reduced-order faMesh is an fvMesh (areaMesh == volMesh) and the d2dt2
+// discretisation is purely temporal, so the finite-area explicit second time
+// derivative is identical to the finite-volume one. Forward to fvc::d2dt2
+// rather than duplicate the scheme hierarchy.
+//
+// Note: the finite-volume fvc::d2dt2 provides only the field and
+// field-scalar-field forms; the (dimensioned<Type>, mesh) and
+// (dimensionedScalar, field) forms carried by the legacy finite-area scheme
+// had no callers and no fvc counterpart, so they are not reprovided here.
+
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>> d2dt2
+tmp<GeometricField<Type, fvPatchField, areaMesh>> d2dt2
 (
-    const dimensioned<Type> dt,
-    const faMesh& mesh
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
-    return fa::faD2dt2Scheme<Type>::New
-    (
-        mesh,
-        mesh.d2dt2Scheme("d2dt2(" + dt.name() + ')')
-    ).ref().facD2dt2(dt);
+    return fvc::d2dt2(vf);
 }
 
 
 template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>> d2dt2
-(
-    const GeometricField<Type, faPatchField, areaMesh>& vf
-)
-{
-    return fa::faD2dt2Scheme<Type>::New
-    (
-        vf.mesh(),
-        vf.mesh().d2dt2Scheme("d2dt2(" + vf.name() + ')')
-    ).ref().facD2dt2(vf);
-}
-
-
-template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>> d2dt2
-(
-    const dimensionedScalar& rho,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
-)
-{
-    return fa::faD2dt2Scheme<Type>::New
-    (
-        vf.mesh(),
-        vf.mesh().d2dt2Scheme
-        (
-            "d2dt2(" + rho.name() + ',' + vf.name() + ')'
-        )
-    ).ref().facD2dt2(rho, vf);
-}
-
-
-template<class Type>
-tmp<GeometricField<Type, faPatchField, areaMesh>> d2dt2
+tmp<GeometricField<Type, fvPatchField, areaMesh>> d2dt2
 (
     const areaScalarField& rho,
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 )
 {
-    return fa::faD2dt2Scheme<Type>::New
-    (
-        vf.mesh(),
-        vf.mesh().d2dt2Scheme
-        (
-            "d2dt2(" + rho.name() + ',' + vf.name() + ')'
-        )
-    ).ref().facD2dt2(rho, vf);
+    return fvc::d2dt2(rho, vf);
 }
 
 

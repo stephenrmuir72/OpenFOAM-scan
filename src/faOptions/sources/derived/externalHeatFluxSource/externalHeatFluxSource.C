@@ -27,9 +27,9 @@ License
 
 #include "externalHeatFluxSource.H"
 #include "fam.H"
-#include "faScalarMatrix.H"
+#include "faMatrices.H"
 #include "physicoChemicalConstants.H"
-#include "zeroGradientFaPatchFields.H"
+#include "zeroGradientFvPatchFields.H"
 #include "addToRunTimeSelectionTable.H"
 
 using Foam::constant::physicoChemical::sigma;

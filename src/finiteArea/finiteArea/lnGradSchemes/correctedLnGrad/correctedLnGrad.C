@@ -29,29 +29,49 @@ License
 #include "edgeFields.H"
 #include "gaussFaGrad.H"
 
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+namespace Foam
+{
+
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+namespace fa
+{
+
+// * * * * * * * * * * * * * * * * Destructor  * * * * * * * * * * * * * * * //
+
+template<class Type>
+correctedLnGrad<Type>::~correctedLnGrad()
+{}
+
+
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
 
 template<class Type>
-Foam::tmp<Foam::GeometricField<Type, Foam::faePatchField, Foam::edgeMesh>>
-Foam::fa::correctedLnGrad<Type>::correction
+tmp<GeometricField<Type, fvsPatchField, edgeMesh>>
+correctedLnGrad<Type>::correction
 (
-    const GeometricField<Type, faPatchField, areaMesh>& vf
+    const GeometricField<Type, fvPatchField, areaMesh>& vf
 ) const
 {
-    const faMesh& mesh = this->mesh();
+    const fvMesh& mesh = this->mesh();
 
-    auto tssf = tmp<GeometricField<Type, faePatchField, edgeMesh>>::New
+    tmp<GeometricField<Type, fvsPatchField, edgeMesh>> tssf
     (
-        IOobject
+        new GeometricField<Type, fvsPatchField, edgeMesh>
         (
-            "lnGradCorr("+vf.name()+')',
-            vf.instance(),
-            vf.db()
-        ),
-        mesh,
-        vf.dimensions()*mesh.deltaCoeffs().dimensions()
+            IOobject
+            (
+                "lnGradCorr("+vf.name()+')',
+                vf.instance(),
+                vf.db()
+            ),
+            mesh,
+            vf.dimensions()*mesh.deltaCoeffs().dimensions()
+        )
     );
-    auto& ssf = tssf.ref();
+    GeometricField<Type, fvsPatchField, edgeMesh>& ssf = tssf.ref();
     ssf.setOriented();
 
     for (direction cmpt = 0; cmpt < pTraits<Type>::nComponents; ++cmpt)
@@ -59,7 +79,8 @@ Foam::fa::correctedLnGrad<Type>::correction
         ssf.replace
         (
             cmpt,
-            mesh.correctionVectors()
+            //mesh.correctionVectors()
+            mesh.nonOrthCorrectionVectors()
           & linearEdgeInterpolation
             <
                 typename
@@ -79,5 +100,13 @@ Foam::fa::correctedLnGrad<Type>::correction
     return tssf;
 }
 
+
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+} // End namespace fa
+
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+} // End namespace Foam
 
 // ************************************************************************* //

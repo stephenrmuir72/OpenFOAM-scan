@@ -25,7 +25,7 @@ License
 
 \*---------------------------------------------------------------------------*/
 
-#include "emptyFaPatch.H"
+#include "emptyFvPatch.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -130,7 +130,7 @@ Foam::fa::jouleHeatingSource::updateSigma
     forAll(bf, patchi)
     {
         faPatchField<Type>& pf = bf[patchi];
-        if (!isA<emptyFaPatch>(pf))
+        if (!isA<emptyFvPatch>(pf.patch()))
         {
             const scalarField& Tbf = T.boundaryField()[patchi];
             forAll(pf, facei)

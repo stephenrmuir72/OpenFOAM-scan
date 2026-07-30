@@ -5,7 +5,7 @@
     \\  /    A nd           | www.openfoam.com
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
-    Copyright (C) 2022-2025 OpenCFD Ltd.
+    Copyright (C) 2025 OpenCFD Ltd.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -31,161 +31,55 @@ License
 
 // * * * * * * * * * * * * * * * * Selectors * * * * * * * * * * * * * * * * //
 
-bool Foam::faMesh::hasSystemFiles
-(
-    const word& areaName,
-    const polyMesh& pMesh
-)
+bool Foam::faMesh::hasMeshFiles(const word& areaName, const polyMesh& pMesh)
 {
-    // Expect
-    // - system/finite-area/<region>/faSchemes
-    // - system/finite-area/<region>/faSolution
-
-    // The directory relative to polyMesh (not Time)
-    const fileName relativeDir
+    // The reduced-order faMesh persists only its parent coupling addressing as
+    //   <instance>/finite-area[/<region>]/faMesh/faceLabels
+    // (see faMesh::readFaceLabels / faMesh::writeObject); the reduced mesh
+    // itself is rebuilt in-memory from the parent + faceLabels. So the
+    // existence probe is a faceLabels probe, mirroring the layout used there.
+    const word regionSub =
     (
-        faMesh::prefix() / polyMesh::regionName(areaName)
+        (areaName.empty() || areaName == polyMesh::defaultRegion)
+      ? word::null : areaName
     );
 
-    DebugInfo<< "check system files: " << relativeDir << nl;
-
-    IOobject systemIOobject
+    const fileName localDir =
     (
-        "any-name",
-        pMesh.time().system(),
-        relativeDir,
-        pMesh,
-        IOobject::MUST_READ,
-        IOobject::NO_WRITE,
-        IOobject::NO_REGISTER
+        regionSub.empty()
+      ? (faMesh::prefix()/meshSubDir)
+      : (faMesh::prefix()/regionSub/meshSubDir)
     );
 
-    const fileOperation& fp = Foam::fileHandler();
-
-    bool looksValid = true;
-
-    // Global files: system/{faSchemes,faSolution}
-    for
+    // READ_IF_PRESENT so a missing file yields a fallback instance rather than
+    // a fatal error during the probe.
+    const word instance = pMesh.time().findInstance
     (
-        const word& expect
-      : List<word>
-        ({
-            {"faSchemes"},
-            {"faSolution"}
-        })
-    )
-    {
-        systemIOobject.resetHeader(expect);
-
-        fileName found
-        (
-            fp.filePath
-            (
-                true,  // global
-                systemIOobject,
-                expect // typeName (ununsed?)
-            )
-        );
-
-        if (found.empty())
-        {
-            looksValid = false;
-        }
-    }
-
-    // Only needed on master
-    Pstream::broadcast(looksValid);
-
-    return looksValid;
-}
-
-
-bool Foam::faMesh::hasMeshFiles
-(
-    const word& areaName,
-    const polyMesh& pMesh
-)
-{
-    // As well as system/finite-area/{faSchemes,faSolution}
-    //
-    // expect these:
-    // - instance/finite-area/<region>/faMesh/faceLabels
-    // - instance/finite-area/<region>/faMesh/faBoundary
-
-
-    // Not required...
-    // bool looksValid = hasSystemFiles(areaName, pMesh);
-
-    bool looksValid = true;
-
-    // The mesh directory relative to polyMesh (not Time)
-    const fileName relativeDir
-    (
-        faMesh::meshDir(word::null, areaName)
+        localDir,
+        "faceLabels",
+        IOobjectOption::READ_IF_PRESENT
     );
 
-    if (looksValid)
-    {
-        DebugInfo<< "check mesh files: " << relativeDir << nl;
+    IOobject meshIOobject
+    (
+        "faceLabels",
+        instance,
+        localDir,
+        pMesh.thisDb(),
+        IOobjectOption::READ_IF_PRESENT,
+        IOobjectOption::NO_WRITE,
+        IOobjectOption::NO_REGISTER
+    );
 
-        const fileOperation& fp = Foam::fileHandler();
+    const fileName found
+    (
+        Foam::fileHandler().filePath(false, meshIOobject, "labelList")
+    );
 
-        // The geometry instance for faMesh/faceLabels
-        // Must use READ_IF_PRESENT to avoid aborting if not available
+    bool looksValid = !found.empty();
 
-        const word instance = pMesh.time().findInstance
-        (
-            // Searching from Time, so need polyMesh region too
-            pMesh.regionName()/relativeDir,
-            "faceLabels",
-            IOobject::READ_IF_PRESENT
-        );
-
-        IOobject meshIOobject
-        (
-            "any-name",
-            instance,
-            relativeDir,
-            pMesh,
-            IOobject::READ_IF_PRESENT,
-            IOobject::NO_WRITE,
-            IOobject::NO_REGISTER
-        );
-
-        for
-        (
-            const wordPair& expect
-          : List<wordPair>
-            ({
-                {"faceLabels", "labelList"},
-                {"faBoundary", "faBoundaryMesh"}
-            })
-        )
-        {
-            const word& dataFile = expect.first();
-            const word& dataClass = expect.second();
-
-            meshIOobject.resetHeader(dataFile);
-
-            fileName found
-            (
-                fp.filePath
-                (
-                    false,      // non-global
-                    meshIOobject,
-                    dataClass   // typeName (ununsed?)
-                )
-            );
-
-            if (found.empty())
-            {
-                looksValid = false;
-            }
-        }
-
-        // Everybody needs it, or they all fail
-        Pstream::reduceAnd(looksValid);
-    }
+    // Everybody needs it, or they all fail (matches legacy TryNew semantics).
+    Pstream::reduceAnd(looksValid);
 
     return looksValid;
 }
@@ -206,12 +100,9 @@ Foam::autoPtr<Foam::faMesh> Foam::faMesh::TryNew
 }
 
 
-Foam::autoPtr<Foam::faMesh> Foam::faMesh::TryNew
-(
-    const polyMesh& pMesh
-)
+Foam::autoPtr<Foam::faMesh> Foam::faMesh::TryNew(const polyMesh& pMesh)
 {
-    return TryNew(polyMesh::defaultRegion, pMesh);
+    return faMesh::TryNew(word::null, pMesh);
 }
 
 
