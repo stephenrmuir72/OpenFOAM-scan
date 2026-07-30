@@ -27,7 +27,7 @@ License
 
 #include "ensightOutputAreaField.H"
 #include "ensightFaMesh.H"
-#include "areaFaMesh.H"
+#include "areaFields.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
