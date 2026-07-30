@@ -27,9 +27,7 @@ License
 
 #include "interfaceTrackingFvMesh.H"
 #include "primitivePatchInterpolation.H"
-#include "emptyFaPatch.H"
-#include "processorFaPatch.H"
-#include "wedgeFaPatch.H"
+#include "processorPolyPatch.H"
 #include "wallFvPatch.H"
 #include "coordinateSystem.H"
 #include "unitConversion.H"
@@ -47,9 +45,11 @@ Foam::interfaceTrackingFvMesh::pointDisplacement()
     auto tdisplacement = tmp<vectorField>::New(points.size(), Zero);
     auto& displacement = tdisplacement.ref();
 
-    // Calculate displacement of internal points
-    const vectorField& pointNormals = aMesh().pointAreaNormals();
-    const edgeList& edges = aMesh().patch().edges();
+    // Calculate displacement of internal points.
+    // pointAreaNormals() are reordered into patch()-local numbering so they
+    // align with the patch-local point loops below.
+    const tmp<vectorField> tPointNormals(patchPointAreaNormals());
+    const vectorField& pointNormals = tPointNormals();
     labelList internalPoints = aMesh().internalPoints();
 
     for (const label curPoint : internalPoints)
@@ -96,31 +96,40 @@ Foam::interfaceTrackingFvMesh::pointDisplacement()
             mesh().oldPoints()[meshPoints[pI]];
     }
 
+    // In finiteArea the reduced-order boundary faces ARE the finite-area
+    // boundary edges (2-point faces in reduced-order/patch-local point
+    // numbering). A boundary patch's edges are therefore its faces, ordered by
+    // the finite-volume patch (patchSlice) ordering, its owning finite-area
+    // face is the patch faceCells(), and the neighbour-patch coupling data is
+    // keyed the same way.
+    const faceList& faEdges = aMesh().faces();
+
+    // Reduced-order face point labels -> patch().localPoints() numbering
+    const labelList& faPointMap = aMesh().patchPointMap();
+
     forAll(patchMirrorPoints, patchI)
     {
-        patchMirrorPoints.set
-        (
-            patchI,
-            new vectorField
-            (
-                aMesh().boundary()[patchI].faPatch::size(),
-                Zero
-            )
-        );
+        // Use the polyPatch view: a constraint fvPatch (e.g. the 2D empty
+        // patch) reports size()/faceCells() as empty, but its reduced-order
+        // boundary faces (rim edges) are real and must be mirrored.
+        const polyPatch& fap = aMesh().boundary()[patchI].patch();
+        const label patchStart = fap.start();
+        const label patchSize = fap.size();
+
+        patchMirrorPoints.set(patchI, new vectorField(patchSize, Zero));
 
         vectorField N
         (
-            aMesh().boundary()[patchI].ngbPolyPatchFaceNormals()
+            aMesh().ngbPolyPatchFaceNormals(patchI)
         );
 
-        const labelUList& eFaces =
-            aMesh().boundary()[patchI].edgeFaces();
+        // Finite-area face (reduced-order cell) owning each boundary edge
+        const labelUList& eFaces = fap.faceCells();
 
         // Correct N according to specified contact angle
         if (contactAnglePtr_)
         {
-            label ngbPolyPatchID =
-                aMesh().boundary()[patchI].ngbPolyPatchIndex();
+            label ngbPolyPatchID = aMesh().ngbPolyPatchIndex(patchI);
 
             if (ngbPolyPatchID != -1)
             {
@@ -130,8 +139,6 @@ Foam::interfaceTrackingFvMesh::pointDisplacement()
                  == wallFvPatch::typeName
                 )
                 {
-                    // Info<< aMesh().boundary()[patchI].name() << endl;
-
                     scalar rotAngle = degToRad
                     (
                         gAverage
@@ -146,13 +153,12 @@ Foam::interfaceTrackingFvMesh::pointDisplacement()
 
                     vectorField rotationAxis( N^pEdgN );
 
-                    const edgeList::subList patchEdges =
-                        aMesh().boundary()[patchI].patchSlice(aMesh().edges());
-
                     forAll(rotationAxis, edgeI)
                     {
-                        vector e = patchEdges[edgeI].vec(oldPoints);
-                        //  vector e = patchEdges[edgeI].vec(aMesh().points());
+                        const face& faEdge = faEdges[patchStart + edgeI];
+                        vector e =
+                            oldPoints[faPointMap[faEdge[1]]]
+                          - oldPoints[faPointMap[faEdge[0]]];
 
                         // Adjust direction
                         rotationAxis[edgeI] =
@@ -190,49 +196,39 @@ Foam::interfaceTrackingFvMesh::pointDisplacement()
                     N = (N^rotationAxis2);
 
                     N /= mag(N) + SMALL;
-
-                    // Info<< N << endl;
                 }
             }
         }
 
-        const labelList peFaces =
-            labelList::subList
-            (
-                aMesh().edgeOwner(),
-                aMesh().boundary()[patchI].faPatch::size(),
-                aMesh().boundary()[patchI].start()
-            );
-
-        const labelList& pEdges = aMesh().boundary()[patchI];
-
-        vectorField peCentres(pEdges.size(), Zero);
+        vectorField peCentres(patchSize, Zero);
         forAll(peCentres, edgeI)
         {
+            const face& faEdge = faEdges[patchStart + edgeI];
             peCentres[edgeI] =
-                edges[pEdges[edgeI]].centre(points);
+                0.5*(points[faPointMap[faEdge[0]]]
+              + points[faPointMap[faEdge[1]]]);
         }
 
         vectorField delta
         (
-            vectorField(controlPoints(), peFaces)
+            vectorField(controlPoints(), eFaces)
           - peCentres
         );
 
-        // Info<< aMesh().boundary()[patchI].name() << endl;
-        // Info<< vectorField(controlPoints(), peFaces) << endl;
-
         patchMirrorPoints[patchI] =
             peCentres + ((I - 2*N*N)&delta);
-
-        // Info<< patchMirrorPoints[patchI] << endl;
     }
 
     // Calculate displacement of boundary points
     labelList boundaryPoints = aMesh().boundaryPoints();
 
-    const labelListList& edgeFaces = aMesh().patch().edgeFaces();
     const labelListList& pointEdges = aMesh().patch().pointEdges();
+
+    // Parent-patch edge -> reduced-order boundary face (global mesh-face id),
+    // -1 for an internal edge. Bridges the parent-patch point/edge topology to
+    // the reduced-order boundary patches that carry the mirror points.
+    const labelList& patchEdgeBndFace = aMesh().patchEdgeToBoundaryFace();
+    const polyBoundaryMesh& faBoundary = aMesh().boundaryMesh();
 
     for (const label curPoint : boundaryPoints)
     {
@@ -247,24 +243,16 @@ Foam::interfaceTrackingFvMesh::pointDisplacement()
 
             forAll(curPointEdges, edgeI)
             {
-                label curEdge = curPointEdges[edgeI];
+                const label curEdge = curPointEdges[edgeI];
+                const label bndFacei = patchEdgeBndFace[curEdge];
 
-                if(edgeFaces[curEdge].size() == 1)
+                // A finite-area boundary edge (coincides with a reduced-order
+                // boundary face); internal edges map to -1.
+                if (bndFacei != -1)
                 {
-                    label patchID = -1;
-                    label edgeID = -1;
-                    forAll(aMesh().boundary(), patchI)
-                    {
-                        const labelList& pEdges =
-                            aMesh().boundary()[patchI];
-                        label index = pEdges.find(curEdge);
-                        if (index != -1)
-                        {
-                            patchID = patchI;
-                            edgeID = index;
-                            break;
-                        }
-                    }
+                    const label patchID = faBoundary.whichPatch(bndFacei);
+                    const label edgeID =
+                        bndFacei - faBoundary[patchID].start();
 
                     mirrorPoints[++counter] =
                         patchMirrorPoints[patchID][edgeID];
@@ -314,123 +302,20 @@ Foam::interfaceTrackingFvMesh::pointDisplacement()
         }
     }
 
-    // Calculate displacement of processor patch points
-    forAll(aMesh().boundary(), patchI)
+    // Calculate displacement of processor patch points.
+    //
+    // The legacy path exchanged the least-squares stencil control points
+    // across processorFaPatches (via nonGlobalPatchPoints()/neighbPoints() and
+    // the per-point boundaryProcessorFaPatchPoints mirror construction). That
+    // finite-area processor point coupling is not yet ported to finiteArea -
+    // guard it loudly rather than silently drop the neighbour contribution.
+    // Serial runs have no processor patches and never enter this path.
+    if (Pstream::parRun())
     {
-        if
-        (
-            aMesh().boundary()[patchI].type()
-         == processorFaPatch::typeName
-        )
-        {
-            const processorFaPatch& procPatch =
-                refCast<const processorFaPatch>(aMesh().boundary()[patchI]);
-
-            const labelList& patchPointLabels =
-                procPatch.pointLabels();
-
-            FieldField<Field, vector> lsPoints(patchPointLabels.size());
-            forAll(lsPoints, pointI)
-            {
-                lsPoints.set(pointI, new vectorField(0, Zero));
-            }
-
-            const labelList& nonGlobalPatchPoints =
-                procPatch.nonGlobalPatchPoints();
-
-            forAll(nonGlobalPatchPoints, pointI)
-            {
-                label curPatchPoint =
-                    nonGlobalPatchPoints[pointI];
-
-                label curPoint =
-                    patchPointLabels[curPatchPoint];
-
-                const labelList& curPointFaces = pointFaces[curPoint];
-
-                lsPoints[curPatchPoint].setSize(curPointFaces.size());
-
-                forAll(curPointFaces, faceI)
-                {
-                    label curFace = curPointFaces[faceI];
-
-                    lsPoints[curPatchPoint][faceI] = controlPoints()[curFace];
-                }
-
-            #include "boundaryProcessorFaPatchPoints.H"
-            }
-
-            // Parallel data exchange
-            {
-                OPstream toNeighbProc
-                (
-                    Pstream::commsTypes::buffered,
-                    procPatch.neighbProcNo()
-                );
-
-                toNeighbProc << lsPoints;
-            }
-
-            FieldField<Field, vector> ngbLsPoints(patchPointLabels.size());
-            {
-                IPstream fromNeighbProc
-                (
-                    Pstream::commsTypes::buffered,
-                    procPatch.neighbProcNo()
-                );
-
-                fromNeighbProc >> ngbLsPoints;
-            }
-
-            forAll(nonGlobalPatchPoints, pointI)
-            {
-                label curPatchPoint =
-                    nonGlobalPatchPoints[pointI];
-
-                label curPoint =
-                    patchPointLabels[curPatchPoint];
-
-                label curNgbPoint = procPatch.neighbPoints()[curPatchPoint];
-
-                vectorField allLsPoints
-                (
-                    lsPoints[curPatchPoint].size()
-                  + ngbLsPoints[curNgbPoint].size(),
-                    Zero
-                );
-
-                label counter = -1;
-                forAll(lsPoints[curPatchPoint], pointI)
-                {
-                    allLsPoints[++counter] = lsPoints[curPatchPoint][pointI];
-                }
-                forAll(ngbLsPoints[curNgbPoint], pointI)
-                {
-                    allLsPoints[++counter] = ngbLsPoints[curNgbPoint][pointI];
-                }
-
-                vectorField pointAndNormal
-                (
-                    lsPlanePointAndNormal
-                    (
-                        allLsPoints,
-                        points[curPoint],
-                        pointNormals[curPoint]
-                    )
-                );
-
-                vector& P = pointAndNormal[0];
-                vector& N = pointAndNormal[1];
-
-                if (motionPointsMask()[curPoint] != 0)
-                {
-                    displacement[curPoint] =
-                        pointsDisplacementDir()[curPoint]
-                       *((P - points[curPoint])&N)
-                       /(pointsDisplacementDir()[curPoint]&N);
-                }
-            }
-        }
+        FatalErrorInFunction
+            << "Parallel free-surface point displacement (processorFaPatch"
+            << " least-squares stencil exchange) is not yet ported to"
+            << " finiteArea. Run serially." << nl << abort(FatalError);
     }
 
 

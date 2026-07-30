@@ -181,6 +181,24 @@ class interfaceTrackingFvMesh
             //- Create contact angle
             void makeContactAngle();
 
+        // finiteArea point-numbering bridge
+        //
+        //  The reduced-order faMesh (an fvMesh) renumbers its points relative
+        //  to aMesh().patch() (the free-surface uindirectPrimitivePatch that
+        //  the free-surface tracker works in). Reduced-order cells coincide
+        //  with patch faces, but reduced-order point ids do NOT coincide with
+        //  patch-local point ids. These helpers translate the reduced-order
+        //  point-indexed quantities into the patch-local numbering used
+        //  throughout this class.
+
+            //- pointAreaNormals() reordered into aMesh().patch() local point
+            //  numbering
+            tmp<vectorField> patchPointAreaNormals() const;
+
+            //- The given finite-area boundary patch's points expressed in
+            //  aMesh().patch() local point numbering
+            labelList boundaryPatchLocalPoints(const label patchI) const;
+
         //- No copy construct
         interfaceTrackingFvMesh(const interfaceTrackingFvMesh&) = delete;
 

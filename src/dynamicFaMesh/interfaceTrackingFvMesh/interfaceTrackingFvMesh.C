@@ -30,11 +30,10 @@ License
 #include "addToRunTimeSelectionTable.H"
 #include "motionSolver.H"
 #include "volFields.H"
-#include "processorFaPatch.H"
-#include "wedgeFaPatch.H"
-#include "wedgeFaPatchFields.H"
-#include "slipFaPatchFields.H"
-#include "fixedValueFaPatchFields.H"
+#include "processorPolyPatch.H"
+#include "wedgePolyPatch.H"
+#include "wedgeFvPatchFields.H"
+#include "fixedValueFvPatchFields.H"
 #include "slipFvPatchFields.H"
 #include "symmetryFvPatchFields.H"
 #include "wallFvPatch.H"
@@ -49,7 +48,7 @@ License
 #include "turbulentTransportModel.H"
 #include "unitConversion.H"
 #include "foamVtkIndPatchWriter.H"
-#include "calculatedFaPatchFields.H"
+#include "calculatedFvPatchFields.H"
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -72,6 +71,45 @@ namespace Foam
 
 
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
+
+Foam::tmp<Foam::vectorField>
+Foam::interfaceTrackingFvMesh::patchPointAreaNormals() const
+{
+    // pointAreaNormals() is stored in reduced-order faMesh point numbering;
+    // reorder into aMesh().patch() local point numbering.
+    const vectorField& pan = aMesh().pointAreaNormals();
+    const labelList& ppMap = aMesh().patchPointMap();  // reduced -> patch-local
+
+    auto tpn = tmp<vectorField>::New(pan.size(), Zero);
+    auto& pn = tpn.ref();
+
+    forAll(pan, reducedPointi)
+    {
+        pn[ppMap[reducedPointi]] = pan[reducedPointi];
+    }
+
+    return tpn;
+}
+
+
+Foam::labelList
+Foam::interfaceTrackingFvMesh::boundaryPatchLocalPoints(const label patchI) const
+{
+    // boundary()[patchI].patch().meshPoints() are reduced-order faMesh point
+    // ids; translate them into aMesh().patch() local point numbering.
+    const labelList& reducedPoints =
+        aMesh().boundary()[patchI].patch().meshPoints();
+    const labelList& ppMap = aMesh().patchPointMap();  // reduced -> patch-local
+
+    labelList localPoints(reducedPoints.size());
+    forAll(reducedPoints, i)
+    {
+        localPoints[i] = ppMap[reducedPoints[i]];
+    }
+
+    return localPoints;
+}
+
 
 void Foam::interfaceTrackingFvMesh::initializeData()
 {
@@ -110,6 +148,14 @@ void Foam::interfaceTrackingFvMesh::initializeData()
 
             correction[patchID] = true;
         }
+
+        // The flags are consumed by the finiteArea reduced-order
+        // pointAreaNormals scheme: faMesh::updatePointNormalsBoundaryCorrection()
+        // publishes the neighbour-polyPatch normals for these patches and
+        // basicFvGeometryScheme::calcPointAreaNormals removes them from the
+        // contact-line point normals during each geometry (re)build, so the
+        // finite-area curvature at the contact line is correct (the legacy
+        // haloFaceNormals removeCollinear correction).
     }
 
     // Read motion direction
@@ -152,16 +198,15 @@ void Foam::interfaceTrackingFvMesh::makeUs() const
         if
         (
             aMesh().boundary()[patchI].type()
-         == wedgeFaPatch::typeName
+         == wedgePolyPatch::typeName
         )
         {
             patchFieldTypes[patchI] =
-                wedgeFaPatchVectorField::typeName;
+                wedgeFvPatchVectorField::typeName;
         }
         else
         {
-            label ngbPolyPatchID =
-                aMesh().boundary()[patchI].ngbPolyPatchIndex();
+            label ngbPolyPatchID = aMesh().ngbPolyPatchIndex(patchI);
 
             if (ngbPolyPatchID != -1)
             {
@@ -172,7 +217,7 @@ void Foam::interfaceTrackingFvMesh::makeUs() const
                 )
                 {
                     patchFieldTypes[patchI] =
-                        slipFaPatchVectorField::typeName;
+                        slipFvPatchVectorField::typeName;
                 }
             }
         }
@@ -192,8 +237,7 @@ void Foam::interfaceTrackingFvMesh::makeUs() const
                 << abort(FatalError);
         }
 
-        label ngbPolyPatchID =
-            aMesh().boundary()[fixedPatchID].ngbPolyPatchIndex();
+        label ngbPolyPatchID = aMesh().ngbPolyPatchIndex(fixedPatchID);
 
         if (ngbPolyPatchID != -1)
         {
@@ -204,7 +248,7 @@ void Foam::interfaceTrackingFvMesh::makeUs() const
             )
             {
                 patchFieldTypes[fixedPatchID] =
-                    fixedValueFaPatchVectorField::typeName;
+                    fixedValueFvPatchVectorField::typeName;
             }
         }
     }
@@ -237,8 +281,7 @@ void Foam::interfaceTrackingFvMesh::makeUs() const
                 << abort(FatalError);
         }
 
-        label ngbPolyPatchID =
-            aMesh().boundary()[fixedPatchID].ngbPolyPatchIndex();
+        label ngbPolyPatchID = aMesh().ngbPolyPatchIndex(fixedPatchID);
 
         if (ngbPolyPatchID != -1)
         {
@@ -351,11 +394,10 @@ void Foam::interfaceTrackingFvMesh::makeMotionPointsMask()
         if
         (
             aMesh().boundary()[patchI].type()
-         == processorFaPatch::typeName
+         == processorPolyPatch::typeName
         )
         {
-            const labelList& patchPoints =
-                aMesh().boundary()[patchI].pointLabels();
+            const labelList patchPoints = boundaryPatchLocalPoints(patchI);
 
             forAll(patchPoints, pointI)
             {
@@ -377,8 +419,7 @@ void Foam::interfaceTrackingFvMesh::makeMotionPointsMask()
                 << abort(FatalError);
         }
 
-        const labelList& patchPoints =
-            aMesh().boundary()[fixedPatchID].pointLabels();
+        const labelList patchPoints = boundaryPatchLocalPoints(fixedPatchID);
 
         forAll(patchPoints, pointI)
         {
@@ -611,15 +652,14 @@ void Foam::interfaceTrackingFvMesh::updateDisplacementDirections()
     if (normalMotionDir())
     {
         // Update point displacement direction
-        pointsDisplacementDir() = aMesh().pointAreaNormals();
+        pointsDisplacementDir() = patchPointAreaNormals();
 
         // Correct point displacement direction at contact line
         forAll(aMesh().boundary(), patchI)
         {
             if (contactAnglePtr_)
             {
-                label ngbPolyPatchID =
-                    aMesh().boundary()[patchI].ngbPolyPatchIndex();
+                label ngbPolyPatchID = aMesh().ngbPolyPatchIndex(patchI);
 
                 if (ngbPolyPatchID != -1)
                 {
@@ -630,12 +670,11 @@ void Foam::interfaceTrackingFvMesh::updateDisplacementDirections()
                     )
                     {
                         labelList patchPoints =
-                            aMesh().boundary()[patchI].pointLabels();
+                            boundaryPatchLocalPoints(patchI);
 
                         vectorField N
                         (
-                            aMesh().boundary()[patchI]
-                           .ngbPolyPatchPointNormals()
+                            aMesh().ngbPolyPatchPointNormals(patchI)
                         );
 
                         forAll(patchPoints, pointI)
@@ -679,8 +718,8 @@ void Foam::interfaceTrackingFvMesh::updateDisplacementDirections()
 void Foam::interfaceTrackingFvMesh::initializeControlPointsPosition()
 {
     {
-        const faceList& faces = aMesh().faces();
-        const pointField& points = aMesh().points();
+        const faceList& faces = aMesh().patch().localFaces();
+        const pointField& points = aMesh().patch().localPoints();
 
         pointField displacement(pointDisplacement());
         scalarField sweptVolCorr(faces.size(), Zero);
@@ -702,7 +741,7 @@ void Foam::interfaceTrackingFvMesh::initializeControlPointsPosition()
             faceArea[faceI] = faces[faceI].unitNormal(newPoints);
         }
 
-        scalarField deltaH = scalarField(aMesh().nFaces(), Zero);
+        scalarField deltaH = scalarField(aMesh().nCells(), Zero);
 
         forAll(deltaH, faceI)
         {
@@ -736,7 +775,7 @@ void Foam::interfaceTrackingFvMesh::initializeControlPointsPosition()
             for
             (
                 const label facei
-              : aMesh().boundary()[fixedPatchID].edgeFaces()
+              : aMesh().boundary()[fixedPatchID].patch().faceCells()
             )
             {
                 deltaH[facei] *= 2.0;
@@ -756,8 +795,8 @@ void Foam::interfaceTrackingFvMesh::smoothFreeSurfaceMesh()
 
     pointField displacement(pointDisplacement());
 
-    const faceList& faces = aMesh().faces();
-    const pointField& points = aMesh().points();
+    const faceList& faces = aMesh().patch().localFaces();
+    const pointField& points = aMesh().patch().localPoints();
 
     pointField newPoints(points + displacement);
 
@@ -793,7 +832,7 @@ void Foam::interfaceTrackingFvMesh::smoothFreeSurfaceMesh()
         for
         (
             const label facei
-          : aMesh().boundary()[fixedPatchID].edgeFaces()
+          : aMesh().boundary()[fixedPatchID].patch().faceCells()
         )
         {
             deltaHf[facei] *= 2.0;
@@ -991,7 +1030,7 @@ Foam::scalar Foam::interfaceTrackingFvMesh::maxCourantNumber()
 
     if (pureFreeSurface())
     {
-        const scalarField& dE = aMesh().lPN();
+        const scalarField dE(aMesh().lPN());
 
         CoNum = gMax
         (
@@ -1010,7 +1049,7 @@ Foam::scalar Foam::interfaceTrackingFvMesh::maxCourantNumber()
           + SMALL
         );
 
-        const scalarField& dE = aMesh().lPN();
+        const scalarField dE(aMesh().lPN());
 
         CoNum = gMax
         (
@@ -1059,11 +1098,10 @@ void Foam::interfaceTrackingFvMesh::correctPointDisplacement
     {
         label fixedPatchID = aMesh().boundary().findPatchID(patchName);
 
-        const labelList& pLabels =
-            aMesh().boundary()[fixedPatchID].pointLabels();
+        const labelList pLabels = boundaryPatchLocalPoints(fixedPatchID);
 
         const labelUList& eFaces =
-            aMesh().boundary()[fixedPatchID].edgeFaces();
+            aMesh().boundary()[fixedPatchID].patch().faceCells();
 
         labelHashSet pointSet;
 
@@ -1146,11 +1184,10 @@ void Foam::interfaceTrackingFvMesh::correctPointDisplacement
         label nonReflectingPatchID =
             aMesh().boundary().findPatchID(patchName);
 
-        const labelList& pLabels =
-            aMesh().boundary()[nonReflectingPatchID].pointLabels();
+        const labelList pLabels = boundaryPatchLocalPoints(nonReflectingPatchID);
 
         const labelUList& eFaces =
-            aMesh().boundary()[nonReflectingPatchID].edgeFaces();
+            aMesh().boundary()[nonReflectingPatchID].patch().faceCells();
 
         labelList corrPoints = pLabels;
 
@@ -1274,106 +1311,24 @@ void Foam::interfaceTrackingFvMesh::correctContactLinePointNormals()
                 mesh().oldPoints()[meshPoints[ptI]];
         }
 
-// #       include "createTangentField.H"
-        areaVectorField tangent
-        (
-            aMesh().thisDb().newIOobject("tangent"),
-            aMesh(),
-            dimensioned<vector>(dimless, Zero)
-        );
-
+        // Parallel contact-line point-normal correction relied on the legacy
+        // processorFaPatch tangent exchange (populating a per-face "tangent"
+        // area field across processor boundaries). That processor point/edge
+        // coupling is not yet ported to finiteArea - guard it loudly rather
+        // than silently produce a wrong normal. Serial runs never enter this
+        // path (no processor patches).
         if (Pstream::parRun())
         {
-            const labelListList& edgeFaces = aMesh().patch().edgeFaces();
-            const labelListList& pointEdges = aMesh().patch().pointEdges();
-            const labelListList& pointFaces = aMesh().patch().pointFaces();
-            const edgeList& edges = aMesh().edges();
-
-            forAll(aMesh().boundary(), patchI)
-            {
-                if
-                (
-                    aMesh().boundary()[patchI].type()
-                 == processorFaPatch::typeName
-                )
-                {
-                    const processorFaPatch& procPatch =
-                        refCast<const processorFaPatch>
-                        (
-                            aMesh().boundary()[patchI]
-                        );
-
-                    const labelList& patchPointLabels =
-                        procPatch.pointLabels();
-
-                    forAll(patchPointLabels, pointI)
-                    {
-                        label curPoint = patchPointLabels[pointI];
-
-                        // Check if processor point is boundary point
-
-                        label patchID = -1;
-                        label edgeID = -1;
-
-                        const labelList& curPointEdges = pointEdges[curPoint];
-
-                        forAll(curPointEdges, edgeI)
-                        {
-                            label curEdge = curPointEdges[edgeI];
-
-                            if (edgeFaces[curEdge].size() == 1)
-                            {
-                                forAll(aMesh().boundary(), pI)
-                                {
-                                    const labelList& curEdges =
-                                        aMesh().boundary()[pI];
-
-                                    label index = curEdges.find(curEdge);
-
-                                    if (index != -1)
-                                    {
-                                        if
-                                        (
-                                            aMesh().boundary()[pI].type()
-                                         != processorFaPatch::typeName
-                                        )
-                                        {
-                                            patchID = pI;
-                                            edgeID = index;
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        if (patchID != -1)
-                        {
-                            label curEdge =
-                                aMesh().boundary()[patchID].start() + edgeID;
-
-                            vector t = edges[curEdge].vec(oldPoints);
-                            t /= mag(t) + SMALL;
-
-                            const labelList& curPointFaces =
-                                pointFaces[curPoint];
-
-                            forAll(curPointFaces, fI)
-                            {
-                                tangent.ref().field()[curPointFaces[fI]] = t;
-                            }
-                        }
-                    }
-                }
-            }
-
-            tangent.correctBoundaryConditions();
+            FatalErrorInFunction
+                << "Parallel contact-line point-normal correction is not yet"
+                << " ported to finiteArea (processor-edge tangent exchange)."
+                << " Run serially, or set correctContactLineNormals false."
+                << nl << abort(FatalError);
         }
 
         forAll(aMesh().boundary(), patchI)
         {
-            label ngbPolyPatchID =
-                aMesh().boundary()[patchI].ngbPolyPatchIndex();
+            label ngbPolyPatchID = aMesh().ngbPolyPatchIndex(patchI);
 
             if (ngbPolyPatchID != -1)
             {
@@ -1394,11 +1349,11 @@ void Foam::interfaceTrackingFvMesh::correctContactLinePointNormals()
 
                     vectorField ngbN
                     (
-                        aMesh().boundary()[patchI].ngbPolyPatchPointNormals()
+                        aMesh().ngbPolyPatchPointNormals(patchI)
                     );
 
                     const labelList& patchPoints =
-                        aMesh().boundary()[patchI].pointLabels();
+                        aMesh().boundary()[patchI].patch().meshPoints();
 
                     vectorField pN(N, patchPoints);
 
@@ -1406,12 +1361,21 @@ void Foam::interfaceTrackingFvMesh::correctContactLinePointNormals()
                     rotationAxis /= mag(rotationAxis) + SMALL;
 
 
-                    // Calc rotation axis using edge vectors
+                    // Calc rotation axis using edge vectors. In finiteArea
+                    // the reduced-order boundary faces ARE the finite-area
+                    // edges, so the boundary patch's point->face addressing
+                    // gives the rim edges incident to each patch point, and
+                    // the (2-point) reduced face is the edge itself.
+                    const faceList& faEdges = aMesh().faces();
 
-                    const edgeList& edges = aMesh().edges();
+                    // Reduced-order face point labels -> patch-local numbering
+                    const labelList& faPointMap = aMesh().patchPointMap();
 
                     const labelListList& pointEdges =
-                        aMesh().boundary()[patchI].pointEdges();
+                        aMesh().boundary()[patchI].patch().pointFaces();
+
+                    const label patchStart =
+                        aMesh().boundary()[patchI].start();
 
                     forAll(pointEdges, pointI)
                     {
@@ -1419,11 +1383,13 @@ void Foam::interfaceTrackingFvMesh::correctContactLinePointNormals()
 
                         forAll(pointEdges[pointI], eI)
                         {
-                            label curEdge =
-                                aMesh().boundary()[patchI].start()
-                              + pointEdges[pointI][eI];
+                            const label curEdge =
+                                patchStart + pointEdges[pointI][eI];
 
-                            vector e = edges[curEdge].vec(oldPoints);
+                            const face& faEdge = faEdges[curEdge];
+                            vector e =
+                                oldPoints[faPointMap[faEdge[1]]]
+                              - oldPoints[faPointMap[faEdge[0]]];
 
                             e *= (e&rotationAxis[pointI])
                                /mag(e&rotationAxis[pointI]);
@@ -1433,66 +1399,10 @@ void Foam::interfaceTrackingFvMesh::correctContactLinePointNormals()
                             rotAx += e;
                         }
 
-                        if (pointEdges[pointI].size() == 1)
-                        {
-                            label curPoint = patchPoints[pointI];
-
-                            const labelListList& ptEdges =
-                                aMesh().patch().pointEdges();
-                            const labelList& curPointEdges =
-                                ptEdges[curPoint];
-
-                            label procPatchID = -1;
-                            label edgeID = -1;
-
-                            const labelListList& edgeFaces =
-                                aMesh().patch().edgeFaces();
-
-                            forAll(curPointEdges, edgeI)
-                            {
-                                label curEdge = curPointEdges[edgeI];
-
-                                if (edgeFaces[curEdge].size() == 1)
-                                {
-                                    forAll(aMesh().boundary(), pI)
-                                    {
-                                        const labelList& curEdges =
-                                            aMesh().boundary()[pI];
-
-                                        label index =
-                                            curEdges.find(curEdge);
-
-                                        if (index != -1)
-                                        {
-                                            if
-                                            (
-                                                aMesh().boundary()[pI].type()
-                                                == processorFaPatch::typeName
-                                            )
-                                            {
-                                                procPatchID = pI;
-                                                edgeID = index;
-                                                break;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            if (procPatchID != -1)
-                            {
-                                vector t =
-                                    tangent.boundaryField()[procPatchID]
-                                   .patchNeighbourField()()[edgeID];
-
-                                t *= (t&rotationAxis[pointI])
-                                    /(mag(t&rotationAxis[pointI]) + SMALL);
-
-                                t /= mag(t) + SMALL;
-
-                                rotAx += t;
-                            }
-                        }
+                        // The legacy single-edge branch here only contributed
+                        // through the processorFaPatch tangent exchange (a
+                        // parallel-only path, guarded out above). In serial it
+                        // was a no-op, so nothing further is added here.
 
                         rotationAxis[pointI] = rotAx/(mag(rotAx) + SMALL);
                     }
@@ -1599,7 +1509,11 @@ bool Foam::interfaceTrackingFvMesh::init(const bool doInit)
         dynamicMotionSolverFvMesh::init(doInit);
     }
 
-    aMeshPtr_.reset(new faMesh(*this));
+    // Reduced-order area region on this (parent) mesh, reading the
+    // pre-generated finite-area addressing (faceLabels). word::null selects
+    // the default area region - the finiteArea analogue of the legacy
+    // faMesh(const polyMesh&) constructor.
+    aMeshPtr_.reset(new faMesh(word::null, *this));
 
     // Set motion-based data
     fixedFreeSurfacePatches_ =
@@ -1669,15 +1583,14 @@ void Foam::interfaceTrackingFvMesh::correctUsBoundaryConditions()
         if
         (
             Us().boundaryField()[patchI].type()
-         == calculatedFaPatchVectorField::typeName
+         == calculatedFvPatchVectorField::typeName
         )
         {
             vectorField& pUs = Us().boundaryFieldRef()[patchI];
 
             pUs = Us().boundaryField()[patchI].patchInternalField();
 
-            label ngbPolyPatchID =
-                aMesh().boundary()[patchI].ngbPolyPatchIndex();
+            label ngbPolyPatchID = aMesh().ngbPolyPatchIndex(patchI);
 
             if (ngbPolyPatchID != -1)
             {
@@ -1696,7 +1609,7 @@ void Foam::interfaceTrackingFvMesh::correctUsBoundaryConditions()
                 {
                     vectorField N
                     (
-                        aMesh().boundary()[patchI].ngbPolyPatchFaceNormals()
+                        aMesh().ngbPolyPatchFaceNormals(patchI)
                     );
 
                     pUs -= N*(N&pUs);
@@ -1746,7 +1659,7 @@ const Foam::surfaceScalarField& Foam::interfaceTrackingFvMesh::phi() const
 Foam::tmp<Foam::vectorField>
 Foam::interfaceTrackingFvMesh::freeSurfaceSnGradU()
 {
-    auto tSnGradU = tmp<vectorField>::New(aMesh().nFaces(), Zero);
+    auto tSnGradU = tmp<vectorField>::New(aMesh().nCells(), Zero);
     auto& SnGradU = tSnGradU.ref();
 
     const vectorField& nA = aMesh().faceAreaNormals().internalField();
@@ -1789,7 +1702,7 @@ Foam::interfaceTrackingFvMesh::freeSurfaceSnGradU()
 Foam::tmp<Foam::scalarField>
 Foam::interfaceTrackingFvMesh::freeSurfaceSnGradUn()
 {
-    auto tSnGradUn = tmp<scalarField>::New(aMesh().nFaces(), Zero);
+    auto tSnGradUn = tmp<scalarField>::New(aMesh().nCells(), Zero);
     auto& SnGradUn = tSnGradUn.ref();
 
     areaScalarField divUs
@@ -1807,7 +1720,7 @@ Foam::interfaceTrackingFvMesh::freeSurfaceSnGradUn()
 Foam::tmp<scalarField>
 Foam::interfaceTrackingFvMesh::freeSurfacePressureJump()
 {
-    auto tPressureJump = tmp<scalarField>::New(aMesh().nFaces(), Zero);
+    auto tPressureJump = tmp<scalarField>::New(aMesh().nCells(), Zero);
     auto& pressureJump = tPressureJump.ref();
 
     const scalarField& K = aMesh().faceCurvatures().internalField();
@@ -2128,7 +2041,7 @@ bool Foam::interfaceTrackingFvMesh::update()
             for
             (
                 const label facei
-              : aMesh().boundary()[fixedPatchID].edgeFaces()
+              : aMesh().boundary()[fixedPatchID].patch().faceCells()
             )
             {
                 deltaHf[facei] *= 2.0;
@@ -2161,6 +2074,14 @@ bool Foam::interfaceTrackingFvMesh::update()
         fsPatchPointMeshU == displacement/mesh().time().deltaTValue();
 
         dynamicMotionSolverFvMesh::update();
+
+        // The parent boundary (free-surface patch) points have just moved;
+        // re-slice the reduced-order faMesh onto them so its geometry -- and
+        // in particular faceCurvatures(), the surface-tension restoring term --
+        // reflects the deformed interface. In legacy finiteArea this happened
+        // automatically via the faMesh MoveableMeshObject callback; the
+        // finiteArea faMesh is a standalone fvMesh and must be moved here.
+        aMesh().movePoints();
 
         correctContactLinePointNormals();
     }
