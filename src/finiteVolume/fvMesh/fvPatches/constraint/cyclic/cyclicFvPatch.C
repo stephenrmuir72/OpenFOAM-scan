@@ -70,6 +70,22 @@ Foam::tmp<Foam::vectorField> Foam::cyclicFvPatch::delta() const
     // To the transformation if necessary
     if (parallel())
     {
+        #ifdef FOAM_OFFLOAD
+        labelRange addr(pdv.size());
+        apply_policy(pdv.size(), [&](auto policy)
+        {
+                std::for_each
+                (
+                    policy,
+                    addr.begin(),
+                    addr.end(),
+                    [&](const label facei)
+                    {
+                        pdv[facei] = patchD[facei] - nbrPatchD[facei];
+                    }
+                );
+        });
+        #else
         forAll(patchD, facei)
         {
             vector ddi = patchD[facei];
@@ -77,9 +93,27 @@ Foam::tmp<Foam::vectorField> Foam::cyclicFvPatch::delta() const
 
             pdv[facei] = ddi - dni;
         }
+        #endif
     }
     else
     {
+        #ifdef FOAM_OFFLOAD
+        labelRange addr(pdv.size());
+        apply_policy(pdv.size(), [&](auto policy)
+        {
+                
+                std::for_each
+                (
+                    policy,
+                    addr.begin(),
+                    addr.end(),
+                    [&](const label facei)
+                    {
+                        pdv[facei] = transform(forwardT()[0], patchD[facei]) - nbrPatchD[facei];
+                    }
+                );
+        });
+        #else
         forAll(patchD, facei)
         {
             vector ddi = patchD[facei];
@@ -87,6 +121,7 @@ Foam::tmp<Foam::vectorField> Foam::cyclicFvPatch::delta() const
 
             pdv[facei] = ddi - transform(forwardT()[0], dni);
         }
+        #endif
     }
 
     return tpdv;
