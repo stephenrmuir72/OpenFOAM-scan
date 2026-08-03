@@ -43,7 +43,8 @@ if (aMesh.nInternalEdges())
 {
     edgeScalarField SfUfbyDelta
     (
-        aMesh.edgeInterpolation::deltaCoeffs()*mag(phis)
+        //aMesh.edgeInterpolation::deltaCoeffs()*mag(phis)
+        aMesh.deltaCoeffs()*mag(phis)
     );
 
     CoNum = max(SfUfbyDelta/aMesh.magLe())

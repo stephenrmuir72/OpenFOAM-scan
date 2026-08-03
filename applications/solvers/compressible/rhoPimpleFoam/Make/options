@@ -26,5 +26,4 @@ EXE_LIBS = \
     -ltopoChangerFvMesh \
     -lsampling \
     -latmosphericModels \
-    -lregionFaModels \
-    -lfiniteArea
+    -lregionFaModels

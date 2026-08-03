@@ -1,5 +1,13 @@
 // Volume-to surface mapping object
-const volSurfaceMapping vsm(aMesh);
+const word& patchName(aRegionName);
+const label patchi = mesh.boundaryMesh().findPatchID(patchName);
+const auto& pp = mesh.boundaryMesh()[patchi];
+labelList meshFaces(pp.size());
+forAll(pp, i)
+{
+    meshFaces[i] = pp.start()+i;
+}
+const volSurfaceMapping vsm(aMesh, meshFaces);
 
 volVectorField U
 (

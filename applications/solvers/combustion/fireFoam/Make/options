@@ -55,5 +55,4 @@ EXE_LIBS = \
     -llagrangianTurbulence \
     -lODE \
     -lregionFaModels \
-    -lfiniteArea \
     -lfaOptions

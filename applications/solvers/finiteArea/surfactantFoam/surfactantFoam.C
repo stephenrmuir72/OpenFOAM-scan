@@ -73,7 +73,10 @@ int main(int argc, char *argv[])
     #include "setRootCaseLists.H"
     #include "createTime.H"
     #include "createMesh.H"
+
+    const word aRegionName(faMesh::prefix());
     #include "createFaMesh.H"
+
     #include "createFaFields.H"
     #include "createVolFields.H"
 

@@ -49,5 +49,4 @@ EXE_LIBS = \
     -lsampling \
     -lcoalCombustion \
     -lregionFaModels \
-    -lfiniteArea \
     -lfaOptions

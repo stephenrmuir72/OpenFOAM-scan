@@ -40,5 +40,4 @@ EXE_LIBS = \
     -lthermoTools \
     -lradiationModels \
     -lregionModels \
-    -lregionFaModels \
-    -lfiniteArea
+    -lregionFaModels

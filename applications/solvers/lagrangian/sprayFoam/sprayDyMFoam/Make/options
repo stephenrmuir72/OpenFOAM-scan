@@ -57,5 +57,4 @@ EXE_LIBS = \
     -ltopoChangerFvMesh \
     -ldynamicMesh \
     -lregionFaModels \
-    -lfiniteArea \
     -lfaOptions

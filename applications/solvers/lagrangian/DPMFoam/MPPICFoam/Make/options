@@ -38,5 +38,4 @@ EXE_LIBS = \
     -lsurfaceFilmModels \
     -lsampling \
     -lregionFaModels \
-    -lfiniteArea \
     -lfaOptions

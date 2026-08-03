@@ -56,7 +56,10 @@ int main(int argc, char *argv[])
     #include "setRootCaseLists.H"
     #include "createTime.H"
     #include "createMesh.H"
+
+    const word aRegionName("film");
     #include "createFaMesh.H"
+
     #include "readGravitationalAcceleration.H"
     #include "readTransportProperties.H"
     #include "createFaFields.H"
@@ -83,7 +86,7 @@ int main(int argc, char *argv[])
 
             #include "calcFrictionFactor.H"
 
-            faVectorMatrix UsEqn
+            fvVectorMatrix UsEqn
             (
                 fam::ddt(h, Us)
               + fam::div(phi2s, Us)
@@ -112,7 +115,7 @@ int main(int argc, char *argv[])
               - fac::interpolate(1.0/(rhol*UsA))*fac::lnGrad(ps*h)*aMesh.magLe()
               + fac::interpolate(ps/(rhol*UsA))*fac::lnGrad(h)*aMesh.magLe();
 
-            faScalarMatrix hEqn
+            fvScalarMatrix hEqn
             (
                 fam::ddt(h)
               + fam::div(phis, h)

@@ -54,5 +54,4 @@ EXE_LIBS = \
     -lsurfaceFilmModels \
     -lcombustionModels \
     -lregionFaModels \
-    -lfiniteArea \
     -lfaOptions
