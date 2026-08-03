@@ -398,19 +398,35 @@ Foam::tmp<Foam::surfaceVectorField> Foam::fvMesh::delta() const
     const labelUList& owner = this->owner();
     const labelUList& neighbour = this->neighbour();
 
+    #ifdef FOAM_OFFLOAD
+    apply_policy(owner.size(), [&](auto policy)
+    {
+        labelRange addr(0,owner.size());
+        std::for_each
+        (
+            policy,
+            addr.begin(),
+            addr.end(),
+            [&](const label facei)
+            {
+                delta[facei] = C[neighbour[facei]] - C[owner[facei]];
+            }
+        );
+    });
+    #else
     forAll(owner, facei)
     {
         delta[facei] = C[neighbour[facei]] - C[owner[facei]];
     }
+    #endif
 
     auto& deltabf = delta.boundaryFieldRef();
-
     forAll(deltabf, patchi)
     {
         deltabf[patchi] = boundary()[patchi].delta();
     }
-
     return tdelta;
+    
 }
 
 
