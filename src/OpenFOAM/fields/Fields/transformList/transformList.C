@@ -42,11 +42,33 @@ Foam::List<T> Foam::transform
     List<T> result(loopLen);
 
     /* pragmas... */
-    for (label i = 0; i < loopLen; ++i)
+    #ifdef FOAM_OFFLOAD
+    if constexpr (is_contiguous_v<T>)
     {
-        result[i] = transform(rotTensor, field[i]);
+        labelList addr(0,loopLen);
+        apply_policy(loopLen, [&](auto policy)
+        {
+            std::transform
+            (
+                policy,
+                addr.begin(),
+                addr.end(),
+                result.begin(),
+                [&](const label i)
+                {
+                    return transform(rotTensor, field[i]);
+                }
+            );
+        });
     }
-
+    else
+    #endif
+    {
+        for (label i = 0; i < loopLen; ++i)
+        {
+            result[i] = transform(rotTensor, field[i]);
+        }
+    }
     return result;
 }
 
@@ -57,9 +79,31 @@ void Foam::transformList(const tensor& rotTensor, UList<T>& field)
     const label loopLen = field.size();
 
     /* pragmas... */
-    for (label i = 0; i < loopLen; ++i)
+    #ifdef FOAM_OFFLOAD
+    if constexpr (is_contiguous_v<T>)
     {
-        field[i] = transform(rotTensor, field[i]);
+        labelList addr(0,loopLen);
+        apply_policy(loopLen, [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                addr.begin(),
+                addr.end(),
+                [&](const label i)
+                {
+                    field[i] = transform(rotTensor, field[i]);
+                }
+            );
+        });
+    }
+    else
+    #endif
+    {
+        for (label i = 0; i < loopLen; ++i)
+        {
+            field[i] = transform(rotTensor, field[i]);
+        }
     }
 }
 
@@ -76,9 +120,31 @@ void Foam::transformList(const tensorField& rotTensor, UList<T>& field)
         const label loopLen = field.size();
 
         /* pragmas... */
-        for (label i = 0; i < loopLen; ++i)
+        #ifdef FOAM_OFFLOAD
+        if constexpr (is_contiguous_v<T>)
         {
-            field[i] = transform(rotTensor[i], field[i]);
+            labelList addr(0,loopLen);
+            apply_policy(loopLen, [&](auto policy)
+            {
+                std::for_each
+                (
+                    policy,
+                    addr.begin(),
+                    addr.end(),
+                    [&](const label i)
+                    {
+                        field[i] = transform(rotTensor[i], field[i]);
+                    }
+                );
+            });
+        }
+        else
+        #endif
+        {
+            for (label i = 0; i < loopLen; ++i)
+            {
+                field[i] = transform(rotTensor[i], field[i]);
+            }
         }
     }
     else
