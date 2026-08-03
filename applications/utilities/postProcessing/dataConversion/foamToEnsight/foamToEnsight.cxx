@@ -129,6 +129,8 @@ Usage
 
 #include "fvc.H"
 #include "fvMesh.H"
+#include "faMesh.H"
+#include "areaFields.H"
 #include "fieldTypes.H"
 #include "volFields.H"
 #include "scalarIOField.H"

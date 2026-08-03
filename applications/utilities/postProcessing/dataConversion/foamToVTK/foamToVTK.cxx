@@ -881,7 +881,7 @@ int main(int argc, char *argv[])
                     if (!doEdgeFields)
                     {
                         // Prune edge fields unless explicitly enabled
-                        objs.filterClasses(Foam::fieldTypes::is_edge, true);
+                        objs.filterClasses(Foam::fieldTypes2::is_edge, true);
                     }
 
                     if (!objs.empty())

@@ -137,7 +137,7 @@ int main(int argc, char *argv[])
 //    }
 
 
-    const labelList addressing(pp.range().labels());
+    const labelList addressing(identity(pp.size(), pp.start()));
 
     const EdgeMap<label> edgeToPatch
     (

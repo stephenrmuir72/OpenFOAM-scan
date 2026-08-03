@@ -25,12 +25,20 @@ License
     along with OpenFOAM.  If not, see <http://www.gnu.org/licenses/>.
 
 Application
-    makeFaMesh
+    makeFaMesh (finiteArea)
 
 Description
-    A mesh generator for finiteArea mesh.
-    When called in parallel, it will also try to act like decomposePar,
-    create procAddressing and decompose serial finite-area fields.
+    A mesh generator for the finiteArea (reduced-order fvMesh) faMesh.
+
+    This is a thin wrapper around the finiteArea generation constructor
+    faMesh(areaName, polyMesh, faMeshDefinition): read the faMeshDefinition,
+    construct the reduced-order mesh, report the mesh checks and write the
+    faceLabels addressing.
+
+    Unlike the legacy finiteArea makeFaMesh, this utility does NOT act like
+    decomposePar in parallel: procAddressing creation and field decomposition
+    are handled by decomposePar / redistributePar directly on the
+    reduced-order mesh.
 
 Original Authors
     Zeljko Tukovic, FAMENA
@@ -41,20 +49,9 @@ Original Authors
 #include "Time.H"
 #include "argList.H"
 #include "faMesh.H"
-#include "IOdictionary.H"
-#include "IOobjectList.H"
-#include "areaFields.H"
-#include "edgeFields.H"
-#include "faFieldDecomposer.H"
 #include "faMeshTools.H"
-#include "faMeshReconstructor.H"
-#include "faMeshSubset.H"
-#include "PtrListOps.H"
-#include "foamVtkIndPatchWriter.H"
-#include "foamVtkLineWriter.H"
-#include "foamVtkVertexWriter.H"
+#include "IOdictionary.H"
 #include "regionProperties.H"
-#include "syncTools.H"
 
 using namespace Foam;
 
@@ -64,7 +61,7 @@ int main(int argc, char *argv[])
 {
     argList::addNote
     (
-        "A mesh generator for finiteArea mesh"
+        "A mesh generator for the finiteArea (reduced-order) faMesh"
     );
     argList::addOption
     (
@@ -81,34 +78,8 @@ int main(int argc, char *argv[])
     );
     argList::addBoolOption
     (
-        "no-decompose",
-        "Suppress procAddressing creation and field decomposition"
-        " (parallel)"
-    );
-    argList::addBoolOption
-    (
-        "no-fields",
-        "Suppress field decomposition"
-        " (parallel)"
-    );
-    argList::addBoolOption
-    (
         "write-vtk",
         "Write mesh as a vtp (vtk) file for display or debugging"
-    );
-    argList::addBoolOption
-    (
-        "write-edges-vtk",
-        "Write mesh edges as vtp (vtk) files (one per processor)",
-        true  // advanced option (debugging only)
-    );
-
-    argList::addBoolOption
-    (
-        "disable-edge-encoding",
-        "Emit edgeProcAddressing without encoding edge flips, "
-        "as per 2512 and earlier [special use]",
-        true  // Advanced option
     );
 
     #include "addRegionOption.H"
@@ -116,28 +87,15 @@ int main(int argc, char *argv[])
 
     #include "setRootCase.H"
     #include "createTime.H"
-    #include "createNamedPolyMesh.H"
+    #include "createNamedMesh.H"
 
     // Handle area region selections
     #include "getAllFaRegionOptions.H"
 
-    const bool doDecompose = !args.found("no-decompose");
-    const bool doDecompFields = !args.found("no-fields");
-
-    // Special use - emit old (2512 and earlier) edgeProcAddressing format
-    // without encoded edge flips.
-    if (args.found("disable-edge-encoding"))
+    if (args.found("write-vtk"))
     {
-        faMeshReconstructor::allowEdgeEncoding(false);
-    }
-
-    if (!doDecompose)
-    {
-        Info<< "Skip decompose of finiteArea mesh/fields" << nl;
-    }
-    else if (!doDecompFields)
-    {
-        Info<< "Skip decompose of finiteArea fields" << nl;
+        Info<< "Note: VTK output is not yet ported to finiteArea"
+            << " - ignoring -write-vtk" << nl << endl;
     }
 
     // ------------------------------------------------------------------------
@@ -170,9 +128,6 @@ int main(int argc, char *argv[])
             meshDefDict.add("emptyPatch", name, true);
         }
 
-        // Preliminary checks
-        #include "checkPatchTopology.H"
-
         Info<< "Create area-mesh";
         if (!polyMesh::regionName(areaRegionName).empty())
         {
@@ -186,14 +141,9 @@ int main(int argc, char *argv[])
         // Mesh information (less verbose)
         faMeshTools::printMeshChecks(aMesh, 0);
 
-        if (args.found("write-vtk") || args.found("write-edges-vtk"))
-        {
-            #include "faMeshWriteVTK.H"
-        }
-
         if (args.dryRun())
         {
-            Info<< "\ndry-run: not writing mesh or decomposing fields\n" << nl;
+            Info<< "\ndry-run: not writing mesh\n" << nl;
         }
         else
         {
@@ -201,16 +151,15 @@ int main(int argc, char *argv[])
             IOstream::minPrecision(10);
 
             Info<< nl << "Write finite area mesh";
-            if (const word& name = aMesh.regionName(); !name.empty())
+            if (!polyMesh::regionName(aMesh.areaName()).empty())
             {
-                Info<< " [" << name << "]";
+                Info<< " [" << aMesh.areaName() << "]";
             }
             Info<< nl;
 
             aMesh.write();
 
             Info<< endl;
-            #include "decomposeFaFields.H"
         }
     }
 

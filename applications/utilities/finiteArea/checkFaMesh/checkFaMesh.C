@@ -25,10 +25,19 @@ License
     along with OpenFOAM.  If not, see <http://www.gnu.org/licenses/>.
 
 Application
-    makeFaMesh
+    checkFaMesh (finiteArea)
 
 Description
-    Check a finite-area mesh
+    Check a finite-area mesh.
+
+    This is a thin wrapper around the finiteArea (reduced-order fvMesh)
+    faMesh: read-construct the area mesh from the on-disk faceLabels and
+    report the finite-area-specific mesh checks (faMeshTools::printMeshChecks).
+
+    Topological validity of the reduced-order region is now covered by
+    checkMesh -region <faRegion>, so this utility keeps only the FA-specific
+    report. The legacy -geometryOrder option is dropped (finiteArea uses the
+    runtime-selected faGeometryScheme).
 
 Original Authors
     Zeljko Tukovic, FAMENA
@@ -41,14 +50,6 @@ Original Authors
 #include "faMesh.H"
 #include "faMeshTools.H"
 #include "polyMesh.H"
-#include "areaFaMesh.H"
-#include "edgeFaMesh.H"
-#include "areaFields.H"
-#include "edgeFields.H"
-#include "processorFaPatch.H"
-#include "foamVtkIndPatchWriter.H"
-#include "foamVtkLineWriter.H"
-#include "foamVtkVertexWriter.H"
 #include "regionProperties.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -76,14 +77,6 @@ int main(int argc, char *argv[])
         true  // advanced option (debugging only)
     );
 
-    argList::addOption
-    (
-        "geometryOrder",
-        "N",
-        "Test different geometry order - experimental!!",
-        true  // Advanced option
-    );
-
     #include "addRegionOption.H"
     #include "addAllFaRegionOptions.H"
     #include "setRootCase.H"
@@ -94,15 +87,12 @@ int main(int argc, char *argv[])
 
     // ------------------------------------------------------------------------
 
-    #include "createNamedPolyMesh.H"
+    #include "createNamedMesh.H"
 
-    int geometryOrder(1);
-    if (args.readIfPresent("geometryOrder", geometryOrder))
+    if (args.found("write-vtk") || args.found("write-edges-vtk"))
     {
-        Info<< "Setting faMesh::geometryOrder = " << geometryOrder << nl
-            << "(experimental)" << nl << endl;
-
-        faMesh::geometryOrder(geometryOrder);
+        Info<< "Note: VTK output is not yet ported to finiteArea"
+            << " - ignoring -write-vtk" << nl << endl;
     }
 
     for (const word& areaName : areaRegionNames)
@@ -114,9 +104,9 @@ int main(int argc, char *argv[])
         }
         Info<< " for time = " << runTime.timeName() << nl;
 
-        autoPtr<faMesh> faMeshPtr(faMesh::TryNew(areaName, mesh));
-
-        if (!faMeshPtr)
+        // Presence probe (same faceLabels check the legacy TryNew used);
+        // preserve the graceful skip when the region was never written.
+        if (!faMesh::hasMeshFiles(areaName, mesh))
         {
             Info<< "    ...failed to create area-mesh";
             if (!polyMesh::regionName(areaName).empty())
@@ -131,15 +121,28 @@ int main(int argc, char *argv[])
             Info<< endl;
         }
 
-        const auto& aMesh = faMeshPtr();
+        // Read-construct from the PERSISTED reduced-order mesh (as
+        // createFaMesh.H / the finiteArea solvers do), so the report is
+        // faithful to what a solver loads and preserves the definition
+        // boundary patches instead of re-deriving them from the parent.
+        // Using the finite-area registry with the loop region name maps a
+        // default region (polyMesh::defaultRegion) and named regions alike
+        // onto the same on-disk layout that makeFaMesh wrote.
+        faMesh aMesh
+        (
+            IOobject
+            (
+                areaName,
+                runTime.timeName(),
+                faMesh::Registry(mesh),
+                IOobject::MUST_READ
+            ),
+            false
+        );
+        aMesh.init(true);   // initialise all (lower levels and current)
 
         // Mesh information (verbose)
-        faMeshTools::printMeshChecks(aMesh);
-
-        if (args.found("write-vtk") || args.found("write-edges-vtk"))
-        {
-            #include "faMeshWriteVTK.H"
-        }
+        faMeshTools::printMeshChecks(aMesh, 1);
     }
 
     Info<< "\nEnd\n" << endl;

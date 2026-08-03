@@ -84,12 +84,34 @@ List<PtrDynList<ensightFaMesh>> ensightMeshesFa(regionNames.size());
 
         for (const word& areaName : areaRegionNames)
         {
-            auto faMeshPtr = faMesh::TryNew(areaName, mesh);
-
-            if (faMeshPtr)
+            // Read-construct from the PERSISTED reduced-order mesh (as
+            // createFaMesh.H / the finiteArea solvers and checkFaMesh do),
+            // so the definition boundary patches are preserved instead of
+            // being re-derived from the parent (which the legacy TryNew path
+            // did, collapsing e.g. inlet1/inlet2 onto the parent "inlet"
+            // patch and breaking the on-disk field boundaryField read).
+            if (!faMesh::hasMeshFiles(areaName, mesh))
             {
-                meshesFa[regioni].push_back(std::move(faMeshPtr));
+                continue;
             }
+
+            autoPtr<faMesh> faMeshPtr
+            (
+                new faMesh
+                (
+                    IOobject
+                    (
+                        areaName,
+                        mesh.time().timeName(),
+                        faMesh::Registry(mesh),
+                        IOobject::MUST_READ
+                    ),
+                    false
+                )
+            );
+            faMeshPtr->init(true);
+
+            meshesFa[regioni].push_back(std::move(faMeshPtr));
         }
 
         // Setup the ensight components

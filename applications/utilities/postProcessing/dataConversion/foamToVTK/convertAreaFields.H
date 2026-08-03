@@ -61,17 +61,41 @@ if (doFiniteArea && !areaRegionNames.empty())
             faObjs = std::move(iter.val());
         }
 
-        const label nAreaFields = faObjs.count(Foam::fieldTypes::is_area);
+        const label nAreaFields = faObjs.count(Foam::fieldTypes2::is_area);
         const label nEdgeFields =
         (
-            doEdgeFields ? faObjs.count(Foam::fieldTypes::is_edge) : 0
+            doEdgeFields ? faObjs.count(Foam::fieldTypes2::is_edge) : 0
         );
 
         autoPtr<faMesh> faMeshPtr;
 
-        if (nAreaFields || nEdgeFields || withMeshIds)
+        // Read-construct from the PERSISTED reduced-order mesh (as
+        // createFaMesh.H / the finiteArea solvers and checkFaMesh do), so
+        // the definition boundary patches are preserved instead of being
+        // re-derived from the parent (which the legacy TryNew path did,
+        // collapsing e.g. inlet1/inlet2 onto the parent "inlet" patch and
+        // breaking the on-disk field boundaryField read).
+        if
+        (
+            (nAreaFields || nEdgeFields || withMeshIds)
+         && faMesh::hasMeshFiles(areaName, basePolyMesh)
+        )
         {
-            faMeshPtr = faMesh::TryNew(areaName, basePolyMesh);
+            faMeshPtr.reset
+            (
+                new faMesh
+                (
+                    IOobject
+                    (
+                        areaName,
+                        runTime.timeName(),
+                        faMesh::Registry(basePolyMesh),
+                        IOobject::MUST_READ
+                    ),
+                    false
+                )
+            );
+            faMeshPtr->init(true);
         }
 
         if (!faMeshPtr)
@@ -137,7 +161,8 @@ if (doFiniteArea && !areaRegionNames.empty())
             writer.writeGlobalIDs("cellID");
 
             // The patch ids can also be quite useful
-            const polyBoundaryMesh& pbm = areaMesh.mesh().boundaryMesh();
+            const polyBoundaryMesh& pbm =
+                areaMesh.parentMesh()().boundaryMesh();
 
             labelList patchIds
             (

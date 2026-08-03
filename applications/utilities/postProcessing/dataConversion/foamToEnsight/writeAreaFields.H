@@ -22,7 +22,9 @@ Description
 #define FoamToEnsight_writeAreaFields_H
 
 #include "readFields.H"
-#include "areaFaMesh.H"
+#include "areaFields.H"
+#include "ensightFaMesh.H"
+#include "ensightOutputAreaField.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 

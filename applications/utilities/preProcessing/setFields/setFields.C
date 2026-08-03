@@ -46,7 +46,6 @@ Description
 #include "volFields.H"
 #include "areaFields.H"
 #include "coupledFvPatch.H"
-#include "coupledFaPatch.H"
 #include "regionProperties.H"
 
 using namespace Foam;
@@ -284,7 +283,8 @@ bool setAreaFieldType
         }
 
         // Handle any e.g. halo-swaps
-        field.boundaryFieldRef().template evaluateCoupled<coupledFaPatch>();
+        // finiteArea: area patches are fvPatch, so use coupledFvPatch
+        field.boundaryFieldRef().template evaluateCoupled<coupledFvPatch>();
 
         if (!field.write())
         {
@@ -714,12 +714,33 @@ int main(int argc, char *argv[])
 
         for (const word& areaName : areaRegionNames)
         {
-            autoPtr<faMesh> faMeshPtr = faMesh::TryNew(areaName, mesh);
-
-            if (faMeshPtr)
+            // Read-construct from the PERSISTED reduced-order mesh (as
+            // createFaMesh.H / the finiteArea solvers and checkFaMesh do),
+            // so the definition boundary patches are preserved instead of
+            // being re-derived from the parent (the legacy TryNew path
+            // collapsed e.g. inlet1/inlet2 onto the parent "inlet" patch).
+            if (!faMesh::hasMeshFiles(areaName, mesh))
             {
-                faMeshes.set(nGoodRegions++, std::move(faMeshPtr));
+                continue;
             }
+
+            autoPtr<faMesh> faMeshPtr
+            (
+                new faMesh
+                (
+                    IOobject
+                    (
+                        areaName,
+                        runTime.timeName(),
+                        faMesh::Registry(mesh),
+                        IOobject::MUST_READ
+                    ),
+                    false
+                )
+            );
+            faMeshPtr->init(true);
+
+            faMeshes.set(nGoodRegions++, std::move(faMeshPtr));
         }
 
         faMeshes.resize(nGoodRegions);

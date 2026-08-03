@@ -6,6 +6,11 @@ EXE_INC = \
     -I$(LIB_SRC)/parallel/reconstruct/reconstruct/lnInclude
 
 EXE_LIBS = \
+    -lfiniteVolume \
+    -lfileFormats \
     -lsurfMesh \
+    -lmeshTools \
     -ldynamicMesh \
+    -lextrudeModel \
+    -llagrangian \
     -lreconstruct

@@ -1,4 +1,5 @@
 readFields.cxx
+ensightFaMesh.C
 foamToEnsight.cxx
 
 EXE = $(FOAM_APPBIN)/foamToEnsight
