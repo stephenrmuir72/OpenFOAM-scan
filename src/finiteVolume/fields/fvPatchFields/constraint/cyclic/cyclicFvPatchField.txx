@@ -123,6 +123,22 @@ void Foam::cyclicFvPatchField<Type>::patchNeighbourField(UList<Type>& pnf) const
 
     if (doTransform())
     {
+        #ifdef FOAM_OFFLOAD
+        const labelRange indices(pnf.size());
+        apply_policy(static_cast<std::size_t>(pnf.size()), [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                indices.begin(),
+                indices.end(),
+                [&](const label facei)
+                {
+                    pnf[facei] = transform( forwardT()[0], iField[nbrFaceCells[facei]]);
+                }
+            );
+        });
+        #else
         forAll(pnf, facei)
         {
             pnf[facei] = transform
@@ -130,13 +146,31 @@ void Foam::cyclicFvPatchField<Type>::patchNeighbourField(UList<Type>& pnf) const
                 forwardT()[0], iField[nbrFaceCells[facei]]
             );
         }
+        #endif
     }
     else
     {
+        #ifdef FOAM_OFFLOAD
+        const labelRange indices(pnf.size());
+        apply_policy(static_cast<std::size_t>(pnf.size()), [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                indices.begin(),
+                indices.end(),
+                [&](const label facei)
+                {
+                    pnf[facei] = iField[nbrFaceCells[facei]];
+                }
+            );
+        });
+        #else
         forAll(pnf, facei)
         {
             pnf[facei] = iField[nbrFaceCells[facei]];
         }
+        #endif
     }
 }
 
@@ -197,7 +231,11 @@ void Foam::cyclicFvPatchField<Type>::updateInterfaceMatrix
     const labelUList& faceCells = lduAddr.patchAddr(patchId);
 
     // Multiply the field by coefficients and add into the result
+    #ifdef FOAM_OFFLOAD
+    this->addToInternalField(result, !add, lduAddr, patchId, coeffs, pnf);
+    #else
     this->addToInternalField(result, !add, faceCells, coeffs, pnf);
+    #endif
 }
 
 
@@ -227,7 +265,11 @@ void Foam::cyclicFvPatchField<Type>::updateInterfaceMatrix
     const labelUList& faceCells = lduAddr.patchAddr(patchId);
 
     // Multiply the field by coefficients and add into the result
+    #ifdef FOAM_OFFLOAD
+    this->addToInternalField(result, !add, lduAddr, patchId, coeffs, pnf);
+    #else
     this->addToInternalField(result, !add, faceCells, coeffs, pnf);
+    #endif
 }
 
 
