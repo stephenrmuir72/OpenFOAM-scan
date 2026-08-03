@@ -502,8 +502,20 @@ template<unsigned N>
 void Foam::List<T>::operator=(const FixedList<T, N>& list)
 {
     resize_nocopy(list.size());
-
-    std::copy(list.begin(), list.end(), this->v_);
+    #ifdef FOAM_OFFLOAD
+    constexpr bool test = std::is_arithmetic<T>::value && !std::is_same_v<T,bool> ;
+    if constexpr (is_contiguous_v<T> && test)
+    {
+        apply_policy(list.size(), [&](auto policy)
+        {
+            std::copy(policy, list.begin(), list.end(), this->v_);
+        });
+    }
+    else
+    #endif
+    {
+        std::copy(list.begin(), list.end(), this->v_);
+    }
 }
 
 
@@ -520,7 +532,20 @@ template<class T>
 void Foam::List<T>::operator=(std::initializer_list<T> list)
 {
     resize_nocopy(list.size());
-    std::copy(list.begin(), list.end(), this->v_);
+    #ifdef FOAM_OFFLOAD
+    constexpr bool test = std::is_arithmetic<T>::value && !std::is_same_v<T,bool> ;
+    if constexpr (is_contiguous_v<T> && test)
+    {
+        apply_policy(list.size(), [&](auto policy)
+        {
+            std::copy(policy, list.begin(), list.end(), this->v_);
+        });
+    }
+    else
+    #endif
+    {
+        std::copy(list.begin(), list.end(), this->v_);
+    }
 }
 
 
