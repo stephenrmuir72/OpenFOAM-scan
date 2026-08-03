@@ -321,7 +321,7 @@ void Foam::Field<Type>::map
     if (mapF.size() > 0)
     {
         #ifdef FOAM_OFFLOAD
-        if constexpr (!is_contiguous_v<Type> )
+        if constexpr (is_contiguous_v<Type> )
         {
             labelRange indices(0, f.size());
             apply_policy(f.size(), [&](auto policy)
