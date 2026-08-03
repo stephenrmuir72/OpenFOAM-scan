@@ -177,7 +177,17 @@ public:
                 const scalarField& coeffs,
                 const Field<Type>& vals
             ) const;
-
+            //- Add/subtract weighted contributions to internal field GPU CSR 
+            template<class Type>
+            void addToInternalField
+            (
+                Field<Type>& result,
+                const bool add,
+                const lduAddressing& addr,
+                const label patchId,
+                const scalarField& coeffs,
+                const Field<Type>& vals
+            ) const;
 
     // Housekeeping
 

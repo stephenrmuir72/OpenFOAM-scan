@@ -53,5 +53,61 @@ void Foam::lduInterfaceField::addToInternalField
     }
 }
 
+template<class Type>
+void Foam::lduInterfaceField::addToInternalField
+(
+    Field<Type>& result,
+    const bool add,
+    const lduAddressing& addr,
+    const label patchId,
+    const scalarField& coeffs,
+    const Field<Type>& vals
+) const
+{
+    const labelUList& patchCells = addr.patchSortCells(patchId);
+    const labelUList& sort       = addr.patchSortAddr(patchId);
+    const labelUList& sortStart  = addr.patchSortStartAddr(patchId);
+    
+    const scalar sign = add ? scalar(1) : scalar(-1);
+    const labelRange cellRange(patchCells.size());
+
+    auto neiFun =
+        [sign, c = coeffs.cdata(), v = vals.cdata()]
+        (const label /*cellIdx*/, const label facei) -> Type
+        {
+            return sign * c[facei] * v[facei];
+        };
+
+    // Accumulation into result cell
+    auto neiOp =
+        [](Type& res, const Type& val)
+        {
+            res += val;
+        };
+
+    apply_policy(cellRange.size(), [&](auto policy)
+    {
+        std::for_each
+        (
+            policy,
+            cellRange.begin(),
+            cellRange.end(),
+            patchCellReduceFunctor
+            <
+                Type,
+                decltype(neiFun),
+                decltype(neiOp)
+            >
+            (
+                result,
+                sortStart,
+                sort,
+                patchCells,
+                neiFun,
+                neiOp
+            )
+        );
+    });
+}
 
 // ************************************************************************* //
