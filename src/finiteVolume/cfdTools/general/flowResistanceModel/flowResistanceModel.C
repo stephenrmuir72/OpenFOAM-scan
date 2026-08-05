@@ -39,7 +39,11 @@ Foam::flowResistanceModel::flowResistanceModel(const dictionary& dict)
     holeSize_(-1),
     longitudinalPitch_(-1),
     transversePitch_(-1),
-    geometryUsed_(false)
+    geometryUsed_(false),
+    relax_(dict.getOrDefault<scalar>("relax", 1)),
+    targetCorrection_(0),
+    relaxedCorrection_(0),
+    relaxedCorrectionInitialised_(false)
 {
     // Validate known resistanceType
     const bool knownType =
@@ -162,6 +166,23 @@ Foam::flowResistanceModel::flowResistanceModel(const dictionary& dict)
                "resistanceType 'constant'"
             << exit(FatalIOError);
     }
+
+    // Validate the relaxation factor
+    if (relax_ <= 0 || relax_ > 1)
+    {
+        FatalIOErrorInFunction(dict)
+            << "The flow resistance relaxation factor must be in "
+               "the range (0, 1]"
+            << exit(FatalIOError);
+    }
+
+    // Resume from a previously written relaxed correction
+    if (dict.found("relaxedPressureCorrection"))
+    {
+        relaxedCorrection_ =
+            dict.get<scalar>("relaxedPressureCorrection");
+        relaxedCorrectionInitialised_ = true;
+    }
 }
 
 
@@ -177,7 +198,11 @@ Foam::flowResistanceModel::flowResistanceModel
     holeSize_(m.holeSize_),
     longitudinalPitch_(m.longitudinalPitch_),
     transversePitch_(m.transversePitch_),
-    geometryUsed_(m.geometryUsed_)
+    geometryUsed_(m.geometryUsed_),
+    relax_(m.relax_),
+    targetCorrection_(m.targetCorrection_),
+    relaxedCorrection_(m.relaxedCorrection_),
+    relaxedCorrectionInitialised_(m.relaxedCorrectionInitialised_)
 {}
 
 
@@ -233,6 +258,36 @@ Foam::scalar Foam::flowResistanceModel::lossCoefficient() const
 }
 
 
+Foam::scalar Foam::flowResistanceModel::updateCorrection
+(
+    const scalar Q,
+    const scalar A,
+    const scalar rhoAvg
+)
+{
+    const scalar UnAvg = Q/A;
+    const scalar deltaP = lossCoefficient()*0.5*rhoAvg*sqr(UnAvg);
+
+    // Signed target: inflow (UnAvg < 0) lowers p0, outflow raises it
+    targetCorrection_ = sign(UnAvg)*deltaP;
+
+    if (!relaxedCorrectionInitialised_)
+    {
+        // First update takes the full step
+        relaxedCorrection_ = targetCorrection_;
+        relaxedCorrectionInitialised_ = true;
+    }
+    else
+    {
+        relaxedCorrection_ =
+            (1 - relax_)*relaxedCorrection_
+          + relax_*targetCorrection_;
+    }
+
+    return relaxedCorrection_;
+}
+
+
 void Foam::flowResistanceModel::write(Ostream& os) const
 {
     os.writeEntry("resistanceType", resistanceType_);
@@ -260,6 +315,13 @@ void Foam::flowResistanceModel::write(Ostream& os) const
     if (resistanceType_ == "constant")
     {
         os.writeEntry("lossCoefficient", lossCoefficient_);
+    }
+
+    os.writeEntryIfDifferent<scalar>("relax", 1, relax_);
+
+    if (relax_ < 1 && relaxedCorrectionInitialised_)
+    {
+        os.writeEntry("relaxedPressureCorrection", relaxedCorrection_);
     }
 }
 

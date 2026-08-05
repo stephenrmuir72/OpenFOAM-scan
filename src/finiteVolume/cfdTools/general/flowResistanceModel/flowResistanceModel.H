@@ -34,11 +34,29 @@ Description
     The pressure drop across the resistance is:
 
     \f[
-        \Delta p = K \frac{1}{2} \rho |U_n|^2
+        \Delta p = K \frac{1}{2} \rho U_n^2
     \f]
 
-    where \c K is the loss coefficient and \c U_n is the face-normal
-    velocity.
+    where \c K is the loss coefficient, \c U_n is the face-normal
+    velocity and \c rho is the density (1 for incompressible flow).
+    The patch-averaged normal velocity is obtained from the velocity
+    flux sum \c Q = sum(U.Sf) over the patch faces and the patch
+    area \c A:
+
+    \f[
+        U_n = \frac{Q}{A}
+    \f]
+
+    The signed correction \c sign(U_n)*deltaP is under-relaxed with
+    the optional \c relax entry (0 < relax <= 1, default 1) so that
+    flow reversal is also smooth:
+
+    \f[
+        corr_n = (1 - relax) corr_{n-1} + relax * target_n
+    \f]
+
+    The relaxed correction is computed by \c updateCorrection() and can
+    be written as \c relaxedPressureCorrection for restart.
 
     Supported resistance types:
     - \c perforated: K computed from open area fraction using
@@ -82,8 +100,12 @@ Usage
     {
         resistanceType      constant;
         lossCoefficient     2.5;
+        relax               0.3;
     }
     \endverbatim
+
+    A restarting run may supply the optional \c relaxedPressureCorrection
+    entry to resume from a previously written relaxed correction.
 
 SourceFiles
     flowResistanceModel.C
@@ -134,6 +156,18 @@ class flowResistanceModel
         //- True if openAreaFraction was derived from geometry inputs
         bool geometryUsed_;
 
+        //- Under-relaxation factor for the signed pressure correction
+        scalar relax_;
+
+        //- Target (unrelaxed) signed pressure correction from last update
+        scalar targetCorrection_;
+
+        //- Relaxed signed pressure correction
+        scalar relaxedCorrection_;
+
+        //- Whether the relaxed correction has been initialised
+        bool relaxedCorrectionInitialised_;
+
 
 public:
 
@@ -153,6 +187,30 @@ public:
 
         //- Return the loss coefficient K
         scalar lossCoefficient() const;
+
+        //- Compute and return the relaxed signed pressure correction
+        //  for the given velocity flux sum Q, patch area A and
+        //  area-averaged density rhoAvg (1 for incompressible flow):
+        //  UnAvg = Q/A, deltaP = K*0.5*rhoAvg*UnAvg^2,
+        //  target = sign(UnAvg)*deltaP, then apply the relaxation.
+        scalar updateCorrection
+        (
+            const scalar Q,
+            const scalar A,
+            const scalar rhoAvg
+        );
+
+        //- The target (unrelaxed) signed correction from the last update
+        scalar targetCorrection() const
+        {
+            return targetCorrection_;
+        }
+
+        //- The current relaxed signed correction
+        scalar relaxedCorrection() const
+        {
+            return relaxedCorrection_;
+        }
 
         //- Write the dictionary entries to stream
         void write(Ostream& os) const;

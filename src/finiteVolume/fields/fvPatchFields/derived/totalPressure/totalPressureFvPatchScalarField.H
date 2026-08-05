@@ -178,15 +178,6 @@ class totalPressureFvPatchScalarField
         //- Optional flow resistance model
         autoPtr<flowResistanceModel> flowResistanceModel_;
 
-        //- Under-relaxation factor for the flow resistance correction
-        scalar flowResistanceRelax_;
-
-        //- Relaxed signed flow resistance pressure correction
-        scalar flowResistancePressureCorrection_;
-
-        //- Whether the relaxed pressure correction has been initialised
-        bool flowResistancePressureCorrectionInitialised_;
-
 
 public:
 

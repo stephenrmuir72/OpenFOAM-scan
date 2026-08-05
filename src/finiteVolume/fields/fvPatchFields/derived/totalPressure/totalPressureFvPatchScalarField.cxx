@@ -48,10 +48,7 @@ Foam::totalPressureFvPatchScalarField::totalPressureFvPatchScalarField
     psiName_("none"),
     gamma_(0.0),
     p0_(p.size(), Zero),
-    flowResistanceModel_(),
-    flowResistanceRelax_(1),
-    flowResistancePressureCorrection_(0),
-    flowResistancePressureCorrectionInitialised_(false)
+    flowResistanceModel_()
 {}
 
 
@@ -69,10 +66,7 @@ Foam::totalPressureFvPatchScalarField::totalPressureFvPatchScalarField
     psiName_(dict.getOrDefault<word>("psi", "none")),
     gamma_(psiName_ != "none" ? dict.get<scalar>("gamma") : 1),
     p0_("p0", dict, p.size()),
-    flowResistanceModel_(),
-    flowResistanceRelax_(1),
-    flowResistancePressureCorrection_(0),
-    flowResistancePressureCorrectionInitialised_(false)
+    flowResistanceModel_()
 {
     if (!this->readValueEntry(dict))
     {
@@ -82,31 +76,10 @@ Foam::totalPressureFvPatchScalarField::totalPressureFvPatchScalarField
     // Read optional flow resistance
     if (dict.found("flowResistanceCoeffs"))
     {
-        const dictionary& resistanceDict =
-            dict.subDict("flowResistanceCoeffs");
-
         flowResistanceModel_.reset
         (
-            new flowResistanceModel(resistanceDict)
+            new flowResistanceModel(dict.subDict("flowResistanceCoeffs"))
         );
-
-        flowResistanceRelax_ =
-            resistanceDict.getOrDefault<scalar>("relax", 1);
-
-        if (flowResistanceRelax_ <= 0 || flowResistanceRelax_ > 1)
-        {
-            FatalIOErrorInFunction(resistanceDict)
-                << "The flow resistance relaxation factor must be in "
-                   "the range (0, 1]"
-                << exit(FatalIOError);
-        }
-
-        if (resistanceDict.found("relaxedPressureCorrection"))
-        {
-            flowResistancePressureCorrection_ =
-                resistanceDict.get<scalar>("relaxedPressureCorrection");
-            flowResistancePressureCorrectionInitialised_ = true;
-        }
     }
 }
 
@@ -126,16 +99,7 @@ Foam::totalPressureFvPatchScalarField::totalPressureFvPatchScalarField
     psiName_(ptf.psiName_),
     gamma_(ptf.gamma_),
     p0_(ptf.p0_, mapper),
-    flowResistanceModel_(ptf.flowResistanceModel_.clone()),
-    flowResistanceRelax_(ptf.flowResistanceRelax_),
-    flowResistancePressureCorrection_
-    (
-        ptf.flowResistancePressureCorrection_
-    ),
-    flowResistancePressureCorrectionInitialised_
-    (
-        ptf.flowResistancePressureCorrectionInitialised_
-    )
+    flowResistanceModel_(ptf.flowResistanceModel_.clone())
 {}
 
 
@@ -152,16 +116,7 @@ Foam::totalPressureFvPatchScalarField::totalPressureFvPatchScalarField
     psiName_(tppsf.psiName_),
     gamma_(tppsf.gamma_),
     p0_(tppsf.p0_),
-    flowResistanceModel_(tppsf.flowResistanceModel_.clone()),
-    flowResistanceRelax_(tppsf.flowResistanceRelax_),
-    flowResistancePressureCorrection_
-    (
-        tppsf.flowResistancePressureCorrection_
-    ),
-    flowResistancePressureCorrectionInitialised_
-    (
-        tppsf.flowResistancePressureCorrectionInitialised_
-    )
+    flowResistanceModel_(tppsf.flowResistanceModel_.clone())
 {}
 
 
@@ -283,53 +238,35 @@ void Foam::totalPressureFvPatchScalarField::updateCoeffs()
         const scalarField& phip =
             patch().lookupPatchField<surfaceScalarField>(phiName_);
 
-        // Loss coefficient K
-        const scalar K = flowResistanceModel_->lossCoefficient();
-
         const scalar A = gSum(patch().magSf());
 
-        // Uniform pressure drop: Δp = K * 0.5 * rho * UnAvg^2
-        // (incompressible: no rho factor)
-        scalar deltaP;
-        scalar UnAvg;
+        // Velocity-flux sum and area-averaged density (1 incompressible)
+        scalar Q;
+        scalar rhoAvg;
 
         if (internalField().dimensions() == dimPressure)
         {
             const scalarField& rhop =
                 patch().lookupPatchField<volScalarField>(rhoName_);
 
-            UnAvg = gSum(phip/rhop)/A;
-            const scalar rhoAvg = gSum(rhop*patch().magSf())/A;
-
-            deltaP = K * 0.5 * rhoAvg * sqr(UnAvg);
+            Q = gSum(phip/rhop);
+            rhoAvg = gSum(rhop*patch().magSf())/A;
         }
         else
         {
-            UnAvg = gSum(phip)/A;
-
-            deltaP = K * 0.5 * sqr(UnAvg);
+            Q = gSum(phip);
+            rhoAvg = 1;
         }
 
-        // Relax the signed correction so that flow reversal is also smooth
-        const scalar targetPressureCorrection = sign(UnAvg)*deltaP;
-
-        if (!flowResistancePressureCorrectionInitialised_)
-        {
-            flowResistancePressureCorrection_ = targetPressureCorrection;
-            flowResistancePressureCorrectionInitialised_ = true;
-        }
-        else
-        {
-            flowResistancePressureCorrection_ =
-                (1 - flowResistanceRelax_)
-               *flowResistancePressureCorrection_
-              + flowResistanceRelax_*targetPressureCorrection;
-        }
+        // Patch-averaged normal velocity and relaxed pressure correction
+        const scalar UnAvg = Q/A;
+        const scalar correction =
+            flowResistanceModel_->updateCorrection(Q, A, rhoAvg);
 
         // Apply one uniform correction based on the net patch flow direction
         const scalarField p0Adj
         (
-            p0_ + flowResistancePressureCorrection_
+            p0_ + correction
         );
 
         updateCoeffs(p0Adj, Up);
@@ -338,9 +275,9 @@ void Foam::totalPressureFvPatchScalarField::updateCoeffs()
         {
             Info<< "Patch average velocity = " << UnAvg << nl
                 << "Target pressure correction = "
-                << targetPressureCorrection << nl
+                << flowResistanceModel_->targetCorrection() << nl
                 << "Relaxed pressure correction = "
-                << flowResistancePressureCorrection_ << endl;
+                << flowResistanceModel_->relaxedCorrection() << endl;
         }
     }
     else
@@ -366,24 +303,6 @@ void Foam::totalPressureFvPatchScalarField::write(Ostream& os) const
     {
         os.beginBlock("flowResistanceCoeffs");
         flowResistanceModel_->write(os);
-        os.writeEntryIfDifferent<scalar>
-        (
-            "relax",
-            1,
-            flowResistanceRelax_
-        );
-        if
-        (
-            flowResistanceRelax_ < 1
-         && flowResistancePressureCorrectionInitialised_
-        )
-        {
-            os.writeEntry
-            (
-                "relaxedPressureCorrection",
-                flowResistancePressureCorrection_
-            );
-        }
         os.endBlock();
     }
 
