@@ -241,10 +241,7 @@ void Foam::totalPressureFvPatchScalarField::updateCoeffs()
         // Loss coefficient K
         const scalar K = flowResistanceModel_->lossCoefficient();
 
-        // Patch-averaged normal velocity — uniform pressure drop
-        // UnAvg = (sum of U.Sf over faces) / (patch area)
-        const scalar A     = gSum(patch().magSf());
-        scalar UnAvg = gSum(Up & patch().Sf())/A;
+        const scalar A = gSum(patch().magSf());
 
         // Uniform pressure drop: Δp = K * 0.5 * rho * UnAvg^2
         // (incompressible: no rho factor)
@@ -255,10 +252,17 @@ void Foam::totalPressureFvPatchScalarField::updateCoeffs()
             const scalarField& rhop =
                 patch().lookupPatchField<volScalarField>(rhoName_);
 
-            deltaP = K * 0.5 * gAverage(rhop) * sqr(UnAvg);
+            const scalar UnAvg = gSum(phip/rhop)/A;
+            const scalar rhoAvg = gSum(rhop*patch().magSf())/A;
+
+            deltaP = K * 0.5 * rhoAvg * sqr(UnAvg);
+
+            Info << "Patch avg velocity = " << UnAvg << endl;
         }
         else
         {
+            const scalar UnAvg = gSum(phip)/A;
+
             deltaP = K * 0.5 * sqr(UnAvg);
         }
 
@@ -272,7 +276,6 @@ void Foam::totalPressureFvPatchScalarField::updateCoeffs()
 
         updateCoeffs(p0Adj, Up);
 
-        Info << "Patch avg velocity = " << UnAvg << endl;
         Info << "deltaP = " << deltaP << endl;
     }
     else
