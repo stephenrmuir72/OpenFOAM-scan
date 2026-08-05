@@ -101,6 +101,7 @@ Usage
         psi          | Compressibility field name | no       | none
         gamma        | (Cp/Cv)                    | no       | 1
         p0           | Total pressure             | yes      |
+        flowResistanceCoeffs | Flow resistance settings | no |
     \endtable
 
     Example of the boundary condition specification:
@@ -109,8 +110,19 @@ Usage
     {
         type            totalPressure;
         p0              uniform 1e5;
+
+        flowResistanceCoeffs
+        {
+            resistanceType      constant;
+            lossCoefficient     10;
+            relax               0.3;
+        }
     }
     \endverbatim
+
+    The optional \c relax entry under-relaxes the signed flow-resistance
+    pressure correction. It must be in the range \f$0 < relax \le 1\f$ and
+    defaults to 1.
 
 See also
     Foam::fixedValueFvPatchField
@@ -165,6 +177,15 @@ class totalPressureFvPatchScalarField
 
         //- Optional flow resistance model
         autoPtr<flowResistanceModel> flowResistanceModel_;
+
+        //- Under-relaxation factor for the flow resistance correction
+        scalar flowResistanceRelax_;
+
+        //- Relaxed signed flow resistance pressure correction
+        scalar flowResistancePressureCorrection_;
+
+        //- Whether the relaxed pressure correction has been initialised
+        bool flowResistancePressureCorrectionInitialised_;
 
 
 public:
