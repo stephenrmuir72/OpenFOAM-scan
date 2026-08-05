@@ -246,22 +246,21 @@ void Foam::totalPressureFvPatchScalarField::updateCoeffs()
         // Uniform pressure drop: Δp = K * 0.5 * rho * UnAvg^2
         // (incompressible: no rho factor)
         scalar deltaP;
+        scalar UnAvg;
 
         if (internalField().dimensions() == dimPressure)
         {
             const scalarField& rhop =
                 patch().lookupPatchField<volScalarField>(rhoName_);
 
-            const scalar UnAvg = gSum(phip/rhop)/A;
+            UnAvg = gSum(phip/rhop)/A;
             const scalar rhoAvg = gSum(rhop*patch().magSf())/A;
 
             deltaP = K * 0.5 * rhoAvg * sqr(UnAvg);
-
-            Info << "Patch avg velocity = " << UnAvg << endl;
         }
         else
         {
-            const scalar UnAvg = gSum(phip)/A;
+            UnAvg = gSum(phip)/A;
 
             deltaP = K * 0.5 * sqr(UnAvg);
         }
@@ -271,12 +270,13 @@ void Foam::totalPressureFvPatchScalarField::updateCoeffs()
         // outflow (phi > 0):  p0_adj = p0 + deltaP  (neg(phi) = 0)
         const scalarField p0Adj
         (
-            p0_ + deltaP*(scalar(1) - 2*neg(phip))
+            p0_ + sign(UnAvg) * deltaP
         );
 
         updateCoeffs(p0Adj, Up);
 
         Info << "deltaP = " << deltaP << endl;
+        Info << "Patch avg velocity = " << UnAvg << endl;
     }
     else
     {
