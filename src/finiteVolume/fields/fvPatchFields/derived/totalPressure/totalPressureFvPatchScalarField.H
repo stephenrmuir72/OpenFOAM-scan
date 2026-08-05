@@ -124,6 +124,7 @@ SourceFiles
 #define Foam_totalPressureFvPatchScalarField_H
 
 #include "fixedValueFvPatchFields.H"
+#include "flowResistanceModel.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -161,6 +162,9 @@ class totalPressureFvPatchScalarField
 
         //- Total pressure
         scalarField p0_;
+
+        //- Optional flow resistance model
+        autoPtr<flowResistanceModel> flowResistanceModel_;
 
 
 public:

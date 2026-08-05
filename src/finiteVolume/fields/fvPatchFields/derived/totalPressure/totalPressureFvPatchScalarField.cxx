@@ -47,7 +47,8 @@ Foam::totalPressureFvPatchScalarField::totalPressureFvPatchScalarField
     rhoName_("rho"),
     psiName_("none"),
     gamma_(0.0),
-    p0_(p.size(), Zero)
+    p0_(p.size(), Zero),
+    flowResistanceModel_()
 {}
 
 
@@ -64,11 +65,21 @@ Foam::totalPressureFvPatchScalarField::totalPressureFvPatchScalarField
     rhoName_(dict.getOrDefault<word>("rho", "rho")),
     psiName_(dict.getOrDefault<word>("psi", "none")),
     gamma_(psiName_ != "none" ? dict.get<scalar>("gamma") : 1),
-    p0_("p0", dict, p.size())
+    p0_("p0", dict, p.size()),
+    flowResistanceModel_()
 {
     if (!this->readValueEntry(dict))
     {
         fvPatchField<scalar>::operator=(p0_);
+    }
+
+    // Read optional flow resistance
+    if (dict.found("flowResistanceCoeffs"))
+    {
+        flowResistanceModel_.reset
+        (
+            new flowResistanceModel(dict.subDict("flowResistanceCoeffs"))
+        );
     }
 }
 
@@ -87,7 +98,8 @@ Foam::totalPressureFvPatchScalarField::totalPressureFvPatchScalarField
     rhoName_(ptf.rhoName_),
     psiName_(ptf.psiName_),
     gamma_(ptf.gamma_),
-    p0_(ptf.p0_, mapper)
+    p0_(ptf.p0_, mapper),
+    flowResistanceModel_(ptf.flowResistanceModel_.clone())
 {}
 
 
@@ -103,7 +115,8 @@ Foam::totalPressureFvPatchScalarField::totalPressureFvPatchScalarField
     rhoName_(tppsf.rhoName_),
     psiName_(tppsf.psiName_),
     gamma_(tppsf.gamma_),
-    p0_(tppsf.p0_)
+    p0_(tppsf.p0_),
+    flowResistanceModel_(tppsf.flowResistanceModel_.clone())
 {}
 
 
@@ -211,11 +224,62 @@ void Foam::totalPressureFvPatchScalarField::updateCoeffs
 
 void Foam::totalPressureFvPatchScalarField::updateCoeffs()
 {
-    updateCoeffs
-    (
-        p0(),
-        patch().lookupPatchField<volVectorField>(UName())
-    );
+    if (updated())
+    {
+        return;
+    }
+
+    if (flowResistanceModel_)
+    {
+        // Flow resistance active — modify p0 by the pressure loss
+
+        const vectorField& Up =
+            patch().lookupPatchField<volVectorField>(UName());
+        const scalarField& phip =
+            patch().lookupPatchField<surfaceScalarField>(phiName_);
+
+        // Loss coefficient K
+        const scalar K = flowResistanceModel_->lossCoefficient();
+
+        // Patch-averaged normal velocity — uniform pressure drop
+        // UnAvg = (sum of U.Sf over faces) / (patch area)
+        const scalar A     = gSum(patch().magSf());
+        scalar UnAvg = gSum(Up & patch().Sf())/A;
+
+        // Uniform pressure drop: Δp = K * 0.5 * rho * UnAvg^2
+        // (incompressible: no rho factor)
+        scalar deltaP;
+
+        if (internalField().dimensions() == dimPressure)
+        {
+            const scalarField& rhop =
+                patch().lookupPatchField<volScalarField>(rhoName_);
+
+            deltaP = K * 0.5 * gAverage(rhop) * sqr(UnAvg);
+        }
+        else
+        {
+            deltaP = K * 0.5 * sqr(UnAvg);
+        }
+
+        // Adjusted total pressure — uniform magnitude, per-face sign
+        // inflow  (phi < 0):  p0_adj = p0 - deltaP  (neg(phi) = 1)
+        // outflow (phi > 0):  p0_adj = p0 + deltaP  (neg(phi) = 0)
+        const scalarField p0Adj
+        (
+            p0_ + deltaP*(scalar(1) - 2*neg(phip))
+        );
+
+        updateCoeffs(p0Adj, Up);
+
+        Info << "Patch avg velocity = " << UnAvg << endl;
+        Info << "deltaP = " << deltaP << endl;
+    }
+    else
+    {
+        // Standard behaviour — no flow resistance
+        updateCoeffs(p0(), patch().lookupPatchField<volVectorField>(UName()));
+    }
 }
 
 
@@ -228,6 +292,15 @@ void Foam::totalPressureFvPatchScalarField::write(Ostream& os) const
     os.writeEntry("psi", psiName_);
     os.writeEntry("gamma", gamma_);
     p0_.writeEntry("p0", os);
+
+    // Write flowResistanceCoeffs if active
+    if (flowResistanceModel_)
+    {
+        os.beginBlock("flowResistanceCoeffs");
+        flowResistanceModel_->write(os);
+        os.endBlock();
+    }
+
     fvPatchField<scalar>::writeValueEntry(os);
 }
 
