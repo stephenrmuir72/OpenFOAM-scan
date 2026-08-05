@@ -2686,28 +2686,28 @@ void fvmLaplacianUncorrected
             // (
             //     intCoeffs,
             //     expr(pvf.gradientInternalCoeffs(pDeltaCoeffs)())
-            //    *gammaMagSf.patchField(patchi)
+            //    *gammaMagSf.coupledPatchField(patchi)
             // );
             // //bouCoeffs = -pGamma*pvf.gradientBoundaryCoeffs(pDeltaCoeffs);
             // evaluator
             // (
             //     bouCoeffs,
             //    -expr(pvf.gradientBoundaryCoeffs(pDeltaCoeffs)())
-            //    *gammaMagSf.patchField(patchi)
+            //    *gammaMagSf.coupledPatchField(patchi)
             // );
 
             intCoeffs =
                 intCoeffs.expr()
               + (
                     scale
-                   *gammaMagSf.patchField(patchi)
+                   *gammaMagSf.coupledPatchField(patchi)
                    *pvf.gradientInternalCoeffs(pDeltaCoeffs)().expr()
                 );
             bouCoeffs =
                 bouCoeffs.expr()
               + (
                     -scale
-                   *gammaMagSf.patchField(patchi)
+                   *gammaMagSf.coupledPatchField(patchi)
                    *pvf.gradientBoundaryCoeffs(pDeltaCoeffs)().expr()
                 );
         }
@@ -2982,7 +2982,7 @@ public:
         (
             psi,
             std::move(ddtScaleOp<ScaleExpr, Type>(psi, scaleExpr)),
-            psi.dimensions()*dimVol/dimTime
+            scaleExpr.dimensions()*psi.dimensions()*dimVol/dimTime
         )
     {}
 };
