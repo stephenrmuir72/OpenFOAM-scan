@@ -122,8 +122,8 @@ void Foam::Time::adjustDeltaT()
         // For tiny deltaT the label can overflow!
         if (nSteps < scalar(labelMax))
         {
-            // nSteps can be < 1 so make sure at least 1
-            label nStepsToNextWrite = max(1, round(nSteps));
+            // nStepsToNextWrite must be > 0! Never round down, because that can violate CFL constraints! 
+            label nStepsToNextWrite = ceil(nSteps);
 
             scalar newDeltaT = timeToNextWrite/nStepsToNextWrite;
 
