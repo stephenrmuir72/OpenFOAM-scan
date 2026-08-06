@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2021-2024 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -32,6 +33,21 @@ Description
     models designed to predict the onset of film separation and mass separation
     in geometries featuring sharp and/or rounded corners.
 
+    When \c separationAggregation is not specified, separated mass is
+    transferred immediately on a per-face basis. When it is specified, the
+    selected model receives buffered mass, momentum, diameter moments, and
+    accumulation times and controls the release of aggregate parcels.
+
+    The optional \c morphology model classifies the physical liquid structure
+    before a morphology-specific \c diameterModel calculates the resulting
+    droplet diameter.  The classifier and diameter model are independent of
+    computational parcelisation; all emitted particles remain ordinary
+    spherical Lagrangian parcels.
+
+    The \c perFace separation-aggregation model keeps this buffered transfer
+    local to each finite-area face and therefore avoids the processor-wide
+    topology communication used by \c connectedComponent.
+
 Usage
     Minimal example by using boundary-condition files:
     \verbatim
@@ -51,6 +67,17 @@ Usage
 
             // Option-2: when model == Friedrich
 
+        // Optional separation aggregation
+        separationAggregation
+        {
+            type            perFace | connectedComponent;
+            ...
+        }
+
+        // Optional aggregate velocity perturbation
+        velocityJitter      <scalar>;
+        seed                <label>;
+
         // Inherited entries
         ...
     }
@@ -60,6 +87,10 @@ Usage
     \table
       Property     | Description                        | Type | Reqd | Deflt
       model        | Name of the filmSeparation model   | word | yes  | -
+      separationAggregation | Optional mass/momentum aggregation
+                  | dict | no | -
+      velocityJitter | Aggregate velocity jitter fraction | scalar | no | 0
+      seed         | Random number generator seed      | label | no   | 0
     \endtable
 
     Options for the \c model entry:
@@ -80,6 +111,9 @@ SourceFiles
 #define Foam_filmSeparation_H
 
 #include "injectionModel.H"
+#include "Random.H"
+#include "areaFields.H"
+#include "IOField.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -94,6 +128,9 @@ namespace regionModels
 namespace areaSurfaceFilmModels
 {
 
+// Forward Declarations
+class separationAggregationModel;
+
 /*---------------------------------------------------------------------------*\
                         Class filmSeparation Declaration
 \*---------------------------------------------------------------------------*/
@@ -106,6 +143,43 @@ class filmSeparation
 
         //- Film-separation model
         autoPtr<filmSeparationModel> filmSeparationModelPtr_;
+
+        //- Separation-aggregation model
+        autoPtr<separationAggregationModel> separationAggregationModelPtr_;
+
+        //- Per-face accumulated mass [kg] when aggregation is enabled
+        IOField<scalar> massAccumulator_;
+
+        //- Per-face accumulated momentum [kg.m/s] when aggregation is enabled
+        IOField<vector> momentumAccumulator_;
+
+        //- Per-face accumulated mass-diameter moment [kg.m]
+        IOField<scalar> diameterAccumulator_;
+
+        //- Per-face accumulation time [s]
+        IOField<scalar> accumulationTime_;
+
+
+        // Velocity jitter
+
+            //- Velocity jitter fraction (0 = none, 0.1 = 10% of |U|)
+            scalar velocityJitter_;
+
+            //- Random number generator
+            Random rndGen_;
+
+
+        // Velocity communication
+
+            //- Registered injection velocity field for Lagrangian reading
+            autoPtr<areaVectorField> UfInjectionPtr_;
+
+
+    // Private Member Functions
+
+        //- Return an isotropic random unit vector (uniform on the unit
+        //- sphere) for the optional velocity jitter
+        vector randomDirection();
 
 
 public:

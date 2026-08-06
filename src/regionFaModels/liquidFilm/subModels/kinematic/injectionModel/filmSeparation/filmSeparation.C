@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2020-2024 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -28,7 +29,39 @@ License
 
 #include "filmSeparation.H"
 #include "filmSeparationModel.H"
+#include "separationAggregationModel.H"
+#include "liquidFilmBase.H"
 #include "addToRunTimeSelectionTable.H"
+
+// * * * * * * * * * * * * * Local Helper Functions  * * * * * * * * * * * * * //
+
+namespace
+{
+
+//- Build the IOobject for a restartable accumulation buffer.  When the buffer
+//  is active it auto-writes and is read on restart; otherwise it is an
+//  unregistered, non-writing placeholder (the buffers are unused when
+//  accumulation is disabled).
+Foam::IOobject accumulatorIO
+(
+    const Foam::word& name,
+    const Foam::regionModels::areaSurfaceFilmModels::liquidFilmBase& film,
+    const bool active
+)
+{
+    return Foam::IOobject
+    (
+        name,
+        film.regionMesh().time().timeName(),
+        film.regionMesh().thisDb(),
+        active ? Foam::IOobject::READ_IF_PRESENT : Foam::IOobject::NO_READ,
+        active ? Foam::IOobject::AUTO_WRITE : Foam::IOobject::NO_WRITE,
+        active ? Foam::IOobject::REGISTER : Foam::IOobject::NO_REGISTER
+    );
+}
+
+} // End anonymous namespace
+
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -53,6 +86,27 @@ addToRunTimeSelectionTable
 }
 
 
+// * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * * //
+
+Foam::vector
+Foam::regionModels::areaSurfaceFilmModels::filmSeparation::randomDirection()
+{
+    // Three independent normal deviates give a direction uniformly distributed
+    // on the unit sphere; the previous uniform-in-cube sample biased the jitter
+    // towards the cube diagonals.
+    vector dir
+    (
+        rndGen_.GaussNormal<scalar>(),
+        rndGen_.GaussNormal<scalar>(),
+        rndGen_.GaussNormal<scalar>()
+    );
+
+    const scalar magDir = mag(dir);
+
+    return (magDir > VSMALL ? dir/magDir : vector(1, 0, 0));
+}
+
+
 // * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * //
 
 Foam::regionModels::areaSurfaceFilmModels::filmSeparation::filmSeparation
@@ -62,8 +116,104 @@ Foam::regionModels::areaSurfaceFilmModels::filmSeparation::filmSeparation
 )
 :
     injectionModel(type(), film, dict),
-    filmSeparationModelPtr_(filmSeparationModel::New(film, coeffDict_))
-{}
+    filmSeparationModelPtr_(filmSeparationModel::New(film, coeffDict_)),
+    separationAggregationModelPtr_
+    (
+        separationAggregationModel::New(film, coeffDict_)
+    ),
+    massAccumulator_
+    (
+        accumulatorIO
+        (
+            "massAccumulator",
+            film,
+            separationAggregationModelPtr_.valid()
+        ),
+        scalarField
+        (
+            separationAggregationModelPtr_.valid()
+          ? film.regionMesh().nFaces()
+          : 0,
+            Zero
+        )
+    ),
+    momentumAccumulator_
+    (
+        accumulatorIO
+        (
+            "momentumAccumulator",
+            film,
+            separationAggregationModelPtr_.valid()
+        ),
+        vectorField
+        (
+            separationAggregationModelPtr_.valid()
+          ? film.regionMesh().nFaces()
+          : 0,
+            Zero
+        )
+    ),
+    diameterAccumulator_
+    (
+        accumulatorIO
+        (
+            "diameterAccumulator",
+            film,
+            separationAggregationModelPtr_.valid()
+        ),
+        scalarField
+        (
+            separationAggregationModelPtr_.valid()
+          ? film.regionMesh().nFaces()
+          : 0,
+            Zero
+        )
+    ),
+    accumulationTime_
+    (
+        accumulatorIO
+        (
+            "accumulationTime",
+            film,
+            separationAggregationModelPtr_.valid()
+        ),
+        scalarField
+        (
+            separationAggregationModelPtr_.valid()
+          ? film.regionMesh().nFaces()
+          : 0,
+            Zero
+        )
+    ),
+    velocityJitter_
+    (
+        coeffDict_.getOrDefault<scalar>("velocityJitter", 0.0)
+    ),
+    rndGen_(coeffDict_.getOrDefault<label>("seed", 0) + Pstream::myProcNo()),
+    UfInjectionPtr_(nullptr)
+{
+    if (separationAggregationModelPtr_)
+    {
+        // Register a velocity field on the FA mesh for Lagrangian reading
+        UfInjectionPtr_.reset
+        (
+            new areaVectorField
+            (
+                IOobject
+                (
+                    "UfInjection",
+                    film.regionMesh().time().timeName(),
+                    film.regionMesh().thisDb(),
+                    IOobject::NO_READ,
+                    IOobject::NO_WRITE,
+                    IOobject::REGISTER
+                ),
+                film.regionMesh(),
+                dimensionedVector(dimVelocity, Zero)
+            )
+        );
+    }
+}
 
 
 // * * * * * * * * * * * * * * * * Destructor  * * * * * * * * * * * * * * * //
@@ -87,12 +237,75 @@ void Foam::regionModels::areaSurfaceFilmModels::filmSeparation::correct
     tmp<scalarField> tmassRatio = filmSeparationModelPtr_->separatedMassRatio();
     const auto& massRatio = tmassRatio.cref();
 
-    // Update various film properties based on the mass ratio
-    massToInject = massRatio*availableMass;
-    diameterToInject = massRatio*film().h();
-    availableMass -= massRatio*availableMass;
+    if (!separationAggregationModelPtr_.valid())
+    {
+        massToInject = massRatio*availableMass;
+        diameterToInject = massRatio*film().h();
+        availableMass -= massToInject;
 
-    addToInjectedMass(sum(massToInject));
+        addToInjectedMass(sum(massToInject));
+    }
+    else
+    {
+        const scalar deltaT = mesh.time().deltaTValue();
+        const areaVectorField& Uf = film().Uf();
+
+        scalarField effectiveAvailMass
+        (
+            max(availableMass - massAccumulator_, scalar(0))
+        );
+
+        scalarField separatedMass(massRatio*effectiveAvailMass);
+
+        forAll(separatedMass, faceI)
+        {
+            if (separatedMass[faceI] > VSMALL)
+            {
+                massAccumulator_[faceI] += separatedMass[faceI];
+                momentumAccumulator_[faceI] += separatedMass[faceI]*Uf[faceI];
+                diameterAccumulator_[faceI] +=
+                    separatedMass[faceI]*film().h()[faceI];
+            }
+
+            if (massAccumulator_[faceI] > VSMALL)
+            {
+                accumulationTime_[faceI] += deltaT;
+            }
+        }
+
+        UfInjectionPtr_().primitiveFieldRef() = Uf.primitiveField();
+
+        separationAggregationModelPtr_->aggregate
+        (
+            massAccumulator_,
+            momentumAccumulator_,
+            diameterAccumulator_,
+            accumulationTime_,
+            massToInject,
+            diameterToInject,
+            UfInjectionPtr_().primitiveFieldRef()
+        );
+
+        if (velocityJitter_ > VSMALL)
+        {
+            forAll(massToInject, faceI)
+            {
+                if (massToInject[faceI] > VSMALL)
+                {
+                    vector& meanVelocity =
+                        UfInjectionPtr_().primitiveFieldRef()[faceI];
+
+                    meanVelocity +=
+                        velocityJitter_*mag(meanVelocity)*randomDirection();
+                }
+            }
+        }
+
+        availableMass =
+            max(availableMass - massAccumulator_ - massToInject, scalar(0));
+
+        addToInjectedMass(sum(massToInject));
+    }
 
     injectionModel::correct();
 
@@ -119,6 +332,18 @@ void Foam::regionModels::areaSurfaceFilmModels::filmSeparation::correct
             );
             areaMassToInject.primitiveFieldRef() = massToInject;
             areaMassToInject.write();
+        }
+
+        if (separationAggregationModelPtr_.valid())
+        {
+            areaScalarField areaAccumulated
+            (
+                mesh.newIOobject("massAccumulated"),
+                mesh,
+                dimensionedScalar(dimMass, Zero)
+            );
+            areaAccumulated.primitiveFieldRef() = massAccumulator_;
+            areaAccumulated.write();
         }
     }
 }

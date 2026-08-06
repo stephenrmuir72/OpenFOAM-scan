@@ -77,11 +77,18 @@ $(kinematic)/injectionModel/injectionModelList/injectionModelList.C
 $(kinematic)/injectionModel/injectionModel/injectionModel.C
 $(kinematic)/injectionModel/injectionModel/injectionModelNew.C
 
-$(kinematic)/injectionModel/filmSeparation/filmSeparation.C
-$(kinematic)/injectionModel/filmSeparation/filmSeparationModels/filmSeparationModel/filmSeparationModel.C
-$(kinematic)/injectionModel/filmSeparation/filmSeparationModels/filmSeparationModel/filmSeparationModelNew.C
-$(kinematic)/injectionModel/filmSeparation/filmSeparationModels/OwenRyleyModel/OwenRyleyModel.C
-$(kinematic)/injectionModel/filmSeparation/filmSeparationModels/FriedrichModel/FriedrichModel.C
+filmSeparation=$(kinematic)/injectionModel/filmSeparation
+$(filmSeparation)/filmSeparation.C
+$(filmSeparation)/filmSeparationModels/filmSeparationModel/filmSeparationModel.C
+$(filmSeparation)/filmSeparationModels/filmSeparationModel/filmSeparationModelNew.C
+$(filmSeparation)/filmSeparationModels/OwenRyleyModel/OwenRyleyModel.C
+$(filmSeparation)/filmSeparationModels/FriedrichModel/FriedrichModel.C
+
+separationAggregationModels=$(filmSeparation)/separationAggregationModels
+$(separationAggregationModels)/separationAggregationModel/separationAggregationModel.C
+$(separationAggregationModels)/separationAggregationModel/separationAggregationModelNew.C
+$(separationAggregationModels)/perFace/perFaceAggregation.C
+$(separationAggregationModels)/connectedComponent/connectedComponentAggregation.C
 
 $(kinematic)/injectionModel/BrunDrippingInjection/BrunDrippingInjection.C
 
