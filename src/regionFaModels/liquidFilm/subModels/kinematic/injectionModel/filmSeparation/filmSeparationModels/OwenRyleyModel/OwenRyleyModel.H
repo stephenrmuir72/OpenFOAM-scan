@@ -110,6 +110,10 @@ Usage
 Note
   - The assumptions underlying the derivation of the model indicate that
     the model is better suited for round corners than for sharp corners.
+  - This model derives the local curvature and radius from \c gradNHat_ and
+    the film velocity. It does not consume the \c cornerDetectionModel
+    framework, whose interface provides corner-face masks and dihedral angles
+    rather than the radius required by the Owen-Ryley force balance.
 
 SourceFiles
     OwenRyleyModel.C
