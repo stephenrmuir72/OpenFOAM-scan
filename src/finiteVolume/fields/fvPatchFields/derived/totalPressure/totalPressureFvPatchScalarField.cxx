@@ -31,6 +31,7 @@ License
 #include "fvPatchFieldMapper.H"
 #include "volFields.H"
 #include "surfaceFields.H"
+#include "turbulenceModel.H"
 
 
 // * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * //
@@ -258,10 +259,35 @@ void Foam::totalPressureFvPatchScalarField::updateCoeffs()
             rhoAvg = 1;
         }
 
-        // Patch-averaged normal velocity and relaxed pressure correction
+        // Patch-averaged normal velocity
         const scalar UnAvg = Q/A;
+
+        // Kinematic viscosity: user-specified, otherwise obtained from
+        // the turbulence model (nu = mu/rho, valid for both
+        // incompressible and compressible runs)
+        scalar nuAvg = flowResistanceModel_->userNu();
+
+        if (nuAvg < 0)
+        {
+            const label patchi = patch().index();
+
+            const auto& turbModel = db().lookupObject<turbulenceModel>
+            (
+                IOobject::groupName
+                (
+                    turbulenceModel::propertiesName,
+                    internalField().group()
+                )
+            );
+
+            const scalarField nuP = turbModel.nu(patchi);
+
+            nuAvg = gSum(nuP*patch().magSf())/A;
+        }
+
+        // Patch-averaged normal velocity and relaxed pressure correction
         const scalar correction =
-            flowResistanceModel_->updateCorrection(Q, A, rhoAvg);
+            flowResistanceModel_->updateCorrection(Q, A, rhoAvg, nuAvg);
 
         // Apply one uniform correction based on the net patch flow direction
         const scalarField p0Adj
