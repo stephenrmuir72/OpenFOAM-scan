@@ -41,6 +41,7 @@ Usage
         // Optional entries
         T0                      <scalar>;
         physicalSpreading       <dict>;
+        temporalSpreading       <dict>;
 
         // Inherited entries
         ...
@@ -54,6 +55,7 @@ Usage
       T0         | Reference temperature [K]       | scalar | choice | -
       physicalSpreading | Physical footprint spreading model <!--
                  -->                                | dict  | no     | -
+      temporalSpreading | Temporal spreading  model | dict  | no     | -
     \endtable
 
     The inherited entries are elaborated in:
@@ -89,6 +91,7 @@ namespace areaSurfaceFilmModels
 
 // Forward Declarations
 class physicalSpreading;
+class temporalSpreading;
 
 /*---------------------------------------------------------------------------*\
                         Class liquidFilmModel Declaration
@@ -158,6 +161,9 @@ protected:
 
         //- Physical footprint spreading model
         autoPtr<physicalSpreading> physicalSpreadingPtr_;
+
+        //- Temporal spreading model
+        autoPtr<temporalSpreading> temporalSpreadingPtr_;
 
 
         // Sub-models

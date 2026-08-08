@@ -29,6 +29,7 @@ License
 #include "liquidFilmModel.H"
 #include "volFields.H"
 #include "physicalSpreading.H"
+#include "temporalSpreading.H"
 #include "addToRunTimeSelectionTable.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -236,6 +237,7 @@ liquidFilmModel::liquidFilmModel
     ),
     turbulence_(filmTurbulenceModel::New(*this, dict)),
     physicalSpreadingPtr_(),
+    temporalSpreadingPtr_(),
     availableMass_(regionMesh().faces().size(), Zero),
     injection_(*this, dict),
     forces_(*this, dict)
@@ -249,6 +251,7 @@ liquidFilmModel::liquidFilmModel
     correctThermoFields();
 
     physicalSpreadingPtr_ = physicalSpreading::NewIfPresent(regionMesh(), dict);
+    temporalSpreadingPtr_ = temporalSpreading::NewIfPresent(regionMesh(), dict);
 }
 
 // * * * * * * * * * * * * * * * * Destructor  * * * * * * * * * * * * * * * //
@@ -290,9 +293,15 @@ void liquidFilmModel::preEvolveRegion()
 
     vsm().mapToSurface(pnSource_, pnSp_.primitiveFieldRef());
 
-    if (physicalSpreadingPtr_)
+    const bool needsDiameter =
+    (
+        (physicalSpreadingPtr_ && physicalSpreadingPtr_->needsDiameter())
+     || (temporalSpreadingPtr_ && temporalSpreadingPtr_->needsDiameter())
+    );
+
+    if (physicalSpreadingPtr_ || temporalSpreadingPtr_)
     {
-        // Map diameter and compute the mass-weighted mean only when required
+        // Map diameter and compute the mass-weighted mean only when required.
         auto tDiameterSp = areaScalarField::New
         (
             "diameterSp",
@@ -302,7 +311,7 @@ void liquidFilmModel::preEvolveRegion()
         );
         areaScalarField& diameterSp = tDiameterSp.ref();
 
-        if (physicalSpreadingPtr_->needsDiameter())
+        if (needsDiameter)
         {
             vsm().mapToSurface
             (
@@ -313,7 +322,7 @@ void liquidFilmModel::preEvolveRegion()
             forAll(diameterSp, i)
             {
                 const scalar mass = rhoSp_[i];
-                if (mass > SMALL)
+                if (mag(mass) > SMALL)
                 {
                     diameterSp[i] /= mass;
                 }
@@ -326,8 +335,102 @@ void liquidFilmModel::preEvolveRegion()
             diameterSp.correctBoundaryConditions();
         }
 
-        // Apply identical spatial weights to every source object
-        physicalSpreadingPtr_->spread(rhoSp_, USp_, pnSp_, diameterSp);
+        if (temporalSpreadingPtr_)
+        {
+            auto tDuration = areaScalarField::New
+            (
+                "temporalDuration",
+                IOobjectOption::NO_REGISTER,
+                regionMesh(),
+                dimensionedScalar(dimTime, Zero)
+            );
+            areaScalarField& duration = tDuration.ref();
+
+            temporalSpreadingPtr_->duration
+            (
+                duration,
+                rhoSp_,
+                USp_,
+                pnSp_,
+                diameterSp,
+                rho_,
+                sigma_
+            );
+
+            if (physicalSpreadingPtr_)
+            {
+                auto tTemporalWeight = areaScalarField::New
+                (
+                    "temporalWeight",
+                    IOobjectOption::NO_REGISTER,
+                    regionMesh(),
+                    dimensionedScalar(dimMass, Zero)
+                );
+                areaScalarField& temporalWeight = tTemporalWeight.ref();
+
+                auto tTemporalMoment = areaScalarField::New
+                (
+                    "temporalMoment",
+                    IOobjectOption::NO_REGISTER,
+                    regionMesh(),
+                    dimensionedScalar(dimMass*dimTime, Zero)
+                );
+                areaScalarField& temporalMoment = tTemporalMoment.ref();
+
+                forAll(temporalWeight, facei)
+                {
+                    temporalWeight[facei] = mag(rhoSp_[facei]);
+                    temporalMoment[facei] =
+                        temporalWeight[facei]*duration[facei];
+                }
+
+                physicalSpreadingPtr_->spread
+                (
+                    rhoSp_,
+                    USp_,
+                    pnSp_,
+                    temporalWeight,
+                    temporalMoment,
+                    diameterSp
+                );
+
+                forAll(duration, facei)
+                {
+                    if (temporalWeight[facei] > VSMALL)
+                    {
+                        duration[facei] =
+                            temporalMoment[facei]/temporalWeight[facei];
+                    }
+                }
+
+                duration.correctBoundaryConditions();
+            }
+
+            const scalar endTime = primaryMesh().time().value();
+            const scalar beginTime = endTime - deltaT;
+
+            temporalSpreadingPtr_->enqueue
+            (
+                rhoSp_,
+                USp_,
+                pnSp_,
+                duration,
+                beginTime
+            );
+            temporalSpreadingPtr_->release
+            (
+                rhoSp_,
+                USp_,
+                pnSp_,
+                beginTime,
+                endTime
+            );
+        }
+        else
+        {
+            // Apply identical spatial weights to every source channel.
+            physicalSpreadingPtr_->spread(rhoSp_, USp_, pnSp_, diameterSp);
+        }
     }
 
     // Always reset the diameter accumulator for the next time step

@@ -48,6 +48,8 @@ struct sourceContribution
     Foam::scalar mass;
     Foam::vector momentum;
     Foam::scalar normalImpulse;
+    Foam::scalar temporalWeight;
+    Foam::scalar temporalMoment;
 };
 
 
@@ -133,13 +135,26 @@ void physicalSpreading::spreadSources
     areaVectorField& momentum,
     areaScalarField& normalImpulse,
     const areaScalarField& diameter,
-    const scalar beta
+    const scalar beta,
+    areaScalarField* temporalWeight,
+    areaScalarField* temporalMoment
 ) const
 {
+    if ((temporalWeight == nullptr) != (temporalMoment == nullptr))
+    {
+        FatalErrorInFunction
+            << "Temporal weight and moment fields must be supplied together"
+            << abort(FatalError);
+    }
+
     const scalarField& localMass = mass.primitiveField();
     const vectorField& localMomentum = momentum.primitiveField();
     const scalarField& localNormal = normalImpulse.primitiveField();
     const scalarField& localDiameter = diameter.primitiveField();
+    const scalarField* localTemporalWeight =
+        temporalWeight ? &temporalWeight->primitiveField() : nullptr;
+    const scalarField* localTemporalMoment =
+        temporalMoment ? &temporalMoment->primitiveField() : nullptr;
 
     bool localActive = false;
     forAll(localMass, facei)
@@ -174,6 +189,8 @@ void physicalSpreading::spreadSources
     DynamicList<scalar> localMassContributions;
     DynamicList<vector> localMomentumContributions;
     DynamicList<scalar> localNormalContributions;
+    DynamicList<scalar> localTemporalWeightContributions;
+    DynamicList<scalar> localTemporalMomentContributions;
 
     forAll(localMass, sourceFacei)
     {
@@ -197,9 +214,13 @@ void physicalSpreading::spreadSources
             &localMassContributions,
             &localMomentumContributions,
             &localNormalContributions,
+            &localTemporalWeightContributions,
+            &localTemporalMomentContributions,
             &localMass,
             &localMomentum,
             &localNormal,
+            localTemporalWeight,
+            localTemporalMoment,
             sourceFacei,
             sourceGlobalFace
         ]
@@ -221,6 +242,18 @@ void physicalSpreading::spreadSources
             localNormalContributions.append
             (
                 fraction*localNormal[sourceFacei]
+            );
+            localTemporalWeightContributions.append
+            (
+                localTemporalWeight
+              ? fraction*(*localTemporalWeight)[sourceFacei]
+              : scalar(0)
+            );
+            localTemporalMomentContributions.append
+            (
+                localTemporalMoment
+              ? fraction*(*localTemporalMoment)[sourceFacei]
+              : scalar(0)
             );
         };
 
@@ -347,6 +380,8 @@ void physicalSpreading::spreadSources
     List<DynamicList<scalar>> sendMassContributions(nProcs);
     List<DynamicList<vector>> sendMomentumContributions(nProcs);
     List<DynamicList<scalar>> sendNormalContributions(nProcs);
+    List<DynamicList<scalar>> sendTemporalWeightContributions(nProcs);
+    List<DynamicList<scalar>> sendTemporalMomentContributions(nProcs);
 
     forAll(localTargetIds, contributioni)
     {
@@ -371,6 +406,14 @@ void physicalSpreading::spreadSources
         (
             localNormalContributions[contributioni]
         );
+        sendTemporalWeightContributions[targetProc].append
+        (
+            localTemporalWeightContributions[contributioni]
+        );
+        sendTemporalMomentContributions[targetProc].append
+        (
+            localTemporalMomentContributions[contributioni]
+        );
     }
 
     PstreamBuffers pBufs(comm);
@@ -388,7 +431,9 @@ void physicalSpreading::spreadSources
             << labelList(sendTargetIds[proci])
             << scalarField(sendMassContributions[proci])
             << vectorField(sendMomentumContributions[proci])
-            << scalarField(sendNormalContributions[proci]);
+            << scalarField(sendNormalContributions[proci])
+            << scalarField(sendTemporalWeightContributions[proci])
+            << scalarField(sendTemporalMomentContributions[proci]);
     }
 
     pBufs.finishedSends();
@@ -401,7 +446,9 @@ void physicalSpreading::spreadSources
         const labelList& targetIds,
         const scalarField& masses,
         const vectorField& momenta,
-        const scalarField& normals
+        const scalarField& normals,
+        const scalarField& temporalWeights,
+        const scalarField& temporalMoments
     )
     {
         if
@@ -410,6 +457,8 @@ void physicalSpreading::spreadSources
          || targetIds.size() != masses.size()
          || targetIds.size() != momenta.size()
          || targetIds.size() != normals.size()
+         || targetIds.size() != temporalWeights.size()
+         || targetIds.size() != temporalMoments.size()
         )
         {
             FatalErrorInFunction
@@ -425,6 +474,8 @@ void physicalSpreading::spreadSources
             contribution.mass = masses[contributioni];
             contribution.momentum = momenta[contributioni];
             contribution.normalImpulse = normals[contributioni];
+            contribution.temporalWeight = temporalWeights[contributioni];
+            contribution.temporalMoment = temporalMoments[contributioni];
             contributions.append(contribution);
         }
     };
@@ -435,7 +486,9 @@ void physicalSpreading::spreadSources
         labelList(sendTargetIds[myProc]),
         scalarField(sendMassContributions[myProc]),
         vectorField(sendMomentumContributions[myProc]),
-        scalarField(sendNormalContributions[myProc])
+        scalarField(sendNormalContributions[myProc]),
+        scalarField(sendTemporalWeightContributions[myProc]),
+        scalarField(sendTemporalMomentContributions[myProc])
     );
 
     for (label proci = 0; proci < nProcs; ++proci)
@@ -450,9 +503,18 @@ void physicalSpreading::spreadSources
         scalarField masses;
         vectorField momenta;
         scalarField normals;
+        scalarField temporalWeights;
+        scalarField temporalMoments;
 
         UIPstream fromProc(proci, pBufs);
-        fromProc >> sourceIds >> targetIds >> masses >> momenta >> normals;
+        fromProc
+            >> sourceIds
+            >> targetIds
+            >> masses
+            >> momenta
+            >> normals
+            >> temporalWeights
+            >> temporalMoments;
 
         appendContributions
         (
@@ -460,7 +522,9 @@ void physicalSpreading::spreadSources
             targetIds,
             masses,
             momenta,
-            normals
+            normals,
+            temporalWeights,
+            temporalMoments
         );
     }
 
@@ -481,6 +545,8 @@ void physicalSpreading::spreadSources
     scalarField nextMass(mesh_.nFaces(), Zero);
     vectorField nextMomentum(mesh_.nFaces(), Zero);
     scalarField nextNormal(mesh_.nFaces(), Zero);
+    scalarField nextTemporalWeight(mesh_.nFaces(), Zero);
+    scalarField nextTemporalMoment(mesh_.nFaces(), Zero);
     const label localEnd = localStart + mesh_.nFaces();
 
     for (const sourceContribution& contribution : contributions)
@@ -504,6 +570,8 @@ void physicalSpreading::spreadSources
         nextMass[targetFacei] += contribution.mass;
         nextMomentum[targetFacei] += contribution.momentum;
         nextNormal[targetFacei] += contribution.normalImpulse;
+        nextTemporalWeight[targetFacei] += contribution.temporalWeight;
+        nextTemporalMoment[targetFacei] += contribution.temporalMoment;
     }
 
     mass.primitiveFieldRef() = nextMass;
@@ -513,6 +581,31 @@ void physicalSpreading::spreadSources
     mass.correctBoundaryConditions();
     momentum.correctBoundaryConditions();
     normalImpulse.correctBoundaryConditions();
+
+    if (temporalWeight)
+    {
+        temporalWeight->primitiveFieldRef() = nextTemporalWeight;
+        temporalMoment->primitiveFieldRef() = nextTemporalMoment;
+        temporalWeight->correctBoundaryConditions();
+        temporalMoment->correctBoundaryConditions();
+    }
+}
+
+
+void physicalSpreading::spread
+(
+    areaScalarField& mass,
+    areaVectorField& momentum,
+    areaScalarField& normalImpulse,
+    areaScalarField& temporalWeight,
+    areaScalarField& temporalMoment,
+    const areaScalarField& diameter
+) const
+{
+    FatalErrorInFunction
+        << "The selected physicalSpreading model does not support "
+        << "temporal duration moments."
+        << abort(FatalError);
 }
 
 

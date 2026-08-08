@@ -79,6 +79,25 @@ parcelDiameterSpreading::~parcelDiameterSpreading()
 
 // * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * * //
 
+scalar parcelDiameterSpreading::beta() const
+{
+    const scalar value =
+        betaPtr_
+      ? betaPtr_->value(mesh_.time().value())
+      : scalar(1);
+
+    if (!(value > 0))
+    {
+        FatalIOErrorInFunction(dict_)
+            << "beta must evaluate to a value > 0 at simulation time "
+            << mesh_.time().value() << ", received " << value
+            << exit(FatalIOError);
+    }
+
+    return value;
+}
+
+
 void parcelDiameterSpreading::spread
 (
     areaScalarField& mass,
@@ -87,20 +106,30 @@ void parcelDiameterSpreading::spread
     const areaScalarField& diameter
 ) const
 {
-    const scalar beta =
-        betaPtr_
-      ? betaPtr_->value(mesh_.time().value())
-      : scalar(1);
+    spreadSources(mass, momentum, normalImpulse, diameter, beta());
+}
 
-    if (!(beta > 0))
-    {
-        FatalIOErrorInFunction(dict_)
-            << "beta must evaluate to a value > 0 at simulation time "
-            << mesh_.time().value() << ", received " << beta
-            << exit(FatalIOError);
-    }
 
-    spreadSources(mass, momentum, normalImpulse, diameter, beta);
+void parcelDiameterSpreading::spread
+(
+    areaScalarField& mass,
+    areaVectorField& momentum,
+    areaScalarField& normalImpulse,
+    areaScalarField& temporalWeight,
+    areaScalarField& temporalMoment,
+    const areaScalarField& diameter
+) const
+{
+    spreadSources
+    (
+        mass,
+        momentum,
+        normalImpulse,
+        diameter,
+        beta(),
+        &temporalWeight,
+        &temporalMoment
+    );
 }
 
 

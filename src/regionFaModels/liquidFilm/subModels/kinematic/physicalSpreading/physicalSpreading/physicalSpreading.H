@@ -140,7 +140,9 @@ protected:
             areaVectorField& momentum,
             areaScalarField& normalImpulse,
             const areaScalarField& diameter,
-            const scalar beta
+            const scalar beta,
+            areaScalarField* temporalWeight = nullptr,
+            areaScalarField* temporalMoment = nullptr
         ) const;
 
 
@@ -219,6 +221,17 @@ public:
 
         //- Flag indicating whether parcel diameter mapping is required
         virtual bool needsDiameter() const noexcept { return false; }
+
+        //- Spread transfer channels and temporal duration moments together
+        virtual void spread
+        (
+            areaScalarField& mass,
+            areaVectorField& momentum,
+            areaScalarField& normalImpulse,
+            areaScalarField& temporalWeight,
+            areaScalarField& temporalMoment,
+            const areaScalarField& diameter
+        ) const;
 };
 
 

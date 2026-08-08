@@ -96,6 +96,12 @@ class parcelDiameterSpreading
         autoPtr<Function1<scalar>> betaPtr_;
 
 
+    // Private Member Functions
+
+        //- Evaluate and validate the active footprint multiplier
+        scalar beta() const;
+
+
 public:
 
     //- Runtime type information
@@ -120,6 +126,17 @@ public:
             areaScalarField& mass,
             areaVectorField& momentum,
             areaScalarField& normalImpulse,
+            const areaScalarField& diameter
+        ) const;
+
+        //- Spread transfer channels and temporal duration moments together
+        virtual void spread
+        (
+            areaScalarField& mass,
+            areaVectorField& momentum,
+            areaScalarField& normalImpulse,
+            areaScalarField& temporalWeight,
+            areaScalarField& temporalMoment,
             const areaScalarField& diameter
         ) const;
 
