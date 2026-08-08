@@ -74,6 +74,21 @@ Usage
             ...
         }
 
+        // Optional physical morphology and diameter routing
+        morphology
+        {
+            type            <word>;
+            ...
+        }
+
+        diameterModels
+        {
+            directDroplet { type filmThickness; }
+            drip          { type filmThickness; }
+            ligament      { type RayleighPlateau; }
+            sheet         { type KelvinHelmholtz; }
+        }
+
         // Optional aggregate velocity perturbation
         velocityJitter      <scalar>;
         seed                <label>;
@@ -89,8 +104,10 @@ Usage
       model        | Name of the filmSeparation model   | word | yes  | -
       separationAggregation | Optional mass/momentum aggregation
                   | dict | no | -
+      morphology   | Optional physical morphology classifier | dict | no | -
+      diameterModels | Per-morphology physical diameter models | dict | no | -
       velocityJitter | Aggregate velocity jitter fraction | scalar | no | 0
-      seed         | Random number generator seed      | label | no   | 0
+      seed         | Random number generator seed      | label | no | 0
     \endtable
 
     Options for the \c model entry:
@@ -98,6 +115,20 @@ Usage
       OwenRyley    | Model proposed by Owen-Ryley (1985)
       Friedrich    | Model proposed by Friedrich et al. (2008)
     \endverbatim
+
+    Morphology options are \c fixed and \c regimeMap.  The initial physical
+    states are \c directDroplet, \c drip, \c ligament, and \c sheet. The
+    default mapping is film thickness for direct droplets and drips,
+    Rayleigh-Plateau breakup for ligaments, and Kelvin-Helmholtz breakup for
+    sheets.  The \c fixedDiameter option of \c connectedComponent aggregation
+    is a legacy aggregate-level override and cannot be combined with an
+    explicit morphology model.
+
+    With \c DebugSwitches { filmSeparation 1; }, \c morphology,
+    \c diameterToInject, \c velocityToInject, and \c massToInject are written
+    on the finite-area mesh. \c morphologyMassTotal is a restartable
+    four-entry field containing cumulative separated mass for
+    directDroplet, drip, ligament, and sheet in that order.
 
     The inherited entries are elaborated in:
     - \link injectionModel.H \endlink
@@ -111,6 +142,7 @@ SourceFiles
 #define Foam_filmSeparation_H
 
 #include "injectionModel.H"
+#include "PtrList.H"
 #include "Random.H"
 #include "areaFields.H"
 #include "IOField.H"
@@ -130,6 +162,8 @@ namespace areaSurfaceFilmModels
 
 // Forward Declarations
 class separationAggregationModel;
+class morphologyModel;
+class diameterModel;
 
 /*---------------------------------------------------------------------------*\
                         Class filmSeparation Declaration
@@ -147,6 +181,13 @@ class filmSeparation
         //- Separation-aggregation model
         autoPtr<separationAggregationModel> separationAggregationModelPtr_;
 
+        //- Physical liquid-structure classifier
+        autoPtr<morphologyModel> morphologyModelPtr_;
+
+        //- Physical droplet-diameter models, indexed by morphology state
+        PtrList<diameterModel> diameterModels_;
+
+
         //- Per-face accumulated mass [kg] when aggregation is enabled
         IOField<scalar> massAccumulator_;
 
@@ -158,6 +199,18 @@ class filmSeparation
 
         //- Per-face accumulation time [s]
         IOField<scalar> accumulationTime_;
+
+        //- Restartable global cumulative separated mass by morphology [kg]
+        IOField<scalar> morphologyMassTotal_;
+
+        //- Locally accumulated separated mass by morphology [kg]
+        scalarField morphologySeparatedMass_;
+
+        //- Locally accumulated mass-transfer closure residual [kg]
+        scalar massConservationResidual_;
+
+        //- Locally accumulated momentum-transfer closure residual [kg.m/s]
+        vector momentumConservationResidual_;
 
 
         // Velocity jitter

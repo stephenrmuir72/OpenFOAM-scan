@@ -152,8 +152,17 @@ public:
 
     // Member Functions
 
+        //- True when this legacy aggregation model replaces the supplied
+        //  physical droplet diameter with an aggregate-level value
+        virtual bool overridesDiameter() const noexcept
+        {
+            return false;
+        }
+
         //- Aggregate buffered separated mass into injection fields.
-        //  All fields are finite-area-face fields.
+        //  All fields are finite-area-face fields. The diameter accumulator
+        //  contains the mass-weighted physical droplet diameter selected
+        //  before computational parcelisation.
         virtual void aggregate
         (
             scalarField& massAccumulator,

@@ -28,7 +28,10 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "filmSeparation.H"
+#include "diameterModel.H"
 #include "filmSeparationModel.H"
+#include "morphologyModel.H"
+#include "PstreamReduceOps.H"
 #include "separationAggregationModel.H"
 #include "liquidFilmBase.H"
 #include "addToRunTimeSelectionTable.H"
@@ -57,6 +60,79 @@ Foam::IOobject accumulatorIO
         active ? Foam::IOobject::READ_IF_PRESENT : Foam::IOobject::NO_READ,
         active ? Foam::IOobject::AUTO_WRITE : Foam::IOobject::NO_WRITE,
         active ? Foam::IOobject::REGISTER : Foam::IOobject::NO_REGISTER
+    );
+}
+
+
+Foam::word defaultDiameterModel
+(
+    const Foam::regionModels::areaSurfaceFilmModels::morphologyModel::
+        morphologyType morphology
+)
+{
+    using morphologyModel =
+        Foam::regionModels::areaSurfaceFilmModels::morphologyModel;
+
+    switch (morphology)
+    {
+        case morphologyModel::DIRECT_DROPLET:
+        case morphologyModel::DRIP:
+            return "filmThickness";
+
+        case morphologyModel::LIGAMENT:
+            return "RayleighPlateau";
+
+        case morphologyModel::SHEET:
+            return "KelvinHelmholtz";
+
+        default:
+            return "filmThickness";
+    }
+}
+
+
+Foam::vector sumMomentum(const Foam::vectorField& momentum)
+{
+    Foam::vector result(Foam::Zero);
+
+    forAll(momentum, facei)
+    {
+        result += momentum[facei];
+    }
+
+    return result;
+}
+
+
+Foam::vector summedMassVelocity
+(
+    const Foam::scalarField& mass,
+    const Foam::vectorField& velocity
+)
+{
+    Foam::vector result(Foam::Zero);
+
+    forAll(mass, facei)
+    {
+        result += mass[facei]*velocity[facei];
+    }
+
+    return result;
+}
+
+
+Foam::word morphologyMassPropertyName(const Foam::label morphology)
+{
+    using morphologyModel =
+        Foam::regionModels::areaSurfaceFilmModels::morphologyModel;
+
+    const auto type =
+        static_cast<morphologyModel::morphologyType>(morphology);
+
+    return Foam::word
+    (
+        "morphologySeparatedMass_"
+      + morphologyModel::morphologyTypeNames[type]
     );
 }
 
@@ -121,6 +197,8 @@ Foam::regionModels::areaSurfaceFilmModels::filmSeparation::filmSeparation
     (
         separationAggregationModel::New(film, coeffDict_)
     ),
+    morphologyModelPtr_(morphologyModel::NewIfPresent(film, coeffDict_)),
+    diameterModels_(morphologyModel::nMorphologyTypes),
     massAccumulator_
     (
         accumulatorIO
@@ -185,6 +263,14 @@ Foam::regionModels::areaSurfaceFilmModels::filmSeparation::filmSeparation
             Zero
         )
     ),
+    morphologyMassTotal_
+    (
+        accumulatorIO("morphologyMassTotal", film, true),
+        scalarField(morphologyModel::nMorphologyTypes, Zero)
+    ),
+    morphologySeparatedMass_(morphologyModel::nMorphologyTypes, Zero),
+    massConservationResidual_(Zero),
+    momentumConservationResidual_(Zero),
     velocityJitter_
     (
         coeffDict_.getOrDefault<scalar>("velocityJitter", 0.0)
@@ -192,7 +278,101 @@ Foam::regionModels::areaSurfaceFilmModels::filmSeparation::filmSeparation
     rndGen_(coeffDict_.getOrDefault<label>("seed", 0) + Pstream::myProcNo()),
     UfInjectionPtr_(nullptr)
 {
-    if (separationAggregationModelPtr_)
+    boolList possibleMorphologies(morphologyModel::nMorphologyTypes, false);
+
+    if (morphologyModelPtr_.valid())
+    {
+        possibleMorphologies = morphologyModelPtr_->possibleTypes();
+    }
+    else
+    {
+        possibleMorphologies.set(morphologyModel::DIRECT_DROPLET);
+    }
+
+    for
+    (
+        label morphology = 0;
+        morphology < possibleMorphologies.size();
+        ++morphology
+    )
+    {
+        if (!possibleMorphologies[morphology])
+        {
+            continue;
+        }
+
+        dictionary diameterDict(coeffDict_);
+        word modelType
+        (
+            morphologyModelPtr_.valid()
+          ? defaultDiameterModel
+            (
+                static_cast<morphologyModel::morphologyType>(morphology)
+            )
+          : coeffDict_.getOrDefault<word>
+            (
+                "diameterModel",
+                "filmThickness"
+            )
+        );
+
+        if (morphologyModelPtr_.valid())
+        {
+            if (const dictionary* diameterDictPtr =
+                coeffDict_.findDict("diameterModels"))
+            {
+                const word& morphologyName =
+                    morphologyModel::morphologyTypeNames
+                    [
+                        static_cast<morphologyModel::morphologyType>
+                        (
+                            morphology
+                        )
+                    ];
+
+                if
+                (
+                    const dictionary* modelDictPtr =
+                        diameterDictPtr->findDict(morphologyName)
+                )
+                {
+                    diameterDict.merge(*modelDictPtr);
+                    modelType = modelDictPtr->getOrDefault<word>
+                    (
+                        "type",
+                        modelDictPtr->getOrDefault<word>
+                        (
+                            "diameterModel",
+                            modelType
+                        )
+                    );
+                }
+            }
+        }
+
+        diameterModels_.set
+        (
+            morphology,
+            diameterModel::New(film, diameterDict, modelType)
+        );
+    }
+
+    if
+    (
+        morphologyModelPtr_.valid()
+     && separationAggregationModelPtr_.valid()
+     && separationAggregationModelPtr_->overridesDiameter()
+    )
+    {
+        FatalIOErrorInFunction(coeffDict_)
+            << "The fixedDiameter option of separationAggregation is a "
+            << "legacy aggregate-level override and cannot be used with an "
+            << "explicit morphology model. Select a physical model in "
+            << "diameterModels instead."
+            << exit(FatalIOError);
+    }
+
+    if (separationAggregationModelPtr_.valid())
     {
         // Register a velocity field on the FA mesh for Lagrangian reading
         UfInjectionPtr_.reset
@@ -213,6 +393,12 @@ Foam::regionModels::areaSurfaceFilmModels::filmSeparation::filmSeparation
             )
         );
     }
+
+    if (morphologyModelPtr_.valid())
+    {
+        Info<< "    filmSeparation: physical morphology model "
+            << morphologyModelPtr_->type() << endl;
+    }
 }
 
 
@@ -232,23 +418,128 @@ void Foam::regionModels::areaSurfaceFilmModels::filmSeparation::correct
 )
 {
     const faMesh& mesh = film().regionMesh();
+    const areaVectorField& Uf = film().Uf();
 
     // Calculate the mass ratio of film separation
     tmp<scalarField> tmassRatio = filmSeparationModelPtr_->separatedMassRatio();
     const auto& massRatio = tmassRatio.cref();
 
+    tmp<labelField> tMorphology
+    (
+        morphologyModelPtr_.valid()
+      ? morphologyModelPtr_->morphology()
+      : tmp<labelField>::New
+        (
+            mesh.nFaces(),
+            label(morphologyModel::DIRECT_DROPLET)
+        )
+    );
+    const labelField& morphology = tMorphology.cref();
+
+    scalarField physicalDiameter(mesh.nFaces(), Zero);
+
+    for
+    (
+        label morphologyType = 0;
+        morphologyType < morphologyModel::nMorphologyTypes;
+        ++morphologyType
+    )
+    {
+        const diameterModel* diameterModelPtr =
+            diameterModels_.set(morphologyType);
+
+        if (!diameterModelPtr)
+        {
+            continue;
+        }
+
+        tmp<scalarField> tDiameter = diameterModelPtr->diameter();
+        const scalarField& diameter = tDiameter.cref();
+
+        if (diameter.size() != mesh.nFaces())
+        {
+            FatalErrorInFunction
+                << "Physical diameter model "
+                << diameterModelPtr->type()
+                << " returned " << diameter.size() << " entries for "
+                << mesh.nFaces() << " finite-area faces."
+                << abort(FatalError);
+        }
+
+        forAll(morphology, faceI)
+        {
+            if (morphology[faceI] == morphologyType)
+            {
+                physicalDiameter[faceI] = diameter[faceI];
+            }
+        }
+    }
+
+    forAll(morphology, faceI)
+    {
+        if
+        (
+            morphology[faceI] < 0
+         || morphology[faceI] >= morphologyModel::nMorphologyTypes
+         || !diameterModels_.set(morphology[faceI])
+        )
+        {
+            FatalErrorInFunction
+                << "Invalid or unconfigured morphology ID "
+                << morphology[faceI] << " on finite-area face " << faceI
+                << abort(FatalError);
+        }
+    }
+
     if (!separationAggregationModelPtr_.valid())
     {
         massToInject = massRatio*availableMass;
-        diameterToInject = massRatio*film().h();
+        diameterToInject = Zero;
+
+        const bool legacyDirectDiameter =
+        (
+            !morphologyModelPtr_.valid()
+         && diameterModels_[morphologyModel::DIRECT_DROPLET].
+                scalesWithSeparationRatio()
+        );
+
+        scalar separatedMassTotal = 0;
+        vector separatedMomentum(Zero);
+
+        forAll(massToInject, faceI)
+        {
+            if (massToInject[faceI] > VSMALL)
+            {
+                const label morphologyType = morphology[faceI];
+
+                diameterToInject[faceI] =
+                (
+                    legacyDirectDiameter
+                  ? massRatio[faceI]*physicalDiameter[faceI]
+                  : physicalDiameter[faceI]
+                );
+
+                morphologySeparatedMass_[morphologyType] +=
+                    massToInject[faceI];
+                separatedMassTotal += massToInject[faceI];
+                separatedMomentum += massToInject[faceI]*Uf[faceI];
+            }
+        }
+
         availableMass -= massToInject;
+
+        massConservationResidual_ +=
+            separatedMassTotal - sum(massToInject);
+        momentumConservationResidual_ +=
+            separatedMomentum - summedMassVelocity(massToInject, Uf);
 
         addToInjectedMass(sum(massToInject));
     }
     else
     {
         const scalar deltaT = mesh.time().deltaTValue();
-        const areaVectorField& Uf = film().Uf();
+        const scalar bufferedMassBefore = sum(massAccumulator_);
+        const vector bufferedMomentumBefore = sumMomentum(momentumAccumulator_);
 
         scalarField effectiveAvailMass
         (
@@ -256,6 +547,8 @@ void Foam::regionModels::areaSurfaceFilmModels::filmSeparation::correct
         );
 
         scalarField separatedMass(massRatio*effectiveAvailMass);
+        scalar separatedMassTotal = 0;
+        vector separatedMomentum(Zero);
 
         forAll(separatedMass, faceI)
         {
@@ -264,7 +557,11 @@ void Foam::regionModels::areaSurfaceFilmModels::filmSeparation::correct
                 massAccumulator_[faceI] += separatedMass[faceI];
                 momentumAccumulator_[faceI] += separatedMass[faceI]*Uf[faceI];
                 diameterAccumulator_[faceI] +=
-                    separatedMass[faceI]*film().h()[faceI];
+                    separatedMass[faceI]*physicalDiameter[faceI];
+                morphologySeparatedMass_[morphology[faceI]] +=
+                    separatedMass[faceI];
+                separatedMassTotal += separatedMass[faceI];
+                separatedMomentum += separatedMass[faceI]*Uf[faceI];
             }
 
             if (massAccumulator_[faceI] > VSMALL)
@@ -304,10 +601,89 @@ void Foam::regionModels::areaSurfaceFilmModels::filmSeparation::correct
         availableMass =
             max(availableMass - massAccumulator_ - massToInject, scalar(0));
 
+        massConservationResidual_ +=
+        (
+            bufferedMassBefore + separatedMassTotal
+          - sum(massAccumulator_) - sum(massToInject)
+        );
+        momentumConservationResidual_ +=
+        (
+            bufferedMomentumBefore + separatedMomentum
+          - sumMomentum(momentumAccumulator_)
+          - summedMassVelocity
+            (
+                massToInject,
+                UfInjectionPtr_().primitiveField()
+            )
+        );
+
         addToInjectedMass(sum(massToInject));
     }
 
     injectionModel::correct();
+
+    if (writeTime())
+    {
+        scalarField morphologyMass
+        (
+            morphologyModel::nMorphologyTypes,
+            Zero
+        );
+
+        scalar totalMorphologyMass = 0;
+
+        forAll(morphologyMass, morphologyType)
+        {
+            const scalar stepMass =
+                returnReduce
+                (
+                    morphologySeparatedMass_[morphologyType],
+                    sumOp<scalar>()
+                );
+
+            morphologyMassTotal_[morphologyType] += stepMass;
+            morphologyMass[morphologyType] =
+                morphologyMassTotal_[morphologyType];
+            totalMorphologyMass += morphologyMass[morphologyType];
+
+            setModelProperty<scalar>
+            (
+                morphologyMassPropertyName(morphologyType),
+                morphologyMass[morphologyType]
+            );
+            morphologySeparatedMass_[morphologyType] = 0;
+        }
+
+        const scalar massResidual =
+            returnReduce(massConservationResidual_, sumOp<scalar>());
+        const vector momentumResidual =
+            returnReduce(momentumConservationResidual_, sumOp<vector>());
+
+        setModelProperty<scalar>("massTransferClosure", massResidual);
+        setModelProperty<vector>("momentumTransferClosure", momentumResidual);
+
+        Info<< "    filmSeparation morphology-resolved separated mass:" << nl;
+
+        forAll(morphologyMass, morphologyType)
+        {
+            const auto type =
+                static_cast<morphologyModel::morphologyType>(morphologyType);
+
+            Info<< "        "
+                << morphologyModel::morphologyTypeNames[type] << " = "
+                << morphologyMass[morphologyType] << " kg"
+                << " (fraction "
+                << morphologyMass[morphologyType]
+                   /max(totalMorphologyMass, VSMALL) << ')' << nl;
+        }
+
+        Info<< "        transfer mass closure = " << massResidual << " kg" << nl
+            << "        transfer momentum closure = " << momentumResidual
+            << " kg.m/s" << endl;
+
+        massConservationResidual_ = 0;
+        momentumConservationResidual_ = Zero;
+    }
 
 
     if (debug && mesh.time().writeTime())
@@ -332,6 +708,50 @@ void Foam::regionModels::areaSurfaceFilmModels::filmSeparation::correct
             );
             areaMassToInject.primitiveFieldRef() = massToInject;
             areaMassToInject.write();
+        }
+
+        {
+            areaScalarField areaDiameterToInject
+            (
+                mesh.newIOobject("diameterToInject"),
+                mesh,
+                dimensionedScalar(dimLength, Zero)
+            );
+            areaDiameterToInject.primitiveFieldRef() = diameterToInject;
+            areaDiameterToInject.write();
+        }
+
+        {
+            areaVectorField areaVelocityToInject
+            (
+                mesh.newIOobject("velocityToInject"),
+                mesh,
+                dimensionedVector(dimVelocity, Zero)
+            );
+
+            areaVelocityToInject.primitiveFieldRef() =
+            (
+                separationAggregationModelPtr_.valid()
+              ? UfInjectionPtr_().primitiveField()
+              : Uf.primitiveField()
+            );
+            areaVelocityToInject.write();
+        }
+
+        {
+            areaScalarField areaMorphology
+            (
+                mesh.newIOobject("morphology"),
+                mesh,
+                dimensionedScalar(dimless, Zero)
+            );
+
+            forAll(morphology, faceI)
+            {
+                areaMorphology.primitiveFieldRef()[faceI] = morphology[faceI];
+            }
+
+            areaMorphology.write();
         }
 
         if (separationAggregationModelPtr_.valid())

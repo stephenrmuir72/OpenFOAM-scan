@@ -90,6 +90,20 @@ $(separationAggregationModels)/separationAggregationModel/separationAggregationM
 $(separationAggregationModels)/perFace/perFaceAggregation.C
 $(separationAggregationModels)/connectedComponent/connectedComponentAggregation.C
 
+diameterModels=$(filmSeparation)/diameterModels
+$(diameterModels)/diameterModel/diameterModel.C
+$(diameterModels)/diameterModel/diameterModelNew.C
+$(diameterModels)/filmThickness/filmThicknessDiameter.C
+$(diameterModels)/aerodynamic/aerodynamicDiameter.C
+$(diameterModels)/RayleighPlateau/RayleighPlateau.C
+$(diameterModels)/KelvinHelmholtz/KelvinHelmholtz.C
+
+morphologyModels=$(filmSeparation)/morphologyModels
+$(morphologyModels)/morphologyModel/morphologyModel.C
+$(morphologyModels)/morphologyModel/morphologyModelNew.C
+$(morphologyModels)/fixed/fixedMorphology.C
+$(morphologyModels)/regimeMap/regimeMapMorphology.C
+
 $(kinematic)/injectionModel/BrunDrippingInjection/BrunDrippingInjection.C
 
 $(kinematic)/force/forceList/forceList.C

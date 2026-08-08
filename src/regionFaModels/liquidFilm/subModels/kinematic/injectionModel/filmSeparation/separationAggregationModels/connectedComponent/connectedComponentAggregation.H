@@ -167,6 +167,12 @@ public:
 
     // Member Functions
 
+        //- True for the legacy fixed aggregate-diameter option
+        virtual bool overridesDiameter() const noexcept
+        {
+            return diameterModel_ == FIXED_DIAMETER;
+        }
+
         //- Aggregate buffered separated mass into injection fields
         virtual void aggregate
         (
