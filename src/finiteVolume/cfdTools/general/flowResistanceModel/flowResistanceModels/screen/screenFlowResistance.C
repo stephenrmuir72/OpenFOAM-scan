@@ -180,6 +180,16 @@ Foam::scalar Foam::flowResistanceModels::Screen::lossCoefficient
             << abort(FatalError);
     }
 
+    if (nuAvg <= 0)
+    {
+        FatalErrorInFunction
+            << "Kinematic viscosity must be positive to evaluate the "
+               "strand Reynolds number, got " << nuAvg << ". Check the "
+               "registered nu/mu field or specify a positive 'nu' "
+               "entry in flowResistanceCoeffs."
+            << abort(FatalError);
+    }
+
     // Strand Reynolds number, clamped to a minimum of 1 to keep the
     // laminar term finite at (near) zero velocity
     const scalar Re =

@@ -248,7 +248,21 @@ void Foam::totalPressureFvPatchScalarField::updateCoeffs()
 
         const scalar A = gSum(patch().magSf());
 
-        // Velocity-flux sum and area-averaged density (1 incompressible)
+        if (A <= 0)
+        {
+            FatalErrorInFunction
+                << "Zero or negative patch area (" << A << ") on patch "
+                << this->patch().name() << " of field "
+                << this->internalField().name()
+                << "; cannot evaluate the flow resistance correction."
+                << exit(FatalError);
+        }
+
+        // Velocity-flux sum and area-averaged density (1 incompressible).
+        // Mirror the same dimension validation used by the
+        // updateCoeffs(p0p, Up) overload below, so an invalid pressure
+        // dimension is caught here rather than silently treated as
+        // incompressible.
         scalar Q;
         scalar rhoAvg;
 
@@ -260,10 +274,24 @@ void Foam::totalPressureFvPatchScalarField::updateCoeffs()
             Q = gSum(phip/rhop);
             rhoAvg = gSum(rhop*patch().magSf())/A;
         }
-        else
+        else if (internalField().dimensions() == dimPressure/dimDensity)
         {
             Q = gSum(phip);
             rhoAvg = 1;
+        }
+        else
+        {
+            FatalErrorInFunction
+                << " Incorrect pressure dimensions "
+                << internalField().dimensions() << nl
+                << "    Should be " << dimPressure
+                << " for compressible/variable density flow" << nl
+                << "    or " << dimPressure/dimDensity
+                << " for incompressible flow," << nl
+                << "    on patch " << this->patch().name()
+                << " of field " << this->internalField().name()
+                << " in file " << this->internalField().objectPath()
+                << exit(FatalError);
         }
 
         // Patch-averaged normal velocity

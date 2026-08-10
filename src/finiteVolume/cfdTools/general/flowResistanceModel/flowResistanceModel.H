@@ -106,6 +106,16 @@ Description
     A restarting run may supply the optional \c relaxedPressureCorrection
     entry to resume from a previously written relaxed correction.
 
+    Reference:
+    \verbatim
+        Idelchik, I. E. (2008).
+        Handbook of Hydraulic Resistance (3rd ed.).
+        Begell House.
+        (Re-dependent loss coefficient correlations and eps0(Re)/
+        zeta_phi(Re, f) tables for perforated plates, slotted
+        openings and screens/grids.)
+    \endverbatim
+
 SourceFiles
     flowResistanceModel.C
     flowResistanceModelNew.C

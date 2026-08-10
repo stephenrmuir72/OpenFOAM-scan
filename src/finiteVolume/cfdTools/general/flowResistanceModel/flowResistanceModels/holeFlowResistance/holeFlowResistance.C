@@ -171,7 +171,7 @@ Foam::flowResistanceModels::holeFlowResistance::zetaPhi
     const scalar f
 )
 {
-    static const scalar ReTable[] =
+    static const scalarList ReTable
     {
         25, 40, 60, 100, 200, 400, 1000, 2000, 4000, 10000, 20000,
         100000, 200000
@@ -199,10 +199,10 @@ Foam::flowResistanceModels::holeFlowResistance::zetaPhi
         {0.01, 0.01, 0.01, 0.01, 0.01, 0, 0, 0, 0, 0, 0}
     };
 
-    const label nRe = 13;
+    const label nRe = ReTable.size();
 
     // Clamp to the table range (the caller only uses Re <= 1e5)
-    const scalar ReC = max(min(Re, ReTable[nRe - 1]), ReTable[0]);
+    const scalar ReC = max(min(Re, ReTable.last()), ReTable.first());
     const scalar fC = max(min(f, fTable.last()), fTable.first());
 
     // Re bracket (log-linear); the f interpolation of each bracketing
@@ -241,6 +241,16 @@ Foam::flowResistanceModels::holeFlowResistance::lossCoefficient
     {
         FatalErrorInFunction
             << "Valid openAreaFraction required for resistance"
+            << abort(FatalError);
+    }
+
+    if (nuAvg <= 0)
+    {
+        FatalErrorInFunction
+            << "Kinematic viscosity must be positive to evaluate the "
+               "hole Reynolds number, got " << nuAvg << ". Check the "
+               "registered nu/mu field or specify a positive 'nu' "
+               "entry in flowResistanceCoeffs."
             << abort(FatalError);
     }
 

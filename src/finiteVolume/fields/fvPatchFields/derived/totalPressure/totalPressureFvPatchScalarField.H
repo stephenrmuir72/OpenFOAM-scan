@@ -128,6 +128,7 @@ Usage
 
 See also
     Foam::fixedValueFvPatchField
+    Foam::flowResistanceModel
 
 SourceFiles
     totalPressureFvPatchScalarField.C

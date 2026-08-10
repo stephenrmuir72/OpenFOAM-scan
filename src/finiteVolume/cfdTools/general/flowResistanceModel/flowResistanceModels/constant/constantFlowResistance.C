@@ -46,6 +46,14 @@ Foam::flowResistanceModels::Constant::Constant(const dictionary& dict)
     flowResistanceModel(dict),
     lossCoefficient_(dict.get<scalar>("lossCoefficient"))
 {
+    if (dict.found("nu"))
+    {
+        IOWarningInFunction(dict)
+            << "The 'nu' entry has no effect for resistanceType "
+               "'constant', which uses a fixed lossCoefficient "
+               "independent of the Reynolds number. Ignoring." << endl;
+    }
+
     if (lossCoefficient_ < 0)
     {
         FatalIOErrorInFunction(dict)
