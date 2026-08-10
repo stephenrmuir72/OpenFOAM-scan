@@ -23,14 +23,19 @@ License
     You should have received a copy of the GNU General Public License
     along with OpenFOAM.  If not, see <http://www.gnu.org/licenses/>.
 
+Namespace
+    Foam::flowResistanceModels
+
+Description
+    A namespace for various flow resistance model implementations.
+
 Class
     Foam::flowResistanceModel
 
 Description
-    Computes the Reynolds-number-dependent loss coefficient zeta for
-    planar flow resistance elements (perforated plates, slotted
-    openings) using the correlations of the vent-openings formulation,
-    or a user-specified constant.
+    Runtime-selectable model computing the Reynolds-number-dependent
+    loss coefficient zeta for planar flow resistance elements attached
+    to a \c totalPressure boundary condition.
 
     The pressure drop across the resistance is:
 
@@ -59,111 +64,11 @@ Description
     The relaxed correction is computed by \c updateCorrection() and can
     be written as \c relaxedPressureCorrection for restart.
 
-    For \c perforated and \c slotted the loss coefficient is
-    Reynolds-number-dependent. With \c f the open area fraction and
-    \c d_h = 4A_h/P_h the hydraulic diameter of a single hole, the hole
-    Reynolds number is
-
-    \f[
-        Re = \frac{U_n d_h}{f \nu}
-    \f]
-
-    where \c nu is the kinematic viscosity (from the turbulence model,
-    or from the optional \c nu entry). The loss coefficient is then
-    evaluated in four Reynolds regimes. The fully turbulent coefficient
-    is
-
-    \f[
-        \zeta_{turb} = \frac{[0.707\sqrt{1-f} + 1-f]^2}{f^2}
-    \f]
-
-    multiplied by a slot shape factor for the \c slotted type.
-
-    Supported resistance types:
+    Available resistance types:
     - \c perforated: Re-dependent zeta (four Reynolds regimes)
     - \c slotted: Re-dependent zeta with the slot shape factor k_shape
     - \c screen: placeholder (returns 0)
     - \c constant: user-specified zeta via \c lossCoefficient entry
-
-    For \c perforated and \c slotted the hole geometry must always be
-    provided in the respective \c perforatedCoeffs or \c slottedCoeffs
-    sub-dict. The open area fraction f is either specified directly via
-    the \c openAreaFraction entry or derived from the geometry and the
-    pitches:
-
-    \f[
-        f = \frac{A_h}{S_l S_t}
-    \f]
-
-    where \c A_h is the area of a single hole:
-    - perforated: \f$ A_h = \frac{\pi d^2}{4} \f$ for circular holes or
-      \f$ A_h = d^2 \f$ for square holes
-    - slotted: \f$ A_h = b(a-b) + \frac{\pi b^2}{4} \f$ for slot length
-      \f$ a \f$ and slot width \f$ b \f$ (a > b)
-
-    The two options are mutually exclusive.
-
-    At the first update the number of holes implied by f and the hole
-    geometry is validated against the patch area: at least one hole must
-    fit on the patch.
-
-Usage
-    Example with direct open area fraction:
-    \verbatim
-    flowResistanceCoeffs
-    {
-        resistanceType      perforated;
-
-        perforatedCoeffs
-        {
-            holeShape           circular;
-            holeSize            0.005;
-            openAreaFraction    0.5;
-        }
-    }
-    \endverbatim
-
-    Example with geometry-derived open area fraction:
-    \verbatim
-    flowResistanceCoeffs
-    {
-        resistanceType      perforated;
-
-        perforatedCoeffs
-        {
-            holeShape           circular;
-            holeSize            0.005;
-            longitudinalPitch   0.01;
-            transversePitch     0.01;
-        }
-    }
-    \endverbatim
-
-    Example with slotted geometry:
-    \verbatim
-    flowResistanceCoeffs
-    {
-        resistanceType      slotted;
-
-        slottedCoeffs
-        {
-            slotLength          0.01;
-            slotWidth           0.005;
-            longitudinalPitch   0.02;
-            transversePitch     0.015;
-        }
-    }
-    \endverbatim
-
-    Example with constant K:
-    \verbatim
-    flowResistanceCoeffs
-    {
-        resistanceType      constant;
-        lossCoefficient     2.5;
-        relax               0.3;
-    }
-    \endverbatim
 
     For \c perforated and \c slotted the kinematic viscosity is obtained
     from the turbulence model (\c nu = \c mu/rho). The optional \c nu
@@ -185,11 +90,22 @@ Usage
     }
     \endverbatim
 
+    Example with constant K:
+    \verbatim
+    flowResistanceCoeffs
+    {
+        resistanceType      constant;
+        lossCoefficient     2.5;
+        relax               0.3;
+    }
+    \endverbatim
+
     A restarting run may supply the optional \c relaxedPressureCorrection
     entry to resume from a previously written relaxed correction.
 
 SourceFiles
     flowResistanceModel.C
+    flowResistanceModelNew.C
 
 \*---------------------------------------------------------------------------*/
 
@@ -198,7 +114,7 @@ SourceFiles
 
 #include "dictionary.H"
 #include "autoPtr.H"
-#include "Ostream.H"
+#include "runTimeSelectionTables.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -211,45 +127,9 @@ namespace Foam
 
 class flowResistanceModel
 {
-    // Private Data
+protected:
 
-        //- Type of flow resistance geometry
-        word resistanceType_;
-
-        //- Open area fraction f (0..1). Negative = not set.
-        scalar openAreaFraction_;
-
-        //- User-specified loss coefficient K. Negative = not set.
-        scalar lossCoefficient_;
-
-        //- Hole shape for perforated geometry: circular or square
-        word holeShape_;
-
-        //- Hole size for perforated geometry [m] (diameter or side)
-        scalar holeSize_;
-
-        //- Longitudinal pitch [m] (S_l)
-        scalar longitudinalPitch_;
-
-        //- Transverse pitch [m] (S_t)
-        scalar transversePitch_;
-
-        //- Slot length for slotted geometry [m] (a: straight length +
-        //  cap diameter)
-        scalar slotLength_;
-
-        //- Slot width for slotted geometry [m] (b: cap diameter =
-        //  slot width)
-        scalar slotWidth_;
-
-        //- True if hole geometry inputs were used
-        bool geometryUsed_;
-
-        //- Verbatim copy of the "<resistanceType>Coeffs" sub-dict for
-        //  placeholder resistance types (e.g. 'screen') that do not yet
-        //  parse their own entries, so that any user-supplied content
-        //  is preserved on write() rather than silently dropped
-        dictionary placeholderCoeffsDict_;
+    // Protected Data
 
         //- Under-relaxation factor for the signed pressure correction
         scalar relax_;
@@ -266,68 +146,73 @@ class flowResistanceModel
         //- Whether the relaxed correction has been initialised
         bool relaxedCorrectionInitialised_;
 
-        //- Whether the patch area has been validated against the hole
-        //  geometry (i.e. that at least one hole fits on the patch)
+        //- Whether the patch area has been validated against the
+        //  resistance geometry (i.e. that at least one hole fits on
+        //  the patch), independent of relaxedCorrectionInitialised_
+        //  so that it is still performed on a restarted run
         bool patchAreaValidated_;
 
 
-    // Private Member Functions
+    // Protected Member Functions
 
-        //- Resolve the open area fraction f for the perforated/slotted
-        //  types from the given \c typeDict (the perforatedCoeffs or
-        //  slottedCoeffs sub-dict): either taken directly from the
-        //  'openAreaFraction' entry, or derived from the hole/slot
-        //  geometry (already read into the member data by the caller)
-        //  and the 'longitudinalPitch'/'transversePitch' entries (set
-        //  as a side effect on longitudinalPitch_/transversePitch_).
-        //  The two options are validated as mutually exclusive and the
-        //  result is validated to lie in (0, 1]. \c geometryDesc is
-        //  used to word the "check ... geometry and pitch" error
-        //  message (e.g. "hole" or "slot").
-        scalar resolveOpenAreaFraction
-        (
-            const dictionary& dict,
-            const dictionary& typeDict,
-            const word& geometryDesc
-        );
-
-        //- Area of a single hole [m^2] for the current resistance
-        //  geometry (perforated or slotted)
-        scalar holeArea() const;
-
-        //- Perimeter of a single hole [m] for the current resistance
-        //  geometry (perforated or slotted)
-        scalar holePerimeter() const;
-
-        //- Hydraulic diameter of a single hole [m] = 4A/P
-        scalar hydraulicDiameter() const;
-
-        //- Turbulent loss coefficient zeta_turb (Eq. 13), including the
-        //  slot shape factor k_shape (Eq. 16) for the slotted type
-        scalar zetaTurbulent() const;
-
-        //- Loss coefficient zeta for the current resistance geometry:
-        //  user-specified for 'constant', otherwise Re-dependent
-        //  (Eqs. 9-12) for perforated/slotted
-        scalar lossCoefficient
+        //- Loss coefficient zeta for the given area-averaged normal
+        //  velocity and kinematic viscosity
+        virtual scalar lossCoefficient
         (
             const scalar UnAvg,
             const scalar nuAvg
-        ) const;
+        ) const = 0;
+
+        //- Validate the resistance geometry/open area fraction against
+        //  the patch area (i.e. that at least one hole fits on the
+        //  patch), called once on the first updateCorrection(). The
+        //  default implementation does nothing; hole-based resistance
+        //  types override this.
+        virtual void validatePatchArea(const scalar A) const;
+
+        //- Write the resistanceType-specific dictionary entries
+        //  (i.e. the "<resistanceType>Coeffs" sub-dict and/or
+        //  "openAreaFraction"/"lossCoefficient" as applicable)
+        virtual void writeCoeffs(Ostream& os) const = 0;
 
 
 public:
 
+    //- Runtime type information
+    TypeName("flowResistanceModel");
+
+    //- Declare runtime constructor selection table
+    declareRunTimeSelectionTable
+    (
+        autoPtr,
+        flowResistanceModel,
+        dictionary,
+        (const dictionary& dict),
+        (dict)
+    );
+
+
     // Constructors
 
         //- Construct from dictionary (the flowResistanceCoeffs sub-dict)
-        flowResistanceModel(const dictionary& dict);
+        explicit flowResistanceModel(const dictionary& dict);
 
         //- Copy constructor
         flowResistanceModel(const flowResistanceModel&);
 
-        //- Clone
-        autoPtr<flowResistanceModel> clone() const;
+        //- Construct and return a clone
+        virtual autoPtr<flowResistanceModel> clone() const = 0;
+
+        //- No copy assignment
+        void operator=(const flowResistanceModel&) = delete;
+
+
+    //- Selector
+    static autoPtr<flowResistanceModel> New(const dictionary& dict);
+
+
+    //- Destructor
+    virtual ~flowResistanceModel() = default;
 
 
     // Member Functions
@@ -343,22 +228,7 @@ public:
         //  (i.e. it is Reynolds-number dependent) and no user-specified
         //  \c nu overrides it. Used by the caller to decide whether a
         //  turbulence model lookup is required.
-        bool needsNu() const
-        {
-            return
-            (
-                userNu_ < 0
-             && (resistanceType_ == "perforated" || resistanceType_ == "slotted")
-            );
-        }
-
-        //- Empirical coefficient eps0(Re) (Eqs. 10-11), log-linear
-        //  interpolation of the Section D table
-        scalar eps0(const scalar Re) const;
-
-        //- Empirical coefficient zeta_phi(Re, f) (Eq. 11), log-linear
-        //  in Re and linear in f interpolation of the Section D table
-        scalar zetaPhi(const scalar Re, const scalar f) const;
+        virtual bool needsNu() const = 0;
 
         //- Compute and return the relaxed signed pressure correction
         //  for the given velocity flux sum Q, patch area A,
@@ -366,7 +236,6 @@ public:
         //  and area-averaged kinematic viscosity nuAvg:
         //  UnAvg = Q/A, deltaP = zeta(Re)*0.5*rhoAvg*UnAvg^2,
         //  target = sign(UnAvg)*deltaP, then apply the relaxation.
-        //  The hole Reynolds number is Re = |UnAvg|*d_h/(f*nuAvg).
         scalar updateCorrection
         (
             const scalar Q,

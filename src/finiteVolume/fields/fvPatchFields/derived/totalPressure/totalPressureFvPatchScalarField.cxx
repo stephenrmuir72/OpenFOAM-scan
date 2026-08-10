@@ -77,9 +77,9 @@ Foam::totalPressureFvPatchScalarField::totalPressureFvPatchScalarField
     // Read optional flow resistance
     if (dict.found("flowResistanceCoeffs"))
     {
-        flowResistanceModel_.reset
+        flowResistanceModel_ = flowResistanceModel::New
         (
-            new flowResistanceModel(dict.subDict("flowResistanceCoeffs"))
+            dict.subDict("flowResistanceCoeffs")
         );
     }
 }
