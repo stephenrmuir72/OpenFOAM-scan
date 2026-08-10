@@ -620,8 +620,7 @@ Foam::scalar Foam::flowResistanceModel::updateCorrection
     else
     {
         relaxedCorrection_ =
-            (1 - relax_)*relaxedCorrection_
-          + relax_*targetCorrection_;
+            lerp(relaxedCorrection_, targetCorrection_, relax_);
     }
 
     return relaxedCorrection_;
