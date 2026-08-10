@@ -70,9 +70,11 @@ Description
     - \c screen: placeholder (returns 0)
     - \c constant: user-specified zeta via \c lossCoefficient entry
 
-    For \c perforated and \c slotted the kinematic viscosity is obtained
-    from the turbulence model (\c nu = \c mu/rho). The optional \c nu
-    entry overrides this, e.g. when no turbulence model is present:
+    For \c perforated and \c slotted the kinematic viscosity is looked
+    up directly from the registered 'nu' field (incompressible flow) or
+    derived from the registered 'mu' and 'rho' fields (compressible
+    flow: \c nu = \c mu/rho). The optional \c nu entry overrides this,
+    e.g. when no such field is registered:
 
     \verbatim
     flowResistanceCoeffs

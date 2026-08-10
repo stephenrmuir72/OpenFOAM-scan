@@ -31,7 +31,6 @@ License
 #include "fvPatchFieldMapper.H"
 #include "volFields.H"
 #include "surfaceFields.H"
-#include "turbulenceModel.H"
 
 
 // * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * //
@@ -46,6 +45,8 @@ Foam::totalPressureFvPatchScalarField::totalPressureFvPatchScalarField
     UName_("U"),
     phiName_("phi"),
     rhoName_("rho"),
+    nuName_("nu"),
+    muName_("thermo:mu"),
     psiName_("none"),
     gamma_(0.0),
     p0_(p.size(), Zero),
@@ -64,6 +65,8 @@ Foam::totalPressureFvPatchScalarField::totalPressureFvPatchScalarField
     UName_(dict.getOrDefault<word>("U", "U")),
     phiName_(dict.getOrDefault<word>("phi", "phi")),
     rhoName_(dict.getOrDefault<word>("rho", "rho")),
+    nuName_(dict.getOrDefault<word>("nu", "nu")),
+    muName_(dict.getOrDefault<word>("mu", "thermo:mu")),
     psiName_(dict.getOrDefault<word>("psi", "none")),
     gamma_(psiName_ != "none" ? dict.get<scalar>("gamma") : 1),
     p0_("p0", dict, p.size()),
@@ -97,6 +100,8 @@ Foam::totalPressureFvPatchScalarField::totalPressureFvPatchScalarField
     UName_(ptf.UName_),
     phiName_(ptf.phiName_),
     rhoName_(ptf.rhoName_),
+    nuName_(ptf.nuName_),
+    muName_(ptf.muName_),
     psiName_(ptf.psiName_),
     gamma_(ptf.gamma_),
     p0_(ptf.p0_, mapper),
@@ -114,6 +119,8 @@ Foam::totalPressureFvPatchScalarField::totalPressureFvPatchScalarField
     UName_(tppsf.UName_),
     phiName_(tppsf.phiName_),
     rhoName_(tppsf.rhoName_),
+    nuName_(tppsf.nuName_),
+    muName_(tppsf.muName_),
     psiName_(tppsf.psiName_),
     gamma_(tppsf.gamma_),
     p0_(tppsf.p0_),
@@ -262,30 +269,49 @@ void Foam::totalPressureFvPatchScalarField::updateCoeffs()
         // Patch-averaged normal velocity
         const scalar UnAvg = Q/A;
 
-        // Kinematic viscosity: user-specified, otherwise obtained from
-        // the turbulence model (nu = mu/rho, valid for both
-        // incompressible and compressible runs). Only required for the
-        // Reynolds-number-dependent resistance types (perforated/
-        // slotted); a turbulence model need not be registered for the
-        // 'constant' or 'screen' types.
+        // Kinematic viscosity: user-specified, otherwise looked up
+        // directly from the registered nu/mu field (nu = mu/rho for
+        // compressible flow), avoiding a hard dependency on a
+        // turbulenceModel (which would introduce a circular library
+        // dependency, since TurbulenceModels itself links against
+        // finiteVolume). Only required for the Reynolds-number-
+        // dependent resistance types (perforated/slotted); no
+        // viscosity field need be registered for the 'constant' or
+        // 'screen' types.
         scalar nuAvg = flowResistanceModel_->userNu();
 
         if (flowResistanceModel_->needsNu())
         {
-            const label patchi = patch().index();
+            const word nuName(IOobject::groupName(nuName_, internalField().group()));
+            const word muName(IOobject::groupName(muName_, internalField().group()));
 
-            const auto& turbModel = db().lookupObject<turbulenceModel>
-            (
-                IOobject::groupName
-                (
-                    turbulenceModel::propertiesName,
-                    internalField().group()
-                )
-            );
+            if (db().foundObject<volScalarField>(nuName))
+            {
+                const auto& nu =
+                    patch().lookupPatchField<volScalarField>(nuName);
 
-            const scalarField nuP = turbModel.nu(patchi);
+                nuAvg = gSum(nu*patch().magSf())/A;
+            }
+            else if (db().foundObject<volScalarField>(muName))
+            {
+                const auto& mu =
+                    patch().lookupPatchField<volScalarField>(muName);
 
-            nuAvg = gSum(nuP*patch().magSf())/A;
+                const scalarField& rhop =
+                    patch().lookupPatchField<volScalarField>(rhoName_);
+
+                nuAvg = gSum((mu/rhop)*patch().magSf())/A;
+            }
+            else
+            {
+                FatalErrorInFunction
+                    << "Cannot find a registered '" << nuName
+                    << "' or '" << muName << "' field to evaluate the "
+                       "kinematic viscosity for the flow resistance "
+                       "model. Specify the 'nu' entry in "
+                       "flowResistanceCoeffs instead."
+                    << exit(FatalError);
+            }
         }
 
         // Patch-averaged normal velocity and relaxed pressure correction
@@ -319,6 +345,8 @@ void Foam::totalPressureFvPatchScalarField::write(Ostream& os) const
     os.writeEntryIfDifferent<word>("U", "U", UName_);
     os.writeEntryIfDifferent<word>("phi", "phi", phiName_);
     os.writeEntry("rho", rhoName_);
+    os.writeEntryIfDifferent<word>("nu", "nu", nuName_);
+    os.writeEntryIfDifferent<word>("mu", "thermo:mu", muName_);
     os.writeEntry("psi", psiName_);
     os.writeEntry("gamma", gamma_);
     p0_.writeEntry("p0", os);

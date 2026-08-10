@@ -98,6 +98,8 @@ Usage
         U            | Velocity field name        | no       | U
         phi          | Flux field name            | no       | phi
         rho          | Density field name         | no       | rho
+        nu           | Kinematic viscosity field name (for flowResistanceCoeffs) | no | nu
+        mu           | Dynamic viscosity field name (for flowResistanceCoeffs) | no | thermo:mu
         psi          | Compressibility field name | no       | none
         gamma        | (Cp/Cv)                    | no       | 1
         p0           | Total pressure             | yes      |
@@ -165,6 +167,14 @@ class totalPressureFvPatchScalarField
         //- Name of the density field used to normalise the mass flux
         //- if necessary
         word rhoName_;
+
+        //- Name of the kinematic viscosity field (incompressible flow)
+        //- used by the flow resistance model
+        word nuName_;
+
+        //- Name of the dynamic viscosity field (compressible flow)
+        //- used by the flow resistance model
+        word muName_;
 
         //- Name of the compressibility field used to calculate the wave speed
         word psiName_;
@@ -272,6 +282,32 @@ public:
             word& rhoName()
             {
                 return rhoName_;
+            }
+
+            //- Return the name of the kinematic viscosity field
+            const word& nuName() const
+            {
+                return nuName_;
+            }
+
+            //- Return reference to the name of the kinematic viscosity
+            //  field to allow adjustment
+            word& nuName()
+            {
+                return nuName_;
+            }
+
+            //- Return the name of the dynamic viscosity field
+            const word& muName() const
+            {
+                return muName_;
+            }
+
+            //- Return reference to the name of the dynamic viscosity
+            //  field to allow adjustment
+            word& muName()
+            {
+                return muName_;
             }
 
             //- Return the name of the compressibility field
