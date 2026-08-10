@@ -267,6 +267,24 @@ class flowResistanceModel
 
     // Private Member Functions
 
+        //- Resolve the open area fraction f for the perforated/slotted
+        //  types from the given \c typeDict (the perforatedCoeffs or
+        //  slottedCoeffs sub-dict): either taken directly from the
+        //  'openAreaFraction' entry, or derived from the hole/slot
+        //  geometry (already read into the member data by the caller)
+        //  and the 'longitudinalPitch'/'transversePitch' entries (set
+        //  as a side effect on longitudinalPitch_/transversePitch_).
+        //  The two options are validated as mutually exclusive and the
+        //  result is validated to lie in (0, 1]. \c geometryDesc is
+        //  used to word the "check ... geometry and pitch" error
+        //  message (e.g. "hole" or "slot").
+        scalar resolveOpenAreaFraction
+        (
+            const dictionary& dict,
+            const dictionary& typeDict,
+            const word& geometryDesc
+        );
+
         //- Area of a single hole [m^2] for the current resistance
         //  geometry (perforated or slotted)
         scalar holeArea() const;

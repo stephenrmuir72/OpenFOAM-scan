@@ -30,6 +30,61 @@ License
 
 // * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * //
 
+Foam::scalar Foam::flowResistanceModel::resolveOpenAreaFraction
+(
+    const dictionary& dict,
+    const dictionary& typeDict,
+    const word& geometryDesc
+)
+{
+    // The open area fraction is either specified directly or derived
+    // from the geometry and the pitches; the two options are exclusive
+    const bool havePitches =
+        typeDict.found("longitudinalPitch")
+     || typeDict.found("transversePitch");
+
+    if (typeDict.found("openAreaFraction") && havePitches)
+    {
+        FatalIOErrorInFunction(dict)
+            << "openAreaFraction must not be specified together "
+               "with 'longitudinalPitch'/'transversePitch'"
+            << exit(FatalIOError);
+    }
+
+    scalar f = -1;
+
+    if (typeDict.found("openAreaFraction"))
+    {
+        f = typeDict.get<scalar>("openAreaFraction");
+
+        if (f <= 0 || f > 1)
+        {
+            FatalIOErrorInFunction(dict)
+                << "openAreaFraction must be in (0, 1]"
+                << exit(FatalIOError);
+        }
+    }
+    else
+    {
+        longitudinalPitch_ = typeDict.get<scalar>("longitudinalPitch");
+        transversePitch_ = typeDict.get<scalar>("transversePitch");
+
+        f = holeArea()/(longitudinalPitch_*transversePitch_);
+
+        if (f <= 0 || f > 1)
+        {
+            FatalIOErrorInFunction(dict)
+                << "Computed openAreaFraction " << f
+                << " is not in (0, 1]. "
+                   "Check " << geometryDesc << " geometry and pitch."
+                << exit(FatalIOError);
+        }
+    }
+
+    return f;
+}
+
+
 Foam::flowResistanceModel::flowResistanceModel(const dictionary& dict)
 :
     resistanceType_(dict.get<word>("resistanceType")),
@@ -102,51 +157,8 @@ Foam::flowResistanceModel::flowResistanceModel(const dictionary& dict)
                 << exit(FatalIOError);
         }
 
-        // The open area fraction is either specified directly or
-        // derived from the hole pitches; the two options are exclusive
-        const bool havePitches =
-            typeDict.found("longitudinalPitch")
-         || typeDict.found("transversePitch");
-
-        if (typeDict.found("openAreaFraction") && havePitches)
-        {
-            FatalIOErrorInFunction(dict)
-                << "openAreaFraction must not be specified together "
-                   "with 'longitudinalPitch'/'transversePitch'"
-                << exit(FatalIOError);
-        }
-
-        if (typeDict.found("openAreaFraction"))
-        {
-            openAreaFraction_ = typeDict.get<scalar>("openAreaFraction");
-
-            if (openAreaFraction_ <= 0 || openAreaFraction_ > 1)
-            {
-                FatalIOErrorInFunction(dict)
-                    << "openAreaFraction must be in (0, 1]"
-                    << exit(FatalIOError);
-            }
-        }
-        else
-        {
-            longitudinalPitch_ =
-                typeDict.get<scalar>("longitudinalPitch");
-            transversePitch_ =
-                typeDict.get<scalar>("transversePitch");
-
-            openAreaFraction_ =
-                holeArea()/(longitudinalPitch_*transversePitch_);
-
-            if (openAreaFraction_ <= 0 || openAreaFraction_ > 1)
-            {
-                FatalIOErrorInFunction(dict)
-                    << "Computed openAreaFraction "
-                    << openAreaFraction_
-                    << " is not in (0, 1]. "
-                       "Check hole geometry and pitch."
-                    << exit(FatalIOError);
-            }
-        }
+        openAreaFraction_ =
+            resolveOpenAreaFraction(dict, typeDict, "hole");
 
         geometryUsed_ = true;
     }
@@ -192,52 +204,8 @@ Foam::flowResistanceModel::flowResistanceModel(const dictionary& dict)
                 << exit(FatalIOError);
         }
 
-        // The open area fraction is either specified directly or
-        // derived from the slot geometry and pitches; the two options
-        // are exclusive
-        const bool havePitches =
-            typeDict.found("longitudinalPitch")
-         || typeDict.found("transversePitch");
-
-        if (typeDict.found("openAreaFraction") && havePitches)
-        {
-            FatalIOErrorInFunction(dict)
-                << "openAreaFraction must not be specified together "
-                   "with 'longitudinalPitch'/'transversePitch'"
-                << exit(FatalIOError);
-        }
-
-        if (typeDict.found("openAreaFraction"))
-        {
-            openAreaFraction_ = typeDict.get<scalar>("openAreaFraction");
-
-            if (openAreaFraction_ <= 0 || openAreaFraction_ > 1)
-            {
-                FatalIOErrorInFunction(dict)
-                    << "openAreaFraction must be in (0, 1]"
-                    << exit(FatalIOError);
-            }
-        }
-        else
-        {
-            longitudinalPitch_ =
-                typeDict.get<scalar>("longitudinalPitch");
-            transversePitch_ =
-                typeDict.get<scalar>("transversePitch");
-
-            openAreaFraction_ =
-                holeArea()/(longitudinalPitch_*transversePitch_);
-
-            if (openAreaFraction_ <= 0 || openAreaFraction_ > 1)
-            {
-                FatalIOErrorInFunction(dict)
-                    << "Computed openAreaFraction "
-                    << openAreaFraction_
-                    << " is not in (0, 1]. "
-                       "Check slot geometry and pitch."
-                    << exit(FatalIOError);
-            }
-        }
+        openAreaFraction_ =
+            resolveOpenAreaFraction(dict, typeDict, "slot");
 
         geometryUsed_ = true;
     }
