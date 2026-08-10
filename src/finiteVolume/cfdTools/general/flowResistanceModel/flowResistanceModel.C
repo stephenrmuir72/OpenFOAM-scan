@@ -27,6 +27,8 @@ License
 
 #include "flowResistanceModel.H"
 #include "mathematicalConstants.H"
+#include "interpolateXY.H"
+#include "scalarList.H"
 
 // * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * //
 
@@ -412,45 +414,37 @@ Foam::scalar Foam::flowResistanceModel::zetaTurbulent() const
 
 Foam::scalar Foam::flowResistanceModel::eps0(const scalar Re) const
 {
-    static const scalar ReTable[] =
+    static const scalarList ReTable
     {
         10, 15, 20, 25, 40, 60, 100, 200, 400, 1000, 2000, 4000,
         10000, 20000, 100000, 200000, 1000000
     };
 
-    static const scalar epsTable[] =
+    static const scalarList epsTable
     {
         0.32, 0.33, 0.34, 0.34, 0.36, 0.37, 0.4, 0.42, 0.46, 0.53,
         0.59, 0.64, 0.74, 0.81, 0.94, 0.96, 0.98
     };
 
-    const label n = 17;
-
-    if (Re <= ReTable[0])
-    {
-        return epsTable[0];
-    }
-
-    if (Re >= ReTable[n - 1])
-    {
-        return epsTable[n - 1];
-    }
-
-    for (label i = 0; i < n - 1; ++i)
-    {
-        if (Re < ReTable[i + 1])
+    // log(Re) table, precomputed once, for the log-linear interpolation
+    static const scalarList logReTable
+    (
+        []()
         {
-            const scalar t =
-            (
-                (log(Re) - log(ReTable[i]))
-              / (log(ReTable[i + 1]) - log(ReTable[i]))
-            );
+            scalarList logRe(ReTable.size());
+            forAll(ReTable, i)
+            {
+                logRe[i] = log(ReTable[i]);
+            }
+            return logRe;
+        }()
+    );
 
-            return epsTable[i] + t*(epsTable[i + 1] - epsTable[i]);
-        }
-    }
+    // Clamp to the table range, then log-linearly interpolate
+    // (interpolateXY holds the boundary value beyond the table range)
+    const scalar ReC = max(min(Re, ReTable.last()), ReTable.first());
 
-    return epsTable[n - 1];
+    return interpolateXY(log(ReC), logReTable, epsTable);
 }
 
 
