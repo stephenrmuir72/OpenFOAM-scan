@@ -264,10 +264,13 @@ void Foam::totalPressureFvPatchScalarField::updateCoeffs()
 
         // Kinematic viscosity: user-specified, otherwise obtained from
         // the turbulence model (nu = mu/rho, valid for both
-        // incompressible and compressible runs)
+        // incompressible and compressible runs). Only required for the
+        // Reynolds-number-dependent resistance types (perforated/
+        // slotted); a turbulence model need not be registered for the
+        // 'constant' or 'screen' types.
         scalar nuAvg = flowResistanceModel_->userNu();
 
-        if (nuAvg < 0)
+        if (flowResistanceModel_->needsNu())
         {
             const label patchi = patch().index();
 
@@ -289,13 +292,9 @@ void Foam::totalPressureFvPatchScalarField::updateCoeffs()
         const scalar correction =
             flowResistanceModel_->updateCorrection(Q, A, rhoAvg, nuAvg);
 
-        // Apply one uniform correction based on the net patch flow direction
-        const scalarField p0Adj
-        (
-            p0_ + correction
-        );
-
-        updateCoeffs(p0Adj, Up);
+        // Apply one uniform correction based on the net patch flow
+        // direction
+        updateCoeffs(p0_ + correction, Up);
 
         if (debug)
         {

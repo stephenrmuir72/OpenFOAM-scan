@@ -315,6 +315,19 @@ public:
             return userNu_;
         }
 
+        //- True if this resistance requires the kinematic viscosity
+        //  (i.e. it is Reynolds-number dependent) and no user-specified
+        //  \c nu overrides it. Used by the caller to decide whether a
+        //  turbulence model lookup is required.
+        bool needsNu() const
+        {
+            return
+            (
+                userNu_ < 0
+             && (resistanceType_ == "perforated" || resistanceType_ == "slotted")
+            );
+        }
+
         //- Empirical coefficient eps0(Re) (Eqs. 10-11), log-linear
         //  interpolation of the Section D table
         scalar eps0(const scalar Re) const;
