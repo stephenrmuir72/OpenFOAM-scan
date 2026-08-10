@@ -44,42 +44,71 @@ namespace flowResistanceModels
 Foam::flowResistanceModels::Screen::Screen(const dictionary& dict)
 :
     flowResistanceModel(dict),
-    openAreaFraction_(dict.getOrDefault<scalar>("openAreaFraction", -1)),
-    placeholderCoeffsDict_(),
-    geometryUsed_(false)
+    openAreaFraction_(-1),
+    strandShape_(),
+    strandSize_(-1),
+    widthSeparation_(-1),
+    lengthSeparation_(-1)
 {
     const word coeffsName = "screenCoeffs";
 
-    if (dict.found(coeffsName))
+    // The strand shape and size are always required (the size enters
+    // the strand Reynolds number)
+    if (!dict.found(coeffsName))
     {
-        if (dict.found("openAreaFraction"))
-        {
-            FatalIOErrorInFunction(dict)
-                << "openAreaFraction must not be specified together "
-                   "with " << coeffsName
-                << exit(FatalIOError);
-        }
-
-        WarningInFunction
-            << "screen resistanceType not yet implemented" << endl;
-
-        geometryUsed_ = true;
-
-        // Preserve the user-supplied sub-dict verbatim so that it is
-        // not silently dropped when write() is called (e.g. on a
-        // restart write of the boundary condition)
-        placeholderCoeffsDict_ = dict.subDict(coeffsName);
+        FatalIOErrorInFunction(dict)
+            << "resistanceType 'screen' requires the '"
+            << coeffsName << "' sub-dict containing 'strandShape' "
+               "and 'strandSize'"
+            << exit(FatalIOError);
     }
-    else
+
+    if (dict.found("openAreaFraction"))
     {
-        // No geometry sub-dict — openAreaFraction required
-        if (openAreaFraction_ < 0)
-        {
-            FatalIOErrorInFunction(dict)
-                << "resistanceType 'screen' requires either "
-                   "'openAreaFraction' or '" << coeffsName << "'"
-                << exit(FatalIOError);
-        }
+        FatalIOErrorInFunction(dict)
+            << "openAreaFraction must be specified inside '"
+            << coeffsName << "'"
+            << exit(FatalIOError);
+    }
+
+    const dictionary& typeDict = dict.subDict(coeffsName);
+
+    strandShape_ = typeDict.get<word>("strandShape");
+    strandSize_ = typeDict.get<scalar>("strandSize");
+
+    if (strandShape_ != "round" && strandShape_ != "square"
+     && strandShape_ != "flat")
+    {
+        FatalIOErrorInFunction(dict)
+            << "strandShape must be 'round', 'square' or 'flat'"
+            << exit(FatalIOError);
+    }
+
+    if (strandSize_ <= 0)
+    {
+        FatalIOErrorInFunction(dict)
+            << "strandSize must be positive"
+            << exit(FatalIOError);
+    }
+
+    // The open area fraction is either specified directly or derived
+    // from the strand geometry and the separations; the two options
+    // are exclusive
+    const bool haveSeparations =
+        typeDict.found("widthSeparation")
+     || typeDict.found("lengthSeparation");
+
+    if (typeDict.found("openAreaFraction") && haveSeparations)
+    {
+        FatalIOErrorInFunction(dict)
+            << "openAreaFraction must not be specified together "
+               "with 'widthSeparation'/'lengthSeparation'"
+            << exit(FatalIOError);
+    }
+
+    if (typeDict.found("openAreaFraction"))
+    {
+        openAreaFraction_ = typeDict.get<scalar>("openAreaFraction");
 
         if (openAreaFraction_ <= 0 || openAreaFraction_ > 1)
         {
@@ -88,10 +117,53 @@ Foam::flowResistanceModels::Screen::Screen(const dictionary& dict)
                 << exit(FatalIOError);
         }
     }
+    else
+    {
+        widthSeparation_ = typeDict.get<scalar>("widthSeparation");
+        lengthSeparation_ = typeDict.get<scalar>("lengthSeparation");
+
+        openAreaFraction_ =
+            (1 - strandSize_/widthSeparation_)
+           *(1 - strandSize_/lengthSeparation_);
+
+        if (openAreaFraction_ <= 0 || openAreaFraction_ > 1)
+        {
+            FatalIOErrorInFunction(dict)
+                << "Computed openAreaFraction " << openAreaFraction_
+                << " is not in (0, 1]. Check strand geometry and "
+                   "separation."
+                << exit(FatalIOError);
+        }
+    }
 }
 
 
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
+
+Foam::scalar Foam::flowResistanceModels::Screen::kShape() const
+{
+    if (strandShape_ == "round")
+    {
+        return 1.3;
+    }
+    else if (strandShape_ == "square")
+    {
+        return 1.8;
+    }
+    else
+    {
+        return 2.1;
+    }
+}
+
+
+Foam::scalar Foam::flowResistanceModels::Screen::zetaTurbulent() const
+{
+    const scalar f = openAreaFraction_;
+
+    return kShape()*(1 - f) + sqr((1 - f)/f);
+}
+
 
 Foam::scalar Foam::flowResistanceModels::Screen::lossCoefficient
 (
@@ -99,23 +171,55 @@ Foam::scalar Foam::flowResistanceModels::Screen::lossCoefficient
     const scalar nuAvg
 ) const
 {
-    return 0;
+    const scalar f = openAreaFraction_;
+
+    if (f <= 0 || f > 1)
+    {
+        FatalErrorInFunction
+            << "Valid openAreaFraction required for resistance"
+            << abort(FatalError);
+    }
+
+    // Strand Reynolds number, clamped to a minimum of 1 to keep the
+    // laminar term finite at (near) zero velocity
+    const scalar Re =
+        max(mag(UnAvg)*strandSize_/(f*nuAvg), scalar(1));
+
+    const scalar zetaT = zetaTurbulent();
+
+    if (Re < 50)
+    {
+        return 22/Re + zetaT;
+    }
+    else if (Re < 1000)
+    {
+        return (1 + 20/Re)*zetaT;
+    }
+    else
+    {
+        return zetaT;
+    }
 }
 
 
 void Foam::flowResistanceModels::Screen::writeCoeffs(Ostream& os) const
 {
-    if (geometryUsed_)
+    os.beginBlock("screenCoeffs");
+
+    os.writeEntry("strandShape", strandShape_);
+    os.writeEntry("strandSize", strandSize_);
+
+    if (widthSeparation_ > 0)
     {
-        // Re-emit the user-supplied sub-dict verbatim rather than
-        // reconstructing it from (currently unused) member data
-        os.writeKeyword("screenCoeffs");
-        placeholderCoeffsDict_.write(os, true);
+        os.writeEntry("widthSeparation", widthSeparation_);
+        os.writeEntry("lengthSeparation", lengthSeparation_);
     }
-    else if (openAreaFraction_ > 0)
+    else
     {
         os.writeEntry("openAreaFraction", openAreaFraction_);
     }
+
+    os.endBlock();
 }
 
 

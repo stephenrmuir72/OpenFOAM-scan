@@ -27,11 +27,49 @@ Class
     Foam::flowResistanceModels::Screen
 
 Description
-    Placeholder for a screen (mesh/fabric) flow resistance. Not yet
-    implemented: always returns a zero loss coefficient. Any
-    user-supplied \c screenCoeffs sub-dict is preserved verbatim so
-    that it round-trips through write() without being silently
-    dropped, e.g. on a restart write of the boundary condition.
+    Flow resistance of a screen (mesh of strands), Section D.1.3 of the
+    vent-opening formulation. The strands may be round wires (diameter
+    \c d), square wires (side \c w) or thin flat ribbons (width \c w);
+    the strand shape selects the shape factor
+
+    \f[
+        k_{shape} = 1.3,\ 1.8,\ 2.1  \quad \text{(round, square, flat)}
+    \f]
+
+    The open area fraction \c f is either specified directly via the
+    \c openAreaFraction entry or derived from the strand size and the
+    width/length separations:
+
+    \f[
+        f = \left(1 - \frac{d}{S_w}\right)\left(1 - \frac{d}{S_l}\right)
+    \f]
+
+    The two options are mutually exclusive. The velocity through the
+    screen is \f$ U_{hole} = U_n/f \f$ and the strand Reynolds number is
+
+    \f[
+        Re = \frac{U_{hole}\,d}{\nu}
+    \f]
+
+    with the loss coefficient evaluated in three Reynolds regimes:
+
+    \f[
+        \zeta = \begin{cases}
+            \frac{22}{Re} + \zeta_{turb} & Re < 50 \\
+            \left(1 + \frac{20}{Re}\right)\zeta_{turb}
+                & 50 \le Re < 1000 \\
+            \zeta_{turb} & Re \ge 1000
+        \end{cases}
+    \f]
+
+    with
+
+    \f[
+        \zeta_{turb} = k_{shape}(1-f) + \left(\frac{1-f}{f}\right)^2
+    \f]
+
+    The strand Reynolds number is clamped to a minimum of 1 to keep the
+    laminar term finite at (near) zero velocity.
 
     \verbatim
     flowResistanceCoeffs
@@ -40,7 +78,12 @@ Description
 
         screenCoeffs
         {
-            // Not yet implemented; entries preserved verbatim
+            strandShape         round;
+            strandSize          0.001;
+            widthSeparation     0.005;
+            lengthSeparation    0.005;
+            // or
+            // openAreaFraction 0.6;
         }
     }
     \endverbatim
@@ -72,35 +115,45 @@ class Screen
 {
     // Private Data
 
-        //- Open area fraction f (0..1), if specified directly.
-        //  Negative = not set (only the screenCoeffs sub-dict form
-        //  was used, or neither was provided)
+        //- Open area fraction f (0..1]
         scalar openAreaFraction_;
 
-        //- Verbatim copy of the "screenCoeffs" sub-dict, so that any
-        //  user-supplied content (currently unused, since screen is
-        //  not yet implemented) is preserved on write() rather than
-        //  silently dropped
-        dictionary placeholderCoeffsDict_;
+        //- Strand shape: 'round', 'square' or 'flat'
+        word strandShape_;
 
-        //- True if the screenCoeffs sub-dict was used (rather than a
-        //  direct openAreaFraction entry)
-        bool geometryUsed_;
+        //- Strand size [m]: wire diameter d or wire/ribbon width w
+        scalar strandSize_;
+
+        //- Width separation [m] (S_w). Negative if not used, i.e.
+        //  openAreaFraction was specified directly.
+        scalar widthSeparation_;
+
+        //- Length separation [m] (S_l). Negative if not used.
+        scalar lengthSeparation_;
+
+
+    // Private Member Functions
+
+        //- Shape factor k_shape for the strand shape (1.3 round,
+        //  1.8 square, 2.1 flat)
+        scalar kShape() const;
+
+        //- Turbulent loss coefficient zeta_turb
+        scalar zetaTurbulent() const;
 
 
 protected:
 
     // Protected Member Functions
 
-        //- Not yet implemented: always returns 0
+        //- Loss coefficient zeta (Section D.1.3)
         virtual scalar lossCoefficient
         (
             const scalar UnAvg,
             const scalar nuAvg
         ) const;
 
-        //- Write the "screenCoeffs" sub-dict verbatim, or the
-        //  "openAreaFraction" entry
+        //- Write the "screenCoeffs" sub-dict
         virtual void writeCoeffs(Ostream& os) const;
 
 
@@ -131,11 +184,12 @@ public:
 
     // Member Functions
 
-        //- The screen resistance is not yet implemented and so never
-        //  requires the kinematic viscosity
+        //- A screen resistance is Reynolds-number dependent and so
+        //  requires the kinematic viscosity unless the user has
+        //  supplied an override
         virtual bool needsNu() const
         {
-            return false;
+            return userNu_ < 0;
         }
 };
 

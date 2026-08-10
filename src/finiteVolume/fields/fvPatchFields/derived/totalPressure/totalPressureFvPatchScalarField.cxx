@@ -275,9 +275,8 @@ void Foam::totalPressureFvPatchScalarField::updateCoeffs()
         // turbulenceModel (which would introduce a circular library
         // dependency, since TurbulenceModels itself links against
         // finiteVolume). Only required for the Reynolds-number-
-        // dependent resistance types (perforated/slotted); no
-        // viscosity field need be registered for the 'constant' or
-        // 'screen' types.
+        // dependent resistance types (perforated/slotted/screen); no
+        // viscosity field need be registered for the 'constant' type.
         scalar nuAvg = flowResistanceModel_->userNu();
 
         if (flowResistanceModel_->needsNu())
