@@ -97,6 +97,7 @@ Foam::flowResistanceModel::flowResistanceModel(const dictionary& dict)
     slotLength_(-1),
     slotWidth_(-1),
     geometryUsed_(false),
+    placeholderCoeffsDict_(),
     relax_(dict.getOrDefault<scalar>("relax", 1)),
     userNu_(dict.getOrDefault<scalar>("nu", -1)),
     targetCorrection_(0),
@@ -230,6 +231,11 @@ Foam::flowResistanceModel::flowResistanceModel(const dictionary& dict)
                 << " not yet implemented" << endl;
             openAreaFraction_ = 0;
             geometryUsed_ = true;
+
+            // Preserve the user-supplied sub-dict verbatim so that it
+            // is not silently dropped when write() is called (e.g. on
+            // a restart write of the boundary condition)
+            placeholderCoeffsDict_ = dict.subDict(coeffsName);
         }
         else
         {
@@ -303,6 +309,7 @@ Foam::flowResistanceModel::flowResistanceModel
     slotLength_(m.slotLength_),
     slotWidth_(m.slotWidth_),
     geometryUsed_(m.geometryUsed_),
+    placeholderCoeffsDict_(m.placeholderCoeffsDict_),
     relax_(m.relax_),
     userNu_(m.userNu_),
     targetCorrection_(m.targetCorrection_),
@@ -649,34 +656,42 @@ void Foam::flowResistanceModel::write(Ostream& os) const
     if (geometryUsed_)
     {
         const word coeffsName = resistanceType_ + "Coeffs";
-        os.beginBlock(coeffsName);
 
-        if (resistanceType_ == "perforated")
+        if (resistanceType_ == "perforated" || resistanceType_ == "slotted")
         {
-            os.writeEntry("holeShape", holeShape_);
-            os.writeEntry("holeSize", holeSize_);
-        }
-        else if (resistanceType_ == "slotted")
-        {
-            os.writeEntry("slotLength", slotLength_);
-            os.writeEntry("slotWidth", slotWidth_);
-        }
+            os.beginBlock(coeffsName);
 
-        if (longitudinalPitch_ > 0)
-        {
-            os.writeEntry("longitudinalPitch", longitudinalPitch_);
-            os.writeEntry("transversePitch", transversePitch_);
-        }
-        else if
-        (
-            (resistanceType_ == "perforated" || resistanceType_ == "slotted")
-         && openAreaFraction_ > 0
-        )
-        {
-            os.writeEntry("openAreaFraction", openAreaFraction_);
-        }
+            if (resistanceType_ == "perforated")
+            {
+                os.writeEntry("holeShape", holeShape_);
+                os.writeEntry("holeSize", holeSize_);
+            }
+            else
+            {
+                os.writeEntry("slotLength", slotLength_);
+                os.writeEntry("slotWidth", slotWidth_);
+            }
 
-        os.endBlock();
+            if (longitudinalPitch_ > 0)
+            {
+                os.writeEntry("longitudinalPitch", longitudinalPitch_);
+                os.writeEntry("transversePitch", transversePitch_);
+            }
+            else if (openAreaFraction_ > 0)
+            {
+                os.writeEntry("openAreaFraction", openAreaFraction_);
+            }
+
+            os.endBlock();
+        }
+        else
+        {
+            // Placeholder resistance type (e.g. 'screen'): re-emit the
+            // user-supplied sub-dict verbatim rather than reconstructing
+            // it from (currently unused) member data
+            os.writeKeyword(coeffsName);
+            placeholderCoeffsDict_.write(os, true);
+        }
     }
     else if (openAreaFraction_ > 0)
     {

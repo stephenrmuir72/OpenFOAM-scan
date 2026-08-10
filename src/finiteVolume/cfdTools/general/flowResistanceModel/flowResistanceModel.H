@@ -245,6 +245,12 @@ class flowResistanceModel
         //- True if hole geometry inputs were used
         bool geometryUsed_;
 
+        //- Verbatim copy of the "<resistanceType>Coeffs" sub-dict for
+        //  placeholder resistance types (e.g. 'screen') that do not yet
+        //  parse their own entries, so that any user-supplied content
+        //  is preserved on write() rather than silently dropped
+        dictionary placeholderCoeffsDict_;
+
         //- Under-relaxation factor for the signed pressure correction
         scalar relax_;
 
