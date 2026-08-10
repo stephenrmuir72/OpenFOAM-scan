@@ -460,12 +460,12 @@ Foam::scalar Foam::flowResistanceModel::zetaPhi
         100000, 200000
     };
 
-    static const scalar fTable[] =
+    static const scalarList fTable
     {
         0.0, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0
     };
 
-    static const scalar zetaTable[13][11] =
+    static const List<scalarList> zetaTable
     {
         {1.94, 1.78, 1.57, 1.35, 1.1, 0.85, 0.58, 0.4, 0.2, 0.03, 0},
         {1.38, 1.36, 1.16, 0.99, 0.75, 0.56, 0.37, 0.24, 0.13, 0.03, 0},
@@ -483,23 +483,17 @@ Foam::scalar Foam::flowResistanceModel::zetaPhi
     };
 
     const label nRe = 13;
-    const label nf = 11;
 
     // Clamp to the table range (the caller only uses Re <= 1e5)
     const scalar ReC = max(min(Re, ReTable[nRe - 1]), ReTable[0]);
-    const scalar fC = max(min(f, fTable[nf - 1]), fTable[0]);
+    const scalar fC = max(min(f, fTable.last()), fTable.first());
 
-    // Re bracket (log-linear) and f bracket (linear)
+    // Re bracket (log-linear); the f interpolation of each bracketing
+    // row is delegated to interpolateXY (linear in f)
     label i = 0;
     while (i < nRe - 2 && ReC >= ReTable[i + 1])
     {
         ++i;
-    }
-
-    label j = 0;
-    while (j < nf - 2 && fC >= fTable[j + 1])
-    {
-        ++j;
     }
 
     const scalar tRe =
@@ -508,20 +502,11 @@ Foam::scalar Foam::flowResistanceModel::zetaPhi
       / (log(ReTable[i + 1]) - log(ReTable[i]))
     );
 
-    const scalar tf =
-    (
-        (fC - fTable[j])/(fTable[j + 1] - fTable[j])
-    );
+    const scalar zeta0 = interpolateXY(fC, fTable, zetaTable[i]);
+    const scalar zeta1 = interpolateXY(fC, fTable, zetaTable[i + 1]);
 
-    const scalar zeta00 = zetaTable[i][j];
-    const scalar zeta01 = zetaTable[i][j + 1];
-    const scalar zeta10 = zetaTable[i + 1][j];
-    const scalar zeta11 = zetaTable[i + 1][j + 1];
-
-    // Linear in f at each Re row, then log-linear in Re
-    const scalar zeta0 = zeta00 + tf*(zeta01 - zeta00);
-    const scalar zeta1 = zeta10 + tf*(zeta11 - zeta10);
-
+    // Linear in f at each Re row (via interpolateXY above), then
+    // log-linear in Re
     return zeta0 + tRe*(zeta1 - zeta0);
 }
 
