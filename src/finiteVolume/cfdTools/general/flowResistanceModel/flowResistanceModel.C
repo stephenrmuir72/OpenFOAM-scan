@@ -107,7 +107,24 @@ Foam::scalar Foam::flowResistanceModel::updateCorrection
     const scalar deltaP =
         lossCoefficient(UnAvg, nuAvg)*0.5*rhoAvg*sqr(UnAvg);
 
-    // Signed target: inflow (UnAvg < 0) lowers p0, outflow raises it
+    // Signed target: inflow (UnAvg < 0) lowers p0, outflow raises it.
+    //
+    // Sign convention: Q (and hence UnAvg = Q/A) is derived from the
+    // patch flux phi = U.Sf, and Sf is outward-pointing on a boundary
+    // patch, so UnAvg > 0 means net outflow and UnAvg < 0 means net
+    // inflow. p0_ represents the total pressure on the far (reservoir)
+    // side of the resistive element:
+    //  - On inflow the resistance dissipates part of the driving
+    //    pressure before it reaches the patch, so the effective total
+    //    pressure applied to the patch (p0_ + correction) must be
+    //    lower than the nominal reservoir p0_, i.e. correction < 0.
+    //  - On outflow the domain interior must overcome both the
+    //    reservoir pressure and the resistance's back-pressure, so the
+    //    effective total pressure is higher, i.e. correction > 0.
+    // deltaP = zeta*0.5*rhoAvg*UnAvg^2 >= 0 always, so multiplying by
+    // sign(UnAvg) gives exactly this behaviour and the correction
+    // varies continuously (approximately linearly in UnAvg for
+    // constant zeta) through UnAvg = 0.
     targetCorrection_ = sign(UnAvg)*deltaP;
 
     if (!relaxedCorrectionInitialised_)
