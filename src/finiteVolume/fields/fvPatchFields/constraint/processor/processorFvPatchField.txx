@@ -344,11 +344,27 @@ void Foam::processorFvPatchField<Type>::initInterfaceMatrixUpdate
     {
         scalarSendBuf_.resize_nocopy(faceCells.size());
         scalarRecvBuf_.resize_nocopy(faceCells.size());
-
+        const labelRange indices(faceCells.size());
+        #ifdef FOAM_OFFLOAD
+        apply_policy(indices.size(), [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                indices.begin(),
+                indices.end(),
+                [&](const label i)
+                {
+                    scalarSendBuf_[i] = psiInternal[faceCells[i]];
+                }
+            );
+        });
+        #else
         forAll(faceCells, i)
         {
             scalarSendBuf_[i] = psiInternal[faceCells[i]];
         }
+        #endif
     }
 
     if
@@ -441,8 +457,11 @@ void Foam::processorFvPatchField<Type>::updateInterfaceMatrix
     }
 
     // Multiply the field by coefficients and add into the result
+    #ifdef FOAM_OFFLOAD
+    this->addToInternalField(result, !add, lduAddr, patchId, coeffs, scalarRecvBuf_);
+    #else
     this->addToInternalField(result, !add, faceCells, coeffs, scalarRecvBuf_);
-
+    #endif
     this->updatedMatrix(true);
 }
 
@@ -464,11 +483,28 @@ void Foam::processorFvPatchField<Type>::initInterfaceMatrixUpdate
     {
         sendBuf_.resize_nocopy(faceCells.size());
         recvBuf_.resize_nocopy(faceCells.size());
+        const labelRange indices(faceCells.size());
 
+        #ifdef FOAM_OFFLOAD
+        apply_policy(faceCells.size(), [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                indices.begin(),
+                indices.end(),
+                [&](const label i)
+                {
+                    sendBuf_[i] = psiInternal[faceCells[i]];
+                }
+            );
+        });
+        #else
         forAll(faceCells, i)
         {
             sendBuf_[i] = psiInternal[faceCells[i]];
         }
+        #endif
     }
 
     if
@@ -557,8 +593,11 @@ void Foam::processorFvPatchField<Type>::updateInterfaceMatrix
     transformCoupleField(recvBuf_);
 
     // Multiply the field by coefficients and add into the result
+    #ifdef FOAM_OFFLOAD
+    this->addToInternalField(result, !add, lduAddr, patchId, coeffs, recvBuf_);
+    #else
     this->addToInternalField(result, !add, faceCells, coeffs, recvBuf_);
-
+    #endif
     this->updatedMatrix(true);
 }
 
