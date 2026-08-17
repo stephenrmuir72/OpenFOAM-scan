@@ -29,6 +29,7 @@ License
 
 #include "filmSeparation.H"
 #include "diameterModel.H"
+#include "aggregationScaleModel.H"
 #include "filmSeparationModel.H"
 #include "morphologyModel.H"
 #include "PstreamReduceOps.H"
@@ -197,6 +198,7 @@ Foam::regionModels::areaSurfaceFilmModels::filmSeparation::filmSeparation
     (
         separationAggregationModel::New(film, coeffDict_)
     ),
+    aggregationScaleModelPtr_(nullptr),
     morphologyModelPtr_(morphologyModel::NewIfPresent(film, coeffDict_)),
     diameterModels_(morphologyModel::nMorphologyTypes),
     massAccumulator_
@@ -357,6 +359,19 @@ Foam::regionModels::areaSurfaceFilmModels::filmSeparation::filmSeparation
         );
     }
 
+    if (separationAggregationModelPtr_.valid())
+    {
+        const dictionary& aggregationDict =
+            coeffDict_.subDict("separationAggregation");
+
+        aggregationScaleModelPtr_ =
+            aggregationScaleModel::New
+            (
+                film,
+                aggregationDict.subDict("scaleModel")
+            );
+    }
+
     if
     (
         morphologyModelPtr_.valid()
@@ -491,6 +506,35 @@ void Foam::regionModels::areaSurfaceFilmModels::filmSeparation::correct
         }
     }
 
+    scalarField eventTime(mesh.nFaces(), GREAT);
+    scalarField coherenceLength(mesh.nFaces(), Zero);
+
+    if (separationAggregationModelPtr_.valid())
+    {
+        tmp<areaVectorField> tUp = film().Up();
+        const vectorField& Up = tUp.cref().primitiveField();
+        boolList scaleActive(mesh.nFaces(), false);
+
+        forAll(scaleActive, faceI)
+        {
+            scaleActive[faceI] =
+            (
+                massAccumulator_[faceI] > VSMALL
+             || massRatio[faceI] > VSMALL
+            );
+        }
+
+        aggregationScaleModelPtr_->calculate
+        (
+            morphology,
+            physicalDiameter,
+            Up,
+            scaleActive,
+            eventTime,
+            coherenceLength
+        );
+    }
+
     if (!separationAggregationModelPtr_.valid())
     {
         massToInject = massRatio*availableMass;
@@ -578,6 +622,9 @@ void Foam::regionModels::areaSurfaceFilmModels::filmSeparation::correct
             momentumAccumulator_,
             diameterAccumulator_,
             accumulationTime_,
+            eventTime,
+            coherenceLength,
+            morphology,
             massToInject,
             diameterToInject,
             UfInjectionPtr_().primitiveFieldRef()

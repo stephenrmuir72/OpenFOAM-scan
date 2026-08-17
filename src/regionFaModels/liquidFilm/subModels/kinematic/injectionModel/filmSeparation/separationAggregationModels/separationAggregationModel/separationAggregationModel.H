@@ -28,25 +28,34 @@ Class
 
 Description
     Abstract base class for aggregating finite-area film-separation mass
-    into grid-independent Lagrangian parcel injection events.
+    into physical event-scale Lagrangian parcel injection events.
 
     The model operates on buffered separated mass and momentum.  Derived
     classes select representative finite-area faces for injection while
     conserving the accumulated mass and momentum and resetting all member
-    faces that contributed to emitted parcels.
+    faces that contributed to emitted parcels.  Release and grouping decisions
+    consume the per-face physical event time and coherence reach supplied by
+    \c filmSeparation.
 
 Usage
     Minimal example:
     \verbatim
     separationAggregation
     {
-        // Mandatory entries
         type    <word>;
 
-        // Inherited entries
-        ...
+        scaleModel
+        {
+            type <word>;
+            ...
+        }
     }
     \endverbatim
+
+    The \c scaleModel dictionary is mandatory whenever aggregation is enabled.
+    The removed dimensional threshold entries \c minParcelMass,
+    \c maxAccumulationTime, \c targetParcelMass, and \c aggregationLength are
+    rejected explicitly.
 
     Options for the \c type entry:
     \verbatim
@@ -68,6 +77,9 @@ SourceFiles
 #include "vectorField.H"
 #include "autoPtr.H"
 #include "dictionary.H"
+#include "labelField.H"
+#include "scalarField.H"
+#include "vectorField.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -159,16 +171,20 @@ public:
             return false;
         }
 
-        //- Aggregate buffered separated mass into injection fields.
-        //  All fields are finite-area-face fields. The diameter accumulator
-        //  contains the mass-weighted physical droplet diameter selected
-        //  before computational parcelisation.
+        //- Aggregate buffered separated mass into injection fields using
+        //  physical event and coherence scales. All fields are finite-area
+        //  face fields. The diameter accumulator contains the mass-weighted
+        //  physical droplet diameter selected before computational
+        //  parcelisation.
         virtual void aggregate
         (
             scalarField& massAccumulator,
             vectorField& momentumAccumulator,
             scalarField& diameterAccumulator,
             scalarField& accumulationTime,
+            const scalarField& eventTime,
+            const scalarField& coherenceLength,
+            const labelField& morphology,
             scalarField& massToInject,
             scalarField& diameterToInject,
             vectorField& velocityToInject

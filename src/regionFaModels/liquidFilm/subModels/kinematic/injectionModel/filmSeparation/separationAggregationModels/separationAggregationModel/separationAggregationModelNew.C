@@ -50,6 +50,31 @@ autoPtr<separationAggregationModel> separationAggregationModel::New
     }
 
     const dictionary modelDict = dict.subDict("separationAggregation");
+
+    for (const word& entryName :
+         {"minParcelMass", "maxAccumulationTime", "targetParcelMass",
+          "aggregationLength"})
+    {
+        if (modelDict.found(entryName))
+        {
+            FatalIOErrorInFunction(modelDict)
+                << "The obsolete separationAggregation entry "
+                << entryName << " is not supported. Release and grouping "
+                << "are controlled by the mandatory scaleModel dictionary."
+                << nl << exit(FatalIOError);
+        }
+    }
+
+    if (!modelDict.found("scaleModel"))
+    {
+        FatalIOErrorInFunction(modelDict)
+            << "The separationAggregation dictionary requires a scaleModel "
+            << "sub-dictionary. Select a physical event/coherence scale "
+            << "model instead of using dimensional mass, time, or length "
+            << "thresholds." << nl
+            << exit(FatalIOError);
+    }
+
     const word modelType(modelDict.get<word>("type"));
 
     Info<< "    Selecting separationAggregationModel "

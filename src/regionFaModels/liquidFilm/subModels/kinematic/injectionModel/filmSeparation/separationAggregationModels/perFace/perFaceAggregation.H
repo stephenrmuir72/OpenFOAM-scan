@@ -32,33 +32,27 @@ Description
 
     Unlike connected-component aggregation, this model never communicates
     face topology or buffered values between processors.  A face emits its
-    own buffered mass when either \c minParcelMass or
-    \c maxAccumulationTime is reached.  The emitted diameter and velocity are
-    the mass-weighted diameter moment and momentum of that face.
+    own buffered mass when its physical accumulation age reaches the local
+    event time supplied by the selected \c aggregationScaleModel.  The
+    emitted diameter and velocity are the mass-weighted diameter moment and
+    momentum of that face.
+
+    This policy is face-local and can therefore depend on finite-area
+    resolution when one physical structure spans multiple faces.
 
 Usage
     \verbatim
     separationAggregation
     {
-        // Mandatory entries
         type                   perFace;
 
-        // Optional entries
-        minParcelMass          <scalar>;
-        maxAccumulationTime    <scalar>;
-
-        // Inherited entries
-        ...
+        scaleModel
+        {
+            type morphologyBased;
+            ...
+        }
     }
     \endverbatim
-
-    where the entries mean:
-    \table
-      Property        | Description                   | Type   | Reqd | Deflt
-      minParcelMass   | Min per-face parcel mass [kg] | scalar | no   | 1e-8
-      maxAccumulationTime  | Max per-face accumulation time before   <!--
-                      -->   forced release            | scalar | no   | GREAT
-    \endtable
 
 SourceFiles
     perFaceAggregation.C
@@ -87,17 +81,6 @@ class perFaceAggregation
 :
     public separationAggregationModel
 {
-private:
-
-    // Private Data
-
-        //- Minimum per-face parcel mass [kg]
-        scalar minParcelMass_;
-
-        //- Maximum per-face accumulation time before forced release [s]
-        scalar maxAccumulationTime_;
-
-
 public:
 
     //- Runtime type information
@@ -132,12 +115,11 @@ public:
         //- Apply per-face aggregation to buffered fields.
         static void aggregateFaces
         (
-            const scalar minParcelMass,
-            const scalar maxAccumulationTime,
             scalarField& massAccumulator,
             vectorField& momentumAccumulator,
             scalarField& diameterAccumulator,
             scalarField& accumulationTime,
+            const scalarField& eventTime,
             scalarField& massToInject,
             scalarField& diameterToInject,
             vectorField& velocityToInject
@@ -150,6 +132,9 @@ public:
             vectorField& momentumAccumulator,
             scalarField& diameterAccumulator,
             scalarField& accumulationTime,
+            const scalarField& eventTime,
+            const scalarField& coherenceLength,
+            const labelField& morphology,
             scalarField& massToInject,
             scalarField& diameterToInject,
             vectorField& velocityToInject

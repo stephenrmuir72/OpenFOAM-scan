@@ -56,39 +56,19 @@ perFaceAggregation::perFaceAggregation
     const dictionary& dict
 )
 :
-    separationAggregationModel(type(), film, dict),
-    minParcelMass_(dict.getOrDefault<scalar>("minParcelMass", 1e-8)),
-    maxAccumulationTime_
-    (
-        dict.getOrDefault<scalar>("maxAccumulationTime", GREAT)
-    )
-{
-    if (minParcelMass_ < 0)
-    {
-        FatalIOErrorInFunction(dict)
-            << "The minParcelMass entry must be non-negative" << nl
-            << exit(FatalIOError);
-    }
-
-    if (maxAccumulationTime_ <= 0)
-    {
-        FatalIOErrorInFunction(dict)
-            << "The maxAccumulationTime entry must be positive" << nl
-            << exit(FatalIOError);
-    }
-}
+    separationAggregationModel(type(), film, dict)
+{}
 
 
 // * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * * //
 
 void perFaceAggregation::aggregateFaces
 (
-    const scalar minParcelMass,
-    const scalar maxAccumulationTime,
     scalarField& massAccumulator,
     vectorField& momentumAccumulator,
     scalarField& diameterAccumulator,
     scalarField& accumulationTime,
+    const scalarField& eventTime,
     scalarField& massToInject,
     scalarField& diameterToInject,
     vectorField& velocityToInject
@@ -101,6 +81,7 @@ void perFaceAggregation::aggregateFaces
         momentumAccumulator.size() != nFaces
      || diameterAccumulator.size() != nFaces
      || accumulationTime.size() != nFaces
+     || eventTime.size() != nFaces
      || massToInject.size() != nFaces
      || diameterToInject.size() != nFaces
      || velocityToInject.size() != nFaces
@@ -119,13 +100,18 @@ void perFaceAggregation::aggregateFaces
     {
         const scalar mass = massAccumulator[facei];
 
+        if (mass > VSMALL && eventTime[facei] <= VSMALL)
+        {
+            FatalErrorInFunction
+                << "Active per-face aggregation face " << facei
+                << " has a non-positive physical event time "
+                << eventTime[facei] << abort(FatalError);
+        }
+
         if
         (
             mass > VSMALL
-         && (
-                mass >= minParcelMass
-             || accumulationTime[facei] >= maxAccumulationTime
-            )
+         && accumulationTime[facei] >= eventTime[facei]
         )
         {
             massToInject[facei] = mass;
@@ -147,19 +133,24 @@ void perFaceAggregation::aggregate
     vectorField& momentumAccumulator,
     scalarField& diameterAccumulator,
     scalarField& accumulationTime,
+    const scalarField& eventTime,
+    const scalarField& coherenceLength,
+    const labelField& morphology,
     scalarField& massToInject,
     scalarField& diameterToInject,
     vectorField& velocityToInject
 ) const
 {
+    (void)coherenceLength;
+    (void)morphology;
+
     aggregateFaces
     (
-        minParcelMass_,
-        maxAccumulationTime_,
         massAccumulator,
         momentumAccumulator,
         diameterAccumulator,
         accumulationTime,
+        eventTime,
         massToInject,
         diameterToInject,
         velocityToInject

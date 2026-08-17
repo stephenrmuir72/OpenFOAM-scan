@@ -32,32 +32,34 @@ Description
 
     The model decouples the film stripping rate from the Lagrangian parcel
     injection frequency by buffering separated mass and momentum per face.
-    A Lagrangian parcel is only injected when the accumulated mass on a
-    connected component exceeds the \c minParcelMass threshold or when the
-    \c maxAccumulationTime is reached. This prevents the "particle explosion"
-    problem where \f$N_{\text{parcels}} \propto N_{\text{faces}} \times
-    N_{\text{steps}}\f$.
+    A Lagrangian parcel is injected when a physically coherent connected
+    component reaches its mass-weighted event time. This prevents the
+    "particle explosion" problem where
+    \f$N_{\text{parcels}} \propto N_{\text{faces}} \times N_{\text{steps}}\f$.
 
     The model collects buffered separated mass and momentum over physically
     connected finite-area faces, selects a deterministic representative face
     closest to the mass centroid, injects the aggregate source there, and
     resets all member-face accumulators.  Processor-boundary connections are
-    included via finite-area boundary connectivity and global face numbering,
-    so the grouping is independent of decomposition.
+    included via finite-area boundary connectivity and global face numbering.
+    Two neighbouring faces are joined only when their morphology agrees and
+    their centre separation is within both local physical coherence reaches,
+    so the grouping is independent of decomposition and dimensional mesh
+    thresholds.
 
 Usage
     Minimal example:
     \verbatim
     separationAggregation
     {
-        // Mandatory entries
         type                   connectedComponent;
 
-        // Optional entries
-        minParcelMass          <scalar>;
-        maxAccumulationTime    <scalar>;
-        targetParcelMass       <scalar>;
-        aggregationLength      <scalar>;
+        scaleModel
+        {
+            type morphologyBased;
+            ...
+        }
+
         diameterModel          <word>;
         fixedDiameter          <scalar>;
     }
@@ -67,16 +69,9 @@ Usage
     \table
       Property      | Description                      | Type   | Reqd | Deflt
       type          | Type name: connectedComponent    | word   | yes  | -
-      minParcelMass | Minimum aggregate parcel mass [kg] | scalar | no | 1e-8
-      maxAccumulationTime | Maximum accumulation time before forced <!--
-                    --> aggregate release [s]          | scalar | no   | GREAT
-      targetParcelMass | Target aggregate parcel mass for optional  <!--
-                    --> component splitting [kg]       | scalar | no   | 0
-      aggregationLength | Maximum distance from a split seed for    <!--
-                    --> optional length splitting [m]  | scalar | no   | 0
       diameterModel | Aggregate parcel diameter model               <!--
                     -->             | word | no | massWeightedFilmThickness
-      fixedDiameter | Fixed parcel diameter [m]        | scalar | no   | 0
+      fixedDiameter | Fixed parcel diameter [m]        | scalar | no | 0
     \endtable
 
 SourceFiles
@@ -129,18 +124,6 @@ private:
         //- Diameter model
         diameterModelType diameterModel_;
 
-        //- Minimum aggregate parcel mass [kg]
-        scalar minParcelMass_;
-
-        //- Maximum accumulation time before forced aggregate release [s]
-        scalar maxAccumulationTime_;
-
-        //- Target aggregate parcel mass for optional component splitting [kg]
-        scalar targetParcelMass_;
-
-        //- Maximum distance from a split seed for optional length splitting [m]
-        scalar aggregationLength_;
-
         //- Fixed parcel diameter [m]
         scalar fixedDiameter_;
 
@@ -180,6 +163,9 @@ public:
             vectorField& momentumAccumulator,
             scalarField& diameterAccumulator,
             scalarField& accumulationTime,
+            const scalarField& eventTime,
+            const scalarField& coherenceLength,
+            const labelField& morphology,
             scalarField& massToInject,
             scalarField& diameterToInject,
             vectorField& velocityToInject

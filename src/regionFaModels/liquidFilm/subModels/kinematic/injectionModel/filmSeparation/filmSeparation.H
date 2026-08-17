@@ -35,8 +35,9 @@ Description
 
     When \c separationAggregation is not specified, separated mass is
     transferred immediately on a per-face basis. When it is specified, the
-    selected model receives buffered mass, momentum, diameter moments, and
-    accumulation times and controls the release of aggregate parcels.
+    selected model receives buffered mass, momentum, diameter moments,
+    accumulation ages, morphology, and physical event/coherence scales and
+    controls the release of aggregate parcels.
 
     The optional \c morphology model classifies the physical liquid structure
     before a morphology-specific \c diameterModel calculates the resulting
@@ -47,6 +48,13 @@ Description
     The \c perFace separation-aggregation model keeps this buffered transfer
     local to each finite-area face and therefore avoids the processor-wide
     topology communication used by \c connectedComponent.
+
+    Aggregation requires a runtime-selected \c scaleModel dictionary.  The
+    scale model uses the existing morphology, physical diameter, film
+    properties, and primary-phase velocity to calculate the event time and
+    coherence reach.  The former dimensional threshold entries
+    \c minParcelMass, \c maxAccumulationTime, \c targetParcelMass, and
+    \c aggregationLength are not supported.
 
 Usage
     Minimal example by using boundary-condition files:
@@ -71,7 +79,12 @@ Usage
         separationAggregation
         {
             type            perFace | connectedComponent;
-            ...
+
+            scaleModel
+            {
+                type morphologyBased;
+                ...
+            }
         }
 
         // Optional physical morphology and diameter routing
@@ -104,6 +117,8 @@ Usage
       model        | Name of the filmSeparation model   | word | yes  | -
       separationAggregation | Optional mass/momentum aggregation
                   | dict | no | -
+      scaleModel   | Physical event/coherence scale model when aggregation
+                  | dict | conditional | -
       morphology   | Optional physical morphology classifier | dict | no | -
       diameterModels | Per-morphology physical diameter models | dict | no | -
       velocityJitter | Aggregate velocity jitter fraction | scalar | no | 0
@@ -120,8 +135,8 @@ Usage
     states are \c directDroplet, \c drip, \c ligament, and \c sheet. The
     default mapping is film thickness for direct droplets and drips,
     Rayleigh-Plateau breakup for ligaments, and Kelvin-Helmholtz breakup for
-    sheets.  The \c fixedDiameter option of \c connectedComponent aggregation
-    is a legacy aggregate-level override and cannot be combined with an
+    sheets.      The \c fixedDiameter option of \c connectedComponent aggregation remains
+    an aggregate-level diameter choice and cannot be combined with an
     explicit morphology model.
 
     With \c DebugSwitches { filmSeparation 1; }, \c morphology,
@@ -162,6 +177,7 @@ namespace areaSurfaceFilmModels
 
 // Forward Declarations
 class separationAggregationModel;
+class aggregationScaleModel;
 class morphologyModel;
 class diameterModel;
 
@@ -180,6 +196,9 @@ class filmSeparation
 
         //- Separation-aggregation model
         autoPtr<separationAggregationModel> separationAggregationModelPtr_;
+
+        //- Physical event/coherence scale model
+        autoPtr<aggregationScaleModel> aggregationScaleModelPtr_;
 
         //- Physical liquid-structure classifier
         autoPtr<morphologyModel> morphologyModelPtr_;

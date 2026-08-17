@@ -93,6 +93,10 @@ $(cornerDetectionModels)/fluxBased/fluxBased.C
 $(cornerDetectionModels)/geometryBased/geometryBased.C
 
 separationAggregationModels=$(filmSeparation)/separationAggregationModels
+aggregationScaleModels=$(separationAggregationModels)/aggregationScaleModels
+$(aggregationScaleModels)/aggregationScaleModel/aggregationScaleModel.C
+$(aggregationScaleModels)/aggregationScaleModel/aggregationScaleModelNew.C
+$(aggregationScaleModels)/morphologyBased/morphologyBasedAggregationScale.C
 $(separationAggregationModels)/separationAggregationModel/separationAggregationModel.C
 $(separationAggregationModels)/separationAggregationModel/separationAggregationModelNew.C
 $(separationAggregationModels)/perFace/perFaceAggregation.C

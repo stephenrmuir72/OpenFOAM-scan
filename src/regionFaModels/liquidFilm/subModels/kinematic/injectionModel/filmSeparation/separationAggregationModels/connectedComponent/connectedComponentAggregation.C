@@ -76,13 +76,12 @@ static void aggregateConnectedFaces
     const vectorField& momenta,
     const scalarField& diameterMoments,
     const scalarField& times,
+    const scalarField& eventTimes,
+    const scalarField& coherenceLengths,
+    const labelField& morphologies,
     const pointField& faceCentres,
     const labelList& edgeStarts,
     const labelList& edgeEnds,
-    const scalar minParcelMass,
-    const scalar maxAccumulationTime,
-    const scalar targetParcelMass,
-    const scalar aggregationLength,
     const connectedComponentAggregation::diameterModelType diameterModel,
     const scalar fixedDiameter,
     DynamicList<label>& injectGlobalFaces,
@@ -106,6 +105,9 @@ static void aggregateConnectedFaces
      || momenta.size() != nActive
      || diameterMoments.size() != nActive
      || times.size() != nActive
+     || eventTimes.size() != nActive
+     || coherenceLengths.size() != nActive
+     || morphologies.size() != nActive
      || faceCentres.size() != nActive
      || edgeStarts.size() != edgeEnds.size()
     )
@@ -134,7 +136,15 @@ static void aggregateConnectedFaces
         const label nodeA = globalToNode.lookup(edgeStarts[edgei], -1);
         const label nodeB = globalToNode.lookup(edgeEnds[edgei], -1);
 
-        if (nodeA != -1 && nodeB != -1 && nodeA != nodeB)
+        if
+        (
+            nodeA != -1
+         && nodeB != -1
+         && nodeA != nodeB
+         && morphologies[nodeA] == morphologies[nodeB]
+         && mag(faceCentres[nodeA] - faceCentres[nodeB])
+            <= min(coherenceLengths[nodeA], coherenceLengths[nodeB])
+        )
         {
             if (!neighbours[nodeA].found(nodeB))
             {
@@ -213,167 +223,93 @@ static void aggregateConnectedFaces
         DynamicList<label>& nodes = components[compi];
         Foam::sort(nodes, nodeCentreLess);
 
-        scalar componentMass = 0;
-        scalar componentMaxTime = 0;
+        scalar mass = 0;
+        scalar ageMoment = 0;
+        scalar eventRateMoment = 0;
 
         forAll(nodes, i)
         {
             const label nodei = nodes[i];
-            componentMass += masses[nodei];
-            componentMaxTime = Foam::max(componentMaxTime, times[nodei]);
+
+            if (eventTimes[nodei] <= VSMALL)
+            {
+                FatalErrorInFunction
+                    << "Connected component face " << globalFaces[nodei]
+                    << " has a non-positive physical event time "
+                    << eventTimes[nodei] << abort(FatalError);
+            }
+
+            mass += masses[nodei];
+            ageMoment += masses[nodei]*times[nodei];
+            eventRateMoment += masses[nodei]/eventTimes[nodei];
         }
 
         if
         (
-            componentMass < minParcelMass
-         && componentMaxTime < maxAccumulationTime
+            mass <= VSMALL
+         || eventRateMoment <= VSMALL
+         || ageMoment < mass/eventRateMoment
         )
         {
             continue;
         }
 
-        boolList assigned(nActive, false);
-        label nAssigned = 0;
+        scalar diameterMoment = 0;
+        vector momentum(Zero);
+        point weightedCentre(Zero);
 
-        while (nAssigned < nodes.size())
+        forAll(nodes, i)
         {
-            label seedNodei = -1;
-            scalar seedMass = -GREAT;
-            label seedNodeTie = -1;
+            const label nodei = nodes[i];
+            diameterMoment += diameterMoments[nodei];
+            momentum += momenta[nodei];
+            weightedCentre += masses[nodei]*faceCentres[nodei];
+        }
 
-            forAll(nodes, i)
-            {
-                const label nodei = nodes[i];
+        weightedCentre /= mass;
 
-                if (!assigned[nodei])
-                {
-                    if
-                    (
-                        masses[nodei] > seedMass
-                     || (
-                            masses[nodei] == seedMass
-                         && (
-                                seedNodeTie == -1
-                             || nodeCentreLess(nodei, seedNodeTie)
-                            )
-                        )
-                    )
-                    {
-                        seedNodei = nodei;
-                        seedMass = masses[nodei];
-                        seedNodeTie = nodei;
-                    }
-                }
-            }
+        label representativeNodei = nodes[0];
+        scalar bestDistance =
+            magSqr(faceCentres[representativeNodei] - weightedCentre);
 
-            DynamicList<label> group;
-            front.clear();
-            front.append(seedNodei);
-            assigned[seedNodei] = true;
-
-            scalar groupMass = 0;
-            const point seedCentre = faceCentres[seedNodei];
-
-            for (label fronti = 0; fronti < front.size(); ++fronti)
-            {
-                const label nodei = front[fronti];
-                group.append(nodei);
-                groupMass += masses[nodei];
-
-                if (targetParcelMass > SMALL && groupMass >= targetParcelMass)
-                {
-                    continue;
-                }
-
-                const DynamicList<label>& nodeNbrs = neighbours[nodei];
-                forAll(nodeNbrs, nbri)
-                {
-                    const label nbrNodei = nodeNbrs[nbri];
-
-                    if
-                    (
-                        component[nbrNodei] == compi
-                     && !assigned[nbrNodei]
-                     && (
-                            aggregationLength <= SMALL
-                         || mag(faceCentres[nbrNodei] - seedCentre)
-                          <= aggregationLength
-                        )
-                    )
-                    {
-                        assigned[nbrNodei] = true;
-                        front.append(nbrNodei);
-                    }
-                }
-            }
-
-            nAssigned += group.size();
-
-            scalar mass = 0;
-            scalar diameterMoment = 0;
-            vector momentum(Zero);
-            point weightedCentre(Zero);
-
-            forAll(group, i)
-            {
-                const label nodei = group[i];
-
-                mass += masses[nodei];
-                diameterMoment += diameterMoments[nodei];
-                momentum += momenta[nodei];
-                weightedCentre += masses[nodei]*faceCentres[nodei];
-            }
-
-            if (mass <= VSMALL)
-            {
-                continue;
-            }
-
-            weightedCentre /= mass;
-
-            label representativeNodei = group[0];
-            scalar bestDistance =
-                magSqr(faceCentres[representativeNodei] - weightedCentre);
-
-            for (const label nodei : group)
-            {
-                const scalar d2 = magSqr(faceCentres[nodei] - weightedCentre);
-
-                if
-                (
-                    d2 < bestDistance
-                 || (
-                        d2 == bestDistance
-                     && nodeCentreLess(nodei, representativeNodei)
-                    )
-                )
-                {
-                    representativeNodei = nodei;
-                    bestDistance = d2;
-                }
-            }
-
-            scalar diameter = fixedDiameter;
+        for (const label nodei : nodes)
+        {
+            const scalar d2 = magSqr(faceCentres[nodei] - weightedCentre);
 
             if
             (
-                diameterModel
-             == connectedComponentAggregation::MASS_WEIGHTED_FILM_THICKNESS
+                d2 < bestDistance
+             || (
+                    d2 == bestDistance
+                 && nodeCentreLess(nodei, representativeNodei)
+                )
             )
             {
-                diameter = diameterMoment/mass;
+                representativeNodei = nodei;
+                bestDistance = d2;
             }
-
-            for (const auto groupi : group)
-            {
-                resetGlobalFaces.append(globalFaces[groupi]);
-            }
-
-            injectGlobalFaces.append(globalFaces[representativeNodei]);
-            injectMasses.append(mass);
-            injectDiameters.append(diameter);
-            injectVelocities.append(momentum/mass);
         }
+
+        scalar diameter = fixedDiameter;
+
+        if
+        (
+            diameterModel
+         == connectedComponentAggregation::MASS_WEIGHTED_FILM_THICKNESS
+        )
+        {
+            diameter = diameterMoment/mass;
+        }
+
+        for (const label groupi : nodes)
+        {
+            resetGlobalFaces.append(globalFaces[groupi]);
+        }
+
+        injectGlobalFaces.append(globalFaces[representativeNodei]);
+        injectMasses.append(mass);
+        injectDiameters.append(diameter);
+        injectVelocities.append(momentum/mass);
     }
 }
 
@@ -396,13 +332,6 @@ connectedComponentAggregation::connectedComponentAggregation
             MASS_WEIGHTED_FILM_THICKNESS
         )
     ),
-    minParcelMass_(dict.getOrDefault<scalar>("minParcelMass", 1e-8)),
-    maxAccumulationTime_
-    (
-        dict.getOrDefault<scalar>("maxAccumulationTime", GREAT)
-    ),
-    targetParcelMass_(dict.getOrDefault<scalar>("targetParcelMass", 0)),
-    aggregationLength_(dict.getOrDefault<scalar>("aggregationLength", 0)),
     fixedDiameter_(dict.getOrDefault<scalar>("fixedDiameter", 0))
 {
     // boundaryConnections() processor ids and the global face numbering used by
@@ -414,45 +343,6 @@ connectedComponentAggregation::connectedComponentAggregation
             << "connectedComponentAggregation requires the finite-area mesh to "
             << "use the world communicator." << nl
             << exit(FatalError);
-    }
-
-    if (minParcelMass_ < 0)
-    {
-        FatalIOErrorInFunction(dict)
-            << "The minParcelMass entry must be non-negative" << nl
-            << exit(FatalIOError);
-    }
-
-    if (maxAccumulationTime_ <= 0)
-    {
-        FatalIOErrorInFunction(dict)
-            << "The maxAccumulationTime entry must be positive" << nl
-            << exit(FatalIOError);
-    }
-
-    if (targetParcelMass_ < 0)
-    {
-        FatalIOErrorInFunction(dict)
-            << "The targetParcelMass entry must be non-negative" << nl
-            << exit(FatalIOError);
-    }
-
-    if (aggregationLength_ < 0)
-    {
-        FatalIOErrorInFunction(dict)
-            << "The aggregationLength entry must be non-negative" << nl
-            << exit(FatalIOError);
-    }
-
-    if (targetParcelMass_ > SMALL && targetParcelMass_ < minParcelMass_)
-    {
-        FatalIOErrorInFunction(dict)
-            << "When component splitting is active (targetParcelMass > 0) the "
-            << "targetParcelMass (" << targetParcelMass_
-            << ") must be >= minParcelMass (" << minParcelMass_
-            << "); otherwise split parcels would fall below the injection "
-            << "threshold." << nl
-            << exit(FatalIOError);
     }
 
     if (diameterModel_ == FIXED_DIAMETER && fixedDiameter_ <= 0)
@@ -473,6 +363,9 @@ void connectedComponentAggregation::aggregate
     vectorField& momentumAccumulator,
     scalarField& diameterAccumulator,
     scalarField& accumulationTime,
+    const scalarField& eventTime,
+    const scalarField& coherenceLength,
+    const labelField& morphology,
     scalarField& massToInject,
     scalarField& diameterToInject,
     vectorField& velocityToInject
@@ -482,10 +375,6 @@ void connectedComponentAggregation::aggregate
     const label nFaces = mesh.nFaces();
     const label comm = mesh.comm();
     const diameterModelType diameterModel = diameterModel_;
-    const scalar minParcelMass = minParcelMass_;
-    const scalar maxAccumulationTime = maxAccumulationTime_;
-    const scalar targetParcelMass = targetParcelMass_;
-    const scalar aggregationLength = aggregationLength_;
     const scalar fixedDiameter = fixedDiameter_;
 
     if
@@ -494,6 +383,9 @@ void connectedComponentAggregation::aggregate
      || momentumAccumulator.size() != nFaces
      || diameterAccumulator.size() != nFaces
      || accumulationTime.size() != nFaces
+     || eventTime.size() != nFaces
+     || coherenceLength.size() != nFaces
+     || morphology.size() != nFaces
      || massToInject.size() != nFaces
      || diameterToInject.size() != nFaces
      || velocityToInject.size() != nFaces
@@ -514,6 +406,14 @@ void connectedComponentAggregation::aggregate
     {
         if (massAccumulator[facei] > VSMALL)
         {
+            if (coherenceLength[facei] <= VSMALL)
+            {
+                FatalErrorInFunction
+                    << "Active connected-component face " << facei
+                    << " has a non-positive physical coherence reach "
+                    << coherenceLength[facei] << abort(FatalError);
+            }
+
             activeFace[facei] = true;
             ++nLocalActive;
         }
@@ -550,6 +450,9 @@ void connectedComponentAggregation::aggregate
     DynamicList<vector> localMomenta(nLocalActive);
     DynamicList<scalar> localDiameters(nLocalActive);
     DynamicList<scalar> localTimes(nLocalActive);
+    DynamicList<scalar> localEventTimes(nLocalActive);
+    DynamicList<scalar> localCoherenceLengths(nLocalActive);
+    DynamicList<label> localMorphologies(nLocalActive);
     DynamicList<point> localCentres(nLocalActive);
     DynamicList<label> localEdgeStarts;
     DynamicList<label> localEdgeEnds;
@@ -566,6 +469,9 @@ void connectedComponentAggregation::aggregate
             localMomenta.append(momentumAccumulator[facei]);
             localDiameters.append(diameterAccumulator[facei]);
             localTimes.append(accumulationTime[facei]);
+            localEventTimes.append(eventTime[facei]);
+            localCoherenceLengths.append(coherenceLength[facei]);
+            localMorphologies.append(morphology[facei]);
             localCentres.append(centres[facei]);
         }
     }
@@ -629,6 +535,9 @@ void connectedComponentAggregation::aggregate
     vectorField localMomentumList(std::move(localMomenta));
     scalarField localDiameterList(std::move(localDiameters));
     scalarField localTimeList(std::move(localTimes));
+    scalarField localEventTimeList(std::move(localEventTimes));
+    scalarField localCoherenceLengthList(std::move(localCoherenceLengths));
+    labelList localMorphologyList(std::move(localMorphologies));
     pointField localCentreList(std::move(localCentres));
     labelList localEdgeStartList(std::move(localEdgeStarts));
     labelList localEdgeEndList(std::move(localEdgeEnds));
@@ -641,6 +550,9 @@ void connectedComponentAggregation::aggregate
     List<vectorField> allMomenta(nProcs);
     List<scalarField> allDiameters(nProcs);
     List<scalarField> allTimes(nProcs);
+    List<scalarField> allEventTimes(nProcs);
+    List<scalarField> allCoherenceLengths(nProcs);
+    List<labelList> allMorphologies(nProcs);
     List<pointField> allCentres(nProcs);
     List<labelList> allEdgeStarts(nProcs);
     List<labelList> allEdgeEnds(nProcs);
@@ -650,6 +562,9 @@ void connectedComponentAggregation::aggregate
     allMomenta[myRank] = std::move(localMomentumList);
     allDiameters[myRank] = std::move(localDiameterList);
     allTimes[myRank] = std::move(localTimeList);
+    allEventTimes[myRank] = std::move(localEventTimeList);
+    allCoherenceLengths[myRank] = std::move(localCoherenceLengthList);
+    allMorphologies[myRank] = std::move(localMorphologyList);
     allCentres[myRank] = std::move(localCentreList);
     allEdgeStarts[myRank] = std::move(localEdgeStartList);
     allEdgeEnds[myRank] = std::move(localEdgeEndList);
@@ -661,6 +576,9 @@ void connectedComponentAggregation::aggregate
         Pstream::gatherList(allMomenta, UPstream::msgType(), comm);
         Pstream::gatherList(allDiameters, UPstream::msgType(), comm);
         Pstream::gatherList(allTimes, UPstream::msgType(), comm);
+        Pstream::gatherList(allEventTimes, UPstream::msgType(), comm);
+        Pstream::gatherList(allCoherenceLengths, UPstream::msgType(), comm);
+        Pstream::gatherList(allMorphologies, UPstream::msgType(), comm);
         Pstream::gatherList(allCentres, UPstream::msgType(), comm);
         Pstream::gatherList(allEdgeStarts, UPstream::msgType(), comm);
         Pstream::gatherList(allEdgeEnds, UPstream::msgType(), comm);
@@ -688,6 +606,9 @@ void connectedComponentAggregation::aggregate
         vectorField momenta(nActive);
         scalarField diameters(nActive);
         scalarField times(nActive);
+        scalarField eventTimes(nActive);
+        scalarField coherenceLengths(nActive);
+        labelField morphologies(nActive);
         pointField faceCentres(nActive);
         labelList edgeStarts(nEdges);
         labelList edgeEnds(nEdges);
@@ -703,6 +624,11 @@ void connectedComponentAggregation::aggregate
                 momenta[nodei] = allMomenta[proci][prociFacei];
                 diameters[nodei] = allDiameters[proci][prociFacei];
                 times[nodei] = allTimes[proci][prociFacei];
+                eventTimes[nodei] = allEventTimes[proci][prociFacei];
+                coherenceLengths[nodei] =
+                    allCoherenceLengths[proci][prociFacei];
+                morphologies[nodei] =
+                    allMorphologies[proci][prociFacei];
                 faceCentres[nodei] = allCentres[proci][prociFacei];
 
                 ++nodei;
@@ -730,13 +656,12 @@ void connectedComponentAggregation::aggregate
             momenta,
             diameters,
             times,
+            eventTimes,
+            coherenceLengths,
+            morphologies,
             faceCentres,
             edgeStarts,
             edgeEnds,
-            minParcelMass,
-            maxAccumulationTime,
-            targetParcelMass,
-            aggregationLength,
             diameterModel,
             fixedDiameter,
             injectGlobalFaces,
