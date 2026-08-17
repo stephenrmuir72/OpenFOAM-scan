@@ -244,12 +244,16 @@ static void aggregateConnectedFaces
             eventRateMoment += masses[nodei]/eventTimes[nodei];
         }
 
-        if
-        (
-            mass <= VSMALL
-         || eventRateMoment <= VSMALL
-         || ageMoment < mass/eventRateMoment
-        )
+        if (mass <= VSMALL || eventRateMoment <= VSMALL)
+        {
+            continue;
+        }
+
+        const scalar meanAge = ageMoment/mass;
+        const scalar meanEventTime = mass/eventRateMoment;
+
+        // Compare times, not an unnormalised mass-time moment.
+        if (meanAge < meanEventTime)
         {
             continue;
         }
