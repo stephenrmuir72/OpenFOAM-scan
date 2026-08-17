@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2021-2022 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -179,6 +180,21 @@ protected:
 
             //- Counter for number of new splash parcels
             label nParcelsSplashed_;
+
+            // Conservation diagnostics
+
+                //- Tangential momentum transferred to the film [kg.m/s]
+                vector totalMomTransferred_;
+
+                //- Normal impingement contribution transferred to the film
+                //- [kg.m/s]
+                scalar totalPnTransferred_;
+
+                //- Mass assigned to newly-created splash parcels [kg]
+                scalar totalSplashMassCreated_;
+
+                //- Momentum assigned to newly-created splash parcels [kg.m/s]
+                vector totalSplashMomCreated_;
 
 
     // Protected Member Functions

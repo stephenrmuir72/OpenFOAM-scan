@@ -620,6 +620,59 @@ void Foam::regionModels::areaSurfaceFilmModels::filmSeparation::correct
         addToInjectedMass(sum(massToInject));
     }
 
+    if (debug)
+    {
+        const vectorField& injectionVelocity =
+        (
+            UfInjectionPtr_
+          ? UfInjectionPtr_().primitiveField()
+          : film().Uf().primitiveField()
+        );
+
+        label localFaces = 0;
+        scalar localMass = 0;
+        vector localMomentum(Zero);
+
+        forAll(massToInject, facei)
+        {
+            if (massToInject[facei] > VSMALL)
+            {
+                ++localFaces;
+                localMass += massToInject[facei];
+                localMomentum +=
+                    massToInject[facei]*injectionVelocity[facei];
+
+                if (debug >= 2)
+                {
+                    Pout<< "[filmSeparation:injection] t="
+                        << mesh.time().timeOutputValue()
+                        << " face=" << facei
+                        << " mass=" << massToInject[facei]
+                        << " diameter=" << diameterToInject[facei]
+                        << " velocity=" << injectionVelocity[facei]
+                        << " momentum="
+                        << massToInject[facei]*injectionVelocity[facei]
+                        << endl;
+                }
+            }
+        }
+
+        Info<< "[filmSeparation:injection] t="
+            << mesh.time().timeOutputValue()
+            << " faces=" << returnReduce(localFaces, sumOp<label>())
+            << " mass="
+            << returnReduce(localMass, sumOp<scalar>())
+            << " momentum="
+            << returnReduce(localMomentum, sumOp<vector>())
+            << " bufferedMass="
+            << (
+                    separationAggregationModelPtr_
+                  ? returnReduce(sum(massAccumulator_), sumOp<scalar>())
+                  : scalar(0)
+               )
+            << endl;
+    }
+
     injectionModel::correct();
 
     if (writeTime())

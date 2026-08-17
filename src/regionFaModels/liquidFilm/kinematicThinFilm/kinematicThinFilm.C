@@ -56,6 +56,16 @@ Foam::tmp<Foam::faVectorMatrix> kinematicThinFilm::UEqn
     const areaVectorField& ns = regionMesh().faceAreaNormals();
     const areaVectorField gs(g_ - ns*(ns & g_));
 
+    if (debug)
+    {
+        Info<< "[kinematicThinFilm:UEqn] t="
+            << regionMesh().time().timeOutputValue()
+            << " momentumSourceRate="
+            << gSum(USp_.primitiveField()*regionMesh().S().field())
+            << " includeMassSource=" << includeMassSource
+            << endl;
+    }
+
     tmp<faVectorMatrix> tUEqn
     (
         fam::ddt(h_, U)
@@ -158,6 +168,19 @@ void kinematicThinFilm::evolveRegion()
                   + rhoSp_
                 );
 
+                if (debug)
+                {
+                    Info<< "[kinematicThinFilm:hEqn] t="
+                        << regionMesh().time().timeOutputValue()
+                        << " massSourceRate="
+                        << gSum
+                           (
+                               rhoSp_.primitiveField()
+                              *regionMesh().S().field()
+                           )
+                        << endl;
+                }
+
                 hEqn.relax();
                 faOptions().constrain(hEqn);
                 hEqn.solve();
@@ -192,6 +215,25 @@ void kinematicThinFilm::postEvolveRegion()
 {
     // Reset sources
     liquidFilmModel::postEvolveRegion();
+
+    if (debug)
+    {
+        const scalarField& faceArea = regionMesh().S().field();
+
+        Info<< "[kinematicThinFilm:state] t="
+            << regionMesh().time().timeOutputValue()
+            << " filmMass="
+            << gSum(h_.primitiveField()*rho_.primitiveField()*faceArea)
+            << " filmMomentum="
+            << gSum
+               (
+                   h_.primitiveField()
+                  *rho_.primitiveField()
+                  *Uf_.primitiveField()
+                  *faceArea
+               )
+            << endl;
+    }
 
     // Correct thermo
     correctThermoFields();

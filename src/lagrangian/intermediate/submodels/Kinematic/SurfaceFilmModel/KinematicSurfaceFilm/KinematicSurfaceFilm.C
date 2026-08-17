@@ -180,6 +180,20 @@ void Foam::KinematicSurfaceFilm<CloudType>::absorbInteraction
         p.d()
     );
 
+    totalMomTransferred_ += mass*Ut;
+    totalPnTransferred_ += mass*mag(Un);
+
+    if (this->debug >= 2)
+    {
+        Pout<< "[KinematicSurfaceFilm:absorb] t="
+            << this->owner().mesh().time().timeOutputValue()
+            << " origId=" << p.origId()
+            << " mass=" << mass
+            << " tangentialMomentum=" << mass*Ut
+            << " impingement=" << mass*mag(Un)
+            << endl;
+    }
+
     this->nParcelsTransferred()++;
 
     this->totalMassTransferred() += mass;
@@ -255,11 +269,31 @@ void Foam::KinematicSurfaceFilm<CloudType>::drySplashInteraction
 
     if (We < Wec) // Adhesion - assume absorb
     {
+        if (this->debug >= 2)
+        {
+            Pout<< "[KinematicSurfaceFilm:drySplash] t="
+                << this->owner().mesh().time().timeOutputValue()
+                << " origId=" << p.origId()
+                << " We=" << We << " Wec=" << Wec
+                << " La=" << La << " ADHESION"
+                << endl;
+        }
+
         absorbInteraction<filmType>
             (filmModel, p, pp, facei, m, keepParticle);
     }
     else // Splash
     {
+        if (this->debug >= 2)
+        {
+            Pout<< "[KinematicSurfaceFilm:drySplash] t="
+                << this->owner().mesh().time().timeOutputValue()
+                << " origId=" << p.origId()
+                << " We=" << We << " Wec=" << Wec
+                << " La=" << La << " SPLASH"
+                << endl;
+        }
+
         // Ratio of incident mass to splashing mass
         const scalar mRatio = 0.2 + 0.6*rndGen_.sample01<scalar>();
         splashInteraction<filmType>
@@ -307,11 +341,30 @@ void Foam::KinematicSurfaceFilm<CloudType>::wetSplashInteraction
 
     if (We < 2) // Adhesion - assume absorb
     {
+        if (this->debug >= 2)
+        {
+            Pout<< "[KinematicSurfaceFilm:wetSplash] t="
+                << this->owner().mesh().time().timeOutputValue()
+                << " origId=" << p.origId()
+                << " We=" << We << " Wec=" << Wec
+                << " La=" << La << " ADHESION"
+                << endl;
+        }
+
         absorbInteraction<filmType>
             (filmModel, p, pp, facei, m, keepParticle);
     }
     else if ((We >= 2) && (We < 20)) // Bounce
     {
+        if (this->debug >= 2)
+        {
+            Pout<< "[KinematicSurfaceFilm:wetSplash] t="
+                << this->owner().mesh().time().timeOutputValue()
+                << " origId=" << p.origId()
+                << " We=" << We << " BOUNCE"
+                << endl;
+        }
+
         // Incident angle of impingement
         const scalar theta = piByTwo - acos(U/mag(U) & nf);
 
@@ -326,11 +379,31 @@ void Foam::KinematicSurfaceFilm<CloudType>::wetSplashInteraction
     }
     else if ((We >= 20) && (We < Wec)) // Spread - assume absorb
     {
+        if (this->debug >= 2)
+        {
+            Pout<< "[KinematicSurfaceFilm:wetSplash] t="
+                << this->owner().mesh().time().timeOutputValue()
+                << " origId=" << p.origId()
+                << " We=" << We << " Wec=" << Wec
+                << " SPREAD"
+                << endl;
+        }
+
         absorbInteraction<filmType>
             (filmModel, p, pp, facei, m, keepParticle);
     }
     else    // Splash
     {
+        if (this->debug >= 2)
+        {
+            Pout<< "[KinematicSurfaceFilm:wetSplash] t="
+                << this->owner().mesh().time().timeOutputValue()
+                << " origId=" << p.origId()
+                << " We=" << We << " Wec=" << Wec
+                << " La=" << La << " SPLASH"
+                << endl;
+        }
+
         // Ratio of incident mass to splashing mass
         // splash mass can be > incident mass due to film entrainment
         const scalar mRatio = 0.2 + 0.9*rndGen_.sample01<scalar>();
@@ -438,6 +511,7 @@ void Foam::KinematicSurfaceFilm<CloudType>::splashInteraction
         sqrt(2.0*parcelsPerSplash_*EKs/mSplash/(1.0 + coeff1/sqr(coeff2)));
 
     // Set splashed parcel properties
+    vector splashMomTotal(Zero);
     forAll(dNew, i)
     {
         const vector dirVec = splashDirection(tanVec1, tanVec2, -nf);
@@ -466,10 +540,47 @@ void Foam::KinematicSurfaceFilm<CloudType>::splashInteraction
         // Apply correction to velocity for 2-D cases
         meshTools::constrainDirection(mesh, mesh.solutionD(), pPtr->U());
 
+        const scalar splashParcelMass =
+            pPtr->nParticle()
+           *pPtr->rho()
+           *constant::mathematical::pi/6.0
+           *pow3(pPtr->d());
+
+        splashMomTotal += splashParcelMass*pPtr->U();
+
+        if (this->debug >= 2)
+        {
+            Pout<< "[KinematicSurfaceFilm:splash] t="
+                << mesh.time().timeOutputValue()
+                << " origId=" << p.origId()
+                << " parcel=" << i
+                << " mass=" << splashParcelMass
+                << " d=" << pPtr->d()
+                << " nParticle=" << pPtr->nParticle()
+                << " U=" << pPtr->U()
+                << " momentum=" << splashParcelMass*pPtr->U()
+                << endl;
+        }
+
         // Add the new parcel
         this->owner().addParticle(pPtr);
 
         nParcelsSplashed_++;
+    }
+
+    totalSplashMassCreated_ += mSplash;
+    totalSplashMomCreated_ += splashMomTotal;
+
+    if (this->debug >= 2)
+    {
+        Pout<< "[KinematicSurfaceFilm:splash] t="
+            << mesh.time().timeOutputValue()
+            << " origId=" << p.origId()
+            << " incidentMass=" << m
+            << " splashMass=" << mSplash
+            << " residualMass=" << m - mSplash
+            << " splashMomentum=" << splashMomTotal
+            << endl;
     }
 
     // Transfer remaining part of parcel to film 0 - splashMass can be -ve
@@ -509,7 +620,11 @@ Foam::KinematicSurfaceFilm<CloudType>::KinematicSurfaceFilm
     Adry_(Zero),
     Awet_(Zero),
     Cf_(Zero),
-    nParcelsSplashed_(0)
+    nParcelsSplashed_(0),
+    totalMomTransferred_(Zero),
+    totalPnTransferred_(Zero),
+    totalSplashMassCreated_(Zero),
+    totalSplashMomCreated_(Zero)
 {
     Info<< "    Applying " << interactionTypeNames[interactionType_]
         << " interaction model" << endl;
@@ -554,7 +669,11 @@ Foam::KinematicSurfaceFilm<CloudType>::KinematicSurfaceFilm
     Adry_(sfm.Adry_),
     Awet_(sfm.Awet_),
     Cf_(sfm.Cf_),
-    nParcelsSplashed_(sfm.nParcelsSplashed_)
+    nParcelsSplashed_(sfm.nParcelsSplashed_),
+    totalMomTransferred_(sfm.totalMomTransferred_),
+    totalPnTransferred_(sfm.totalPnTransferred_),
+    totalSplashMassCreated_(sfm.totalSplashMassCreated_),
+    totalSplashMomCreated_(sfm.totalSplashMomCreated_)
 {
     if (interactionType_ == interactionType::splashBai)
     {
@@ -595,6 +714,19 @@ bool Foam::KinematicSurfaceFilm<CloudType>::transferParcel
     if (this->filmModel_ && this->filmModel_->isRegionPatch(patchi))
     {
         auto& film = *filmModel_;
+
+        if (this->debug >= 2)
+        {
+            Pout<< "[KinematicSurfaceFilm:transfer] t="
+                << this->owner().mesh().time().timeOutputValue()
+                << " origId=" << p.origId()
+                << " patch=" << patchi
+                << " face=" << facei
+                << " filmFace=" << facei
+                << " type=" << interactionTypeNames[interactionType_]
+                << " mass=" << p.nParticle()*p.mass()
+                << endl;
+        }
 
         switch (interactionType_)
         {
@@ -667,6 +799,19 @@ bool Foam::KinematicSurfaceFilm<CloudType>::transferParcel
         {
             // Film model does not include this patch face
             continue;
+        }
+
+        if (this->debug >= 2)
+        {
+            Pout<< "[KinematicSurfaceFilm:transfer] t="
+                << this->owner().mesh().time().timeOutputValue()
+                << " origId=" << p.origId()
+                << " patch=" << patchi
+                << " face=" << facei
+                << " filmFace=" << filmFacei
+                << " type=" << interactionTypeNames[interactionType_]
+                << " mass=" << p.nParticle()*p.mass()
+                << endl;
         }
 
         switch (interactionType_)
@@ -787,10 +932,31 @@ void Foam::KinematicSurfaceFilm<CloudType>::info()
 
     Log_<< "      - new splash parcels          = " << nSplashTotal << endl;
 
+    if (this->debug)
+    {
+        const auto& time = this->owner().mesh().time();
+
+        Info<< "[KinematicSurfaceFilm:summary] t="
+            << time.timeOutputValue()
+            << " tangentialMomentumToFilm="
+            << returnReduce(totalMomTransferred_, sumOp<vector>())
+            << " impingementToFilm="
+            << returnReduce(totalPnTransferred_, sumOp<scalar>())
+            << " splashMassCreated="
+            << returnReduce(totalSplashMassCreated_, sumOp<scalar>())
+            << " splashMomentumCreated="
+            << returnReduce(totalSplashMomCreated_, sumOp<vector>())
+            << endl;
+    }
+
     if (this->writeTime())
     {
         this->setModelProperty("nParcelsSplashed", nSplashTotal);
         nParcelsSplashed_ = 0;
+        totalMomTransferred_ = Zero;
+        totalPnTransferred_ = Zero;
+        totalSplashMassCreated_ = Zero;
+        totalSplashMomCreated_ = Zero;
     }
 }
 

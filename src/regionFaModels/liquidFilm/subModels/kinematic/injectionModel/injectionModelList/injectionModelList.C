@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2020 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -137,6 +138,15 @@ void injectionModelList::correct
         }
 
         massInjected_ += gSum(massToInject.boundaryField()[patchi]);
+
+        if (injectionModel::debug)
+        {
+            Info<< "[injectionModelList:mapping] t="
+                << film().primaryMesh().time().timeOutputValue()
+                << " mode=singlePatch mass="
+                << gSum(massToInject.boundaryField()[patchi])
+                << endl;
+        }
     }
     else
     {
@@ -172,6 +182,9 @@ void injectionModelList::correct
         massInjected_ += gSum(massToInjectTmp);
 
         // Transcribe to boundary patches
+        label localSkippedFaces = 0;
+        scalar localSkippedMass = 0;
+
         forAll(patchFaces, i)
         {
             const labelPair& patchAndFace = patchFaces[i];
@@ -184,6 +197,24 @@ void injectionModelList::correct
                 diameterToInject.boundaryFieldRef()[patchAndFace]
                     = diameterToInjectTmp[i];
             }
+            else if (massToInjectTmp[i] > VSMALL)
+            {
+                ++localSkippedFaces;
+                localSkippedMass += massToInjectTmp[i];
+            }
+        }
+
+        if (injectionModel::debug)
+        {
+            Info<< "[injectionModelList:mapping] t="
+                << film().primaryMesh().time().timeOutputValue()
+                << " mode=multiPatch mass="
+                << gSum(massToInjectTmp)
+                << " skippedFaces="
+                << returnReduce(localSkippedFaces, sumOp<label>())
+                << " skippedMass="
+                << returnReduce(localSkippedMass, sumOp<scalar>())
+                << endl;
         }
     }
 }

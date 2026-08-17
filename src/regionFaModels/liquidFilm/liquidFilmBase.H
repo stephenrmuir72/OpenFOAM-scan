@@ -187,6 +187,35 @@ protected:
             //- Normal pressure by particles
             volScalarField pnSource_;
 
+            //- Cumulative mass source since the start of the run
+            volScalarField massSourceCumulative_;
+
+            //- Cumulative momentum source since the start of the run
+            volVectorField momentumSourceCumulative_;
+
+            //- Cumulative normal pressure source since the start of the run
+            volScalarField pnSourceCumulative_;
+
+            //- Cumulative Lagrangian-to-film mass source since the start
+            //  of the run
+            volScalarField massSourceLagrangianToFilm_;
+
+            //- Cumulative Lagrangian-to-film momentum source since the start
+            //  of the run
+            volVectorField momentumSourceLagrangianToFilm_;
+
+            //- Cumulative Lagrangian-to-film pressure source since the start
+            //  of the run
+            volScalarField pnSourceLagrangianToFilm_;
+
+            //- Cumulative film-to-Lagrangian mass source since the start
+            //  of the run
+            volScalarField massSourceFilmToLagrangian_;
+
+            //- Cumulative film-to-Lagrangian momentum source since the start
+            //  of the run
+            volVectorField momentumSourceFilmToLagrangian_;
+
             //- Mass-weighted parcel diameter [kg m]
             //  Accumulates mass*diameter per face for source spreading
             volScalarField diameterSource_;
@@ -366,7 +395,8 @@ public:
                 const scalar massSource,       // [kg]
                 const vector& momentumSource,  // [kg.m/s] (tang'l momentum)
                 const scalar pressureSource,   // [kg.m/s] (normal momentum)
-                const scalar energySource = 0  // [J]
+                const scalar energySource = 0, // [J]
+                const bool filmToLagrangian = false  // classify transfer leg
             );
 
             //- Accumulate mass-weighted parcel diameter for source spreading

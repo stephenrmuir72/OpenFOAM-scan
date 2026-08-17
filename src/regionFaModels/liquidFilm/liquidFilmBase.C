@@ -199,6 +199,110 @@ liquidFilmBase::liquidFilmBase
         primaryMesh(),
         dimensionedScalar(dimMass*dimVelocity, Zero)
     ),
+    massSourceCumulative_
+    (
+        IOobject
+        (
+            "massSourceCumulative",
+            primaryMesh().time().timeName(),
+            primaryMesh().thisDb(),
+            IOobject::NO_READ,
+            IOobject::NO_WRITE
+        ),
+        primaryMesh(),
+        dimensionedScalar(dimMass, Zero)
+    ),
+    momentumSourceCumulative_
+    (
+        IOobject
+        (
+            "momentumSourceCumulative",
+            primaryMesh().time().timeName(),
+            primaryMesh().thisDb(),
+            IOobject::NO_READ,
+            IOobject::NO_WRITE
+        ),
+        primaryMesh(),
+        dimensionedVector(dimMass*dimVelocity, Zero)
+    ),
+    pnSourceCumulative_
+    (
+        IOobject
+        (
+            "pnSourceCumulative",
+            primaryMesh().time().timeName(),
+            primaryMesh().thisDb(),
+            IOobject::NO_READ,
+            IOobject::NO_WRITE
+        ),
+        primaryMesh(),
+        dimensionedScalar(dimMass*dimVelocity, Zero)
+    ),
+    massSourceLagrangianToFilm_
+    (
+        IOobject
+        (
+            "massSourceLagrangianToFilm",
+            primaryMesh().time().timeName(),
+            primaryMesh().thisDb(),
+            IOobject::NO_READ,
+            IOobject::NO_WRITE
+        ),
+        primaryMesh(),
+        dimensionedScalar(dimMass, Zero)
+    ),
+    momentumSourceLagrangianToFilm_
+    (
+        IOobject
+        (
+            "momentumSourceLagrangianToFilm",
+            primaryMesh().time().timeName(),
+            primaryMesh().thisDb(),
+            IOobject::NO_READ,
+            IOobject::NO_WRITE
+        ),
+        primaryMesh(),
+        dimensionedVector(dimMass*dimVelocity, Zero)
+    ),
+    pnSourceLagrangianToFilm_
+    (
+        IOobject
+        (
+            "pnSourceLagrangianToFilm",
+            primaryMesh().time().timeName(),
+            primaryMesh().thisDb(),
+            IOobject::NO_READ,
+            IOobject::NO_WRITE
+        ),
+        primaryMesh(),
+        dimensionedScalar(dimMass*dimVelocity, Zero)
+    ),
+    massSourceFilmToLagrangian_
+    (
+        IOobject
+        (
+            "massSourceFilmToLagrangian",
+            primaryMesh().time().timeName(),
+            primaryMesh().thisDb(),
+            IOobject::NO_READ,
+            IOobject::NO_WRITE
+        ),
+        primaryMesh(),
+        dimensionedScalar(dimMass, Zero)
+    ),
+    momentumSourceFilmToLagrangian_
+    (
+        IOobject
+        (
+            "momentumSourceFilmToLagrangian",
+            primaryMesh().time().timeName(),
+            primaryMesh().thisDb(),
+            IOobject::NO_READ,
+            IOobject::NO_WRITE
+        ),
+        primaryMesh(),
+        dimensionedVector(dimMass*dimVelocity, Zero)
+    ),
     diameterSource_
     (
         IOobject
@@ -382,12 +486,48 @@ void liquidFilmBase::addSources
     const scalar massSource,
     const vector& momentumSource,
     const scalar pressureSource,
-    const scalar energySource
+    const scalar energySource,
+    const bool filmToLagrangian
 )
 {
+    (void)energySource;
+
     massSource_.boundaryFieldRef()[patchi][facei] += massSource;
     pnSource_.boundaryFieldRef()[patchi][facei] += pressureSource;
     momentumSource_.boundaryFieldRef()[patchi][facei] += momentumSource;
+    massSourceCumulative_.boundaryFieldRef()[patchi][facei] += massSource;
+    pnSourceCumulative_.boundaryFieldRef()[patchi][facei] += pressureSource;
+    momentumSourceCumulative_.boundaryFieldRef()[patchi][facei]
+        += momentumSource;
+
+    if (filmToLagrangian)
+    {
+        massSourceFilmToLagrangian_.boundaryFieldRef()[patchi][facei]
+            += massSource;
+        momentumSourceFilmToLagrangian_.boundaryFieldRef()[patchi][facei]
+            += momentumSource;
+    }
+    else
+    {
+        massSourceLagrangianToFilm_.boundaryFieldRef()[patchi][facei]
+            += massSource;
+        momentumSourceLagrangianToFilm_.boundaryFieldRef()[patchi][facei]
+            += momentumSource;
+        pnSourceLagrangianToFilm_.boundaryFieldRef()[patchi][facei]
+            += pressureSource;
+    }
+
+    if (debug >= 2)
+    {
+        Pout<< "[liquidFilmBase:addSources] t="
+            << primaryMesh().time().timeOutputValue()
+            << " patch=" << patchi
+            << " face=" << facei
+            << " mass=" << massSource
+            << " momentum=" << momentumSource
+            << " pressure=" << pressureSource
+            << endl;
+    }
 }
 
 
@@ -416,6 +556,39 @@ void liquidFilmBase::postEvolveRegion()
         massSource_.write();
         pnSource_.write();
         momentumSource_.write();
+        massSourceCumulative_.write();
+        momentumSourceCumulative_.write();
+        pnSourceCumulative_.write();
+        massSourceLagrangianToFilm_.write();
+        momentumSourceLagrangianToFilm_.write();
+        pnSourceLagrangianToFilm_.write();
+        massSourceFilmToLagrangian_.write();
+        momentumSourceFilmToLagrangian_.write();
+    }
+
+    if (debug)
+    {
+        scalar totalMass = 0;
+        vector totalMomentum = Zero;
+        scalar totalPressure = 0;
+
+        forAll(massSource_.boundaryField(), patchi)
+        {
+            totalMass += sum(massSource_.boundaryField()[patchi]);
+            totalMomentum += sum(momentumSource_.boundaryField()[patchi]);
+            totalPressure += sum(pnSource_.boundaryField()[patchi]);
+        }
+
+        reduce(totalMass, sumOp<scalar>());
+        reduce(totalMomentum, sumOp<vector>());
+        reduce(totalPressure, sumOp<scalar>());
+
+        Info<< "[liquidFilmBase:summary] t="
+            << primaryMesh().time().timeOutputValue()
+            << " massSource=" << totalMass
+            << " momentumSource=" << totalMomentum
+            << " pressureSource=" << totalPressure
+            << endl;
     }
 
     massSource_.boundaryFieldRef() = Zero;

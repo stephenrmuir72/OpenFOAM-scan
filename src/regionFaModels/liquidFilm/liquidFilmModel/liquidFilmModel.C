@@ -293,6 +293,16 @@ void liquidFilmModel::preEvolveRegion()
 
     vsm().mapToSurface(pnSource_, pnSp_.primitiveFieldRef());
 
+    if (debug)
+    {
+        Info<< "[liquidFilmModel:source] t="
+            << primaryMesh().time().timeOutputValue()
+            << " rawMass=" << gSum(rhoSp_.primitiveField())
+            << " rawMomentum=" << gSum(USp_.primitiveField())
+            << " rawPressure=" << gSum(pnSp_.primitiveField())
+            << endl;
+    }
+
     const bool needsDiameter =
     (
         (physicalSpreadingPtr_ && physicalSpreadingPtr_->needsDiameter())
@@ -441,6 +451,18 @@ void liquidFilmModel::preEvolveRegion()
     USp_.primitiveFieldRef() *= rAreaDeltaT/rho_;
     pnSp_.primitiveFieldRef() *= rAreaDeltaT;
 
+    if (debug)
+    {
+        const scalarField& faceArea = regionMesh().S().field();
+
+        Info<< "[liquidFilmModel:sourceRate] t="
+            << primaryMesh().time().timeOutputValue()
+            << " massRate=" << gSum(rhoSp_.primitiveField()*faceArea)
+            << " momentumRate=" << gSum(USp_.primitiveField()*faceArea)
+            << " pressureRate=" << gSum(pnSp_.primitiveField()*faceArea)
+            << endl;
+    }
+
     rhoSp_.relax();
     pnSp_.relax();
     USp_.relax();
@@ -451,6 +473,16 @@ void liquidFilmModel::postEvolveRegion()
 {
     availableMass_ = (h() - h0_)*rho()*regionMesh().S();
     injection_.correct(availableMass_, cloudMassTrans_, cloudDiameterTrans_);
+
+    if (debug && primaryMesh().time().writeTime())
+    {
+        rhoSp_.write();
+        USp_.write();
+        pnSp_.write();
+        cloudMassTrans_.write();
+        cloudDiameterTrans_.write();
+    }
+
     liquidFilmBase::postEvolveRegion();
 }
 
