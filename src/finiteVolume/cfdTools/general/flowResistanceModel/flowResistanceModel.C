@@ -44,7 +44,8 @@ Foam::flowResistanceModel::flowResistanceModel(const dictionary& dict)
     targetCorrection_(0),
     relaxedCorrection_(0),
     relaxedCorrectionInitialised_(false),
-    patchAreaValidated_(false)
+    patchAreaValidated_(false),
+    Re_(0)
 {
     // Validate the relaxation factor
     if (relax_ <= 0 || relax_ > 1)
@@ -75,7 +76,8 @@ Foam::flowResistanceModel::flowResistanceModel
     targetCorrection_(m.targetCorrection_),
     relaxedCorrection_(m.relaxedCorrection_),
     relaxedCorrectionInitialised_(m.relaxedCorrectionInitialised_),
-    patchAreaValidated_(m.patchAreaValidated_)
+    patchAreaValidated_(m.patchAreaValidated_),
+    Re_(m.Re_)
 {}
 
 
@@ -104,8 +106,8 @@ Foam::scalar Foam::flowResistanceModel::updateCorrection
     }
 
     const scalar UnAvg = Q/A;
-    const scalar deltaP =
-        lossCoefficient(UnAvg, nuAvg)*0.5*rhoAvg*sqr(UnAvg);
+    const scalar zeta = lossCoefficient(UnAvg, nuAvg);
+    const scalar deltaP = zeta*0.5*rhoAvg*sqr(UnAvg);
 
     // Signed target: inflow (UnAvg < 0) lowers p0, outflow raises it.
     //
@@ -137,6 +139,31 @@ Foam::scalar Foam::flowResistanceModel::updateCorrection
     {
         relaxedCorrection_ =
             lerp(relaxedCorrection_, targetCorrection_, relax_);
+    }
+
+    if (debug)
+    {
+        Info<< type() << "::updateCorrection" << nl
+            << "    Q       = " << Q << nl
+            << "    A       = " << A << nl
+            << "    UnAvg   = " << UnAvg << nl
+            << "    rhoAvg  = " << rhoAvg << nl;
+
+        // Re is only meaningful for the Reynolds-number-dependent
+        // resistance types (perforated/slotted/screen), which always
+        // report Re_ >= 1; the constant type leaves it at zero
+        if (Re_ > 0)
+        {
+            Info<< "    nuAvg   = " << nuAvg
+                << (userNu_ > 0 ? " (user-specified)" : " (field lookup)")
+                << nl
+                << "    Re      = " << Re_ << nl;
+        }
+
+        Info<< "    zeta    = " << zeta << nl
+            << "    deltaP  = " << deltaP << nl
+            << "    target  = " << targetCorrection_ << nl
+            << "    relaxed = " << relaxedCorrection_ << endl;
     }
 
     return relaxedCorrection_;

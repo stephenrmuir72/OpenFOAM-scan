@@ -102,14 +102,6 @@ Foam::scalar Foam::flowResistanceModels::Slotted::holeArea() const
 }
 
 
-Foam::scalar Foam::flowResistanceModels::Slotted::holePerimeter() const
-{
-    return
-        2.0*(slotLength_ - slotWidth_)
-      + constant::mathematical::pi*slotWidth_;
-}
-
-
 Foam::scalar Foam::flowResistanceModels::Slotted::shapeFactor() const
 {
     const scalar ab = slotLength_/slotWidth_;

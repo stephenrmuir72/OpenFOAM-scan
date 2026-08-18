@@ -87,9 +87,6 @@ protected:
         //- Area of a single slot [m^2]
         virtual scalar holeArea() const;
 
-        //- Perimeter of a single slot [m]
-        virtual scalar holePerimeter() const;
-
         //- Slot shape factor k_shape (Eq. 16)
         virtual scalar shapeFactor() const;
 

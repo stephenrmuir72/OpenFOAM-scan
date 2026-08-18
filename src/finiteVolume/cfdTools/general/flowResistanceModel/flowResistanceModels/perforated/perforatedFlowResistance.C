@@ -97,17 +97,6 @@ Foam::scalar Foam::flowResistanceModels::Perforated::holeArea() const
 }
 
 
-Foam::scalar Foam::flowResistanceModels::Perforated::holePerimeter() const
-{
-    return
-    (
-        holeShape_ == "circular"
-      ? constant::mathematical::pi*holeSize_
-      : 4.0*holeSize_
-    );
-}
-
-
 void Foam::flowResistanceModels::Perforated::writeCoeffs(Ostream& os) const
 {
     os.beginBlock("perforatedCoeffs");

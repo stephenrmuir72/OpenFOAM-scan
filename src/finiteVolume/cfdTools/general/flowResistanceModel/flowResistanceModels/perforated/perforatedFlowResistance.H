@@ -102,9 +102,6 @@ protected:
         //- Area of a single hole [m^2]
         virtual scalar holeArea() const;
 
-        //- Perimeter of a single hole [m]
-        virtual scalar holePerimeter() const;
-
         //- Write the "perforatedCoeffs" sub-dict
         virtual void writeCoeffs(Ostream& os) const;
 

@@ -99,31 +99,12 @@ protected:
         scalar transversePitch_;
 
 
-private:
-
-    // Private Member Functions
-
-        //- Empirical coefficient eps0(Re) (Eqs. 10-11), log-linear
-        //  interpolation of the Section D table
-        static scalar eps0(const scalar Re);
-
-        //- Empirical coefficient zeta_phi(Re, f) (Eq. 11), log-linear
-        //  in Re and linear in f interpolation of the Section D table
-        static scalar zetaPhi(const scalar Re, const scalar f);
-
-
 protected:
 
     // Protected Member Functions
 
         //- Area of a single hole [m^2]
         virtual scalar holeArea() const = 0;
-
-        //- Perimeter of a single hole [m]
-        virtual scalar holePerimeter() const = 0;
-
-        //- Hydraulic diameter of a single hole [m] = 4A/P
-        scalar hydraulicDiameter() const;
 
         //- Shape factor applied to the fully turbulent loss
         //  coefficient (Eq. 16 for the slotted type; 1 for perforated)
@@ -189,11 +170,11 @@ public:
             return openAreaFraction_;
         }
 
-        //- A hole-based resistance requires the kinematic viscosity
-        //  unless the user has supplied an override
+        //- A hole-based resistance does not require the kinematic
+        //  viscosity (the loss coefficient is Re-independent)
         virtual bool needsNu() const
         {
-            return userNu_ < 0;
+            return false;
         }
 };
 

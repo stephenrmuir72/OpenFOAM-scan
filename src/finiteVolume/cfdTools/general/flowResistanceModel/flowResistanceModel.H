@@ -165,6 +165,12 @@ protected:
         //  so that it is still performed on a restarted run
         bool patchAreaValidated_;
 
+        //- Reynolds number from the last lossCoefficient() evaluation,
+        //  for debug reporting. mutable: assigned from the const
+        //  lossCoefficient() implementation. Zero when not applicable
+        //  (e.g. the constant resistance type).
+        mutable scalar Re_;
+
 
     // Protected Member Functions
 

@@ -73,7 +73,8 @@ Foam::flowResistanceModels::Screen::Screen(const dictionary& dict)
 
     const dictionary& typeDict = dict.subDict(coeffsName);
 
-    strandShape_ = typeDict.get<word>("strandShape");
+    // Strand shape defaults to 'round' when not specified
+    strandShape_ = typeDict.getOrDefault<word>("strandShape", "round");
     strandSize_ = typeDict.get<scalar>("strandSize");
 
     if (strandShape_ != "round" && strandShape_ != "square"
@@ -194,6 +195,9 @@ Foam::scalar Foam::flowResistanceModels::Screen::lossCoefficient
     // laminar term finite at (near) zero velocity
     const scalar Re =
         max(mag(UnAvg)*strandSize_/(f*nuAvg), scalar(1));
+
+    // Cache for debug reporting (base class)
+    Re_ = Re;
 
     const scalar zetaT = zetaTurbulent();
 
