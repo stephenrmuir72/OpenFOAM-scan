@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2023-2026 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -193,7 +194,8 @@ void Foam::pairGAMGAgglomeration::agglomerate
             nCoarseCells,
             fineMesh.lduAddr(),
             faceWeights,
-            renumber_
+            renumber_,
+            strengthThreshold_
         );
 
         if
@@ -324,6 +326,34 @@ Foam::tmp<Foam::labelField> Foam::pairGAMGAgglomeration::agglomerate
     const bool renumber
 )
 {
+    return agglomerate
+    (
+        nCoarseCells,
+        fineMatrixAddressing,
+        faceWeights,
+        renumber,
+        0
+    );
+}
+
+
+Foam::tmp<Foam::labelField> Foam::pairGAMGAgglomeration::agglomerate
+(
+    label& nCoarseCells,
+    const lduAddressing& fineMatrixAddressing,
+    const scalarField& faceWeights,
+    const bool renumber,
+    const scalar strengthThreshold
+)
+{
+    if (!(strengthThreshold >= 0 && strengthThreshold <= 1))
+    {
+        FatalErrorInFunction
+            << "Strength threshold " << strengthThreshold
+            << " is outside the range [0,1]"
+            << exit(FatalError);
+    }
+
     const label nFineCells = fineMatrixAddressing.size();
 
     const labelUList& upperAddr = fineMatrixAddressing.upperAddr();
@@ -376,6 +406,48 @@ Foam::tmp<Foam::labelField> Foam::pairGAMGAgglomeration::agglomerate
             nNbrs[lowerAddr[facei]]++;
         }
     }
+
+
+    // Maximum positive incident weight for each row. Rebuilt for every
+    // invocation, including coarse levels after face-weight restriction.
+    scalarField maxCellWeight;
+    if (strengthThreshold > 0)
+    {
+        maxCellWeight.resize(nFineCells, 0);
+
+        forAll(upperAddr, facei)
+        {
+            const scalar weight = faceWeights[facei];
+            if (weight > 0)
+            {
+                maxCellWeight[upperAddr[facei]] =
+                    max(maxCellWeight[upperAddr[facei]], weight);
+                maxCellWeight[lowerAddr[facei]] =
+                    max(maxCellWeight[lowerAddr[facei]], weight);
+            }
+        }
+    }
+
+    const auto isStrong =
+    [&](const label facei)
+    {
+        if (strengthThreshold == 0)
+        {
+            return true;
+        }
+
+        const scalar weight = faceWeights[facei];
+
+        return
+        (
+            weight > 0
+         &&
+            (
+                weight >= strengthThreshold*maxCellWeight[upperAddr[facei]]
+             || weight >= strengthThreshold*maxCellWeight[lowerAddr[facei]]
+            )
+        );
+    };
 
 
     // Determine cell visit order. This will lower the effect of having
@@ -459,6 +531,7 @@ Foam::tmp<Foam::labelField> Foam::pairGAMGAgglomeration::agglomerate
                 (
                     coarseCellMap[upperAddr[facei]] < 0
                  && coarseCellMap[lowerAddr[facei]] < 0
+                 && isStrong(facei)
                  && faceWeights[facei] > maxFaceWeight*(1.0 + tol)
                 )
                 {
@@ -491,7 +564,12 @@ Foam::tmp<Foam::labelField> Foam::pairGAMGAgglomeration::agglomerate
                 {
                     label facei = cellFaces[faceOs];
 
-                    if (faceWeights[facei] > clusterMaxFaceCoeff*(1.0 + tol))
+                    if
+                    (
+                        isStrong(facei)
+                     && faceWeights[facei]
+                      > clusterMaxFaceCoeff*(1.0 + tol)
+                    )
                     {
                         clusterMatchFaceNo = facei;
                         clusterMaxFaceCoeff = faceWeights[facei];
