@@ -1,0 +1,46 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  2406                                  |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version         2;
+    format          ascii;
+    class           dictionary;
+    location        "constant";
+    object          transformStlDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+transforms
+{
+    centerBlade
+    {
+        translation    (0 0 0);
+	rotationAxis   (0 0 1);
+	rotationCentre (0 0 0);
+	rotationAngle  10;
+    }
+
+    planetaryBlade
+    {
+        translation    (-0.02 0.055 0);
+	rotationAxis   (0 0 1);
+	rotationCentre (0 0 0);
+	rotationAngle  120;
+    }
+
+   vesselWall
+   {
+        translation    (0 0 0);
+	rotationAxis   (0 0 1);
+	rotationCentre (0 0 0);
+	rotationAngle  0;
+    }
+
+}
+
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
