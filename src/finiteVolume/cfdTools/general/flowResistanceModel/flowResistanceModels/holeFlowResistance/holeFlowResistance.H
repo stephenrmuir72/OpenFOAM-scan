@@ -27,25 +27,19 @@ Class
     Foam::flowResistanceModels::holeFlowResistance
 
 Description
-    Abstract intermediate base class for Reynolds-number-dependent
-    flow resistances through a regular array of holes (\c perforated,
-    \c slotted). Provides the shared open-area-fraction resolution and
-    the Re-dependent loss coefficient correlation:
+    Abstract intermediate base class for flow resistances through a
+    regular array of holes (\c perforated, \c slotted). Provides the
+    shared open-area-fraction resolution and the fully turbulent loss
+    coefficient correlation:
 
     \f[
-        \zeta_{turb} = \frac{[0.707\sqrt{1-f} + 1-f]^2}{f^2}
+        \zeta_{turb} = \frac{[0.707(1-f)^{0.375} + 1-f]^2}{f^2}
     \f]
 
-    evaluated in four Reynolds regimes (Eqs. 9-12), where \c f is the
-    open area fraction and the hole Reynolds number is
-
-    \f[
-        Re = \frac{U_n d_h}{f \nu}
-    \f]
-
-    with \c d_h = 4A_h/P_h the hydraulic diameter of a single hole.
-    Derived classes provide the single-hole area/perimeter (and any
-    shape factor applied to \c zeta_turb, e.g. the slotted \c k_shape).
+    The loss coefficient is independent of the Reynolds number; the
+    fully turbulent value shown above is used directly. Derived classes
+    provide the single-hole area and any shape factor applied to
+    \c zeta_turb (e.g. the slotted \c k_shape).
 
     The open area fraction f is either specified directly via the
     \c openAreaFraction entry or derived from the hole geometry and

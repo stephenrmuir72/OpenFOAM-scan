@@ -73,18 +73,28 @@ Foam::flowResistanceModels::Slotted::Slotted(const dictionary& dict)
     slotLength_ = typeDict.get<scalar>("slotLength");
     slotWidth_ = typeDict.get<scalar>("slotWidth");
 
-    if (slotWidth_ <= 0)
+    if (!(slotWidth_ > 0))
     {
         FatalIOErrorInFunction(dict)
             << "slotWidth must be positive"
             << exit(FatalIOError);
     }
 
-    if (slotLength_ <= slotWidth_)
+    if (!(slotLength_ > slotWidth_))
     {
         FatalIOErrorInFunction(dict)
             << "slotLength must be greater than slotWidth (a > b) "
                "to give a positive straight section"
+            << exit(FatalIOError);
+    }
+
+    if (dict.found("nu"))
+    {
+        FatalIOErrorInFunction(dict)
+            << "The 'nu' entry is not permitted for resistanceType "
+               "'slotted'. The loss coefficient is independent of the "
+               "Reynolds number, so a kinematic viscosity is not required. "
+               "Remove the 'nu' entry from flowResistanceCoeffs."
             << exit(FatalIOError);
     }
 

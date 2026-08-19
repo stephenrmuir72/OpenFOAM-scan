@@ -33,9 +33,9 @@ Class
     Foam::flowResistanceModel
 
 Description
-    Runtime-selectable model computing the Reynolds-number-dependent
-    loss coefficient zeta for planar flow resistance elements attached
-    to a \c totalPressure boundary condition.
+    Runtime-selectable model computing the loss coefficient zeta for
+    planar flow resistance elements attached to a \c totalPressure
+    boundary condition.
 
     The pressure drop across the resistance is:
 
@@ -65,28 +65,31 @@ Description
     be written as \c relaxedPressureCorrection for restart.
 
     Available resistance types:
-    - \c perforated: Re-dependent zeta (four Reynolds regimes)
-    - \c slotted: Re-dependent zeta with the slot shape factor k_shape
+    - \c perforated: Re-independent fully turbulent zeta
+    - \c slotted: Re-independent fully turbulent zeta with the slot
+      shape factor k_shape
     - \c screen: Re-dependent zeta (three Reynolds regimes, strand
       shape factor k_shape)
     - \c constant: user-specified zeta via \c lossCoefficient entry
 
-    For \c perforated, \c slotted and \c screen the kinematic viscosity
-    is looked up directly from the registered 'nu' field (incompressible
-    flow) or derived from the registered 'mu' and 'rho' fields
-    (compressible flow: \c nu = \c mu/rho). The optional \c nu entry
-    overrides this, e.g. when no such field is registered:
+    For \c screen the kinematic viscosity is looked up directly from
+    the registered 'nu' field (incompressible flow) or derived from the
+    registered 'mu' and 'rho' fields (compressible flow:
+    \c nu = \c mu/rho). The optional \c nu entry overrides this, e.g.
+    when no such field is registered. The \c nu entry is only permitted
+    for \c screen; it is rejected for \c perforated, \c slotted and
+    \c constant.
 
     \verbatim
     flowResistanceCoeffs
     {
-        resistanceType      perforated;
+        resistanceType      screen;
 
-        perforatedCoeffs
+        screenCoeffs
         {
-            holeShape           circular;
-            holeSize            0.005;
-            openAreaFraction    0.5;
+            strandShape         round;
+            strandSize          0.001;
+            openAreaFraction    0.6;
         }
 
         nu                  1.5e-5;

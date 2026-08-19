@@ -27,8 +27,9 @@ Class
     Foam::flowResistanceModels::Perforated
 
 Description
-    Reynolds-number-dependent flow resistance for a perforated plate
-    (regular array of circular or square holes).
+    Flow resistance for a perforated plate (regular array of circular
+    or square holes) using the fully turbulent loss coefficient. The
+    loss coefficient is independent of the Reynolds number.
 
     \verbatim
     flowResistanceCoeffs

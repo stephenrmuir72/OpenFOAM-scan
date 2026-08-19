@@ -248,7 +248,7 @@ void Foam::totalPressureFvPatchScalarField::updateCoeffs()
 
         const scalar A = gSum(patch().magSf());
 
-        if (A <= 0)
+        if (!(A > 0))
         {
             FatalErrorInFunction
                 << "Zero or negative patch area (" << A << ") on patch "

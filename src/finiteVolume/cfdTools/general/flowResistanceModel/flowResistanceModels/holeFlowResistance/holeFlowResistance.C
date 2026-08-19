@@ -71,7 +71,7 @@ Foam::flowResistanceModels::holeFlowResistance::resolveOpenAreaFraction
     {
         f = typeDict.get<scalar>("openAreaFraction");
 
-        if (f <= 0 || f > 1)
+        if (!(f > 0 && f <= 1))
         {
             FatalIOErrorInFunction(dict)
                 << "openAreaFraction must be in (0, 1]"
@@ -83,9 +83,16 @@ Foam::flowResistanceModels::holeFlowResistance::resolveOpenAreaFraction
         longitudinalPitch_ = typeDict.get<scalar>("longitudinalPitch");
         transversePitch_ = typeDict.get<scalar>("transversePitch");
 
+        if (!(longitudinalPitch_ > 0 && transversePitch_ > 0))
+        {
+            FatalIOErrorInFunction(dict)
+                << "longitudinalPitch and transversePitch must be positive"
+                << exit(FatalIOError);
+        }
+
         f = holeArea()/(longitudinalPitch_*transversePitch_);
 
-        if (f <= 0 || f > 1)
+        if (!(f > 0 && f <= 1))
         {
             FatalIOErrorInFunction(dict)
                 << "Computed openAreaFraction " << f
@@ -127,7 +134,8 @@ Foam::flowResistanceModels::holeFlowResistance::lossCoefficient
 {
     const scalar f = openAreaFraction_;
 
-    if (f <= 0 || f > 1)
+    // Defensive invariant: openAreaFraction_ is validated in the constructor
+    if (!(f > 0 && f <= 1))
     {
         FatalErrorInFunction
             << "Valid openAreaFraction required for resistance"

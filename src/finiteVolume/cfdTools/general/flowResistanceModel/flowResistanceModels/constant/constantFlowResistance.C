@@ -48,13 +48,15 @@ Foam::flowResistanceModels::Constant::Constant(const dictionary& dict)
 {
     if (dict.found("nu"))
     {
-        IOWarningInFunction(dict)
-            << "The 'nu' entry has no effect for resistanceType "
-               "'constant', which uses a fixed lossCoefficient "
-               "independent of the Reynolds number. Ignoring." << endl;
+        FatalIOErrorInFunction(dict)
+            << "The 'nu' entry is not permitted for resistanceType "
+               "'constant'. The loss coefficient is independent of the "
+               "Reynolds number, so a kinematic viscosity is not required. "
+               "Remove the 'nu' entry from flowResistanceCoeffs."
+            << exit(FatalIOError);
     }
 
-    if (lossCoefficient_ < 0)
+    if (!(lossCoefficient_ >= 0))
     {
         FatalIOErrorInFunction(dict)
             << "lossCoefficient must not be negative"

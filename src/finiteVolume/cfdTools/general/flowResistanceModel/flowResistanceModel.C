@@ -48,11 +48,19 @@ Foam::flowResistanceModel::flowResistanceModel(const dictionary& dict)
     Re_(0)
 {
     // Validate the relaxation factor
-    if (relax_ <= 0 || relax_ > 1)
+    if (!(relax_ > 0 && relax_ <= 1))
     {
         FatalIOErrorInFunction(dict)
             << "The flow resistance relaxation factor must be in "
                "the range (0, 1]"
+            << exit(FatalIOError);
+    }
+
+    // Validate the optional user-specified kinematic viscosity
+    if (dict.found("nu") && !(userNu_ > 0))
+    {
+        FatalIOErrorInFunction(dict)
+            << "The optional 'nu' entry must be positive, got " << userNu_
             << exit(FatalIOError);
     }
 

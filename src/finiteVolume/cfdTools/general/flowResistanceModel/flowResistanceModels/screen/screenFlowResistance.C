@@ -85,7 +85,7 @@ Foam::flowResistanceModels::Screen::Screen(const dictionary& dict)
             << exit(FatalIOError);
     }
 
-    if (strandSize_ <= 0)
+    if (!(strandSize_ > 0))
     {
         FatalIOErrorInFunction(dict)
             << "strandSize must be positive"
@@ -111,7 +111,7 @@ Foam::flowResistanceModels::Screen::Screen(const dictionary& dict)
     {
         openAreaFraction_ = typeDict.get<scalar>("openAreaFraction");
 
-        if (openAreaFraction_ <= 0 || openAreaFraction_ > 1)
+        if (!(openAreaFraction_ > 0 && openAreaFraction_ <= 1))
         {
             FatalIOErrorInFunction(dict)
                 << "openAreaFraction must be in (0, 1]"
@@ -123,11 +123,18 @@ Foam::flowResistanceModels::Screen::Screen(const dictionary& dict)
         widthSeparation_ = typeDict.get<scalar>("widthSeparation");
         lengthSeparation_ = typeDict.get<scalar>("lengthSeparation");
 
+        if (!(widthSeparation_ > 0 && lengthSeparation_ > 0))
+        {
+            FatalIOErrorInFunction(dict)
+                << "widthSeparation and lengthSeparation must be positive"
+                << exit(FatalIOError);
+        }
+
         openAreaFraction_ =
             (1 - strandSize_/widthSeparation_)
            *(1 - strandSize_/lengthSeparation_);
 
-        if (openAreaFraction_ <= 0 || openAreaFraction_ > 1)
+        if (!(openAreaFraction_ > 0 && openAreaFraction_ <= 1))
         {
             FatalIOErrorInFunction(dict)
                 << "Computed openAreaFraction " << openAreaFraction_
@@ -135,6 +142,20 @@ Foam::flowResistanceModels::Screen::Screen(const dictionary& dict)
                    "separation."
                 << exit(FatalIOError);
         }
+    }
+
+    if (dict.found("nu"))
+    {
+        Info<< "flowResistanceModels::Screen: using user-specified nu = "
+            << userNu_ << " m^2/s from flowResistanceCoeffs; the registered "
+               "nu/mu fields will not be looked up." << endl;
+    }
+    else
+    {
+        Info<< "flowResistanceModels::Screen: no 'nu' entry specified in "
+               "flowResistanceCoeffs; the kinematic viscosity will be obtained "
+               "from the registered 'nu' field, or from 'mu'/'rho' if 'nu' is "
+               "not registered." << endl;
     }
 }
 
@@ -174,14 +195,15 @@ Foam::scalar Foam::flowResistanceModels::Screen::lossCoefficient
 {
     const scalar f = openAreaFraction_;
 
-    if (f <= 0 || f > 1)
+    // Defensive invariant: openAreaFraction_ is validated in the constructor
+    if (!(f > 0 && f <= 1))
     {
         FatalErrorInFunction
             << "Valid openAreaFraction required for resistance"
             << abort(FatalError);
     }
 
-    if (nuAvg <= 0)
+    if (!(nuAvg > 0))
     {
         FatalErrorInFunction
             << "Kinematic viscosity must be positive to evaluate the "

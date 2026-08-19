@@ -27,9 +27,10 @@ Class
     Foam::flowResistanceModels::Slotted
 
 Description
-    Reynolds-number-dependent flow resistance for a slotted opening
-    (regular array of slots), including the slot shape factor k_shape
-    (Eq. 16) applied to the fully turbulent loss coefficient.
+    Flow resistance for a slotted opening (regular array of slots)
+    using the fully turbulent loss coefficient with the slot shape
+    factor k_shape. The loss coefficient is independent of the
+    Reynolds number.
 
     \verbatim
     flowResistanceCoeffs
