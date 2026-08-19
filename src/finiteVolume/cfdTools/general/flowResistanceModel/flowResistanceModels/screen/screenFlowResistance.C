@@ -130,6 +130,15 @@ Foam::flowResistanceModels::Screen::Screen(const dictionary& dict)
                 << exit(FatalIOError);
         }
 
+        if (!(widthSeparation_ > strandSize_
+           && lengthSeparation_ > strandSize_))
+        {
+            FatalIOErrorInFunction(dict)
+                << "widthSeparation and lengthSeparation must both be "
+                   "greater than strandSize to avoid overlapping strands"
+                << exit(FatalIOError);
+        }
+
         openAreaFraction_ =
             (1 - strandSize_/widthSeparation_)
            *(1 - strandSize_/lengthSeparation_);

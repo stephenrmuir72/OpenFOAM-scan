@@ -88,6 +88,38 @@ Foam::flowResistanceModels::Slotted::Slotted(const dictionary& dict)
             << exit(FatalIOError);
     }
 
+    if
+    (
+        !typeDict.found("openAreaFraction")
+     &&
+        (
+            typeDict.found("longitudinalPitch")
+         || typeDict.found("transversePitch")
+        )
+    )
+    {
+        const scalar longitudinalPitch =
+            typeDict.get<scalar>("longitudinalPitch");
+        const scalar transversePitch =
+            typeDict.get<scalar>("transversePitch");
+
+        if (!(longitudinalPitch >= slotLength_))
+        {
+            FatalIOErrorInFunction(dict)
+                << "longitudinalPitch must be greater than or equal to "
+                   "slotLength to avoid overlapping slots"
+                << exit(FatalIOError);
+        }
+
+        if (!(transversePitch >= slotWidth_))
+        {
+            FatalIOErrorInFunction(dict)
+                << "transversePitch must be greater than or equal to "
+                   "slotWidth to avoid overlapping slots"
+                << exit(FatalIOError);
+        }
+    }
+
     if (dict.found("nu"))
     {
         FatalIOErrorInFunction(dict)

@@ -243,7 +243,7 @@ void Foam::totalPressureFvPatchScalarField::updateCoeffs()
 
         const vectorField& Up =
             patch().lookupPatchField<volVectorField>(UName());
-        const scalarField& phip =
+        const auto& phip =
             patch().lookupPatchField<surfaceScalarField>(phiName_);
 
         const scalar A = gSum(patch().magSf());
@@ -259,24 +259,44 @@ void Foam::totalPressureFvPatchScalarField::updateCoeffs()
         }
 
         // Velocity-flux sum and area-averaged density (1 incompressible).
-        // Mirror the same dimension validation used by the
-        // updateCoeffs(p0p, Up) overload below, so an invalid pressure
-        // dimension is caught here rather than silently treated as
-        // incompressible.
         scalar Q;
-        scalar rhoAvg;
 
-        if (internalField().dimensions() == dimPressure)
+        if (phip.internalField().dimensions() == dimVolume/dimTime)
+        {
+            Q = gSum(phip);
+        }
+        else if (phip.internalField().dimensions() == dimMass/dimTime)
         {
             const scalarField& rhop =
                 patch().lookupPatchField<volScalarField>(rhoName_);
 
             Q = gSum(phip/rhop);
+        }
+        else
+        {
+            FatalErrorInFunction
+                << " Incorrect flux dimensions "
+                << phip.internalField().dimensions() << nl
+                << "    Should be " << dimVolume/dimTime
+                << " for volumetric flux" << nl
+                << "    or " << dimMass/dimTime
+                << " for mass flux," << nl
+                << "    on patch " << this->patch().name()
+                << " of field " << phip.internalField().name()
+                << " in file " << phip.internalField().objectPath()
+                << exit(FatalError);
+        }
+
+        scalar rhoAvg;
+        if (internalField().dimensions() == dimPressure)
+        {
+            const scalarField& rhop =
+                patch().lookupPatchField<volScalarField>(rhoName_);
+
             rhoAvg = gSum(rhop*patch().magSf())/A;
         }
         else if (internalField().dimensions() == dimPressure/dimDensity)
         {
-            Q = gSum(phip);
             rhoAvg = 1;
         }
         else
