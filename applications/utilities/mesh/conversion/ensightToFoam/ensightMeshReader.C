@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2022-2025 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -303,10 +304,9 @@ bool Foam::fileFormats::ensightMeshReader::readGoldPart
             // Extend and fill the new trailing portion
             const label startElemi = cells.size();
             cells.resize(startElemi+elemCount);
-            faceListList::subList myElements = cells.slice(startElemi);
 
             const auto& model = cellModel::ref(cellModel::TET);
-            for (auto& cellFaces : myElements)
+            for (auto& cellFaces : cells.slice(startElemi))
             {
                 readVerts(is, 4, nodeIdToPoints, verts);
                 if (setHandedness_)
@@ -337,10 +337,9 @@ bool Foam::fileFormats::ensightMeshReader::readGoldPart
             // Extend and fill the new trailing portion
             const label startElemi = cells.size();
             cells.resize(startElemi+elemCount);
-            faceListList::subList myElements = cells.slice(startElemi);
 
             const auto& model = cellModel::ref(cellModel::PYR);
-            for (auto& cellFaces : myElements)
+            for (auto& cellFaces : cells.slice(startElemi))
             {
                 readVerts(is, 5, nodeIdToPoints, verts);
                 if (setHandedness_)
@@ -371,10 +370,9 @@ bool Foam::fileFormats::ensightMeshReader::readGoldPart
             // Extend and fill the new trailing portion
             const label startElemi = cells.size();
             cells.resize(startElemi+elemCount);
-            faceListList::subList myElements = cells.slice(startElemi);
 
             const auto& model = cellModel::ref(cellModel::PRISM);
-            for (auto& cellFaces : myElements)
+            for (auto& cellFaces : cells.slice(startElemi))
             {
                 readVerts(is, 6, nodeIdToPoints, verts);
                 if (setHandedness_)
@@ -405,10 +403,9 @@ bool Foam::fileFormats::ensightMeshReader::readGoldPart
             // Extend and fill the new trailing portion
             const label startElemi = cells.size();
             cells.resize(startElemi+elemCount);
-            faceListList::subList myElements = cells.slice(startElemi);
 
             const auto& model = cellModel::ref(cellModel::HEX);
-            for (auto& cellFaces : myElements)
+            for (auto& cellFaces : cells.slice(startElemi))
             {
                 readVerts(is, 8, nodeIdToPoints, verts);
                 if (setHandedness_)
@@ -439,7 +436,7 @@ bool Foam::fileFormats::ensightMeshReader::readGoldPart
             // Extend and fill the new trailing portion
             const label startElemi = cells.size();
             cells.resize(startElemi+elemCount);
-            faceListList::subList myElements = cells.slice(startElemi);
+            auto myElements = cells.slice(startElemi);
 
             for (auto& cellFaces : myElements)
             {
@@ -458,7 +455,7 @@ bool Foam::fileFormats::ensightMeshReader::readGoldPart
                 }
             }
 
-            for (faceList& cellFaces : myElements)
+            for (auto& cellFaces : myElements)
             {
                 for (face& f : cellFaces)
                 {
@@ -505,13 +502,12 @@ bool Foam::fileFormats::ensightMeshReader::readGoldPart
             );
 
             // Extend and fill the new trailing portion
-            const label startElemi = cells.size();
-            faces.resize(startElemi+elemCount, face(3));  // <- tria3
-            faceList::subList myElements = faces.slice(startElemi);
+            const label startElemi = faces.size();
+            faces.resize(startElemi+elemCount);
 
-            for (face& f : myElements)
+            for (face& f : faces.slice(startElemi))
             {
-                readVerts(is, f.size(), nodeIdToPoints, verts);
+                readVerts(is, 3, nodeIdToPoints, verts);
                 f.labelList::operator=(verts);
             }
         }
@@ -534,13 +530,12 @@ bool Foam::fileFormats::ensightMeshReader::readGoldPart
             );
 
             // Extend and fill the new trailing portion
-            const label startElemi = cells.size();
-            faces.resize(startElemi+elemCount, face(4));  // <- quad4
-            faceList::subList myElements = faces.slice(startElemi);
+            const label startElemi = faces.size();
+            faces.resize(startElemi+elemCount);
 
-            for (face& f : myElements)
+            for (face& f : faces.slice(startElemi))
             {
-                readVerts(is, f.size(), nodeIdToPoints, verts);
+                readVerts(is, 4, nodeIdToPoints, verts);
                 f.labelList::operator=(verts);
             }
         }
@@ -563,9 +558,9 @@ bool Foam::fileFormats::ensightMeshReader::readGoldPart
             );
 
             // Extend and fill the new trailing portion
-            const label startElemi = cells.size();
+            const label startElemi = faces.size();
             faces.resize(startElemi+elemCount);
-            faceList::subList myElements = faces.slice(startElemi);
+            auto myElements = faces.slice(startElemi);
 
             for (face& f : myElements)
             {
