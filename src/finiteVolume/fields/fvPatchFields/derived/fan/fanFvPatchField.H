@@ -48,11 +48,13 @@ Description
 
     As inputs it needs the fan RPM (rpm) and the mean diameter (dm).
 
-    The non-dimensional U for the table is calculated as follows:
+    The non-dimensional flow rate for the table is calculated as follows:
 
     \verbatim
-        phi = 120*Un/(PI^3*dm^3*rpm)
+        phi = 240*Q/(PI^2*dm^3*rpm)
         where:
+            Q is the volume flow rate (mass flow rate divided by rho
+              for compressible cases).
             dm is the mean diameter.
             rpm is the RPM of the fan.
     \endverbatim
@@ -60,10 +62,15 @@ Description
     The non-dimensional pressure:
 
     \verbatim
-        Psi = 2 deltaP/(rho*(sqr(PI*omega*dm)))
+        Psi = 7200*deltaP/(rho*(sqr(PI*rpm*dm)))
         where:
-            deltaP is the pressure drop
+            deltaP is the pressure drop [Pa].
+            rho is the area-weighted patch-averaged density.
     \endverbatim
+
+    For incompressible (kinematic pressure) fields, where the pressure has
+    dimensions of m^2/s^2, the density is omitted and the non-dimensional
+    pressure is applied directly to the kinematic pressure jump.
 
     The non-dimensional table should be given as Psi = F(phi).
 

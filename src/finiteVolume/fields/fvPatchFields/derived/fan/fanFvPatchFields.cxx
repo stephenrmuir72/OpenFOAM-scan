@@ -128,10 +128,10 @@ void Foam::fanFvPatchField<Foam::scalar>::calcFanJump()
             // Create a non-dimensional flow rate
             sumVolFlowRate *=
             (
-                120.0
+                240.0
                /stabilise
                 (
-                    pow3(constant::mathematical::pi*meanDiam)*rpm,
+                    sqr(constant::mathematical::pi*meanDiam)*meanDiam*rpm,
                     VSMALL
                 )
             );
@@ -139,9 +139,41 @@ void Foam::fanFvPatchField<Foam::scalar>::calcFanJump()
             const scalar pdNonDim = this->jumpTable_->value(sumVolFlowRate);
 
             // Convert uniform non-dimensional pdFan from curve into deltaP
-            pdFan =
-                pdNonDim
-               *pow4(constant::mathematical::pi)*sqr(meanDiam*rpm)/1800.0;
+            if (internalField().dimensions() == dimPressure)
+            {
+                // Compressible/variable-density flow: dynamic pressure [Pa]
+                const auto& rhop =
+                    patch().lookupPatchField<volScalarField>(rhoName_);
+
+                const scalar rhoAve =
+                    gSum(rhop*patch().magSf())/gSum(patch().magSf());
+
+                pdFan =
+                    pdNonDim
+                   *rhoAve*sqr(constant::mathematical::pi*meanDiam*rpm)
+                   /7200.0;
+            }
+            else if (internalField().dimensions() == dimPressure/dimDensity)
+            {
+                // Incompressible flow: kinematic pressure [m^2/s^2]
+                pdFan =
+                    pdNonDim
+                   *sqr(constant::mathematical::pi*meanDiam*rpm)/7200.0;
+            }
+            else
+            {
+                FatalErrorInFunction
+                    << "Incorrect pressure dimensions "
+                    << internalField().dimensions() << nl
+                    << "    Should be " << dimPressure
+                    << " for compressible/variable density flow" << nl
+                    << "    or " << dimPressure/dimDensity
+                    << " for incompressible flow," << nl
+                    << "    on patch " << patch().name()
+                    << " of field " << internalField().name()
+                    << " in file " << internalField().objectPath()
+                    << exit(FatalError);
+            }
 
             break;
         }

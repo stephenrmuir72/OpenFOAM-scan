@@ -37,18 +37,25 @@ Description
     The switch nonDimensional can be used for a non-dimensional fan curve.
     It needs inputs rpm and dm of the fan.
 
-    The nonDimensional flux is calculate as :
+    The non-dimensional flow rate for the table is calculated as follows:
 
-        phi = 4.0*mDot/(rho*sqr(PI)*dm^3*omega)
+        phi = 240*Q/(PI^2*dm^3*rpm)
         where:
+            Q is the volume flow rate (mass flow rate divided by rho
+              for compressible cases).
             dm is the mean diameter.
-            omega is rad/sec.
+            rpm is the RPM of the fan.
 
-    The nonDimensinal pressure :
+    The non-dimensional pressure:
 
-        Psi = 2 deltaP/(rho*(sqr(PI*omega*dm)))
+        Psi = 7200*deltaP/(rho*(sqr(PI*rpm*dm)))
         where:
-            deltaP is the pressure drop
+            deltaP is the pressure drop [Pa].
+            rho is the area-weighted patch-averaged density.
+
+    For incompressible (kinematic pressure) fields, where the pressure has
+    dimensions of m^2/s^2, the density is omitted and the non-dimensional
+    pressure is applied directly to the kinematic pressure jump.
 
     The non-dimensional table should be given as Psi = F(phi).
 

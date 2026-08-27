@@ -177,10 +177,10 @@ void Foam::fanPressureFvPatchScalarField::updateCoeffs()
 
         // Create an non-dimensional flow rate
         volFlowRate =
-            120.0*volFlowRate
+            240.0*volFlowRate
           / stabilise
             (
-                pow3(constant::mathematical::pi * meanDiam) * rpm,
+                sqr(constant::mathematical::pi * meanDiam) * meanDiam * rpm,
                 VSMALL
             );
     }
@@ -191,11 +191,39 @@ void Foam::fanPressureFvPatchScalarField::updateCoeffs()
     if (nonDimensional_)
     {
         // Convert the non-dimensional deltap from curve into deltaP
-        pdFan =
-        (
-            pdFan*pow4(constant::mathematical::pi)
-          * sqr(rpm * meanDiam) / 1800.0
-        );
+        if (internalField().dimensions() == dimPressure)
+        {
+            // Compressible/variable-density flow: dynamic pressure [Pa]
+            const auto& rhop =
+                patch().lookupPatchField<volScalarField>(rhoName());
+
+            const scalar rhoAve =
+                gSum(rhop*patch().magSf())/gSum(patch().magSf());
+
+            pdFan =
+                pdFan*rhoAve*sqr(constant::mathematical::pi*meanDiam*rpm)
+               /7200.0;
+        }
+        else if (internalField().dimensions() == dimPressure/dimDensity)
+        {
+            // Incompressible flow: kinematic pressure [m^2/s^2]
+            pdFan =
+                pdFan*sqr(constant::mathematical::pi*meanDiam*rpm)/7200.0;
+        }
+        else
+        {
+            FatalErrorInFunction
+                << "Incorrect pressure dimensions "
+                << internalField().dimensions() << nl
+                << "    Should be " << dimPressure
+                << " for compressible/variable density flow" << nl
+                << "    or " << dimPressure/dimDensity
+                << " for incompressible flow," << nl
+                << "    on patch " << patch().name()
+                << " of field " << internalField().name()
+                << " in file " << internalField().objectPath()
+                << exit(FatalError);
+        }
     }
 
     this->parent_bctype::updateCoeffs
