@@ -1,0 +1,3 @@
+cutCellPrototype.C
+
+EXE = $(FOAM_APPBIN)/cutCellPrototype
