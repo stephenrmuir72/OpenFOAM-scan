@@ -51,13 +51,31 @@ Description
         Psi = 7200*deltaP/(rho*(sqr(PI*rpm*dm)))
         where:
             deltaP is the pressure drop [Pa].
-            rho is the area-weighted patch-averaged density.
+            rho is the density used to non-dimensionalise the curve.
+
+    For compressible/variable-density fields (pressure in Pa), the density
+    used to convert the non-dimensional pressure back to Pa is controlled by
+    the \c rhoCorrection switch:
+
+    - rhoCorrection off (default): the rated density \c rhoRef is used
+      (default 1.2 kg/m^3).
+    - rhoCorrection on: the area-weighted patch-averaged density is used.
 
     For incompressible (kinematic pressure) fields, where the pressure has
     dimensions of m^2/s^2, the density is omitted and the non-dimensional
     pressure is applied directly to the kinematic pressure jump.
 
     The non-dimensional table should be given as Psi = F(phi).
+
+    The pressure drop \c deltaP can be optionally under-relaxed using the
+    \c relax factor (0 < relax <= 1). The update is:
+
+        deltaP = relax*deltaPNew + (1 - relax)*deltaP0
+
+    where \c deltaP0 is the reference value from the previous update. The
+    reference is refreshed only when the time index changes, so the
+    relaxation acts within the iterations of a time step and is therefore
+    also valid for transient simulations.
 
 Usage
     \table
@@ -68,6 +86,9 @@ Usage
         nonDimensional | uses non-dimensional table      | no  | false
         rpm          | fan rpm for non-dimensional table | no  |
         dm           | mean diameter for non-dimensional table | no |
+        rhoCorrection | use patch-averaged density instead of rhoRef | no | false
+        rhoRef        | rated density (non-dimensional table)        | no | 1.2
+        relax         | under-relaxation factor for pressure drop    | no | -1
         file         | fan curve file name               | legacy |
         outOfBounds  | out of bounds handling            | legacy |
     \endtable
@@ -168,6 +189,24 @@ private:
 
         //- Fan mean diameter (for non-dimensional curve)
         autoPtr<Function1<scalar>> dm_;
+
+        //- Use patch-averaged density instead of rated density
+        bool rhoCorrection_;
+
+        //- Rated/reference density for non-dimensional curve
+        scalar rhoRef_;
+
+        //- Whether rhoRef was explicitly specified
+        bool rhoRefUserProvided_;
+
+        //- Under-relaxation factor for the pressure drop
+        scalar relaxFactor_;
+
+        //- Reference pressure drop for under-relaxation
+        scalar pdFan0_;
+
+        //- Time index of the reference pressure drop
+        label timeIndex_;
 
 
 public:
