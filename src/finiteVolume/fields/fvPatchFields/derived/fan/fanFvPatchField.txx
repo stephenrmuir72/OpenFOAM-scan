@@ -67,7 +67,10 @@ Foam::fanFvPatchField<Type>::fanFvPatchField
     phiName_("phi"),
     rhoName_("rho"),
     rpm_(nullptr),
-    dm_(nullptr)
+    dm_(nullptr),
+    rhoCorrection_(false),
+    rhoRef_(1.2),
+    rhoRefUserProvided_(false)
 {}
 
 
@@ -87,7 +90,10 @@ Foam::fanFvPatchField<Type>::fanFvPatchField
     phiName_(dict.getOrDefault<word>("phi", "phi")),
     rhoName_(dict.getOrDefault<word>("rho", "rho")),
     rpm_(nullptr),
-    dm_(nullptr)
+    dm_(nullptr),
+    rhoCorrection_(dict.getOrDefault("rhoCorrection", false)),
+    rhoRef_(1.2),
+    rhoRefUserProvided_(false)
 {
     // Backwards compatibility
     if (operatingMode_ == operatingMode::VELOCITY)
@@ -113,6 +119,67 @@ Foam::fanFvPatchField<Type>::fanFvPatchField
     {
         rpm_.reset(Function1<scalar>::New("rpm", dict, &this->db()));
         dm_.reset(Function1<scalar>::New("dm", dict, &this->db()));
+    }
+
+    // Density correction entries (only relevant for nonDimensional mode
+    // applied to dynamic pressure fields)
+    if (dict.found("rhoRef"))
+    {
+        rhoRef_ = dict.get<scalar>("rhoRef");
+        rhoRefUserProvided_ = true;
+    }
+
+    if (operatingMode_ == operatingMode::NON_DIMENSIONAL)
+    {
+        if (this->internalField().dimensions() == dimPressure)
+        {
+            if (!rhoCorrection_)
+            {
+                if (rhoRefUserProvided_)
+                {
+                    if (rhoRef_ < SMALL)
+                    {
+                        FatalIOErrorInFunction(dict)
+                            << "rhoRef cannot be zero or negative, but is "
+                            << rhoRef_ << nl
+                            << "    on patch " << this->patch().name()
+                            << " of field " << this->internalField().name()
+                            << " in file " << this->internalField().objectPath()
+                            << exit(FatalIOError);
+                    }
+                }
+                else
+                {
+                    WarningInFunction
+                        << "rhoRef not specified; using default rated density "
+                        << rhoRef_ << " [kg/m^3]" << nl
+                        << "    on patch " << this->patch().name()
+                        << " of field " << this->internalField().name()
+                        << " in file " << this->internalField().objectPath()
+                        << endl;
+                }
+            }
+        }
+        else if (rhoCorrection_ || rhoRefUserProvided_)
+        {
+            WarningInFunction
+                << "Entries 'rhoCorrection' and/or 'rhoRef' are ignored for "
+                << "kinematic pressure fields (dimPressure/dimDensity)" << nl
+                << "    on patch " << this->patch().name()
+                << " of field " << this->internalField().name()
+                << " in file " << this->internalField().objectPath()
+                << endl;
+        }
+    }
+    else if (rhoCorrection_ || rhoRefUserProvided_)
+    {
+        WarningInFunction
+            << "Entries 'rhoCorrection' and/or 'rhoRef' are ignored unless "
+            << "mode is 'nonDimensional'" << nl
+            << "    on patch " << this->patch().name()
+            << " of field " << this->internalField().name()
+            << " in file " << this->internalField().objectPath()
+            << endl;
     }
 
     if (this->cyclicPatch().owner())
@@ -141,7 +208,10 @@ Foam::fanFvPatchField<Type>::fanFvPatchField
     phiName_(rhs.phiName_),
     rhoName_(rhs.rhoName_),
     rpm_(rhs.rpm_.clone()),
-    dm_(rhs.dm_.clone())
+    dm_(rhs.dm_.clone()),
+    rhoCorrection_(rhs.rhoCorrection_),
+    rhoRef_(rhs.rhoRef_),
+    rhoRefUserProvided_(rhs.rhoRefUserProvided_)
 {}
 
 
@@ -157,7 +227,10 @@ Foam::fanFvPatchField<Type>::fanFvPatchField
     phiName_(rhs.phiName_),
     rhoName_(rhs.rhoName_),
     rpm_(rhs.rpm_.clone()),
-    dm_(rhs.dm_.clone())
+    dm_(rhs.dm_.clone()),
+    rhoCorrection_(rhs.rhoCorrection_),
+    rhoRef_(rhs.rhoRef_),
+    rhoRefUserProvided_(rhs.rhoRefUserProvided_)
 {}
 
 
@@ -191,6 +264,16 @@ void Foam::fanFvPatchField<Type>::write(Ostream& os) const
     {
         rpm_->writeData(os);
         dm_->writeData(os);
+        os.writeEntryIfDifferent<bool>("rhoCorrection", false, rhoCorrection_);
+
+        if (rhoRefUserProvided_)
+        {
+            os.writeEntry("rhoRef", rhoRef_);
+        }
+        else
+        {
+            os.writeEntryIfDifferent<scalar>("rhoRef", 1.2, rhoRef_);
+        }
     }
 }
 

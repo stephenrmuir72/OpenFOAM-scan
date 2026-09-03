@@ -142,15 +142,22 @@ void Foam::fanFvPatchField<Foam::scalar>::calcFanJump()
             if (internalField().dimensions() == dimPressure)
             {
                 // Compressible/variable-density flow: dynamic pressure [Pa]
-                const auto& rhop =
-                    patch().lookupPatchField<volScalarField>(rhoName_);
+                scalar rhoEff = rhoRef_;
 
-                const scalar rhoAve =
-                    gSum(rhop*patch().magSf())/gSum(patch().magSf());
+                // Use patch area-averaged density when density correction is
+                // ON, else stick with reference density
+                if (rhoCorrection_)
+                {
+                    const auto& rhop =
+                        patch().lookupPatchField<volScalarField>(rhoName_);
+
+                    rhoEff =
+                        gSum(rhop*patch().magSf())/gSum(patch().magSf());
+                }
 
                 pdFan =
                     pdNonDim
-                   *rhoAve*sqr(constant::mathematical::pi*meanDiam*rpm)
+                   *rhoEff*sqr(constant::mathematical::pi*meanDiam*rpm)
                    /7200.0;
             }
             else if (internalField().dimensions() == dimPressure/dimDensity)

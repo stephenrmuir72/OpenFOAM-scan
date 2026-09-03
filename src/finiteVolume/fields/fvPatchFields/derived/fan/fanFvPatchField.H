@@ -65,8 +65,16 @@ Description
         Psi = 7200*deltaP/(rho*(sqr(PI*rpm*dm)))
         where:
             deltaP is the pressure drop [Pa].
-            rho is the area-weighted patch-averaged density.
+            rho is the density used to non-dimensionalise the curve.
     \endverbatim
+
+    For compressible/variable-density fields (pressure in Pa), the density
+    used to convert the non-dimensional pressure back to Pa is controlled by
+    the \c rhoCorrection switch:
+
+    - rhoCorrection off (default): the rated density \c rhoRef is used
+      (default 1.2 kg/m^3).
+    - rhoCorrection on: the area-weighted patch-averaged density is used.
 
     For incompressible (kinematic pressure) fields, where the pressure has
     dimensions of m^2/s^2, the density is omitted and the non-dimensional
@@ -84,6 +92,8 @@ Usage
         rho         | density field name                    | no  | rho
         rpm         | fan rpm (non-dimensional table)       | no |
         dm          | mean diameter (non-dimensional table) | no |
+        rhoCorrection | use patch-averaged density instead of rhoRef | no | false
+        rhoRef        | rated density (non-dimensional table)        | no | 1.2
     \endtable
 
     Example of the boundary condition specification:
@@ -183,6 +193,15 @@ private:
 
         //- Fan mean diameter (for non-dimensional curve)
         autoPtr<Function1<scalar>> dm_;
+
+        //- Use patch-averaged density instead of rated density
+        bool rhoCorrection_;
+
+        //- Rated/reference density for non-dimensional curve
+        scalar rhoRef_;
+
+        //- Whether rhoRef was explicitly specified
+        bool rhoRefUserProvided_;
 
 
     // Private Member Functions
