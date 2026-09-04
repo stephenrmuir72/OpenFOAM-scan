@@ -94,7 +94,13 @@ Usage
         dm          | mean diameter (non-dimensional table) | no |
         rhoCorrection | use patch-averaged density instead of rhoRef | no | false
         rhoRef        | rated density (non-dimensional table)        | no | 1.2
+        nonDimensional | legacy: select non-dimensional mode         | no | false
+        uniformJump   | legacy: select uniform velocity mode         | no | false
     \endtable
+
+    The inherited entries are elaborated in:
+      - \link uniformJumpFvPatchField.H \endlink
+      - \link fixedJumpFvPatchField.H \endlink
 
     Example of the boundary condition specification:
     \verbatim

@@ -103,7 +103,7 @@ Foam::fanPressureFvPatchScalarField::fanPressureFvPatchScalarField
     rpm_(nullptr),
     dm_(nullptr),
     rhoRef_(defaultRho()),
-    relaxFactor_(dict.getOrDefault<scalar>("relax", -1)),
+    relaxFactor_(-1),
     pdFan0_(0),
     timeIndex_(this->db().time().timeIndex()),
     direction_(fanFlowDirectionNames_.get("direction", dict)),
@@ -111,6 +111,18 @@ Foam::fanPressureFvPatchScalarField::fanPressureFvPatchScalarField
     rhoCorrection_(dict.getOrDefault("rhoCorrection", false)),
     rhoRefUserProvided_(false)
 {
+    // Validate the under-relaxation factor. The value is optional and
+    // defaults to -1 (disabled); when specified it must satisfy 0 < relax <= 1.
+    dict.readCheckIfPresent
+    (
+        "relax",
+        relaxFactor_,
+        [](const scalar v)
+        {
+            return v > 0 && v <= 1;
+        }
+    );
+
     // Backwards compatibility
     if (dict.found("file"))
     {
@@ -325,7 +337,7 @@ void Foam::fanPressureFvPatchScalarField::updateCoeffs()
     // Under-relax the pressure drop, mirroring fixedJumpFvPatchField:
     // the reference is only advanced when the time index changes,
     // so relaxation is confined to iterations within a time step.
-    if (relaxFactor_ >= 0)
+    if (relaxFactor_ > 0)
     {
         pdFan = lerp(pdFan0_, pdFan, relaxFactor_);
 

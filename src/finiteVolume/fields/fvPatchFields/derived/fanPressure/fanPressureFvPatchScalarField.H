@@ -77,6 +77,10 @@ Description
     relaxation acts within the iterations of a time step and is therefore
     also valid for transient simulations.
 
+    When \c relax is active, \c deltaP0 is written and read automatically to
+    preserve the relaxation state across restarts; it is not intended as a
+    normal user configuration entry.
+
 Usage
     \table
         Property     | Description                       | Required | Default
@@ -92,6 +96,9 @@ Usage
         file         | fan curve file name               | legacy |
         outOfBounds  | out of bounds handling            | legacy |
     \endtable
+
+    The inherited entries are elaborated in:
+      - \link totalPressureFvPatchScalarField.H \endlink
 
     Example of the boundary condition specification:
     \verbatim
