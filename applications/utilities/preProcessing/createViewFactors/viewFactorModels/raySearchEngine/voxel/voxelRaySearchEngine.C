@@ -668,7 +668,7 @@ Foam::pointIndexHit Foam::VF::voxel::hit
 ) const
 {
     // Initialise return value
-    pointIndexHit hitInfo;
+    pointIndexHit closestHitInfo;
 
     const point origin(localPosition(origin0));
 
@@ -686,7 +686,7 @@ Foam::pointIndexHit Foam::VF::voxel::hit
             << "Supplied direction has zero size"
             << endl;
 
-        return hitInfo;
+        return closestHitInfo;
     }
 
     const vector dir(normalised(direction0));
@@ -732,6 +732,10 @@ Foam::pointIndexHit Foam::VF::voxel::hit
     };
 
 
+    // A triangle's inflated bounding box can straddle voxel boundaries, so the
+    // first voxel hit need not be the closest one
+    scalar closestDistSqr = VGREAT;
+
     while (true)
     {
         const label voxeli = this->voxeli(ijk);
@@ -745,31 +749,49 @@ Foam::pointIndexHit Foam::VF::voxel::hit
                 << endl;
         }
 
-        hitInfo = hitObject(voxeli, origin, dir, tMax);
+        const boundBox voxelBb
+        (
+            voxelMin(ijk[0], ijk[1], ijk[2]),
+            voxelMax(ijk[0], ijk[1], ijk[2])
+        );
+
+        // Voxels are entered in non-decreasing distance from the origin
+        if (voxelBb.nearest(origin).distSqr(origin) >= closestDistSqr)
+        {
+            break;
+        }
+
+        const pointIndexHit hitInfo
+        (
+            hitObject(voxeli, origin, dir, tMax)
+        );
 
         if (hitInfo.hit())
         {
-            // Valid hit
-            break;
+            const scalar distSqr = hitInfo.hitPoint().distSqr(origin0);
+
+            if (distSqr < closestDistSqr)
+            {
+                closestDistSqr = distSqr;
+                closestHitInfo = hitInfo;
+            }
+        }
+
+        if (tMax[0] < tMax[1] && tMax[0] < tMax[2])
+        {
+            if (!traverse(0)) break;
+        }
+        else if (tMax[1] < tMax[2])
+        {
+            if (!traverse(1)) break;
         }
         else
         {
-            if (tMax[0] < tMax[1] && tMax[0] < tMax[2])
-            {
-                if (!traverse(0)) break;
-            }
-            else if (tMax[1] < tMax[2])
-            {
-                if (!traverse(1)) break;
-            }
-            else
-            {
-                if (!traverse(2)) break;
-            }
+            if (!traverse(2)) break;
         }
     }
 
-    return hitInfo;
+    return closestHitInfo;
 }
 
 
