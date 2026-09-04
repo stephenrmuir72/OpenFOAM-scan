@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2023-2024 OpenCFD Ltd.
+    Copyright (C) 2026 Patrick Wilhelm, Data Lab Hell
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -213,6 +214,11 @@ void Foam::VF::voxel::setCoarseTriangulation(const fvMesh& mesh)
 
         for (const face& f : patch)
         {
+            // Always consume the face index - skipped (invalid) faces
+            // would otherwise misalign the triangle addressing
+            const label globalFacei =
+                globalNumbering_.toGlobal(Pstream::myProcNo(), nFace++);
+
             DynamicList<label> faceVerts;
             for (const label fpi : f)
             {
@@ -232,9 +238,6 @@ void Foam::VF::voxel::setCoarseTriangulation(const fvMesh& mesh)
             const face reducedFace(faceVerts);
             faceList triFaces(reducedFace.nTriangles(points));
             reducedFace.triangles(points, nTri, triFaces);
-
-            const label globalFacei =
-                globalNumbering_.toGlobal(Pstream::myProcNo(), nFace++);
 
             for (const face& f : triFaces)
             {
