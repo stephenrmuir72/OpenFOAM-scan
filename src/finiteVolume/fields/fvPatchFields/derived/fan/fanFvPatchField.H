@@ -163,7 +163,7 @@ public:
     // Public Data Types
 
         //- Enumeration defining the operating modes
-        enum class operatingMode
+        enum class operatingMode : uint8_t
         {
             VELOCITY,           //!< velocity-based lookup
             UNIFORM_VELOCITY,   //!< uniform velocity-based lookup
@@ -177,10 +177,22 @@ public:
 
 private:
 
+    // Private Static Member Functions
+
+        //- The default reference density (1.2)
+        static constexpr scalar defaultRho() noexcept { return 1.2; }
+
+
     // Private Data
 
         //- Operating mode
         operatingMode operatingMode_;
+
+        //- Use patch-averaged density instead of rated density
+        bool rhoCorrection_;
+
+        //- Whether rhoRef was explicitly specified
+        bool rhoRefUserProvided_;
 
         //- Name of the flux transporting the field
         word phiName_;
@@ -194,14 +206,8 @@ private:
         //- Fan mean diameter (for non-dimensional curve)
         autoPtr<Function1<scalar>> dm_;
 
-        //- Use patch-averaged density instead of rated density
-        bool rhoCorrection_;
-
         //- Rated/reference density for non-dimensional curve
         scalar rhoRef_;
-
-        //- Whether rhoRef was explicitly specified
-        bool rhoRefUserProvided_;
 
 
     // Private Member Functions

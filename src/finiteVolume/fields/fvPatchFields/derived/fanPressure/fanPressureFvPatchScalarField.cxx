@@ -55,16 +55,16 @@ Foam::fanPressureFvPatchScalarField::fanPressureFvPatchScalarField
 :
     parent_bctype(p, iF),
     fanCurve_(nullptr),
-    direction_(ffdOut),
-    nonDimensional_(false),
     rpm_(nullptr),
     dm_(nullptr),
-    rhoCorrection_(false),
-    rhoRef_(1.2),
-    rhoRefUserProvided_(false),
+    rhoRef_(defaultRho()),
     relaxFactor_(-1),
     pdFan0_(0),
-    timeIndex_(-1)
+    timeIndex_(-1),
+    direction_(ffdOut),
+    nonDimensional_(false),
+    rhoCorrection_(false),
+    rhoRefUserProvided_(false)
 {}
 
 
@@ -78,16 +78,16 @@ Foam::fanPressureFvPatchScalarField::fanPressureFvPatchScalarField
 :
     parent_bctype(rhs, p, iF, mapper),
     fanCurve_(rhs.fanCurve_.clone()),
-    direction_(rhs.direction_),
-    nonDimensional_(rhs.nonDimensional_),
     rpm_(rhs.rpm_.clone()),
     dm_(rhs.dm_.clone()),
-    rhoCorrection_(rhs.rhoCorrection_),
     rhoRef_(rhs.rhoRef_),
-    rhoRefUserProvided_(rhs.rhoRefUserProvided_),
     relaxFactor_(rhs.relaxFactor_),
     pdFan0_(rhs.pdFan0_),
-    timeIndex_(rhs.timeIndex_)
+    timeIndex_(rhs.timeIndex_),
+    direction_(rhs.direction_),
+    nonDimensional_(rhs.nonDimensional_),
+    rhoCorrection_(rhs.rhoCorrection_),
+    rhoRefUserProvided_(rhs.rhoRefUserProvided_)
 {}
 
 
@@ -100,16 +100,16 @@ Foam::fanPressureFvPatchScalarField::fanPressureFvPatchScalarField
 :
     parent_bctype(p, iF, dict),
     fanCurve_(nullptr),
-    direction_(fanFlowDirectionNames_.get("direction", dict)),
-    nonDimensional_(dict.getOrDefault("nonDimensional", false)),
     rpm_(nullptr),
     dm_(nullptr),
-    rhoCorrection_(dict.getOrDefault("rhoCorrection", false)),
-    rhoRef_(1.2),
-    rhoRefUserProvided_(false),
+    rhoRef_(defaultRho()),
     relaxFactor_(dict.getOrDefault<scalar>("relax", -1)),
     pdFan0_(0),
-    timeIndex_(this->db().time().timeIndex())
+    timeIndex_(this->db().time().timeIndex()),
+    direction_(fanFlowDirectionNames_.get("direction", dict)),
+    nonDimensional_(dict.getOrDefault("nonDimensional", false)),
+    rhoCorrection_(dict.getOrDefault("rhoCorrection", false)),
+    rhoRefUserProvided_(false)
 {
     // Backwards compatibility
     if (dict.found("file"))
@@ -132,11 +132,7 @@ Foam::fanPressureFvPatchScalarField::fanPressureFvPatchScalarField
 
     // Density correction entries (only relevant for nonDimensional mode
     // applied to dynamic pressure fields)
-    if (dict.found("rhoRef"))
-    {
-        rhoRef_ = dict.get<scalar>("rhoRef");
-        rhoRefUserProvided_ = true;
-    }
+    rhoRefUserProvided_ = dict.readIfPresent("rhoRef", rhoRef_);
 
     if (nonDimensional_)
     {
@@ -207,16 +203,16 @@ Foam::fanPressureFvPatchScalarField::fanPressureFvPatchScalarField
 :
     parent_bctype(rhs, iF),
     fanCurve_(rhs.fanCurve_.clone()),
-    direction_(rhs.direction_),
-    nonDimensional_(rhs.nonDimensional_),
     rpm_(rhs.rpm_.clone()),
     dm_(rhs.dm_.clone()),
-    rhoCorrection_(rhs.rhoCorrection_),
     rhoRef_(rhs.rhoRef_),
-    rhoRefUserProvided_(rhs.rhoRefUserProvided_),
     relaxFactor_(rhs.relaxFactor_),
     pdFan0_(rhs.pdFan0_),
-    timeIndex_(rhs.timeIndex_)
+    timeIndex_(rhs.timeIndex_),
+    direction_(rhs.direction_),
+    nonDimensional_(rhs.nonDimensional_),
+    rhoCorrection_(rhs.rhoCorrection_),
+    rhoRefUserProvided_(rhs.rhoRefUserProvided_)
 {}
 
 
@@ -297,8 +293,7 @@ void Foam::fanPressureFvPatchScalarField::updateCoeffs()
                 const auto& rhop =
                     patch().lookupPatchField<volScalarField>(rhoName());
 
-                rhoEff =
-                    gSum(rhop*patch().magSf())/gSum(patch().magSf());
+                rhoEff = gWeightedAverage(patch().magSf(), rhop);
             }
 
             pdFan =
@@ -385,10 +380,6 @@ void Foam::fanPressureFvPatchScalarField::write(Ostream& os) const
         if (rhoRefUserProvided_)
         {
             os.writeEntry("rhoRef", rhoRef_);
-        }
-        else
-        {
-            os.writeEntryIfDifferent<scalar>("rhoRef", 1.2, rhoRef_);
         }
     }
 }

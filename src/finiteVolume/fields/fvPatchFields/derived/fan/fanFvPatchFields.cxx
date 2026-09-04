@@ -151,8 +151,7 @@ void Foam::fanFvPatchField<Foam::scalar>::calcFanJump()
                     const auto& rhop =
                         patch().lookupPatchField<volScalarField>(rhoName_);
 
-                    rhoEff =
-                        gSum(rhop*patch().magSf())/gSum(patch().magSf());
+                    rhoEff = gWeightedAverage(patch().magSf(), rhop);
                 }
 
                 pdFan =

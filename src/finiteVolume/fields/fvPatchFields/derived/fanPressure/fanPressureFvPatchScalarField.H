@@ -173,16 +173,16 @@ public:
 
 private:
 
+    // Private Static Member Functions
+
+        //- The default reference density (1.2)
+        static constexpr scalar defaultRho() noexcept { return 1.2; }
+
+
     // Private Data
 
         //- Run-time selectable fan curve
         autoPtr<Function1<scalar>> fanCurve_;
-
-        //- Direction of flow through the fan relative to patch
-        fanFlowDirection direction_;
-
-        //- Use non-dimensional curve
-        bool nonDimensional_;
 
         //- Fan rpm (for non-dimensional curve)
         autoPtr<Function1<scalar>> rpm_;
@@ -190,14 +190,8 @@ private:
         //- Fan mean diameter (for non-dimensional curve)
         autoPtr<Function1<scalar>> dm_;
 
-        //- Use patch-averaged density instead of rated density
-        bool rhoCorrection_;
-
         //- Rated/reference density for non-dimensional curve
         scalar rhoRef_;
-
-        //- Whether rhoRef was explicitly specified
-        bool rhoRefUserProvided_;
 
         //- Under-relaxation factor for the pressure drop
         scalar relaxFactor_;
@@ -207,6 +201,18 @@ private:
 
         //- Time index of the reference pressure drop
         label timeIndex_;
+
+        //- Direction of flow through the fan relative to patch
+        fanFlowDirection direction_;
+
+        //- Use non-dimensional curve
+        bool nonDimensional_;
+
+        //- Use patch-averaged density instead of rated density
+        bool rhoCorrection_;
+
+        //- Whether rhoRef was explicitly specified
+        bool rhoRefUserProvided_;
 
 
 public:

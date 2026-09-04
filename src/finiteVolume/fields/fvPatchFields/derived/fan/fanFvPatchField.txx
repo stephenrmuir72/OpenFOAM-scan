@@ -64,13 +64,13 @@ Foam::fanFvPatchField<Type>::fanFvPatchField
 :
     parent_bctype(p, iF),
     operatingMode_(operatingMode::VELOCITY),
+    rhoCorrection_(false),
+    rhoRefUserProvided_(false),
     phiName_("phi"),
     rhoName_("rho"),
     rpm_(nullptr),
     dm_(nullptr),
-    rhoCorrection_(false),
-    rhoRef_(1.2),
-    rhoRefUserProvided_(false)
+    rhoRef_(defaultRho())
 {}
 
 
@@ -87,13 +87,13 @@ Foam::fanFvPatchField<Type>::fanFvPatchField
     (
         operatingModeNames_.getOrDefault("mode", dict, operatingMode::VELOCITY)
     ),
+    rhoCorrection_(dict.getOrDefault("rhoCorrection", false)),
+    rhoRefUserProvided_(false),
     phiName_(dict.getOrDefault<word>("phi", "phi")),
     rhoName_(dict.getOrDefault<word>("rho", "rho")),
     rpm_(nullptr),
     dm_(nullptr),
-    rhoCorrection_(dict.getOrDefault("rhoCorrection", false)),
-    rhoRef_(1.2),
-    rhoRefUserProvided_(false)
+    rhoRef_(defaultRho())
 {
     // Backwards compatibility
     if (operatingMode_ == operatingMode::VELOCITY)
@@ -123,11 +123,7 @@ Foam::fanFvPatchField<Type>::fanFvPatchField
 
     // Density correction entries (only relevant for nonDimensional mode
     // applied to dynamic pressure fields)
-    if (dict.found("rhoRef"))
-    {
-        rhoRef_ = dict.get<scalar>("rhoRef");
-        rhoRefUserProvided_ = true;
-    }
+    rhoRefUserProvided_ = dict.readIfPresent("rhoRef", rhoRef_);
 
     if (operatingMode_ == operatingMode::NON_DIMENSIONAL)
     {
@@ -205,13 +201,13 @@ Foam::fanFvPatchField<Type>::fanFvPatchField
 :
     parent_bctype(rhs, p, iF, mapper),
     operatingMode_(rhs.operatingMode_),
+    rhoCorrection_(rhs.rhoCorrection_),
+    rhoRefUserProvided_(rhs.rhoRefUserProvided_),
     phiName_(rhs.phiName_),
     rhoName_(rhs.rhoName_),
     rpm_(rhs.rpm_.clone()),
     dm_(rhs.dm_.clone()),
-    rhoCorrection_(rhs.rhoCorrection_),
-    rhoRef_(rhs.rhoRef_),
-    rhoRefUserProvided_(rhs.rhoRefUserProvided_)
+    rhoRef_(rhs.rhoRef_)
 {}
 
 
@@ -224,13 +220,13 @@ Foam::fanFvPatchField<Type>::fanFvPatchField
 :
     parent_bctype(rhs, iF),
     operatingMode_(rhs.operatingMode_),
+    rhoCorrection_(rhs.rhoCorrection_),
+    rhoRefUserProvided_(rhs.rhoRefUserProvided_),
     phiName_(rhs.phiName_),
     rhoName_(rhs.rhoName_),
     rpm_(rhs.rpm_.clone()),
     dm_(rhs.dm_.clone()),
-    rhoCorrection_(rhs.rhoCorrection_),
-    rhoRef_(rhs.rhoRef_),
-    rhoRefUserProvided_(rhs.rhoRefUserProvided_)
+    rhoRef_(rhs.rhoRef_)
 {}
 
 
@@ -269,10 +265,6 @@ void Foam::fanFvPatchField<Type>::write(Ostream& os) const
         if (rhoRefUserProvided_)
         {
             os.writeEntry("rhoRef", rhoRef_);
-        }
-        else
-        {
-            os.writeEntryIfDifferent<scalar>("rhoRef", 1.2, rhoRef_);
         }
     }
 }
