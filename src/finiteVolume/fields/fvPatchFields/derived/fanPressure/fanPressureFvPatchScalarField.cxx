@@ -350,7 +350,10 @@ void Foam::fanPressureFvPatchScalarField::updateCoeffs()
 
     if (debug)
     {
-        Info<< "volume flow rate = " << Q << " m3/s, deltaP = " << pdFan;
+        Info<< type() << " on patch " << patch().name()
+            << " of field " << internalField().name() << ':' << nl
+            << "    volume flow rate = " << Q << " m3/s"
+            << ", deltaP = " << pdFan;
 
         if (internalField().dimensions() == dimPressure)
         {
