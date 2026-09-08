@@ -2783,6 +2783,7 @@ void Foam::snappyRefineDriver::baffleAndSplitMesh
     meshRefiner_.baffleAndSplitMesh
     (
         handleSnapProblems,             // detect&remove potential snap problem
+        refineParams.retainAllCells(),
 
         // Snap problem cell detection
         snapParams,
@@ -2804,7 +2805,7 @@ void Foam::snappyRefineDriver::baffleAndSplitMesh
     );
 
 
-    if (!handleSnapProblems) // merge free standing baffles?
+    if (!handleSnapProblems && !refineParams.retainAllCells())
     {
         // By default only merge baffles if on same patch. However the patching
         // of the castellated mesh is not very accurate. For backwards
@@ -2876,6 +2877,7 @@ void Foam::snappyRefineDriver::zonify
         (
             refineParams.allowFreeStandingZoneFaces(),
             refineParams.nErodeCellZone(),
+            refineParams.retainAllCells(),
             refineParams.locationsInMesh(),
             refineParams.zonesInMesh(),
             refineParams.locationsOutsideMesh(),
@@ -2938,6 +2940,7 @@ void Foam::snappyRefineDriver::splitAndMergeBaffles
     meshRefiner_.baffleAndSplitMesh
     (
         handleSnapProblems,
+        false,
 
         // Snap problem cell detection
         snapParams,
@@ -3717,13 +3720,21 @@ void Foam::snappyRefineDriver::doRefine
     }
 
     // Pull baffles apart
-    splitAndMergeBaffles
-    (
-        refineParams,
-        snapParams,
-        prepareForSnapping,
-        motionDict
-    );
+    if (refineParams.retainAllCells())
+    {
+        Info<< "Retaining all cells; skipping baffle pull-apart cleanup"
+            << nl << endl;
+    }
+    else
+    {
+        splitAndMergeBaffles
+        (
+            refineParams,
+            snapParams,
+            prepareForSnapping,
+            motionDict
+        );
+    }
 
 
     // Do something about cells with refined faces on the boundary

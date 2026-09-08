@@ -90,6 +90,10 @@ Foam::refinementParameters::refinementParameters
     (
         dict.getOrDefault<Switch>("handleSnapProblems", true)
     ),
+    retainAllCells_
+    (
+        dict.getOrDefault<Switch>("retainAllCells", false)
+    ),
     interfaceRefine_
     (
         dict.getOrDefault<Switch>("interfaceRefine", true)

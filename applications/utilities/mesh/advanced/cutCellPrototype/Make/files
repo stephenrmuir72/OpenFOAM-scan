@@ -1,3 +1,4 @@
 cutCellPrototype.C
+cuboidClipper.C
 
 EXE = $(FOAM_APPBIN)/cutCellPrototype

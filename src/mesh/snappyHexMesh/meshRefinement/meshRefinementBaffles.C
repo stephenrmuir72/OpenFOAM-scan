@@ -4635,6 +4635,7 @@ void Foam::meshRefinement::allocateInterRegionFaceZone
 void Foam::meshRefinement::baffleAndSplitMesh
 (
     const bool doHandleSnapProblems,
+    const bool retainAllCells,
     const snapParameters& snapParams,
     const bool useTopologicalSnapDetection,
     const bool removeEdgeConnectedCells,
@@ -4778,6 +4779,8 @@ void Foam::meshRefinement::baffleAndSplitMesh
     }
 
 
+    if (!retainAllCells)
+    {
     // Select part of mesh
     // ~~~~~~~~~~~~~~~~~~~
 
@@ -4824,6 +4827,13 @@ void Foam::meshRefinement::baffleAndSplitMesh
         );
         Pout<< "Dumped debug data in = "
             << runTime.cpuTimeIncrement() << " s\n" << nl << endl;
+    }
+    }
+    else
+    {
+        Info<< nl
+            << "Retaining all cells; skipping unreachable-region removal"
+            << nl << endl;
     }
 }
 
@@ -5820,6 +5830,7 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::meshRefinement::zonify
 (
     const bool allowFreeStandingZoneFaces,
     const label nErodeCellZones,
+    const bool retainAllCells,
     const pointField& locationsInMesh,
     const wordList& zonesInMesh,
     const pointField& locationsOutsideMesh,
@@ -5916,6 +5927,34 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::meshRefinement::zonify
             namedSurfaceRegion,
             posOrientation
         );
+    }
+
+    if (retainAllCells)
+    {
+        label nUnassigned = 0;
+
+        forAll(cellToZone, celli)
+        {
+            if (cellToZone[celli] == -2)
+            {
+                cellToZone[celli] = -1;
+                ++nUnassigned;
+            }
+            else if (cellToZone[celli] < -1)
+            {
+                FatalErrorInFunction
+                    << "Invalid cell-zone state " << cellToZone[celli]
+                    << " for cell " << celli
+                    << exit(FatalError);
+            }
+        }
+
+        if (nUnassigned)
+        {
+            Info<< "Assigned " << nUnassigned
+                << " unresolved cells to the background (none) zone"
+                << endl;
+        }
     }
 
 

@@ -21,10 +21,14 @@
 #include "cellCuts.H"
 #include "meshCutter.H"
 #include "removeFaces.H"
+#include "removeCells.H"
+#include "polyPatch.H"
+#include "wallPolyPatch.H"
 #include "edgeVertex.H"
 #include "DynamicList.H"
 #include "IOobject.H"
 #include "OFstream.H"
+#include "cuboidClipper.H"
 
 using namespace Foam;
 
@@ -181,21 +185,458 @@ label commonFace
 }
 
 
-bool isCutFace
+bool isCutInterfaceFace
 (
-    const Map<label>& addedFaces,
+    const Map<label>& interfaceFaces,
     const label facei
 )
 {
-    forAllConstIters(addedFaces, iter)
+    return interfaceFaces.found(facei);
+}
+
+
+labelList uniqueRegions
+(
+    const labelList& loopEdges,
+    const labelList& edgeRegions
+)
+{
+    DynamicList<label> regions(loopEdges.size());
+
+    forAll(loopEdges, i)
     {
-        if (iter.val() == facei)
+        const label regioni = edgeRegions[loopEdges[i]];
+
+        if (regioni >= 0 && !regions.found(regioni))
         {
-            return true;
+            regions.append(regioni);
         }
     }
 
-    return false;
+    regions.shrink();
+    return labelList(regions);
+}
+
+
+wordList regionNamesFor
+(
+    const labelList& regions,
+    const wordList& regionNames
+)
+{
+    wordList names(regions.size());
+
+    forAll(regions, i)
+    {
+        if (regions[i] >= 0 && regions[i] < regionNames.size())
+        {
+            names[i] = regionNames[regions[i]];
+        }
+        else
+        {
+            names[i] = word("region" + Foam::name(regions[i]));
+        }
+    }
+
+    return names;
+}
+
+
+void validateRegionNames(const wordList& regionNames)
+{
+    forAll(regionNames, regioni)
+    {
+        if (regionNames[regioni].empty())
+        {
+            FatalErrorInFunction
+                << "STL region " << regioni << " has an empty name."
+                << exit(FatalError);
+        }
+
+        for (label other = 0; other < regioni; ++other)
+        {
+            if (regionNames[other] == regionNames[regioni])
+            {
+                FatalErrorInFunction
+                    << "STL regions " << other << " and " << regioni
+                    << " have the duplicate patch name "
+                    << regionNames[regioni] << "."
+                    << exit(FatalError);
+            }
+        }
+    }
+}
+
+
+label requireSingleRegion
+(
+    const label celli,
+    const labelList& regions,
+    const wordList& regionNames
+)
+{
+    if (regions.empty())
+    {
+        FatalErrorInFunction
+            << "Cut cell " << celli
+            << " has no STL-region provenance for its generated cut face."
+            << exit(FatalError);
+    }
+
+    if (regions.size() != 1)
+    {
+        FatalErrorInFunction
+            << "Cut cell " << celli
+            << " intersects multiple STL regions "
+            << regionNamesFor(regions, regionNames) << nl
+            << "Retained-inside extraction requires exact subdivision of "
+            << "edge/corner cut surfaces into region-specific boundary faces. "
+            << "That subdivision is not implemented safely yet, so this "
+            << "utility refuses to assign the whole exposed face to one "
+            << "arbitrary region."
+            << exit(FatalError);
+    }
+
+    return regions[0];
+}
+
+
+label ensureRegionPatch
+(
+    polyMesh& mesh,
+    const word& patchName
+)
+{
+    const polyBoundaryMesh& boundary = mesh.boundaryMesh();
+    const label existingPatchi = boundary.findPatchID(patchName);
+
+    if (existingPatchi >= 0)
+    {
+        if (boundary[existingPatchi].coupled())
+        {
+            FatalErrorInFunction
+                << "Cannot use coupled patch " << patchName
+                << " for retained cut-surface extraction."
+                << exit(FatalError);
+        }
+
+        return existingPatchi;
+    }
+
+    mesh.clearOut();
+
+    polyBoundaryMesh& patches =
+        const_cast<polyBoundaryMesh&>(mesh.boundaryMesh());
+    const label patchi = patches.size();
+
+    dictionary patchDict;
+    patchDict.set("type", wallPolyPatch::typeName);
+    patchDict.set("nFaces", 0);
+    patchDict.set("startFace", mesh.nFaces());
+
+    patches.push_back
+    (
+        polyPatch::New
+        (
+            patchName,
+            patchDict,
+            patchi,
+            patches
+        )
+    );
+
+    Info<< "Added retained extraction patch " << patchName
+        << " at index " << patchi << endl;
+
+    return patchi;
+}
+
+
+void assignCellsToZone
+(
+    polyMesh& mesh,
+    const labelList& cells,
+    const label targetZone
+)
+{
+    if (cells.empty())
+    {
+        return;
+    }
+
+    cellZoneMesh& zones = mesh.cellZones();
+
+    if (targetZone < 0 || targetZone >= zones.size())
+    {
+        FatalErrorInFunction
+            << "Invalid target cellZone " << targetZone
+            << exit(FatalError);
+    }
+
+    boolList selected(mesh.nCells(), false);
+
+    forAll(cells, i)
+    {
+        const label celli = cells[i];
+
+        if (celli < 0 || celli >= mesh.nCells())
+        {
+            FatalErrorInFunction
+                << "Cannot assign invalid cell " << celli
+                << " to cellZone " << targetZone
+                << exit(FatalError);
+        }
+
+        selected[celli] = true;
+    }
+
+    List<DynamicList<label>> members(zones.size());
+
+    forAll(zones, zonei)
+    {
+        for (const label celli : zones[zonei])
+        {
+            if (!selected[celli])
+            {
+                members[zonei].append(celli);
+            }
+        }
+    }
+
+    forAll(cells, i)
+    {
+        members[targetZone].append(cells[i]);
+    }
+
+    forAll(zones, zonei)
+    {
+        members[zonei].shrink();
+        zones[zonei].resetAddressing(labelList(members[zonei]));
+    }
+}
+
+
+void retainedInsideExtraction
+(
+    polyMesh& mesh,
+    const triSurface& surface,
+    const Time& runTime,
+    const meshCutter& cutter,
+    const labelList& originalCutCells,
+    const List<labelList>& cutCellRegions,
+    const Map<label>& interfaceFaces,
+    const Map<label>& clippedRetainedCells,
+    const List<volumeType>& preClipCellTypes,
+    const wordList& regionNames,
+    const label keepZone
+)
+{
+    List<volumeType> cellTypes(preClipCellTypes);
+
+    const Map<label>& addedCells = cutter.addedCells();
+
+    forAll(originalCutCells, i)
+    {
+        if (cutCellRegions[i].size() <= 1)
+        {
+            continue;
+        }
+
+        const label celli = originalCutCells[i];
+        const label addedCelli = addedCells[celli];
+
+        const bool originalRetained =
+            clippedRetainedCells.found(celli);
+        const bool addedRetained =
+            clippedRetainedCells.found(addedCelli);
+
+        if (originalRetained == addedRetained)
+        {
+            FatalErrorInFunction
+                << "Missing retained-polyhedron classification for "
+                << "multi-region cut cell " << celli
+                << exit(FatalError);
+        }
+
+        cellTypes[celli] =
+            originalRetained ? volumeType::INSIDE : volumeType::OUTSIDE;
+        cellTypes[addedCelli] =
+            addedRetained ? volumeType::INSIDE : volumeType::OUTSIDE;
+    }
+
+    DynamicList<label> cellsToRemove(mesh.nCells()/2);
+    DynamicList<label> cellsToKeep(mesh.nCells()/2);
+    label nInside = 0;
+    label nOutside = 0;
+
+    forAll(cellTypes, celli)
+    {
+        if (cellTypes[celli] == volumeType::INSIDE)
+        {
+            ++nInside;
+            cellsToKeep.append(celli);
+        }
+        else if (cellTypes[celli] == volumeType::OUTSIDE)
+        {
+            ++nOutside;
+            cellsToRemove.append(celli);
+        }
+        else
+        {
+            FatalErrorInFunction
+                << "Could not classify cell " << celli
+                << " for retained-inside extraction; volume type is "
+                << cellTypes[celli]
+                << exit(FatalError);
+        }
+    }
+
+    cellsToKeep.shrink();
+    cellsToRemove.shrink();
+
+    Info<< "Retained-inside classification: " << nInside
+        << " cells inside, " << nOutside << " cells outside" << endl;
+
+    label nInsideOriginalDescendants = 0;
+    label nInsideAddedDescendants = 0;
+
+    forAll(originalCutCells, i)
+    {
+        const label celli = originalCutCells[i];
+
+        if (!addedCells.found(celli))
+        {
+            FatalErrorInFunction
+                << "Missing cutter descendant/provenance for cut cell "
+                << celli << exit(FatalError);
+        }
+
+        const label addedCelli = addedCells[celli];
+        if (cellTypes[celli] == volumeType::INSIDE)
+        {
+            ++nInsideOriginalDescendants;
+        }
+        if (cellTypes[addedCelli] == volumeType::INSIDE)
+        {
+            ++nInsideAddedDescendants;
+        }
+
+        if (cellTypes[celli] == cellTypes[addedCelli])
+        {
+            FatalErrorInFunction
+                << "Cut descendants " << celli << " and " << addedCelli
+                << " are both classified " << cellTypes[celli]
+                << ". Expected one inside and one outside descendant."
+                << exit(FatalError);
+        }
+    }
+
+    Info<< "Cut-descendant classification: "
+        << nInsideOriginalDescendants << " original descendants inside, "
+        << nInsideAddedDescendants << " added descendants inside" << endl;
+
+    assignCellsToZone(mesh, cellsToKeep, keepZone);
+
+    labelList regionPatchIDs(regionNames.size(), -1);
+    boolList expectedRegions(regionNames.size(), false);
+    bool allowEmptyRegions = false;
+
+    forAll(regionNames, regioni)
+    {
+        regionPatchIDs[regioni] = ensureRegionPatch(mesh, regionNames[regioni]);
+    }
+
+    forAll(cutCellRegions, i)
+    {
+        allowEmptyRegions =
+            allowEmptyRegions || cutCellRegions[i].size() > 1;
+
+        forAll(cutCellRegions[i], j)
+        {
+            expectedRegions[cutCellRegions[i][j]] = true;
+        }
+    }
+
+    removeCells cellRemover(mesh);
+    const labelList exposedFaces(cellRemover.getExposedFaces(cellsToRemove));
+    labelList exposedPatchIDs(exposedFaces.size(), -1);
+    labelList exposedRegionCounts(regionNames.size(), 0);
+
+    forAll(exposedFaces, i)
+    {
+        const label facei = exposedFaces[i];
+
+        if (!interfaceFaces.found(facei))
+        {
+            FatalErrorInFunction
+                << "Retained-inside extraction would expose face " << facei
+                << " without exact STL-region provenance. Only generated "
+                << "single-region cut faces can become final STL patches in "
+                << "this phase."
+                << exit(FatalError);
+        }
+
+        const label regioni = interfaceFaces[facei];
+
+        if (regioni < 0 || regioni >= regionPatchIDs.size())
+        {
+            FatalErrorInFunction
+                << "Invalid STL region " << regioni
+                << " for exposed face " << facei
+                << exit(FatalError);
+        }
+
+        exposedPatchIDs[i] = regionPatchIDs[regioni];
+        ++exposedRegionCounts[regioni];
+    }
+
+    Info<< "Retained cut-surface patch assignment:" << endl;
+    forAll(exposedRegionCounts, regioni)
+    {
+        Info<< "  " << regionNames[regioni] << ": "
+            << exposedRegionCounts[regioni] << " exposed faces" << endl;
+    }
+
+    polyTopoChange removeMod(mesh);
+    cellRemover.setRefinement
+    (
+        cellsToRemove,
+        exposedFaces,
+        exposedPatchIDs,
+        removeMod
+    );
+
+    autoPtr<mapPolyMesh> removeMap = removeMod.changeMesh(mesh, false);
+
+    if (removeMap().hasMotionPoints())
+    {
+        mesh.movePoints(removeMap().preMotionPoints());
+    }
+
+    forAll(regionPatchIDs, regioni)
+    {
+        const label patchi = regionPatchIDs[regioni];
+
+        if
+        (
+            mesh.boundaryMesh()[patchi].empty()
+         && (!allowEmptyRegions || expectedRegions[regioni])
+        )
+        {
+            FatalErrorInFunction
+                << "Retained-inside extraction produced no faces for STL "
+                << "region " << regionNames[regioni]
+                << ". Exact final region-patch reconstruction failed."
+                << exit(FatalError);
+        }
+
+        if (expectedRegions[regioni])
+        {
+            Info<< "Final STL-region patch " << regionNames[regioni]
+                << " (patch " << patchi << ") contains "
+                << mesh.boundaryMesh()[patchi].size() << " faces" << endl;
+        }
+    }
 }
 
 
@@ -323,7 +764,7 @@ mergeQuality evaluateMergedCell
 bool findMergeCandidate
 (
     const polyMesh& mesh,
-    const Map<label>& addedFaces,
+    const Map<label>& interfaceFaces,
     const label sliverCell,
     label& mergeCell,
     label& mergeFace
@@ -345,7 +786,7 @@ bool findMergeCandidate
         const bool eligible =
             mesh.isInternalFace(facei)
          && sliverZone == mesh.cellZones().whichZone(neighbour)
-         && !isCutFace(addedFaces, facei)
+         && !isCutInterfaceFace(interfaceFaces, facei)
          && mesh.faceZones().whichZone(facei) < 0;
 
         if (!eligible)
@@ -419,7 +860,7 @@ bool findMergeCandidate
 void reportMergeCandidates
 (
     const polyMesh& mesh,
-    const Map<label>& addedFaces,
+    const Map<label>& interfaceFaces,
     const label sliverCell
 )
 {
@@ -443,7 +884,7 @@ void reportMergeCandidates
         const label neighbourZone = mesh.cellZones().whichZone(neighbour);
         const label patchi = mesh.boundaryMesh().whichPatch(facei);
         const label faceZonei = mesh.faceZones().whichZone(facei);
-        const bool cutFace = isCutFace(addedFaces, facei);
+        const bool cutFace = isCutInterfaceFace(interfaceFaces, facei);
         const bool sameZone = sliverZone == neighbourZone;
         const bool internalFace = mesh.isInternalFace(facei);
         const bool eligible =
@@ -654,6 +1095,24 @@ int main(int argc, char *argv[])
         "zone",
         "Existing cellZone to assign to cut descendants classified outside"
     );
+    argList::addBoolOption
+    (
+        "audit",
+        "Report cut-cell and STL-region provenance without changing the mesh"
+    );
+    argList::addBoolOption
+    (
+        "extractInside",
+        "Cut the surface, retain cells classified inside in -keepZone, "
+        "remove outside cells, and patch exposed cut faces by STL region"
+    );
+    argList::addOption
+    (
+        "keepZone",
+        "zone",
+        "CellZone expected to contain the retained side during an audit or "
+        "retained-inside extraction"
+    );
     argList::noParallel();
     argList::noFunctionObjects();
 
@@ -663,11 +1122,13 @@ int main(int argc, char *argv[])
 
     const fileName surfaceName = args.get<fileName>("surface");
     const scalar endpointTol = args.getOrDefault<scalar>("tol", 1e-8);
+    const bool extractInside = args.found("extractInside");
     const scalar minVolumeRatio =
-        args.getOrDefault<scalar>("minVolumeRatio", 0.3);
+        args.getOrDefault<scalar>("minVolumeRatio", extractInside ? 0.0 : 0.3);
     const bool mergeSlivers = args.found("mergeSlivers");
-    const bool hasInsideZone = args.optionFound("insideZone");
-    const bool hasOutsideZone = args.optionFound("outsideZone");
+    const bool hasInsideZone = args.found("insideZone");
+    const bool hasOutsideZone = args.found("outsideZone");
+    const bool audit = args.found("audit");
 
     if (hasInsideZone != hasOutsideZone)
     {
@@ -676,8 +1137,32 @@ int main(int argc, char *argv[])
             << exit(FatalError);
     }
 
+    if (extractInside && audit)
+    {
+        FatalErrorInFunction
+            << "-extractInside changes the mesh and cannot be combined with "
+            << "-audit." << exit(FatalError);
+    }
+
+    if (extractInside && hasInsideZone)
+    {
+        FatalErrorInFunction
+            << "-extractInside assigns retained cells to -keepZone; do not "
+            << "combine it with -insideZone/-outsideZone."
+            << exit(FatalError);
+    }
+
+    if (extractInside && mergeSlivers)
+    {
+        FatalErrorInFunction
+            << "-extractInside cannot currently be combined with "
+            << "-mergeSlivers because sliver repair changes the cut-cell "
+            << "topology before retained-side extraction."
+            << exit(FatalError);
+    }
+
     label selectedCell = -1;
-    if (args.optionFound("cell"))
+    if (args.found("cell"))
     {
         selectedCell = args.get<label>("cell");
 
@@ -703,15 +1188,43 @@ int main(int argc, char *argv[])
             << minVolumeRatio << exit(FatalError);
     }
 
+    label keepZone = -1;
+    if (args.found("keepZone"))
+    {
+        const word keepZoneName = args.get<word>("keepZone");
+        keepZone = mesh.cellZones().findZoneID(keepZoneName);
+
+        if (keepZone < 0)
+        {
+            FatalErrorInFunction
+                << "Audit keepZone " << keepZoneName
+                << " does not exist in the mesh" << exit(FatalError);
+        }
+    }
+    else if (extractInside)
+    {
+        FatalErrorInFunction
+            << "-extractInside requires -keepZone <existingCellZone>."
+            << exit(FatalError);
+    }
+
     Info<< "Reading surface " << surfaceName << endl;
     triSurface surface(surfaceName);
     triSurfaceSearch surfaceSearch(surface);
+    wordList regionNames(surface.patches().size());
+    forAll(regionNames, regioni)
+    {
+        regionNames[regioni] = surface.patches()[regioni].name();
+    }
+    validateRegionNames(regionNames);
+
     const scalarField oldCellVolumes(mesh.cellVolumes());
     const edgeList& edges = mesh.edges();
     const pointField& points = mesh.points();
 
     boolList edgeIsCut(mesh.nEdges(), false);
     scalarField edgeWeights(mesh.nEdges(), -GREAT);
+    labelList edgeRegions(mesh.nEdges(), -1);
     boolList edgeToCheck(mesh.nEdges(), selectedCell < 0);
 
     if (selectedCell >= 0)
@@ -734,6 +1247,7 @@ int main(int argc, char *argv[])
         const edge& e = edges[edgei];
         const pointField starts(1, points[e.start()]);
         const pointField ends(1, points[e.end()]);
+        const vector edgeVec = points[e.end()] - points[e.start()];
         List<List<pointIndexHit>> hits;
 
         surfaceSearch.findLineAll(starts, ends, hits);
@@ -743,16 +1257,54 @@ int main(int argc, char *argv[])
             continue;
         }
 
-        if (hits[0].size() != 1)
+        DynamicList<pointIndexHit> uniqueHits(hits[0].size());
+        const scalar hitTolerance =
+            max(endpointTol*mag(edgeVec), SMALL);
+
+        forAll(hits[0], hitI)
+        {
+            const pointIndexHit& hit = hits[0][hitI];
+            bool duplicate = false;
+
+            forAll(uniqueHits, uniqueI)
+            {
+                if
+                (
+                    mag(hit.hitPoint() - uniqueHits[uniqueI].hitPoint())
+                  <= hitTolerance
+                )
+                {
+                    duplicate = true;
+                    break;
+                }
+            }
+
+            if (!duplicate)
+            {
+                uniqueHits.append(hit);
+            }
+        }
+
+        if (uniqueHits.size() != 1)
         {
             FatalErrorInFunction
                 << "Edge " << edgei << " has " << hits[0].size()
-                << " surface intersections; multiple hits "
+                << " reported surface intersections and "
+                << uniqueHits.size() << " distinct intersections; "
+                << "multiple distinct hits "
                 << "on one edge are unsupported." << exit(FatalError);
         }
 
-        const point& hit = hits[0][0].hitPoint();
-        const vector edgeVec = points[e.end()] - points[e.start()];
+        if (uniqueHits.size() != hits[0].size())
+        {
+            Info<< "Edge " << edgei << " has "
+                << hits[0].size()
+                << " coincident triangle hits; treating them as one "
+                << "geometric intersection." << endl;
+        }
+
+        const pointIndexHit& uniqueHit = uniqueHits[0];
+        const point& hit = uniqueHit.hitPoint();
         const scalar edgeLengthSqr = magSqr(edgeVec);
         const scalar weight = ((hit - points[e.start()]) & edgeVec)
             / edgeLengthSqr;
@@ -768,11 +1320,13 @@ int main(int argc, char *argv[])
 
         edgeIsCut[edgei] = true;
         edgeWeights[edgei] = weight;
+        edgeRegions[edgei] = surface[uniqueHit.index()].region();
     }
 
     edgeVertex cutsEncoding(mesh);
     DynamicList<label> cutCells;
     DynamicList<labelList> loops;
+    DynamicList<labelList> surfaceLoops;
     DynamicList<scalarField> loopWeights;
 
     for (label celli = 0; celli < mesh.nCells(); ++celli)
@@ -818,6 +1372,7 @@ int main(int argc, char *argv[])
 
         cutCells.append(celli);
         loops.append(loop);
+        surfaceLoops.append(orderedEdges);
         loopWeights.append(weights);
 
         Info<< "Constructed one loop with " << orderedEdges.size()
@@ -826,13 +1381,164 @@ int main(int argc, char *argv[])
 
     cutCells.shrink();
     loops.shrink();
+    surfaceLoops.shrink();
     loopWeights.shrink();
+
+    List<labelList> cutCellRegions(cutCells.size());
+
+    forAll(cutCells, i)
+    {
+        cutCellRegions[i] = uniqueRegions(surfaceLoops[i], edgeRegions);
+    }
 
     if (cutCells.empty())
     {
         FatalErrorInFunction
             << "Surface does not cross any selected mesh cell"
             << exit(FatalError);
+    }
+
+    if (audit)
+    {
+        label nKeepCells = 0;
+        label nBackgroundCells = 0;
+        label nOtherZoneCells = 0;
+        labelList regionCellCounts(regionNames.size(), 0);
+
+        forAll(mesh.cellZones(), zonei)
+        {
+            const label nCells = mesh.cellZones()[zonei].size();
+
+            Info<< "CellZone " << mesh.cellZones()[zonei].name()
+                << " contains " << nCells << " cells" << endl;
+        }
+
+        for (label celli = 0; celli < mesh.nCells(); ++celli)
+        {
+            const label zonei = mesh.cellZones().whichZone(celli);
+
+            if (zonei == keepZone)
+            {
+                ++nKeepCells;
+            }
+            else if (zonei < 0)
+            {
+                ++nBackgroundCells;
+            }
+            else
+            {
+                ++nOtherZoneCells;
+            }
+        }
+
+        Info<< nl
+            << "Audit summary" << nl
+            << "-------------" << nl
+            << "Total cells             : " << mesh.nCells() << nl
+            << "Intersected cells       : " << cutCells.size() << nl
+            << "Retained-zone cells     : " << nKeepCells << nl
+            << "Background cells        : " << nBackgroundCells << nl
+            << "Other cell-zone cells   : " << nOtherZoneCells << nl
+            << "STL regions             : " << regionNames << nl
+            << endl;
+
+        forAll(cutCells, i)
+        {
+            const label celli = cutCells[i];
+            const label zonei = mesh.cellZones().whichZone(celli);
+            labelList cellRegions;
+
+            cellRegions = cutCellRegions[i];
+
+            Info<< "Cut cell " << celli
+                << " zone " << zonei
+                << " STL regions:";
+
+            if (cellRegions.empty())
+            {
+                Info<< " none";
+            }
+            else
+            {
+                forAll(cellRegions, j)
+                {
+                    Info<< ' ' << regionNames[cellRegions[j]];
+                    ++regionCellCounts[cellRegions[j]];
+                }
+            }
+
+            Info<< endl;
+        }
+
+        Info<< nl << "STL-region cut-cell coverage" << nl
+            << "----------------------------" << endl;
+
+        forAll(regionCellCounts, regioni)
+        {
+            Info<< regionNames[regioni] << ": "
+                << regionCellCounts[regioni] << " cut cells" << endl;
+        }
+
+        Info<< nl
+            << "Audit completed without modifying the mesh." << endl;
+
+        return 0;
+    }
+
+    if (extractInside)
+    {
+        labelList nCutCellsPerRegion(regionNames.size(), 0);
+        bool hasMultiRegionCutCell = false;
+
+        forAll(cutCells, i)
+        {
+            const labelList& regions = cutCellRegions[i];
+
+            if (regions.size() == 1)
+            {
+                ++nCutCellsPerRegion
+                [
+                    requireSingleRegion(cutCells[i], regions, regionNames)
+                ];
+            }
+            else if (regions.size() > 1)
+            {
+                hasMultiRegionCutCell = true;
+                Info<< "Retained-inside preflight defers multi-region cell "
+                    << cutCells[i] << " to the cuboid clipping component: "
+                    << regionNamesFor(regions, regionNames) << endl;
+            }
+        }
+
+        Info<< "Retained-inside extraction preflight accepted "
+            << cutCells.size()
+            << " cut cells. Region provenance:" << endl;
+
+        forAll(nCutCellsPerRegion, regioni)
+        {
+            Info<< "  " << regionNames[regioni] << ": "
+                << nCutCellsPerRegion[regioni] << " cut cells" << endl;
+        }
+
+        if (hasMultiRegionCutCell)
+        {
+            cuboidClipper::applyDirect
+            (
+                mesh,
+                surface,
+                max(endpointTol*mag(mesh.bounds().span()), SMALL),
+                keepZone
+            );
+
+            ++runTime;
+            mesh.write();
+
+            Info<< "Wrote retained-inside cuboid mesh with "
+                << mesh.nCells() << " cells at time "
+                << runTime.timeName() << endl;
+
+            return 0;
+        }
     }
 
     labelListList cellLoops(cutCells.size());
@@ -857,6 +1563,21 @@ int main(int argc, char *argv[])
             << exit(FatalError);
     }
 
+    List<labelList> originalCellFaces(cutCells.size());
+    List<faceList> originalCellFaceGeometry(cutCells.size());
+
+    forAll(cutCells, i)
+    {
+        originalCellFaces[i] = mesh.cells()[cutCells[i]];
+        originalCellFaceGeometry[i].setSize(originalCellFaces[i].size());
+
+        forAll(originalCellFaces[i], facei)
+        {
+            originalCellFaceGeometry[i][facei] =
+                mesh.faces()[originalCellFaces[i][facei]];
+        }
+    }
+
     polyTopoChange meshMod(mesh);
     meshCutter cutter(mesh);
     cutter.setRefinement(cuts, meshMod);
@@ -871,6 +1592,73 @@ int main(int argc, char *argv[])
     cutter.updateMesh(morphMap());
 
     verifyCutCellZones(mesh, cutter, cutCells, morphMap());
+
+    List<volumeType> preClipCellTypes;
+
+    if (extractInside)
+    {
+        closedTriSurfaceMesh volumeSurface
+        (
+            IOobject
+            (
+                "cutCellPreClipVolumeSurface",
+                runTime.constant(),
+                mesh,
+                IOobject::NO_READ,
+                IOobject::NO_WRITE
+            ),
+            surface
+        );
+
+        volumeSurface.getVolumeType(mesh.cellCentres(), preClipCellTypes);
+    }
+
+    labelList mappedCutCells(cutCells.size(), -1);
+
+    forAll(cutCells, i)
+    {
+        mappedCutCells[i] = morphMap().reverseCellMap()[cutCells[i]];
+
+        if (mappedCutCells[i] < 0)
+        {
+            FatalErrorInFunction
+                << "Cut cell " << cutCells[i]
+                << " was not mapped after cutting."
+                << exit(FatalError);
+        }
+    }
+
+    Map<label> interfaceFaces;
+    Map<label> clippedRetainedCells;
+
+    forAll(cutCells, i)
+    {
+        if (cutCellRegions[i].size() == 1)
+        {
+            interfaceFaces.insert
+            (
+                cutter.addedFaces()[mappedCutCells[i]],
+                cutCellRegions[i][0]
+            );
+        }
+    }
+
+    cuboidClipper::apply
+    (
+        mesh,
+        surface,
+        cutter,
+        cutCells,
+        mappedCutCells,
+        originalCellFaces,
+        originalCellFaceGeometry,
+        morphMap(),
+        cutCellRegions,
+        max(endpointTol*mag(mesh.bounds().span()), SMALL),
+        extractInside,
+        interfaceFaces,
+        clippedRetainedCells
+    );
 
     if (hasInsideZone)
     {
@@ -903,13 +1691,13 @@ int main(int argc, char *argv[])
     if (minVolumeRatio > 0)
     {
         const Map<label>& addedCells = cutter.addedCells();
-        const Map<label>& addedFaces = cutter.addedFaces();
 
         forAll(cutCells, i)
         {
-            const label celli = cutCells[i];
+            const label oldCelli = cutCells[i];
+            const label celli = mappedCutCells[i];
             const label addedCelli = addedCells[celli];
-            const scalar parentVolume = oldCellVolumes[celli];
+            const scalar parentVolume = oldCellVolumes[oldCelli];
             const scalar originalRatio =
                 mesh.cellVolumes()[celli]/parentVolume;
             const scalar addedRatio =
@@ -921,7 +1709,7 @@ int main(int argc, char *argv[])
                 const label sliverCell =
                     originalRatio < addedRatio ? celli : addedCelli;
 
-                reportMergeCandidates(mesh, addedFaces, sliverCell);
+                reportMergeCandidates(mesh, interfaceFaces, sliverCell);
 
                 if (mergeSlivers)
                 {
@@ -933,7 +1721,7 @@ int main(int argc, char *argv[])
                         !findMergeCandidate
                         (
                             mesh,
-                            addedFaces,
+                            interfaceFaces,
                             sliverCell,
                             mergeCell,
                             mergeFace
@@ -1017,10 +1805,29 @@ int main(int argc, char *argv[])
         }
     }
 
+    if (extractInside)
+    {
+        retainedInsideExtraction
+        (
+            mesh,
+            surface,
+            runTime,
+            cutter,
+            mappedCutCells,
+            cutCellRegions,
+            interfaceFaces,
+            clippedRetainedCells,
+            preClipCellTypes,
+            regionNames,
+            keepZone
+        );
+    }
+
     ++runTime;
     mesh.write();
 
-    Info<< "Wrote cut mesh with " << mesh.nCells()
+    Info<< "Wrote " << (extractInside ? "retained-inside " : "")
+        << "cut mesh with " << mesh.nCells()
         << " cells at time " << runTime.timeName() << endl;
 
     return 0;

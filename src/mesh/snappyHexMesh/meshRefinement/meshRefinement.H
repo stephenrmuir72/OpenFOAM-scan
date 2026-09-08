@@ -1371,6 +1371,7 @@ public:
             void baffleAndSplitMesh
             (
                 const bool handleSnapProblems,
+                const bool retainAllCells,
 
                 // How to remove problem snaps
                 const snapParameters& snapParams,
@@ -1528,6 +1529,7 @@ public:
             (
                 const bool allowFreeStandingZoneFaces,
                 const label nErodeCellZones,
+                const bool retainAllCells,
                 const pointField& locationsInMesh,
                 const wordList& regionsInMesh,
                 const pointField& locationsOutsideMesh,

@@ -506,6 +506,10 @@ castellatedMeshControls
     // Optional: do not remove cells likely to give snapping problems
     // handleSnapProblems false;
 
+    // Optional: retain all cells for a castellated support mesh. This is
+    // intended for use with snap false and addLayers false.
+    // retainAllCells true;
+
     // Optional: switch off topological test for cells to-be-squashed
     //           and use geometric test instead
     //useTopologicalSnapDetection false;

@@ -113,6 +113,9 @@ class refinementParameters
 
         const Switch handleSnapProblems_;
 
+        //- Retain all cells in the castellated support-mesh workflow
+        const Switch retainAllCells_;
+
         const Switch interfaceRefine_;
 
         const label nErodeCellZone_;
@@ -243,6 +246,11 @@ public:
             bool handleSnapProblems() const
             {
                 return handleSnapProblems_;
+            }
+
+            bool retainAllCells() const
+            {
+                return retainAllCells_;
             }
 
             //- Refine cell with opposite faces with different refinement level
