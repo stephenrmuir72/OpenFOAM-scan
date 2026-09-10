@@ -35,8 +35,8 @@ SourceFiles
 
 \*---------------------------------------------------------------------------*/
 
-#ifndef advancingFrontAMI_H
-#define advancingFrontAMI_H
+#ifndef Foam_advancingFrontAMI_H
+#define Foam_advancingFrontAMI_H
 
 #include "className.H"
 #include "DynamicList.H"
@@ -124,10 +124,10 @@ protected:
         const scalar minCosAngle_;
 
         //- Storage for src-side triangle decomposition
-        List<DynamicList<face>> srcTris_;
+        List<DynamicList<triFace>> srcTris_;
 
         //- Storage for tgt-side triangle decomposition
-        List<DynamicList<face>> tgtTris_;
+        List<DynamicList<triFace>> tgtTris_;
 
         //- Demand-driven extended target mesh (distributed parallel usage)
         autoPtr<primitivePatch> extendedTgtPatchPtr_;
@@ -219,7 +219,7 @@ protected:
             void triangulatePatch
             (
                 const primitivePatch& patch,
-                List<DynamicList<face>>& tris,
+                List<DynamicList<triFace>>& tris,
                 List<scalar>& magSf
             ) const;
 
@@ -242,7 +242,7 @@ public:
         );
 
         //- Construct from components
-        advancingFrontAMI
+        explicit advancingFrontAMI
         (
             const bool requireMatch = true,
             const bool reverseTarget = false,

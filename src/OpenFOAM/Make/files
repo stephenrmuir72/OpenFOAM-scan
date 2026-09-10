@@ -533,7 +533,7 @@ primitiveShapes = meshes/primitiveShapes
 
 $(primitiveShapes)/line/line.C
 $(primitiveShapes)/plane/plane.C
-$(primitiveShapes)/triangle/intersection.C
+$(primitiveShapes)/triangle/intersection.cxx
 $(primitiveShapes)/objectHit/pointIndexHitIOList.C
 $(primitiveShapes)/volumeType/volumeType.C
 
@@ -542,11 +542,15 @@ $(meshShapes)/edge/edge.C
 $(meshShapes)/edge/edgeIOList.C
 
 face = $(meshShapes)/face
-$(face)/face.C
-$(face)/faceIntersection.C
-$(face)/faceContactSphere.C
-$(face)/faceAreaInContact.C
-$(face)/faceIOList.C
+$(face)/face.cxx
+$(face)/faceContactSphere.cxx
+$(face)/faceContactArea.cxx
+$(face)/faceIntersection.cxx
+$(face)/faceIOList.cxx
+
+quadFace = $(meshShapes)/quadFace
+$(quadFace)/quadFace.cxx
+$(quadFace)/quadFaceIntersection.cxx
 
 cell = $(meshShapes)/cell
 $(cell)/cell.C

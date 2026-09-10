@@ -37,14 +37,15 @@ SourceFiles
 
 \*---------------------------------------------------------------------------*/
 
-#ifndef faceAreaIntersect_H
-#define faceAreaIntersect_H
+#ifndef Foam_faceAreaIntersect_H
+#define Foam_faceAreaIntersect_H
 
 #include "pointField.H"
 #include "FixedList.H"
 #include "plane.H"
-#include "face.H"
 #include "triangle.H"
+#include "face.H"
+#include "triFace.H"
 #include "Enum.H"
 #include "searchableSurface.H"
 
@@ -81,10 +82,10 @@ private:
         const pointField& pointsB_;
 
         //- Triangle decomposition of face A
-        const DynamicList<face>& trisA_;
+        const UList<triFace>& trisA_;
 
         //- Triangle decomposition of face B
-        const DynamicList<face>& trisB_;
+        const UList<triFace>& trisB_;
 
         //- Flag to reverse B faces
         const bool reverseB_;
@@ -109,6 +110,14 @@ private:
         (
             const pointField& points,
             const face& f,
+            const bool reverse
+        ) const;
+
+        //- Get triPoints from face
+        inline triPoints getTriPoints
+        (
+            const pointField& points,
+            const triFace& f,
             const bool reverse
         ) const;
 
@@ -153,6 +162,16 @@ private:
             vector& centroid
         ) const;
 
+        //- Triangulate a face using the given triangulation mode
+        template<class TriFaceT>
+        static void triangulate_impl
+        (
+            const face& f,
+            const pointField& points,
+            const triangulationMode triMode,
+            List<TriFaceT>& faceTris
+        );
+
 
 public:
 
@@ -163,8 +182,8 @@ public:
         (
             const pointField& pointsA,
             const pointField& pointsB,
-            const DynamicList<face>& trisA,
-            const DynamicList<face>& trisB,
+            const UList<triFace>& trisA,
+            const UList<triFace>& trisB,
             const bool reverseB = false,
             const bool cacheTriangulation = false
         );
@@ -180,8 +199,17 @@ public:
         (
             const face& f,
             const pointField& points,
-            const triangulationMode& triMode,
-            faceList& faceTris
+            const triangulationMode triMode,
+            List<face>& faceTris
+        );
+
+        //- Triangulate a face using the given triangulation mode
+        static void triangulate
+        (
+            const face& f,
+            const pointField& points,
+            const triangulationMode triMode,
+            List<triFace>& faceTris
         );
 
         //- Const access to the cacheTriangulation flag

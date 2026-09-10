@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2017-2026 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -126,22 +127,32 @@ public:
     // Access
 
         //- The first vertex
-        label a() const noexcept { return get<0>(); }
+        constexpr label a() const noexcept { return get<0>(); }
 
         //- The second vertex
-        label b() const noexcept { return get<1>(); }
+        constexpr label b() const noexcept { return get<1>(); }
 
         //- The third vertex
-        label c() const noexcept { return get<2>(); }
+        constexpr label c() const noexcept { return get<2>(); }
 
         //- The first vertex
-        label& a() noexcept { return get<0>(); }
+        constexpr label& a() noexcept { return get<0>(); }
 
         //- The second vertex
-        label& b() noexcept { return get<1>(); }
+        constexpr label& b() noexcept { return get<1>(); }
 
         //- The third vertex
-        label& c() noexcept { return get<2>(); }
+        constexpr label& c() noexcept { return get<2>(); }
+
+        //- Next vertex on face (circular order)
+        label nextLabel(label i) const { return (*this)[fcIndex(i)]; }
+
+        //- Previous vertex on face (circular order)
+        label prevLabel(label i) const { return (*this)[rcIndex(i)]; }
+
+        //- The vertex on face (naming as per nextLabel, prevLabel),
+        //- identical to operator[]
+        label thisLabel(label i) const { return (*this)[i]; }
 
 
     // Queries
@@ -184,14 +195,6 @@ public:
         //- The unit normal
         inline vector unitNormal(const UList<point>& points) const;
 
-        //- Legacy name for areaNormal()
-        //  \deprecated(2018-06) Deprecated for new use
-        FOAM_DEPRECATED_FOR(2018-12, "areaNormal() or unitNormal()")
-        vector normal(const UList<point>& points) const
-        {
-            return areaNormal(points); // Legacy definition
-        }
-
         //- Magnitude of face area
         inline scalar mag(const UList<point>& points) const;
 
@@ -202,7 +205,7 @@ public:
         inline Pair<point> box(const UList<point>& points) const;
 
         //- Number of triangles after splitting == 1
-        inline label nTriangles() const noexcept;
+        static constexpr label nTriangles() noexcept { return 1; }
 
         //- Return face with reverse direction
         //  The starting vertex of the original and reverse face are identical.
@@ -211,16 +214,6 @@ public:
         //- Find local vertex on face for the vertex label, same as find()
         //  \return position in face (0,1,2) or -1 if not found.
         inline label which(const label vertex) const;
-
-        //- Next vertex on face
-        inline label nextLabel(const label i) const;
-
-        //- Previous vertex on face
-        inline label prevLabel(const label i) const;
-
-        //- The vertex on face - identical to operator[], but with naming
-        //- similar to nextLabel(), prevLabel()
-        inline label thisLabel(const label i) const;
 
         //- Return swept-volume from old-points to new-points
         inline scalar sweptVol
@@ -304,7 +297,7 @@ public:
         ) const;
 
         //- Return number of edges == 3
-        inline label nEdges() const noexcept;
+        static constexpr label nEdges() noexcept { return 3; }
 
         //- Return i-th face edge (forward walk order).
         //  The edge 0 is from [0] to [1]
@@ -340,13 +333,13 @@ public:
     // Searching
 
         //- Regular contains(pointi) tests
-        using FixedList<label, 3>::contains;
+        using tuple_type::contains;
 
         //- True if face contains(edge)
         inline bool contains(const Foam::edge& e) const;
 
         //- Regular find pointi within face
-        using FixedList<label, 3>::find;
+        using tuple_type::find;
 
         //- Find the edge within the face.
         //  \return the edge index or -1 if not found
@@ -368,6 +361,9 @@ public:
 
 
     // Member Operators
+
+        //- Inherit assignment
+        using tuple_type::operator=;
 
         //- Increment (offset) vertices by given amount
         inline void operator+=(label vertexOffset);
@@ -423,6 +419,14 @@ public:
 
         //- Same as good()
         bool valid() const noexcept { return good(); }
+
+        //- Legacy name for areaNormal()
+        //  \deprecated(2018-06) Deprecated for new use
+        FOAM_DEPRECATED_FOR(2018-12, "areaNormal() or unitNormal()")
+        vector normal(const UList<point>& points) const
+        {
+            return areaNormal(points);  // Legacy definition
+        }
 
         //- Identical to edge()
         Foam::edge faceEdge(label edgei) const { return this->edge(edgei); }

@@ -124,9 +124,15 @@ int main(int argc, char *argv[])
         { 2, 2, 2}
     });
 
-    face f1({1, 2, 3, 4});
+    face f1(Foam::identity(4, 1));
     Info<< "face:"; faceInfo(f1, points1); Info << nl;
     testSign(f1, points1, testPoints);
+
+    {
+        face f2(Foam::identity(4, 1), face::flipType::FLIP);
+        Info<< "face:"; faceInfo(f2, points1); Info << nl;
+        testSign(f2, points1, testPoints);
+    }
 
     Info<< "find within " << f1 << nl;
     for
@@ -156,7 +162,7 @@ int main(int argc, char *argv[])
 
     // Component-wise
     {
-        edge e1(3, 2, 1);  // Inadvertent sort!!!
+        edge e1 = edge::sorted(3, 2);  // Inadvertent sort!!!
         Info<< "edge:" << e1 << nl;
     }
 

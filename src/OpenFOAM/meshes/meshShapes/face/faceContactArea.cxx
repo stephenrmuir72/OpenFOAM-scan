@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -28,7 +29,6 @@ License
 #include "face.H"
 #include "scalarField.H"
 
-
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
 
 Foam::scalar Foam::face::areaInContact
@@ -41,27 +41,20 @@ Foam::scalar Foam::face::areaInContact
     // the face plane. Positive displacement is above the face (no contact);
     // negative is in contact
 
-    // Assemble the vertex values
-    const labelList& labels = *this;
+    // Sample the vertex values
+    const List<scalar> vertexValue(v, static_cast<const labelUList&>(*this));
 
-    scalarField vertexValue(labels.size());
-
-    forAll(labels, i)
-    {
-        vertexValue[i] = v[labels[i]];
-    }
-
-
-    // Loop through vertexValue. If all greater that 0 return 0 (no contact);
-    // if all less than zero return 1
-    // all zeros is assumed to be in contact.
+    // Loop through vertexValue.
+    // - if all greater than 0 : return 0 (no contact);
+    // - if all less than zero : return 1
+    // - all zeros is assumed to be in contact.
 
     bool allPositive = true;
     bool allNegative = true;
 
-    forAll(vertexValue, vI)
+    for (auto val : vertexValue)
     {
-        if (vertexValue[vI] > 0)
+        if (val > 0)
         {
             allNegative = false;
         }
@@ -73,12 +66,11 @@ Foam::scalar Foam::face::areaInContact
 
     if (allPositive)
     {
-        return 0.0;
+        return 0;
     }
-
     if (allNegative)
     {
-        return 1.0;
+        return 1;
     }
 
     // There is a partial contact.
@@ -90,73 +82,47 @@ Foam::scalar Foam::face::areaInContact
     // calculate area of new face and return relative area (0<x<1)
 
     // Dimension new point list to max possible size
-    const labelList& faceLabels = *this;
+    const labelUList& faceLabels = *this;
 
-    List<point> newFacePoints(2*size());
-    label nNewFacePoints = 0;
+    const label nPoints = size();
 
-    for (label vI = 0; vI < size() - 1; vI++)
+    DynamicList<point> newFacePoints(2*nPoints);
+
+    for (label idx0 = 0; idx0 < nPoints; ++idx0)
     {
-        if (vertexValue[vI] <= 0)
+        label idx1 = fcIndex(idx0);
+        const auto& pt0 = meshPoints[faceLabels[idx0]];
+        const auto& pt1 = meshPoints[faceLabels[idx1]];
+
+        if (vertexValue[idx0] <= 0)
         {
             // This is a point in contact
-            newFacePoints[nNewFacePoints] = meshPoints[faceLabels[vI]];
-            nNewFacePoints++;
+            newFacePoints.push_back(pt0);
         }
 
         if
         (
-            (vertexValue[vI] > 0 && vertexValue[vI + 1] < 0)
-         || (vertexValue[vI] < 0 && vertexValue[vI + 1] > 0)
+            (vertexValue[idx0] > 0 && vertexValue[idx1] < 0)
+         || (vertexValue[idx0] < 0 && vertexValue[idx1] > 0)
         )
         {
             // Edge intersection. Calculate intersection point and add to list
             point intersection =
-                meshPoints[faceLabels[vI]]
-              + vertexValue[vI]/(vertexValue[vI + 1] - vertexValue[vI])
-                *(meshPoints[faceLabels[vI]] - meshPoints[faceLabels[vI + 1]]);
+            (
+                pt0
+              + vertexValue[idx0]/(vertexValue[idx1] - vertexValue[idx0])
+              * (pt0 - pt1)
+            );
 
-            newFacePoints[nNewFacePoints] = intersection;
-            nNewFacePoints++;
+            newFacePoints.push_back(intersection);
         }
     }
 
-    // Do last point by hand
-    if (vertexValue[size() - 1] <= 0)
-    {
-        // This is a point in contact
-        newFacePoints[nNewFacePoints] = meshPoints[faceLabels[size() - 1]];
-        nNewFacePoints++;
-    }
-
-    if
-    (
-        (vertexValue[size() - 1] > 0 && vertexValue[0] < 0)
-     || (vertexValue[size() - 1] < 0 && vertexValue[0] > 0)
-    )
-    {
-        // Edge intersection. Calculate intersection point and add to list
-        point intersection =
-            meshPoints[faceLabels[size() - 1]]
-          + vertexValue[size() - 1]/(vertexValue[0] - vertexValue[size() - 1])
-            *(meshPoints[faceLabels[size() - 1]] - meshPoints[faceLabels[0]]);
-
-        newFacePoints[nNewFacePoints] = intersection;
-        nNewFacePoints++;
-    }
-
-    newFacePoints.setSize(nNewFacePoints);
-
-    // Make a labelList for the sub-face (points are ordered!)
-    labelList sfl(newFacePoints.size());
-
-    forAll(sfl, sflI)
-    {
-        sfl[sflI] = sflI;
-    }
+    // Make the sub-face (points are ordered!)
+    face subf(Foam::identity(newFacePoints.size()));
 
     // Calculate relative area
-    return face(sfl).mag(newFacePoints)/(mag(meshPoints) + VSMALL);
+    return subf.mag(newFacePoints)/(this->mag(meshPoints) + VSMALL);
 }
 
 

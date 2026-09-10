@@ -62,7 +62,7 @@ class boundaryPatch
         //- The size of the patch
         label size_;
 
-        //- Start label of the patch
+        //- Start label of the patch (within the boundary faces)
         label start_;
 
 public:
@@ -103,7 +103,7 @@ public:
 
     // Member Functions
 
-        //- The start of the patch
+        //- The start of the patch (within the boundary faces)
         label start() const noexcept { return start_; }
 
         //- The start of the patch (modifiable)
@@ -121,6 +121,9 @@ public:
             return labelRange(start_, size_);
         }
 
+        //- The offset where this patch starts in the boundary face list
+        //  (same as start for boundaryPatch)
+        label offset() const noexcept { return start(); }
 
         //- Write dictionary entries (without surrounding braces)
         virtual void write(Ostream& os) const;

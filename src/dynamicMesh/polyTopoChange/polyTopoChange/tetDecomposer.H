@@ -38,8 +38,8 @@ SourceFiles
 
 \*---------------------------------------------------------------------------*/
 
-#ifndef tetDecomposer_H
-#define tetDecomposer_H
+#ifndef Foam_tetDecomposer_H
+#define Foam_tetDecomposer_H
 
 #include "DynamicList.H"
 #include "bitSet.H"
@@ -47,6 +47,8 @@ SourceFiles
 #include "typeInfo.H"
 #include "Enum.H"
 #include "faceList.H"
+#include "triFace.H"
+#include "quadFace.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -137,41 +139,42 @@ private:
         //- Calculate triangulation of boundary faces
         void splitBoundaryFaces
         (
-            List<faceList>& boundaryQuads,
-            List<faceList>& boundaryTris
+            List<List<quadFace>>& boundaryQuads,
+            List<List<triFace>>& boundaryTris
         ) const;
 
         //- Correct coupled faces to match up
+        template<class FaceType>
         void relativeIndicesToFace
         (
             const bool doFlip,
             const face& meshFace,
-            const faceList& indexLists,
-            faceList& faces
+            const UList<FaceType>& indexLists,
+            List<FaceType>& faces
         ) const;
 
         //- Calculate triangulation of any face
         void splitFace
         (
-            const List<faceList>& boundaryQuads,
-            const List<faceList>& boundaryTris,
+            const UList<List<quadFace>>& boundaryQuads,
+            const UList<List<triFace>>& boundaryTris,
             const label facei,
             const label patchi,
             label& quadi,
-            faceList& quadFaces,
+            List<quadFace>& quadFaces,  // work space
             label& trii,
-            faceList& triFaces
+            List<triFace>& triFaces     // work space
         ) const;
 
         void splitFace
         (
-            const List<faceList>& boundaryQuads,
-            const List<faceList>& boundaryTris,
+            const UList<List<quadFace>>& boundaryQuads,
+            const UList<List<triFace>>& boundaryTris,
             const label facei,
             const label patchi,
-            faceList& quadFaces,
-            faceList& triFaces,
-            faceList& subFaces
+            List<quadFace>& quadFaces,   // work space
+            List<triFace>& triFaces,     // work space
+            List<face>& subFaces
         ) const;
 
         //- No copy construct

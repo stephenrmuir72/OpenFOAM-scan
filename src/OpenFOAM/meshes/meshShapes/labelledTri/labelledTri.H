@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2016-2021 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -67,7 +68,7 @@ class labelledTri
 
     // Private Member Functions
 
-        //- Assign from 3 or 4 labels, default region is 0.
+        //- Assign from 3 or 4 labels. The 4th label (optional) is the region.
         template<class ListType>
         inline void assignList(const ListType& list);
 
@@ -76,31 +77,21 @@ public:
 
     // Constructors
 
-        //- Default construct, with invalid point labels and region (-1).
+        //- Default construct, with invalid point labels and region/index (-1).
         inline labelledTri();
 
         //- Construct from triFace
-        //- and optional region index (0 if unspecified)
-        inline labelledTri
-        (
-            const triFace& tri,
-            const label region = 0
-        );
+        //- and optional region/index (0 if unspecified)
+        inline labelledTri(const triFace& f, label idx = 0);
 
         //- Construct from three point labels
-        //- and optional region index (0 if unspecified)
-        inline labelledTri
-        (
-            const label p0,
-            const label p1,
-            const label p2,
-            const label region = 0
-        );
+        //- and optional region/index (0 if unspecified)
+        inline labelledTri(label p0, label p1, label p2, label idx = 0);
 
-        //- Construct from a list of 3 or 4 labels. Default region is 0.
+        //- Construct from a list of 3 or 4 labels. Default region/index is 0.
         inline explicit labelledTri(const labelUList& list);
 
-        //- Construct from a list of 3 or 4 labels. Default region is 0.
+        //- Construct from a list of 3 or 4 labels. Default region/index is 0.
         inline explicit labelledTri(std::initializer_list<label>);
 
         //- Copy construct from a subset of point labels
@@ -108,8 +99,8 @@ public:
         inline labelledTri
         (
             const labelUList& list,
-            const FixedList<label, 3>& triIndices,
-            const label region = 0
+            const FixedList<label, 3>& indices,
+            label idx = 0
         );
 
         //- Copy construct from a subset of point labels
@@ -117,7 +108,7 @@ public:
         inline labelledTri
         (
             const labelUList& list,
-            const labelledTri& triIndices
+            const labelledTri& indices
         );
 
         //- Construct from Istream
@@ -127,34 +118,22 @@ public:
     // Member Functions
 
         //- Return the index (eg, the region)
-        label index() const noexcept
-        {
-            return index_;
-        }
+        label index() const noexcept { return index_; }
 
         //- Non-const access to the index (eg, the region)
-        label& index() noexcept
-        {
-            return index_;
-        }
+        label& index() noexcept { return index_; }
 
         //- Set the index (eg, the region)
-        void setIndex(const label idx) noexcept
-        {
-            index_ = idx;
-        }
+        void setIndex(label i) noexcept { index_ = i; }
 
-        //- Return the region index
-        label region() const noexcept
-        {
-            return index_;
-        }
+        //- The region index
+        label region() const noexcept { return index_; }
 
         //- Non-const access to the region index
-        label& region() noexcept
-        {
-            return index_;
-        }
+        label& region() noexcept { return index_; }
+
+        //- Set the region/index
+        void region(label i) noexcept { index_ = i; }
 
 
     // IOstream Operators

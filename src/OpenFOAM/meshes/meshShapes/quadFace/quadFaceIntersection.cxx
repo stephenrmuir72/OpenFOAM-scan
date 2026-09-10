@@ -5,8 +5,7 @@
     \\  /    A nd           | www.openfoam.com
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
-    Copyright (C) 2011-2016 OpenFOAM Foundation
-    Copyright (C) 2022 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -26,14 +25,13 @@ License
 
 \*---------------------------------------------------------------------------*/
 
-#include "face.H"
+#include "quadFace.H"
 #include "pointHit.H"
 #include "triangle.H"
-#include "line.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-Foam::pointHit Foam::face::ray
+Foam::pointHit Foam::quadFace::ray
 (
     const point& p,
     const vector& n,
@@ -42,51 +40,25 @@ Foam::pointHit Foam::face::ray
     const intersection::direction dir
 ) const
 {
-    // Return potential intersection with face with a ray starting
-    // at p, direction n (does not need to be normalized)
-    // Does face-center decomposition and returns triangle intersection
-    // point closest to p.
+    // Fan decomposition from face centre into 4 triangles.
+    // Returns triangle intersection point closest to p.
+    // Centre point comes last in each triangle for best accuracy.
 
-    // In case of miss the point is the nearest point intersection of the
-    // face plane and the ray and the distance is the distance between the
-    // intersection point and the nearest point on the face
-
-    // If the face is a triangle, do a direct calculation
-    if (size() == 3)
-    {
-        return triPointRef
-        (
-            meshPoints[operator[](0)],
-            meshPoints[operator[](1)],
-            meshPoints[operator[](2)]
-        ).ray(p, n, alg, dir);
-    }
-
-    point ctr = Foam::average(points(meshPoints));
+    const point ctr = centre(meshPoints);
 
     scalar nearestHitDist = GREAT;
     scalar nearestMissDist = GREAT;
     bool eligible = false;
 
-    // Initialize to miss, distance = GREAT
+    // Initialize to miss
     pointHit nearest(p);
 
-    const labelList& f = *this;
-
-    const label nPoints = size();
-
-    point nextPoint = ctr;
-
-    for (label pI = 0; pI < nPoints; pI++)
+    for (label i = 0; i < quadFace::size(); ++i)
     {
-        nextPoint = meshPoints[f[fcIndex(pI)]];
-
-        // Note: for best accuracy, centre point always comes last
-        //
-        pointHit curHit = triPointRef
+        const pointHit curHit = triPointRef
         (
-            meshPoints[f[pI]],
-            nextPoint,
+            meshPoints[thisLabel(i)],
+            meshPoints[nextLabel(i)],
             ctr
         ).ray(p, n, alg, dir);
 
@@ -100,14 +72,14 @@ Foam::pointHit Foam::face::ray
         }
         else if (!nearest.hit())
         {
-            // Miss and no hit yet. Update miss statistics.
             if (curHit.eligibleMiss())
             {
                 eligible = true;
 
-                // Miss distance is the distance between the plane intersection
-                // point and the nearest point of the triangle
-                scalar missDist = curHit.point().dist(p + curHit.distance()*n);
+                // Miss distance: between the plane intersection point
+                // and the nearest point on the triangle
+                const scalar missDist =
+                    curHit.point().dist(p + curHit.distance()*n);
 
                 if (missDist < nearestMissDist)
                 {
@@ -125,7 +97,6 @@ Foam::pointHit Foam::face::ray
     }
     else
     {
-        // Haven't hit a single face triangle
         nearest.setMiss(eligible);
     }
 
@@ -133,7 +104,20 @@ Foam::pointHit Foam::face::ray
 }
 
 
-Foam::pointHit Foam::face::intersection
+Foam::pointHit Foam::quadFace::intersection
+(
+    const point& p,
+    const vector& q,
+    const UList<point>& meshPoints,
+    const intersection::algorithm alg,
+    const scalar tol
+) const
+{
+    return intersection(p, q, centre(meshPoints), meshPoints, alg, tol);
+}
+
+
+Foam::pointHit Foam::quadFace::intersection
 (
     const point& p,
     const vector& q,
@@ -143,31 +127,20 @@ Foam::pointHit Foam::face::intersection
     const scalar tol
 ) const
 {
-    // If the face is a triangle, do a direct calculation
-    if (size() == 3)
-    {
-        return triPointRef
-        (
-            meshPoints[operator[](0)],
-            meshPoints[operator[](1)],
-            meshPoints[operator[](2)]
-        ).intersection(p, q, alg, tol);
-    }
+    // Fan decomposition from face centre into 4 triangles.
+    // Centre point comes last in each triangle for best accuracy.
 
     scalar nearestHitDist = VGREAT;
 
-    // Initialize to miss, distance = GREAT
+    // Initialize to miss
     pointHit nearest(p);
 
-    const labelList& f = *this;
-
-    forAll(f, pI)
+    for (label i = 0; i < quadFace::size(); ++i)
     {
-        // Note: for best accuracy, centre point always comes last
-        pointHit curHit = triPointRef
+        const pointHit curHit = triPointRef
         (
-            meshPoints[f[pI]],
-            meshPoints[f[fcIndex(pI)]],
+            meshPoints[thisLabel(i)],
+            meshPoints[nextLabel(i)],
             ctr
         ).intersection(p, q, alg, tol);
 
@@ -190,21 +163,21 @@ Foam::pointHit Foam::face::intersection
 }
 
 
-Foam::pointHit Foam::face::nearestPoint
+Foam::pointHit Foam::quadFace::nearestPoint
 (
     const point& p,
     const UList<point>& meshPoints
 ) const
 {
     // Dummy labels
-    label nearType = -1;
-    label nearLabel = -1;
+    label nearType(-1);
+    label nearLabel(-1);
 
     return nearestPointClassify(p, meshPoints, nearType, nearLabel);
 }
 
 
-Foam::pointHit Foam::face::nearestPointClassify
+Foam::pointHit Foam::quadFace::nearestPointClassify
 (
     const point& p,
     const UList<point>& meshPoints,
@@ -212,79 +185,51 @@ Foam::pointHit Foam::face::nearestPointClassify
     label& nearLabel
 ) const
 {
-    // If the face is a triangle, do a direct calculation
-    if (size() == 3)
-    {
-        return triPointRef
-        (
-            meshPoints[operator[](0)],
-            meshPoints[operator[](1)],
-            meshPoints[operator[](2)]
-        ).nearestPointClassify(p, nearType, nearLabel);
-    }
+    // Decompose from face centre into 4 triangles
+    const point ctr(this->centre(meshPoints));
 
-    const face& f = *this;
-    point ctr = centre(meshPoints);
-
-    // Initialize to miss, distance=GREAT
+    // Initialize to miss, distance = GREAT
     pointHit nearest(p);
 
-    nearType = -1;
+    nearType  = -1;
     nearLabel = -1;
 
-    const label nPoints = f.size();
-
-    point nextPoint = ctr;
-
-    for (label pI = 0; pI < nPoints; pI++)
+    for (label i = 0; i < quadFace::size(); ++i)
     {
-        nextPoint = meshPoints[f[fcIndex(pI)]];
-
-        label tmpNearType = -1;
+        label tmpNearType  = -1;
         label tmpNearLabel = -1;
 
-        // Note: for best accuracy, centre point always comes last
-        triPointRef tri
+        // Centre point comes last for best accuracy
+        const triPointRef tri
         (
-            meshPoints[f[pI]],
-            nextPoint,
+            meshPoints[thisLabel(i)],
+            meshPoints[nextLabel(i)],
             ctr
         );
 
-        pointHit curHit = tri.nearestPointClassify
-        (
-            p,
-            tmpNearType,
-            tmpNearLabel
-        );
+        const pointHit curHit =
+            tri.nearestPointClassify(p, tmpNearType, tmpNearLabel);
 
         if (Foam::mag(curHit.distance()) < Foam::mag(nearest.distance()))
         {
             nearest.setDistance(curHit.distance());
 
-            // Assume at first that the near type is NONE on the
-            // triangle (i.e. on the face of the triangle) then it is
-            // therefore also for the face.
-
-            nearType = NONE;
+            // Map triangle proximity back to face proximity.
+            // Default: on the face interior (NONE).
+            nearType = face::NONE;
 
             if (tmpNearType == triPointRef::EDGE && tmpNearLabel == 0)
             {
-                // If the triangle edge label is 0, then this is also
-                // an edge of the face, if not, it is on the face
-
-                nearType = EDGE;
-
-                nearLabel = pI;
+                // Triangle edge 0 is face edge i
+                nearType  = face::EDGE;
+                nearLabel = i;
             }
             else if (tmpNearType == triPointRef::POINT && tmpNearLabel < 2)
             {
-                // If the triangle point label is 0 or 1, then this is
-                // also a point of the face, if not, it is on the face
-
-                nearType = POINT;
-
-                nearLabel = pI + tmpNearLabel;
+                // Triangle point 0 -> face point i
+                // Triangle point 1 -> face point at nextLabel(i)
+                nearType  = face::POINT;
+                nearLabel = (tmpNearLabel == 0) ? i : (i+1) % quadFace::size();
             }
 
             if (curHit.hit())
@@ -301,25 +246,6 @@ Foam::pointHit Foam::face::nearestPointClassify
     }
 
     return nearest;
-}
-
-
-int Foam::face::sign
-(
-    const point& p,
-    const UList<point>& points,
-    const scalar tol
-) const
-{
-    // Take three points [0, 1/3, 2/3] from the face
-    // - assumes the face is not severely warped
-
-    return triPointRef
-    (
-        points[operator[](0)],
-        points[operator[](size()/3)],
-        points[operator[]((2*size())/3)]
-    ).sign(p, tol);
 }
 
 

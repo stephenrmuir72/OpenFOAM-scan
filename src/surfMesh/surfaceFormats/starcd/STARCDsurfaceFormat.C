@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2016-2024 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -139,7 +140,10 @@ bool Foam::fileFormats::STARCDsurfaceFormat<Face>::read
     bool ignoreElemId = false;
 
     label ignoredLabel, shapeId, nLabels, cellTableId, typeId;
+
+    // Work arrays
     DynamicList<label> vertexLabels(64);
+    DynamicList<triFace> trias;
 
     token tok;
 
@@ -167,39 +171,39 @@ bool Foam::fileFormats::STARCDsurfaceFormat<Face>::read
             is >> vrtId;
 
             // Convert original vertex id to point label
-            vertexLabels.append(mapPointId[vrtId]);
+            vertexLabels.push_back(mapPointId[vrtId]);
         }
 
         if (typeId == starcdShellType)
         {
             // Convert cellTableId to zoneId
-            const auto iterGroup = lookup.cfind(cellTableId);
-            if (iterGroup.good())
+            if (auto it = lookup.cfind(cellTableId); it.good())
             {
-                if (zoneId != *iterGroup)
+                if (zoneId != it.val())
                 {
                     // cellTableIds are intermixed
                     sorted = false;
                 }
-                zoneId = *iterGroup;
+                zoneId = it.val();
             }
             else
             {
                 zoneId = dynSizes.size();
                 lookup.insert(cellTableId, zoneId);
 
-                const auto iterTableName = cellTableLookup.cfind(cellTableId);
-
-                if (iterTableName.good())
+                if (auto it = cellTableLookup.cfind(cellTableId); it.good())
                 {
-                    dynNames.append(*iterTableName);
+                    dynNames.push_back(it.val());
                 }
                 else
                 {
-                    dynNames.append("cellTable_" + ::Foam::name(cellTableId));
+                    dynNames.push_back
+                    (
+                        "cellTable_" + ::Foam::name(cellTableId)
+                    );
                 }
 
-                dynSizes.append(0);
+                dynSizes.push_back(0);
             }
 
             SubList<label> vertices(vertexLabels, vertexLabels.size());
@@ -211,25 +215,27 @@ bool Foam::fileFormats::STARCDsurfaceFormat<Face>::read
 
                 face f(vertices);
 
-                faceList trias(f.nTriangles());
-                label nTri = 0;
-                f.triangles(this->points(), nTri, trias);
+                trias.clear();
+                f.triangles(this->points(), trias);
 
-                for (const face& tri : trias)
+                for (const auto& tri : trias)
                 {
-                    // A triangular 'face', convert to 'triFace' etc
-                    dynFaces.append(Face(tri));
-                    dynZones.append(zoneId);
+                    // A triangular face, convert to 'labelledTri' etc
+                    dynFaces.emplace_back(tri);
+                    dynZones.push_back(zoneId);
                     dynSizes[zoneId]++;
                 }
             }
             else if (nLabels >= 3)
             {
-                --elemId;   // Convert 1-based -> 0-based
-                dynElemId.append(elemId);
+                if (!ignoreElemId)
+                {
+                    // Convert 1-based -> 0-based
+                    dynElemId.push_back(elemId-1);
+                }
 
-                dynFaces.append(Face(vertices));
-                dynZones.append(zoneId);
+                dynFaces.emplace_back(vertices);
+                dynZones.push_back(zoneId);
                 dynSizes[zoneId]++;
             }
         }

@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2020-2022 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -143,7 +144,7 @@ Foam::fileName Foam::surfaceWriters::abaqusWriter::writeTemplate
 
         // Additional bookkeeping for decomposing non tri/quad
         labelList decompOffsets;
-        DynamicList<face> decompFaces;
+        DynamicList<triFace> decompFaces;
 
 
         OFstream os(outputFile);

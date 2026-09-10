@@ -121,32 +121,24 @@ void Foam::triangulatedPatch::triangulate
     List<labelledTri>& tris
 )
 {
+    // Triangulate the patch faces and create addressing
     const pointField& points = pp.points();
 
-    // Triangulate the patch faces and create addressing
     label nTris = 0;
     for (const face& f : pp)
     {
         nTris += f.nTriangles();
     }
 
-    DynamicList<labelledTri> dynTris(nTris);
-    DynamicList<face> tfaces(8);  // work array
+    tris.resize_nocopy(nTris);
 
-    label facei = 0;
+    nTris = 0;
+    label patchFacei = 0;
     for (const face& f : pp)
     {
-        tfaces.clear();
-        f.triangles(points, tfaces);
-
-        for (const auto& t : tfaces)
-        {
-            dynTris.emplace_back(t[0], t[1], t[2], facei);
-        }
-        ++facei;
+        f.triangles(points, nTris, tris, patchFacei);
+        ++patchFacei;
     }
-
-    tris.transfer(dynTris);
 }
 
 

@@ -237,7 +237,7 @@ Foam::fileName Foam::surfaceWriters::nastranWriter::writeTemplate
 
         // Additional bookkeeping for decomposing non tri/quad
         labelList decompOffsets;
-        DynamicList<face> decompFaces;
+        DynamicList<triFace> decompFaces;
 
 
         OFstream os

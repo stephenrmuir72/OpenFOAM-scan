@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2013-2016 OpenFOAM Foundation
     Copyright (C) 2015-2022,2024 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -395,13 +396,13 @@ void Foam::advancingFrontAMI::appendNbrFaces
 void Foam::advancingFrontAMI::triangulatePatch
 (
     const primitivePatch& patch,
-    List<DynamicList<face>>& tris,
+    List<DynamicList<triFace>>& tris,
     List<scalar>& magSf
 ) const
 {
     const pointField& points = patch.points();
-    tris.setSize(patch.size());
-    magSf.setSize(patch.size());
+    tris.resize_nocopy(patch.size());
+    magSf.resize_nocopy(patch.size());
 
     const auto& faceNormals = patch.faceNormals();
 
@@ -414,7 +415,7 @@ void Foam::advancingFrontAMI::triangulatePatch
         {
             case faceAreaIntersect::tmFan:
             {
-                faceAreaIntersect::triangleFan(patch[facei], tris[facei]);
+                patch[facei].trianglesFan(points, tris[facei]);
                 break;
             }
             case faceAreaIntersect::tmMesh:
@@ -424,37 +425,29 @@ void Foam::advancingFrontAMI::triangulatePatch
             }
         }
 
-        const DynamicList<face>& triFaces = tris[facei];
+        const auto& triFaces = tris[facei];
         magSf[facei] = 0;
 
         switch (areaNormalisationMode_)
         {
             case areaNormalisationMode::project:
             {
-                for (const face& f : triFaces)
+                for (const auto& f : triFaces)
                 {
                     magSf[facei] +=
-                        triPointRef
-                        (
-                            points[f[0]],
-                            points[f[1]],
-                            points[f[2]]
-                        ).areaNormal()
-                      & faceNormals[facei];
+                    (
+                        triPointRef(points, f[0], f[1], f[2]).areaNormal()
+                      & faceNormals[facei]
+                    );
                 }
                 break;
             }
             case areaNormalisationMode::mag:
             {
-                for (const face& f : triFaces)
+                for (const auto& f : triFaces)
                 {
                     magSf[facei] +=
-                        triPointRef
-                        (
-                            points[f[0]],
-                            points[f[1]],
-                            points[f[2]]
-                        ).mag();
+                        triPointRef(points, f[0], f[1], f[2]).mag();
                 }
                 break;
             }

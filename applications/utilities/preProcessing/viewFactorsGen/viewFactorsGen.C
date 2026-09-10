@@ -171,36 +171,23 @@ triSurface triangulate
         const polyPatch& patch = bMesh[patchI];
         const pointField& points = patch.points();
 
-        //label nTriTotal = 0;
-
         forAll(patch, patchFaceI)
         {
             const face& f = patch[patchFaceI];
 
-            faceList triFaces(f.nTriangles(points));
+            const label nTris = f.triangles(points, triangles, newPatchI);
 
-            label nTri = 0;
+            const label agglomId = globalNumbering.toGlobal
+            (
+                UPstream::myProcNo(),
+                finalAgglom[patchI][patchFaceI] + coarsePatches[patchI].start()
+            );
 
-            f.triangles(points, nTri, triFaces);
-
-            forAll(triFaces, triFaceI)
-            {
-                const face& f = triFaces[triFaceI];
-
-                triangles.append(labelledTri(f[0], f[1], f[2], newPatchI));
-
-                //nTriTotal++;
-
-                triSurfaceToAgglom[localTriFaceI++] = globalNumbering.toGlobal
-                (
-                    Pstream::myProcNo(),
-                    finalAgglom[patchI][patchFaceI]
-                  + coarsePatches[patchI].start()
-                );
-            }
+            triSurfaceToAgglom.slice(localTriFaceI, nTris) = agglomId;;
+            localTriFaceI += nTris;
         }
 
-        newPatchI++;
+        ++newPatchI;
     }
 
     //triSurfaceToAgglom.resize(localTriFaceI-1);

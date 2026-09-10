@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2017-2025 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -31,15 +32,15 @@ Description
     A face is a list of labels corresponding to mesh vertices.
 
 See also
-    Foam::triFace
+    Foam::quadFace, Foam::triFace
 
 SourceFiles
     faceI.H
-    face.C
-    faceIntersection.C
-    faceContactSphere.C
-    faceAreaInContact.C
+    face.cxx
     face.txx
+    faceContactArea.cxx
+    faceContactSphere.cxx
+    faceIntersection.cxx
 
 \*---------------------------------------------------------------------------*/
 
@@ -49,7 +50,6 @@ SourceFiles
 #include "pointField.H"
 #include "labelList.H"
 #include "edgeList.H"
-#include "vectorField.H"
 #include "faceListFwd.H"
 #include "intersection.H"
 #include "pointHit.H"
@@ -64,6 +64,9 @@ namespace Foam
 // Forward Declarations
 class face;
 class triFace;
+class quadFace;
+class labelledTri;
+class labelledQuad;
 template<class T, int SizeMin> class DynamicList;
 
 /*---------------------------------------------------------------------------*\
@@ -74,48 +77,12 @@ class face
 :
     public labelList
 {
-    // Private Member Functions
-
-        //- Construct list of edge vectors for face
-        tmp<vectorField> calcEdgeVectors
-        (
-            const UList<point>& points
-        ) const;
-
-        //- Find index of largest internal angle on face
-        label mostConcaveAngle
-        (
-            const UList<point>& points,
-            const vectorField& edges,
-            scalar& edgeCos
-        ) const;
-
-        //- Enumeration listing the modes for split()
-        enum splitMode
-        {
-            COUNTTRIANGLE,  //!< count if split into triangles
-            COUNTQUAD,      //!< count if split into triangles and quads
-            SPLITTRIANGLE,  //!< split into triangles
-            SPLITQUAD       //!< split into  triangles and quads
-        };
-
-        //- Split face into triangles or triangles and quads.
-        //  Stores results quadFaces[quadI], triFaces[triI]
-        //  \return number of new faces created
-        label split
-        (
-            const splitMode mode,
-            const UList<point>& points,
-            label& triI,
-            label& quadI,
-            faceList& triFaces,
-            faceList& quadFaces
-        ) const;
-
-
 public:
 
-    // Public Typedefs
+    // Public Data Types
+
+        //- Face flipping
+        enum class flipType { NONE, FLIP };
 
         //- The proximity classifications
         enum proxType
@@ -126,8 +93,58 @@ public:
         };
 
 
+private:
+
+    // Private Data Types
+
+        //- Enumeration of the split() modes
+        enum splitMode
+        {
+            COUNT_TRIANGLE,  //!< count if split into triangles
+            COUNT_QUAD,      //!< count if split into triangles and quads
+            SPLIT_FAN,       //!< split as triangular fan around vertex 0
+            SPLIT_TRIANGLE,  //!< split into triangles
+            SPLIT_QUAD       //!< split into triangles and quads
+        };
+
+
+    // Private Member Functions
+
+        //- Approximate normal (for directional calculations).
+        //  Normal vector obtained from three points on the face.
+        //  Used when only the basic direction of the face is needed.
+        //  For speed, the vector is not normalized and its magnitude has
+        //  no particular meaning.
+        inline vector approxNormal(const UList<point>& points) const;
+
+        //- Split face into triangles or triangles/quads (or just count).
+        //
+        //  \note QuadFaceT is allowed to be an integral (non-face type),
+        //  which signals that tris/quads go into a single output.
+        //
+        //  \return Number of new faces created
+        template<splitMode Mode, class TriFaceT, class QuadFaceT>
+        label split
+        (
+            //! Reference points for the face geometry
+            [[maybe_unused]] const UList<point>& points,
+            //! [in,out] Index counter for triangles
+            label& triI,
+            //! [in,out] Index counter for quads
+            label& quadI,
+            //! [out] Output of triangle results (split mode)
+            [[maybe_unused]] UList<TriFaceT>& triFaces,
+            //! [out] Output of quad results (split mode)
+            [[maybe_unused]] UList<QuadFaceT>& quadFaces,
+            //! Virtual flipping before the split?
+            [[maybe_unused]] const flipType flipping
+        ) const;
+
+public:
+
     // Static Data Members
 
+        //- The typeName
         static const char* const typeName;
 
 
@@ -137,13 +154,17 @@ public:
         constexpr face() noexcept = default;
 
         //- Construct given size, with invalid vertex labels (-1)
-        inline explicit face(const label sz);
+        inline explicit face(label len);
+
+        //- Move construct from list of vertex labels
+        inline explicit face(labelList&& list);
 
         //- Copy construct from list of vertex labels
         inline explicit face(const labelUList& list);
 
-        //- Move construct from list of vertex labels
-        inline explicit face(labelList&& list);
+        //- Copy construct from list of vertex labels,
+        //- with specified face flipping
+        inline face(const labelUList& list, flipType flipping);
 
         //- Copy construct from an initializer list of vertex labels
         inline explicit face(std::initializer_list<label> list);
@@ -152,15 +173,35 @@ public:
         template<unsigned N>
         inline explicit face(const FixedList<label, N>& list);
 
-        //- Copy construct from subset of vertex labels
-        inline face(const labelUList& list, const labelUList& indices);
-
-        //- Copy construct from subset of vertex labels
+        //- Copy construct from list of vertex labels,
+        //- with specified face flipping
         template<unsigned N>
-        inline face(const labelUList& list, const FixedList<label, N>& indices);
+        inline face(const FixedList<label, N>& list, flipType flipping);
+
+        //- Copy construct from subset of vertex labels,
+        //- with optional face flipping
+        inline face
+        (
+            const labelUList& list,
+            const labelUList& indices,
+            flipType flipping = flipType::NONE
+        );
+
+        //- Copy construct from subset of vertex labels,
+        //- with optional face flipping
+        template<unsigned N>
+        inline face
+        (
+            const labelUList& list,
+            const FixedList<label, N>& indices,
+            flipType flipping = flipType::NONE
+        );
 
         //- Copy construct from triFace
         face(const triFace& f);
+
+        //- Copy construct from quadFace
+        face(const quadFace& f);
 
         //- Construct from Istream
         inline face(Istream& is);
@@ -199,14 +240,6 @@ public:
         //- The unit normal
         inline vector unitNormal(const UList<point>& p) const;
 
-        //- Legacy name for areaNormal()
-        //  \deprecated(2018-06) Deprecated for new use
-        FOAM_DEPRECATED_FOR(2018-12, "areaNormal() or unitNormal()")
-        vector normal(const UList<point>& p) const
-        {
-            return areaNormal(p); // Legacy definition
-        }
-
         //- Magnitude of face area
         inline scalar mag(const UList<point>& p) const;
 
@@ -225,17 +258,17 @@ public:
 
         //- Find local vertex on face for the vertex label, same as find()
         //  \return position in face (0,1,2,...) or -1 if not found.
-        inline label which(const label vertex) const;
+        inline label which(label vertex) const;
 
-        //- The vertex on face - identical to operator[], but with naming
-        //- similar to nextLabel(), prevLabel()
-        inline label thisLabel(const label i) const;
+        //- Next vertex on face (circular order)
+        label nextLabel(label i) const { return labelList::fcValue(i); }
 
-        //- Next vertex on face
-        inline label nextLabel(const label i) const;
+        //- Previous vertex on face (circular order)
+        label prevLabel(label i) const { return labelList::rcValue(i); }
 
-        //- Previous vertex on face
-        inline label prevLabel(const label i) const;
+        //- The vertex on face (naming as per nextLabel, prevLabel),
+        //- identical to operator[]
+        label thisLabel(label i) const { return (*this)[i]; }
 
 
         //- Return the volume swept out by the face when its points move
@@ -344,22 +377,22 @@ public:
         //- Return i-th face edge (forward walk order).
         //  The edge 0 is from [0] to [1]
         //  and edge 1 is from [1] to [2]
-        inline Foam::edge edge(const label edgei) const;
+        inline Foam::edge edge(label edgei) const;
 
         //- Return vector of i-th face edge (forward walk order).
         //  The edge 0 is from [0] to [1]
         //  and edge 1 is from [1] to [2]
-        inline vector edge(const label edgei, const UList<point>& pts) const;
+        inline vector edge(label edgei, const UList<point>& pts) const;
 
         //- Return i-th face edge in reverse walk order.
         //  The rcEdge 0 is from [0] to [n-1]
         //  and rcEdge 1 is from [n-1] to [n-2]
-        inline Foam::edge rcEdge(const label edgei) const;
+        inline Foam::edge rcEdge(label edgei) const;
 
         //- Return vector of i-th face edge in reverse walk order.
         //  The rcEdge 0 is from [0] to [n-1]
         //  and rcEdge 1 is from [n-1] to [n-2]
-        inline vector rcEdge(const label edgei, const UList<point>& pts) const;
+        inline vector rcEdge(label edgei, const UList<point>& pts) const;
 
         //- Return list of edges in forward walk order.
         //  The edge 0 is from [0] to [1]
@@ -406,47 +439,261 @@ public:
             //- Number of triangles after splitting
             label nTriangles(const UList<point>& unused) const;
 
-            //- Split into triangles using existing points.
-            //  Result in triFaces[triI..triI+nTri].
+            //- Split into triangles using given points.
             //  Splits intelligently to maximize triangle quality.
             //  \Return number of faces created.
             label triangles
             (
                 const UList<point>& points,
+                //! [in,out] write position into tris
                 label& triI,
-                faceList& triFaces
+                //! [out] The triangle results, written starting at triI
+                UList<face>& tris,
+                //! Virtual flipping before the split?
+                const flipType flipping = flipType::NONE
             ) const;
 
-            //- Split into triangles using existing points.
-            //  Append to DynamicList.
+            //- Split into triangles using given points.
             //  \Return number of faces created.
             template<int SizeMin>
             label triangles
             (
                 const UList<point>& points,
-                DynamicList<face, SizeMin>& triFaces
+                //! [out] The triangle results (appended to list)
+                DynamicList<face, SizeMin>& tris,
+                //! Virtual flipping before the split?
+                const flipType flipping = flipType::NONE
             ) const;
+
+            //- Split into triangles using given points.
+            //  \Return number of faces created.
+            label triangles
+            (
+                const UList<point>& points,
+                //! [in,out] write position into tris
+                label& triI,
+                //! [out] The triangle results, written starting at triI
+                UList<triFace>& tris,
+                //! Virtual flipping before the split?
+                const flipType flipping = flipType::NONE
+            ) const;
+
+            //- Split into triangles using given points.
+            //  \Return number of faces created.
+            template<int SizeMin>
+            label triangles
+            (
+                const UList<point>& points,
+                //! [out] The triangle results (appended to list)
+                DynamicList<triFace, SizeMin>& tris,
+                //! Virtual flipping before the split?
+                const flipType flipping = flipType::NONE
+            ) const;
+
+            //- Split into triangles using given points.
+            //  \Return number of faces created.
+            label triangles
+            (
+                const UList<point>& points,
+                //! [in,out] write position into tris
+                label& triI,
+                //! [out] The triangle results, written starting at triI
+                UList<labelledTri>& tris,
+                const label region = 0,
+                //! Virtual flipping before the split?
+                const flipType flipping = flipType::NONE
+            ) const;
+
+            //- Split into triangles using given points.
+            //  \Return number of faces created.
+            template<int SizeMin>
+            label triangles
+            (
+                const UList<point>& points,
+                //! [out] The triangle results (appended to list)
+                DynamicList<labelledTri, SizeMin>& tris,
+                const label region = 0,
+                //! Virtual flipping before the split?
+                const flipType flipping = flipType::NONE
+            ) const;
+
+            //- Fan-split into triangles using given points.
+            //  \Return number of faces created.
+            label trianglesFan
+            (
+                const UList<point>& points,
+                //! [in,out] write position into tris
+                label& triI,
+                //! [out] The triangle results, written starting at triI
+                UList<face>& tris,
+                //! Virtual flipping before the split?
+                const flipType flipping = flipType::NONE
+            ) const;
+
+            //- Fan-split into triangles using given points.
+            //  \Return number of faces created.
+            template<int SizeMin>
+            label trianglesFan
+            (
+                const UList<point>& points,
+                //! [out] The triangle results (appended to list)
+                DynamicList<face, SizeMin>& tris,
+                //! Virtual flipping before the split?
+                const flipType flipping = flipType::NONE
+            ) const;
+
+            //- Fan-split into triangles using given points.
+            //  \Return number of faces created.
+            label trianglesFan
+            (
+                const UList<point>& points,
+                //! [in,out] write position into tris
+                label& triI,
+                //! [out] The triangle results, written starting at triI
+                UList<triFace>& tris,
+                //! Virtual flipping before the split?
+                const flipType flipping = flipType::NONE
+            ) const;
+
+            //- Fan-split into triangles using given points.
+            //  \Return number of faces created.
+            template<int SizeMin>
+            label trianglesFan
+            (
+                const UList<point>& points,
+                //! [out] The triangle results (appended to list)
+                DynamicList<triFace, SizeMin>& tris,
+                //! Virtual flipping before the split?
+                const flipType flipping = flipType::NONE
+            ) const;
+
+            //- Fan-split into triangles using given points.
+            //  \Return number of faces created.
+            label trianglesFan
+            (
+                const UList<point>& points,
+                //! [in,out] write position into tris
+                label& triI,
+                //! [out] The triangle results, written starting at triI
+                UList<labelledTri>& tris,
+                const label region = 0,
+                //! Virtual flipping before the split?
+                const flipType flipping = flipType::NONE
+            ) const;
+
+            //- Split into triangles using given points.
+            //  \Return number of faces created.
+            template<int SizeMin>
+            label trianglesFan
+            (
+                const UList<point>& points,
+                //! [out] The triangle results (appended to list)
+                DynamicList<labelledTri, SizeMin>& tris,
+                const label region = 0,
+                //! Virtual flipping before the split?
+                const flipType flipping = flipType::NONE
+            ) const;
+
 
             //- Number of triangles and quads after splitting
             //  Returns the sum of both
             label nTrianglesQuads
             (
                 const UList<point>& points,
+                //! [out] The number of triangles
                 label& nTris,
-                label& nQuads
+                //! [out] The number of quads
+                label& nQuads,
+                //! Virtual flipping before the split?
+                const flipType flipping = flipType::NONE
             ) const;
 
-            //- Split into triangles and quads.
-            //  Results in triFaces (starting at triI) and quadFaces
-            //  (starting at quadI).
+            //- Split into triangles and quads, combined output.
             //  Returns number of new faces created.
             label trianglesQuads
             (
                 const UList<point>& points,
+                //! [in,out] write position into splitFaces
+                label& faceI,
+                //! [out] The triangle/quad results, written starting at faceI
+                UList<face>& splitFaces,
+                //! Virtual flipping before the split?
+                const flipType flipping = flipType::NONE
+            ) const;
+
+            //- Split into triangles and quads, combined output.
+            //  \Return number of faces created.
+            template<int SizeMin>
+            label trianglesQuads
+            (
+                const UList<point>& points,
+                //! [out] The triangle/quad results (appended to list)
+                DynamicList<face, SizeMin>& splitFaces,
+                //! Virtual flipping before the split?
+                const flipType flipping = flipType::NONE
+            ) const;
+
+            //- Split into triangles and quads.
+            //  Returns number of new faces created.
+            label trianglesQuads
+            (
+                const UList<point>& points,
+                //! [in,out] write position into tris
                 label& triI,
+                //! [in,out] write position into quads
                 label& quadI,
-                faceList& triFaces,
-                faceList& quadFaces
+                //! [out] The triangle results, written starting at triI
+                UList<face>& tris,
+                //! [out] The quad results, written starting at quadI
+                UList<face>& quads,
+                //! Virtual flipping before the split?
+                const flipType flipping = flipType::NONE
+            ) const;
+
+            //- Split into triangles and quads.
+            //  \Return number of faces created.
+            template<int SizeMin1, int SizeMin2>
+            label trianglesQuads
+            (
+                const UList<point>& points,
+                //! [out] The triangle results (appended to list)
+                DynamicList<face, SizeMin1>& tris,
+                //! [out] The quad results (appended to list)
+                DynamicList<face, SizeMin2>& quads,
+                //! Virtual flipping before the split?
+                const flipType flipping = flipType::NONE
+            ) const;
+
+            //- Split into triangles and quads.
+            //  Returns number of new faces created.
+            label trianglesQuads
+            (
+                const UList<point>& points,
+                //! [in,out] write position into tris
+                label& triI,
+                //! [in,out] write position into quads
+                label& quadI,
+                //! [out] The triangle results, written starting at triI
+                UList<triFace>& tris,
+                //! [out] The quad results, written starting at quadI
+                UList<quadFace>& quads,
+                //! Virtual flipping before the split?
+                const flipType flipping = flipType::NONE
+            ) const;
+
+            //- Split into triangles and quads.
+            //  Append to DynamicList.
+            //  \Return number of faces created.
+            template<int SizeMin1, int SizeMin2>
+            label trianglesQuads
+            (
+                const UList<point>& points,
+                //! [out] The triangle results (appended to list)
+                DynamicList<triFace, SizeMin1>& tris,
+                //! [out] The quad results (appended to list)
+                DynamicList<quadFace, SizeMin2>& quads,
+                //! Virtual flipping before the split?
+                const flipType flipping = flipType::NONE
             ) const;
 
 
@@ -471,7 +718,20 @@ public:
     // Member Operators
 
         //- Increment (offset) vertices by given amount
-        inline void operator+=(const label vertexOffset);
+        inline void operator+=(label vertexOffset);
+
+        //- Equality: faces are equal if they share the same vertices
+        //- in the same or opposite order (orientation-agnostic)
+        bool operator==(const face& other) const
+        {
+            return (face::compare(*this, other) != 0);
+        }
+
+        //- Inequality
+        bool operator!=(const face& other) const
+        {
+            return (face::compare(*this, other) == 0);
+        }
 
 
     // Hashing
@@ -518,6 +778,14 @@ public:
 
     // Housekeeping
 
+        //- Legacy name for areaNormal()
+        //  \deprecated(2018-06) Deprecated for new use
+        FOAM_DEPRECATED_FOR(2018-12, "areaNormal() or unitNormal()")
+        vector normal(const UList<point>& p) const
+        {
+            return areaNormal(p);  // Legacy definition
+        }
+
         //- Identical to edge()
         Foam::edge faceEdge(label edgei) const { return this->edge(edgei); }
 };
@@ -540,12 +808,6 @@ struct offsetOp<face>
         return f;
     }
 };
-
-
-// * * * * * * * * * * * * * * * Global Operators  * * * * * * * * * * * * * //
-
-inline bool operator==(const face& a, const face& b);
-inline bool operator!=(const face& a, const face& b);
 
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //

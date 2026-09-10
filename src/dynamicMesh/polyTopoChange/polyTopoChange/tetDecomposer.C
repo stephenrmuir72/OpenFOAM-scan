@@ -220,13 +220,13 @@ const
 
 void Foam::tetDecomposer::splitBoundaryFaces
 (
-    List<faceList>& boundaryQuads,
-    List<faceList>& boundaryTris
+    List<List<quadFace>>& boundaryQuads,
+    List<List<triFace>>& boundaryTris
 ) const
 {
     // Work space
-    faceList quadFaces(1000);
-    faceList triFaces(1000);
+    DynamicList<quadFace> quads;
+    DynamicList<triFace> tris;
 
     const auto& pbm = mesh_.boundaryMesh();
     for (const auto& pp : pbm)
@@ -240,43 +240,39 @@ void Foam::tetDecomposer::splitBoundaryFaces
 
                 if (meshFace.size() > 4)
                 {
-                    label trii = 0;
-                    label quadi = 0;
-                    meshFace.trianglesQuads
-                    (
-                        mesh_.points(),
-                        trii,
-                        quadi,
-                        triFaces,
-                        quadFaces
-                    );
+                    quads.clear();
+                    tris.clear();
+                    meshFace.trianglesQuads(mesh_.points(), tris, quads);
 
                     const label bFacei = facei-mesh_.nInternalFaces();
 
+                    const label nTris = tris.size();
                     {
                         auto& faces = boundaryTris[bFacei];
-                        faces.setSize(trii);
+                        faces.resize_nocopy(nTris);
                         // Express as relative w.r.t. 0th vertex
-                        for (label i = 0; i < trii; i++)
+                        for (label i = 0; i < nTris; i++)
                         {
-                            const auto& f = triFaces[i];
+                            const auto& f = tris[i];
                             auto& verts = faces[i];
-                            verts.setSize(f.size());
+                            verts.resize(f.size());
                             forAll(f, fp)
                             {
                                 verts[fp] = meshFace.find(f[fp]);
                             }
                         }
                     }
+
+                    const label nQuads = quads.size();
                     {
                         auto& faces = boundaryQuads[bFacei];
-                        faces.setSize(quadi);
+                        faces.resize_nocopy(nQuads);
                         // Express as relative w.r.t. 0th vertex
-                        for (label i = 0; i < quadi; i++)
+                        for (label i = 0; i < nQuads; i++)
                         {
-                            const auto& f = quadFaces[i];
+                            const auto& f = quads[i];
                             auto& verts = faces[i];
-                            verts.setSize(f.size());
+                            verts.resize(f.size());
                             forAll(f, fp)
                             {
                                 verts[fp] = meshFace.find(f[fp]);
@@ -294,7 +290,7 @@ void Foam::tetDecomposer::splitBoundaryFaces
     (
         mesh_,
         boundaryTris,
-        [](faceList& result, const UList<face>& input)
+        [](List<triFace>& result, const UList<triFace>& input)
         {
             if (result.empty())
             {
@@ -307,7 +303,7 @@ void Foam::tetDecomposer::splitBoundaryFaces
     (
         mesh_,
         boundaryQuads,
-        [](faceList& result, const UList<face>& input)
+        [](List<quadFace>& result, const UList<quadFace>& input)
         {
             if (result.empty())
             {
@@ -319,12 +315,13 @@ void Foam::tetDecomposer::splitBoundaryFaces
 }
 
 
+template<class FaceType>
 void Foam::tetDecomposer::relativeIndicesToFace
 (
     const bool doFlip,
     const face& meshFace,
-    const faceList& indexLists,
-    faceList& faces
+    const UList<FaceType>& indexLists,
+    List<FaceType>& faces
 ) const
 {
     //faces.setSize(indexLists.size());
@@ -335,7 +332,7 @@ void Foam::tetDecomposer::relativeIndicesToFace
         {
             const auto& verts = indexLists[facei];
             auto& f = faces[facei];
-            f.setSize(verts.size());
+            f.resize(verts.size());  // (no-op for FixedList - same type)
 
             forAll(verts, fp)
             {
@@ -349,7 +346,7 @@ void Foam::tetDecomposer::relativeIndicesToFace
         {
             const auto& verts = indexLists[facei];
             auto& f = faces[facei];
-            f.setSize(verts.size());
+            f.resize(verts.size());  // (no-op for FixedList - same type)
 
             // - 0th vertex matches; walking order opposite
             // - assemble in opposite order so as to flip normal
@@ -373,14 +370,14 @@ void Foam::tetDecomposer::relativeIndicesToFace
 
 void Foam::tetDecomposer::splitFace
 (
-    const List<faceList>& boundaryQuads,
-    const List<faceList>& boundaryTris,
+    const UList<List<quadFace>>& boundaryQuads,
+    const UList<List<triFace>>& boundaryTris,
     const label facei,
     const label patchi,
     label& quadi,
-    faceList& quadFaces,
+    List<quadFace>& quadFaces,  // work space
     label& trii,
-    faceList& triFaces
+    List<triFace>& triFaces     // work space
 ) const
 {
     // Split face into quads (in quadFaces) and tris (in triFaces)
@@ -392,8 +389,7 @@ void Foam::tetDecomposer::splitFace
     if (patchi != -1 && mesh_.boundaryMesh()[patchi].coupled())
     {
         const auto& pp = mesh_.boundaryMesh()[patchi];
-        const bool owner =
-            refCast<const coupledPolyPatch>(pp).owner();
+        const bool owner = refCast<const coupledPolyPatch>(pp).owner();
         const label bFacei = facei-mesh_.nInternalFaces();
 
         // Triangles
@@ -436,13 +432,13 @@ void Foam::tetDecomposer::splitFace
 
 void Foam::tetDecomposer::splitFace
 (
-    const List<faceList>& boundaryQuads,
-    const List<faceList>& boundaryTris,
+    const UList<List<quadFace>>& boundaryQuads,
+    const UList<List<triFace>>& boundaryTris,
     const label facei,
     const label patchi,
-    faceList& quadFaces,
-    faceList& triFaces,
-    faceList& subFaces
+    List<quadFace>& quadFaces,   // work space
+    List<triFace>& triFaces,     // work space
+    List<face>& subFaces
 ) const
 {
     const face& f = mesh_.faces()[facei];
@@ -589,10 +585,10 @@ void Foam::tetDecomposer::setRefinement
     // For diagonal splitting : send over diagonals since two sides of
     // coupled face might make different decisions
     // TBD: probably also for FACE_DIAG_TRIS ?
-    faceList quadFaces;
-    faceList triFaces;
-    List<faceList> boundaryQuads;
-    List<faceList> boundaryTris;
+    List<quadFace> quadFaces;
+    List<triFace> triFaces;
+    List<List<quadFace>> boundaryQuads;
+    List<List<triFace>> boundaryTris;
     faceList subFaces;
 
     if (decomposeType == FACE_DIAG_QUADS)

@@ -669,10 +669,7 @@ void Foam::MeshedSurface<Face>::compactPoints(labelList& pointMap)
         }
     }
 
-    pointField newPoints
-    (
-        UIndirectList<point>(this->points(), compactPointMap)
-    );
+    pointField newPoints(this->points(), compactPointMap);
 
     this->swapPoints(newPoints);
 
@@ -1092,7 +1089,7 @@ Foam::label Foam::MeshedSurface<Face>::triangulate
     else
     {
         // triangulate with points
-        List<face> tmpTri(maxTri);
+        DynamicList<triFace> trias(maxTri);
 
         nTri = 0;
         forAll(faceLst, facei)
@@ -1100,14 +1097,12 @@ Foam::label Foam::MeshedSurface<Face>::triangulate
             // 'face' not '<Face>'
             const face& f = faceLst[facei];
 
-            label nTmp = 0;
-            f.triangles(this->points(), nTmp, tmpTri);
-            for (label triI = 0; triI < nTmp; triI++)
+            trias.clear();
+            f.triangles(this->points(), trias);
+
+            for (const auto& t : trias)
             {
-                newFaces[nTri] = Face
-                (
-                    static_cast<labelUList&>(tmpTri[triI])
-                );
+                newFaces[nTri] = Face(t);
                 faceMap[nTri] = facei;
                 ++nTri;
             }
@@ -1139,7 +1134,7 @@ Foam::MeshedSurface<Face>::subsetMeshImpl
     const List<Face>& locFaces  = this->localFaces();
 
     // Subset of points (compact)
-    pointField newPoints(UIndirectList<point>(locPoints, pointMap));
+    pointField newPoints(locPoints, pointMap);
 
     // Inverse point mapping - same as ListOps invert() without checks
     labelList oldToNew(locPoints.size(), -1);
@@ -1149,7 +1144,7 @@ Foam::MeshedSurface<Face>::subsetMeshImpl
     }
 
     // Subset of faces
-    List<Face> newFaces(UIndirectList<Face>(locFaces, faceMap));
+    List<Face> newFaces(locFaces, faceMap);
 
     // Renumber face node labels
     for (auto& f : newFaces)

@@ -128,24 +128,33 @@ void Foam::ParticleCollector<CloudType>::initPolygons
     }
 
     label pointOffset = 0;
-    points_.setSize(nPoints);
-    faces_.setSize(polygons.size());
-    faceTris_.setSize(polygons.size());
-    area_.setSize(polygons.size());
+
+    points_.resize_nocopy(nPoints);
+    faces_.resize_nocopy(polygons.size());
+    // faceTris_.resize_nocopy(polygons.size());
+    area_.resize_nocopy(polygons.size());
+
     forAll(faces_, facei)
     {
-        const Field<point>& polyPoints = polygons[facei];
-        face f(identity(polyPoints.size(), pointOffset));
+        const auto& polyPoints = polygons[facei];
+        auto& f = faces_[facei];
+
+        f = face(Foam::identity(polyPoints.size(), pointOffset));
+
+        pointOffset += polyPoints.size();
+
         UIndirectList<point>(points_, f) = polyPoints;
         area_[facei] = f.mag(points_);
 
-        DynamicList<face> tris;
-        f.triangles(points_, tris);
-        faceTris_[facei].transfer(tris);
-
-        faces_[facei].transfer(f);
-
-        pointOffset += polyPoints.size();
+        // Triangulation
+        #if 0
+        {
+            label triI = 0;
+            auto& tris = faceTris_[facei];
+            tris.resize_nocopy(f.nTriangles());
+            f.triangles(points_, triI, tris);
+        }
+        #endif
     }
 }
 
@@ -523,7 +532,6 @@ Foam::ParticleCollector<CloudType>::ParticleCollector
     logToFile_(this->coeffDict().getBool("log")),
     points_(),
     faces_(),
-    faceTris_(),
     nSector_(0),
     radius_(),
     coordSys_(),
@@ -608,7 +616,7 @@ Foam::ParticleCollector<CloudType>::ParticleCollector
     logToFile_(pc.logToFile_),
     points_(pc.points_),
     faces_(pc.faces_),
-    faceTris_(pc.faceTris_),
+    // faceTris_(pc.faceTris_),
     nSector_(pc.nSector_),
     radius_(pc.radius_),
     coordSys_(pc.coordSys_),

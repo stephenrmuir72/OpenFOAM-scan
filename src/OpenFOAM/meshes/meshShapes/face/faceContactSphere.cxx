@@ -44,6 +44,11 @@ Foam::scalar Foam::face::contactSphereDiameter
 
     n2 /= Foam::mag(n2) + SMALL;
 
+    // const vector n1(Foam::normalised(n));
+    // const vector n2(this->unitNormal(meshPoints));
+    //
+    // return 2*((this->centre(meshPoints) - p) & n2)/((n1 & n2) - 1.0);
+
     return 2*((centre(meshPoints) - p) & n2)/((n1 & n2) - 1.0);
 }
 

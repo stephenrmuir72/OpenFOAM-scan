@@ -155,8 +155,9 @@ private:
 
         // Polygon collector
 
-            //- Triangulation of faces
-            List<List<face>> faceTris_;
+            // unused: //- Triangulation of faces
+            // unused: List<List<face>> faceTris_;
+
 
         // Concentric circles collector
 

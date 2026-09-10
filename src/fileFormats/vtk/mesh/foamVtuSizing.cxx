@@ -5,7 +5,8 @@
     \\  /    A nd           | www.openfoam.com
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
-    Copyright (C) 2016-2026 OpenCFD Ltd.
+    Copyright (C) 2016-2025 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -436,22 +437,17 @@ void Foam::vtk::vtuSizing::reset
                 // Face decomposed into triangles and quads
                 // Tri -> Tet, Quad -> Pyr
                 const face& f = meshFaces[facei];
-                label nTria = 0, nQuad = 0;
 
-                // Need to use a flipped face on the boundary?
-                if
-                (
-                    (f.size() > 4)
-                 && flipBoundaryFace.test(facei - mesh.nInternalFaces())
-                )
+                face::flipType flipping(face::flipType::NONE);
+
+                // Need flipped face on the boundary
+                if (flipBoundaryFace.test(facei - mesh.nInternalFaces()))
                 {
-                    const face flipped(f.reverseFace());
-                    flipped.nTrianglesQuads(mesh.points(), nTria, nQuad);
+                    flipping = face::flipType::FLIP;
                 }
-                else
-                {
-                    f.nTrianglesQuads(mesh.points(), nTria, nQuad);
-                }
+
+                label nTria = 0, nQuad = 0;
+                f.nTrianglesQuads(mesh.points(), nTria, nQuad, flipping);
 
                 nAddCells_ += nTria + nQuad;
                 nAddVerts_ += (nTria * 4) + (nQuad * 5);

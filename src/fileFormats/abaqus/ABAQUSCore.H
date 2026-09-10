@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2020 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -83,6 +84,7 @@ SourceFiles
 #include "Enum.H"
 #include "Map.H"
 #include "face.H"
+#include "triFace.H"
 #include "point.H"
 #include "DynamicList.H"
 
@@ -181,6 +183,27 @@ public:
               : 0
             );
         }
+
+
+private:
+
+    // Private Functions
+
+        //- Calculate face decomposition for non tri/quad faces
+        //
+        //  \return number of decomposed faces
+        template<class TriFaceT>
+        static label faceDecomposition_impl
+        (
+            //! The surface points
+            const UList<point>& points,
+            //! The surface faces
+            const UList<face>& faces,
+            //! [out] begin/end offsets (size+1) into decompFaces
+            labelList& decompOffsets,
+            //! [out] List of non-tri/quad decomposed into triangles
+            DynamicList<TriFaceT>& decompFaces
+        );
 
 
 protected:
@@ -343,18 +366,32 @@ public:
 
         //- Calculate face decomposition for non tri/quad faces
         //
-        //  \param points the surface points
-        //  \param faces  the surface faces
-        //  \param decompOffsets begin/end offsets (size+1) into decompFaces
-        //  \param decompFaces  List of non-tri/quad decomposed into triangles
+        //  \return number of decomposed faces
+        static label faceDecomposition
+        (
+            //! The surface points
+            const UList<point>& points,
+            //! The surface faces
+            const UList<face>& faces,
+            //! [out] begin/end offsets (size+1) into decompFaces
+            labelList& decompOffsets,
+            //! [out] List of non-tri/quad decomposed into triangles
+            DynamicList<face>& decompFaces
+        );
+
+        //- Calculate face decomposition for non tri/quad faces
         //
         //  \return number of decomposed faces
         static label faceDecomposition
         (
+            //! The surface points
             const UList<point>& points,
+            //! The surface faces
             const UList<face>& faces,
+            //! [out] begin/end offsets (size+1) into decompFaces
             labelList& decompOffsets,
-            DynamicList<face>& decompFaces
+            //! [out] List of non-tri/quad decomposed into triangles
+            DynamicList<triFace>& decompFaces
         );
 };
 

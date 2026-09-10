@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2015 OpenFOAM Foundation
     Copyright (C) 2017-2022 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -312,29 +313,27 @@ Foam::triSurface Foam::faceShading::triangulate
     DynamicList<labelledTri> triangles(2*faceIDs.size());
 
     // Work array
-    faceList triFaces;
+    DynamicList<triFace> triFaces;
 
     forAll(faceIDs, i)
     {
         const label facei = faceIDs[i];
         const bool flip = flipMap[i];
         const label patchi = patchID[facei];
-        const face& f = faces[facei];
 
         // Triangulate face
-        triFaces.setSize(f.nTriangles(points));
-        label nTri = 0;
-        f.triangles(points, nTri, triFaces);
+        triFaces.clear();
+        faces[facei].triangles(points, triFaces);
 
-        for (const face& f : triFaces)
+        for (const auto& f : triFaces)
         {
             if (!flip)
             {
-                triangles.append(labelledTri(f[0], f[1], f[2], patchi));
+                triangles.emplace_back(f[0], f[1], f[2], patchi);
             }
             else
             {
-                triangles.append(labelledTri(f[0], f[2], f[1], patchi));
+                triangles.emplace_back(f[0], f[2], f[1], patchi);
             }
         }
     }

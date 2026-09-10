@@ -113,22 +113,13 @@ public:
     // Member Functions
 
         //- Return the index
-        label index() const noexcept
-        {
-            return index_;
-        }
+        label index() const noexcept { return index_; }
 
         //- Non-const access to the index
-        label& index() noexcept
-        {
-            return index_;
-        }
+        label& index() noexcept { return index_; }
 
         //- Set the index
-        void setIndex(const label idx) noexcept
-        {
-            index_ = idx;
-        }
+        void setIndex(label i) noexcept { index_ = i; }
 
 
     // Member Operators
