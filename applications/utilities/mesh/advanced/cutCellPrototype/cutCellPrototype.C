@@ -35,134 +35,6 @@ using namespace Foam;
 namespace
 {
 
-bool faceContainsEdge
-(
-    const polyMesh& mesh,
-    const label facei,
-    const label edgei
-)
-{
-    return mesh.faceEdges()[facei].found(edgei);
-}
-
-
-label nextCutEdge
-(
-    const polyMesh& mesh,
-    const labelList& cellFaces,
-    const label currentEdge,
-    const label previousEdge,
-    const labelList& cutEdges
-)
-{
-    forAll(cellFaces, i)
-    {
-        const label facei = cellFaces[i];
-
-        if (!faceContainsEdge(mesh, facei, currentEdge))
-        {
-            continue;
-        }
-
-        label other = -1;
-        label nCut = 0;
-
-        forAll(cutEdges, j)
-        {
-            if (faceContainsEdge(mesh, facei, cutEdges[j]))
-            {
-                ++nCut;
-
-                if (cutEdges[j] != currentEdge)
-                {
-                    other = cutEdges[j];
-                }
-            }
-        }
-
-        if (nCut == 2 && other != previousEdge)
-        {
-            return other;
-        }
-    }
-
-    return -1;
-}
-
-
-bool buildLoop
-(
-    const polyMesh& mesh,
-    const label celli,
-    const labelList& cutEdges,
-    labelList& loopEdges
-)
-{
-    const labelList& cellFaces = mesh.cells()[celli];
-
-    if (cutEdges.size() < 3)
-    {
-        return false;
-    }
-
-    forAll(cellFaces, i)
-    {
-        label nCut = 0;
-
-        forAll(cutEdges, j)
-        {
-            nCut += faceContainsEdge(mesh, cellFaces[i], cutEdges[j]);
-        }
-
-        if (nCut > 2)
-        {
-            WarningInFunction
-                << "Cell " << celli << " has " << nCut
-                << " intersections on face " << cellFaces[i]
-                << "; only one cut loop with two points per face is supported."
-                << endl;
-            return false;
-        }
-    }
-
-    DynamicList<label> ordered(cutEdges.size());
-    label previous = -1;
-    label current = cutEdges[0];
-
-    for (label step = 0; step < cutEdges.size(); ++step)
-    {
-        if (ordered.found(current))
-        {
-            break;
-        }
-
-        ordered.append(current);
-
-        const label next =
-            nextCutEdge(mesh, cellFaces, current, previous, cutEdges);
-
-        if (next < 0)
-        {
-            return false;
-        }
-
-        previous = current;
-        current = next;
-    }
-
-    if (current != ordered[0] || ordered.size() != cutEdges.size())
-    {
-        WarningInFunction
-            << "Cell " << celli
-            << " does not produce one closed intersection loop." << endl;
-        return false;
-    }
-
-    loopEdges.transfer(ordered);
-    return true;
-}
-
-
 label commonFace
 (
     const polyMesh& mesh,
@@ -195,21 +67,45 @@ bool isCutInterfaceFace
 }
 
 
-labelList uniqueRegions
+labelList cellSurfaceRegions
 (
-    const labelList& loopEdges,
+    const polyMesh& mesh,
+    const label celli,
+    const boolList& pointIsCut,
+    const labelList& pointRegions,
+    const boolList& edgeIsCut,
     const labelList& edgeRegions
 )
 {
-    DynamicList<label> regions(loopEdges.size());
+    DynamicList<label> regions;
 
-    forAll(loopEdges, i)
+    const labelList& cellEdges = mesh.cellEdges()[celli];
+    forAll(cellEdges, i)
     {
-        const label regioni = edgeRegions[loopEdges[i]];
+        const label edgei = cellEdges[i];
 
-        if (regioni >= 0 && !regions.found(regioni))
+        if (edgeIsCut[edgei] && edgeRegions[edgei] >= 0)
         {
-            regions.append(regioni);
+            if (!regions.found(edgeRegions[edgei]))
+            {
+                regions.append(edgeRegions[edgei]);
+            }
+        }
+    }
+
+    const labelList& cellPoints = mesh.cellPoints(celli);
+    forAll(cellPoints, i)
+    {
+        const label pointi = cellPoints[i];
+
+        if
+        (
+            pointIsCut[pointi]
+         && pointRegions[pointi] >= 0
+         && !regions.found(pointRegions[pointi])
+        )
+        {
+            regions.append(pointRegions[pointi]);
         }
     }
 
@@ -699,19 +595,14 @@ mergeQuality evaluateMergedCell
     {
         const label facei = boundaryFaces[i];
         vector faceNormal = faceAreas[facei];
+        const bool belongsToCell = mesh.cells()[celli].found(facei);
 
         if
         (
-            faceOwner[facei] != celli
-         && faceOwner[facei] != neighbour
+            belongsToCell
+          ? faceOwner[facei] != celli
+          : faceOwner[facei] != neighbour
         )
-        {
-            FatalErrorInFunction
-                << "Face " << facei << " is not owned by either cell "
-                << celli << " or " << neighbour << exit(FatalError);
-        }
-
-        if (faceOwner[facei] != celli)
         {
             faceNormal *= -1;
         }
@@ -854,6 +745,610 @@ bool findMergeCandidate
     << " and shared-face area " << bestArea << endl;
 
     return true;
+}
+
+
+bool findIterativeMergeCandidate
+(
+    const polyMesh& mesh,
+    const Map<label>& interfaceFaces,
+    const scalarField& targetVolumes,
+    const scalar minVolumeRatio,
+    const label sliverCell,
+    label& mergeCell,
+    label& mergeFace
+)
+{
+    const label sliverZone = mesh.cellZones().whichZone(sliverCell);
+    const labelList& neighbours = mesh.cellCells()[sliverCell];
+    bool bestHealthy = false;
+    scalar bestArea = -GREAT;
+    label bestConcave = labelMax;
+    scalar bestPyramidRatio = -GREAT;
+    label bestNeighbour = -1;
+    label bestFace = -1;
+
+    forAll(neighbours, i)
+    {
+        const label neighbour = neighbours[i];
+        const label facei = commonFace(mesh, sliverCell, neighbour);
+
+        if
+        (
+            !mesh.isInternalFace(facei)
+         || sliverZone != mesh.cellZones().whichZone(neighbour)
+         || isCutInterfaceFace(interfaceFaces, facei)
+         || mesh.faceZones().whichZone(facei) >= 0
+        )
+        {
+            continue;
+        }
+
+        const mergeQuality quality =
+            evaluateMergedCell(mesh, sliverCell, neighbour, facei);
+
+        if
+        (
+            !quality.valid
+         || quality.minPyramidRatio <= SMALL
+         || quality.concaveFaces > 0
+        )
+        {
+            Info<< "Rejected iterative merge candidate " << neighbour
+                << " across face " << facei
+                << ": volume " << quality.volume
+                << ", minimum face-pyramid ratio "
+                << quality.minPyramidRatio
+                << ", concavity score " << quality.concaveFaces
+                << endl;
+            continue;
+        }
+
+        const bool healthy =
+            targetVolumes[neighbour] < 0
+         || mesh.cellVolumes()[neighbour]
+            >= targetVolumes[neighbour]*minVolumeRatio;
+        const scalar area = mag(mesh.faceAreas()[facei]);
+
+        if
+        (
+            bestNeighbour < 0
+         || healthy > bestHealthy
+         || (
+                healthy == bestHealthy
+             && (
+                    area > bestArea
+                 || (
+                        area == bestArea
+                     && (
+                            quality.concaveFaces < bestConcave
+                         || (
+                                quality.concaveFaces == bestConcave
+                             && (
+                                    quality.minPyramidRatio
+                                  > bestPyramidRatio
+                                 || (
+                                        quality.minPyramidRatio
+                                      == bestPyramidRatio
+                                     && neighbour < bestNeighbour
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        )
+        {
+            bestHealthy = healthy;
+            bestArea = area;
+            bestConcave = quality.concaveFaces;
+            bestPyramidRatio = quality.minPyramidRatio;
+            bestNeighbour = neighbour;
+            bestFace = facei;
+        }
+    }
+
+    if (bestNeighbour < 0)
+    {
+        return false;
+    }
+
+    mergeCell = bestNeighbour;
+    mergeFace = bestFace;
+
+    Info<< "Selected iterative merge candidate " << mergeCell
+        << " across face " << mergeFace
+        << " (" << (bestHealthy ? "healthy" : "sliver")
+        << " neighbour), shared-face area " << bestArea
+        << ", concavity score " << bestConcave
+        << ", minimum face-pyramid ratio " << bestPyramidRatio
+        << endl;
+
+    return true;
+}
+
+
+struct plannedMerge
+{
+    label sliverCell;
+    label mergeCell;
+    label mergeFace;
+    bool healthyNeighbour;
+    scalar sharedArea;
+    label concaveFaces;
+    scalar minPyramidRatio;
+};
+
+
+bool betterPlannedMerge
+(
+    const plannedMerge& candidate,
+    const plannedMerge& current
+)
+{
+    return
+    (
+        candidate.healthyNeighbour > current.healthyNeighbour
+     || (
+            candidate.healthyNeighbour == current.healthyNeighbour
+         && (
+                candidate.sharedArea > current.sharedArea
+             || (
+                    candidate.sharedArea == current.sharedArea
+                 && (
+                        candidate.concaveFaces < current.concaveFaces
+                     || (
+                            candidate.concaveFaces == current.concaveFaces
+                         && (
+                                candidate.minPyramidRatio
+                              > current.minPyramidRatio
+                             || (
+                                    candidate.minPyramidRatio
+                                  == current.minPyramidRatio
+                                 && (
+                                        candidate.sliverCell
+                                      < current.sliverCell
+                                     || (
+                                            candidate.sliverCell
+                                          == current.sliverCell
+                                         && candidate.mergeCell
+                                          < current.mergeCell
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        )
+    );
+}
+
+
+bool buildDisjointMergeBatch
+(
+    const polyMesh& mesh,
+    const Map<label>& interfaceFaces,
+    const scalarField& targetVolumes,
+    const scalar minVolumeRatio,
+    DynamicList<plannedMerge>& batch
+)
+{
+    DynamicList<plannedMerge> candidates;
+
+    forAll(targetVolumes, sliverCell)
+    {
+        if
+        (
+            targetVolumes[sliverCell] < 0
+         || mesh.cellVolumes()[sliverCell]/targetVolumes[sliverCell]
+            >= minVolumeRatio
+        )
+        {
+            continue;
+        }
+
+        label mergeCell = -1;
+        label mergeFace = -1;
+
+        if
+        (
+            !findIterativeMergeCandidate
+            (
+                mesh,
+                interfaceFaces,
+                targetVolumes,
+                minVolumeRatio,
+                sliverCell,
+                mergeCell,
+                mergeFace
+            )
+        )
+        {
+            continue;
+        }
+
+        const mergeQuality quality =
+            evaluateMergedCell(mesh, sliverCell, mergeCell, mergeFace);
+        const bool healthy =
+            targetVolumes[mergeCell] < 0
+         || mesh.cellVolumes()[mergeCell]
+            >= targetVolumes[mergeCell]*minVolumeRatio;
+
+        candidates.append
+        (
+            plannedMerge
+            {
+                sliverCell,
+                mergeCell,
+                mergeFace,
+                healthy,
+                mag(mesh.faceAreas()[mergeFace]),
+                quality.concaveFaces,
+                quality.minPyramidRatio
+            }
+        );
+    }
+
+    boolList usedCells(mesh.nCells(), false);
+    labelHashSet usedFaces;
+
+    while (!candidates.empty())
+    {
+        label best = -1;
+
+        forAll(candidates, candidatei)
+        {
+            const plannedMerge& candidate = candidates[candidatei];
+
+            if
+            (
+                usedCells[candidate.sliverCell]
+             || usedCells[candidate.mergeCell]
+             || usedFaces.found(candidate.mergeFace)
+            )
+            {
+                continue;
+            }
+
+            if
+            (
+                best < 0
+             || betterPlannedMerge(candidate, candidates[best])
+            )
+            {
+                best = candidatei;
+            }
+        }
+
+        if (best < 0)
+        {
+            break;
+        }
+
+        const plannedMerge selected = candidates[best];
+        batch.append(selected);
+        usedCells[selected.sliverCell] = true;
+        usedCells[selected.mergeCell] = true;
+        usedFaces.insert(selected.mergeFace);
+        candidates[best] = candidates.last();
+        candidates.setSize(candidates.size() - 1);
+    }
+
+    return !batch.empty();
+}
+
+
+void remapIterativeTargets
+(
+    const mapPolyMesh& morphMap,
+    const scalarField& oldTargets,
+    scalarField& newTargets
+)
+{
+    newTargets = scalarField(morphMap.mesh().nCells(), -1);
+
+    forAll(oldTargets, oldCelli)
+    {
+        if (oldTargets[oldCelli] < 0)
+        {
+            continue;
+        }
+
+        const label mapped = morphMap.reverseCellMap()[oldCelli];
+        label newCelli = mapped;
+
+        if (mapped < -1)
+        {
+            newCelli = -mapped - 2;
+        }
+
+        if (newCelli >= 0)
+        {
+            newTargets[newCelli] =
+                max(newTargets[newCelli], oldTargets[oldCelli]);
+        }
+    }
+}
+
+
+void remapIterativeInterfaces
+(
+    const mapPolyMesh& morphMap,
+    const Map<label>& oldInterfaces,
+    Map<label>& newInterfaces
+)
+{
+    newInterfaces.clear();
+
+    forAllConstIter(Map<label>, oldInterfaces, iter)
+    {
+        const label oldFacei = iter.key();
+        const label mapped = morphMap.reverseFaceMap()[oldFacei];
+        label newFacei = mapped;
+
+        if (mapped < -1)
+        {
+            newFacei = -mapped - 2;
+        }
+
+        if (newFacei < 0)
+        {
+            FatalErrorInFunction
+                << "Generated cut interface face " << oldFacei
+                << " was removed during sliver repair."
+                << exit(FatalError);
+        }
+
+        newInterfaces.insert(newFacei, iter());
+    }
+}
+
+
+bool validateIterativeBatchResult
+(
+    const polyMesh& mesh,
+    const Map<label>& interfaceFaces,
+    const scalarField& targetVolumes
+)
+{
+    forAll(mesh.cellVolumes(), celli)
+    {
+        if (mesh.cellVolumes()[celli] <= VSMALL)
+        {
+            WarningInFunction
+                << "Post-batch cell " << celli
+                << " has non-positive volume "
+                << mesh.cellVolumes()[celli] << endl;
+            return false;
+        }
+    }
+
+    forAllConstIter(Map<label>, interfaceFaces, iter)
+    {
+        if
+        (
+            iter.key() < 0
+         || iter.key() >= mesh.nFaces()
+         || !mesh.isInternalFace(iter.key())
+        )
+        {
+            WarningInFunction
+                << "Post-batch generated interface face " << iter.key()
+                << " is missing or no longer internal." << endl;
+            return false;
+        }
+    }
+
+    if (targetVolumes.size() != mesh.nCells())
+    {
+        WarningInFunction
+            << "Post-batch target-volume map has " << targetVolumes.size()
+            << " entries for " << mesh.nCells() << " cells." << endl;
+        return false;
+    }
+
+    return true;
+}
+
+
+bool applyIterativeSliverRepair
+(
+    polyMesh& mesh,
+    Map<label>& interfaceFaces,
+    scalarField& targetVolumes,
+    const scalar minVolumeRatio
+)
+{
+    bool changed = false;
+    label round = 0;
+
+    for (;;)
+    {
+        DynamicList<plannedMerge> batch;
+
+        if
+        (
+            !buildDisjointMergeBatch
+            (
+                mesh,
+                interfaceFaces,
+                targetVolumes,
+                minVolumeRatio,
+                batch
+            )
+        )
+        {
+            break;
+        }
+
+        ++round;
+
+        Info<< "Iterative sliver round " << round
+            << ": planning " << batch.size()
+            << " disjoint merge candidates" << endl;
+
+        removeFaces faceRemover(mesh, 1.0);
+        labelList piercedFaces;
+        labelList cellRegion;
+        labelList cellRegionMaster;
+        labelList allPiercedFaces;
+        label nRegions = 0;
+
+        for (;;)
+        {
+            piercedFaces.setSize(batch.size());
+
+            forAll(batch, i)
+            {
+                piercedFaces[i] = batch[i].mergeFace;
+            }
+
+            nRegions =
+                faceRemover.compatibleRemoves
+                (
+                    piercedFaces,
+                    cellRegion,
+                    cellRegionMaster,
+                    allPiercedFaces
+                );
+
+            labelHashSet regionMasters;
+            bool compatible = true;
+
+            forAll(batch, i)
+            {
+                const plannedMerge& planned = batch[i];
+                const label sliverRegion =
+                    cellRegion[planned.sliverCell];
+                const label mergeRegion =
+                    cellRegion[planned.mergeCell];
+
+                if
+                (
+                    sliverRegion < 0
+                 || sliverRegion != mergeRegion
+                 || !regionMasters.insert
+                    (
+                        cellRegionMaster[sliverRegion]
+                    )
+                )
+                {
+                    compatible = false;
+                    break;
+                }
+            }
+
+            if (compatible)
+            {
+                break;
+            }
+
+            Info<< "Reducing iterative merge batch from "
+                << batch.size()
+                << " because compatibleRemoves grouped planned pairs."
+                << endl;
+
+            batch.setSize(batch.size() - 1);
+
+            if (batch.empty())
+            {
+                break;
+            }
+        }
+
+        if (batch.empty())
+        {
+            WarningInFunction
+                << "No compatible disjoint merge batch remains; leaving "
+                << "remaining slivers unresolved." << endl;
+            break;
+        }
+
+        Info<< "Applying iterative merge batch of " << batch.size()
+            << " pairwise merges across " << piercedFaces.size()
+            << " selected faces in " << nRegions << " regions." << endl;
+
+        scalarField newTargets;
+        Map<label> newInterfaces;
+        polyTopoChange mergeMod(mesh);
+
+        faceRemover.setRefinement
+        (
+            allPiercedFaces,
+            cellRegion,
+            cellRegionMaster,
+            mergeMod
+        );
+
+        autoPtr<mapPolyMesh> mergeMap =
+            mergeMod.changeMesh(mesh, false);
+
+        if (mergeMap().hasMotionPoints())
+        {
+            mesh.movePoints(mergeMap().preMotionPoints());
+        }
+
+        remapIterativeTargets(mergeMap(), targetVolumes, newTargets);
+        remapIterativeInterfaces
+        (
+            mergeMap(),
+            interfaceFaces,
+            newInterfaces
+        );
+
+        if
+        (
+            !validateIterativeBatchResult
+            (
+                mesh,
+                newInterfaces,
+                newTargets
+            )
+        )
+        {
+            FatalErrorInFunction
+                << "Post-batch invariant validation failed; refusing to "
+                << "continue with a potentially invalid mesh."
+                << exit(FatalError);
+        }
+
+        targetVolumes.transfer(newTargets);
+        interfaceFaces = newInterfaces;
+        changed = true;
+
+        Info<< "Iteratively merged " << batch.size()
+            << " disjoint cell pairs; mesh now has "
+            << mesh.nCells() << " cells" << endl;
+    }
+
+    if (changed)
+    {
+        Info<< "Iterative sliver repair completed after " << round
+            << " topology rounds." << endl;
+    }
+
+    label unresolved = 0;
+
+    forAll(targetVolumes, celli)
+    {
+        if
+        (
+            targetVolumes[celli] >= 0
+         && mesh.cellVolumes()[celli]/targetVolumes[celli]
+            < minVolumeRatio
+        )
+        {
+            ++unresolved;
+        }
+    }
+
+    Info<< "Iterative sliver repair unresolved slivers: "
+        << unresolved << endl;
+
+    return changed;
 }
 
 
@@ -1078,10 +1573,22 @@ int main(int argc, char *argv[])
         "Reject a cut if either side is below this parent-volume ratio "
         "(default 0.3; use 0 to disable)"
     );
+    argList::addOption
+    (
+        "vertexSnapFraction",
+        "scalar",
+        "Collapse intersections within this symmetric edge-endpoint "
+        "fraction to cut vertices (default 0.05; use 0 for edge-only cuts)"
+    );
     argList::addBoolOption
     (
         "mergeSlivers",
         "Merge a rejected sliver into a safe adjacent cell"
+    );
+    argList::addBoolOption
+    (
+        "iterativeMergeSlivers",
+        "Iteratively agglomerate slivers using a queued, quality-ranked repair"
     );
     argList::addOption
     (
@@ -1125,7 +1632,10 @@ int main(int argc, char *argv[])
     const bool extractInside = args.found("extractInside");
     const scalar minVolumeRatio =
         args.getOrDefault<scalar>("minVolumeRatio", extractInside ? 0.0 : 0.3);
+    const scalar vertexSnapFraction =
+        args.getOrDefault<scalar>("vertexSnapFraction", 0.05);
     const bool mergeSlivers = args.found("mergeSlivers");
+    const bool iterativeMergeSlivers = args.found("iterativeMergeSlivers");
     const bool hasInsideZone = args.found("insideZone");
     const bool hasOutsideZone = args.found("outsideZone");
     const bool audit = args.found("audit");
@@ -1161,6 +1671,22 @@ int main(int argc, char *argv[])
             << exit(FatalError);
     }
 
+    if (extractInside && iterativeMergeSlivers)
+    {
+        FatalErrorInFunction
+            << "-extractInside cannot currently be combined with "
+            << "-iterativeMergeSlivers because sliver repair changes the "
+            << "cut-cell topology before retained-side extraction."
+            << exit(FatalError);
+    }
+
+    if (mergeSlivers && iterativeMergeSlivers)
+    {
+        FatalErrorInFunction
+            << "-mergeSlivers and -iterativeMergeSlivers are mutually "
+            << "exclusive." << exit(FatalError);
+    }
+
     label selectedCell = -1;
     if (args.found("cell"))
     {
@@ -1186,6 +1712,13 @@ int main(int argc, char *argv[])
         FatalErrorInFunction
             << "Minimum volume ratio must be in [0, 1), got "
             << minVolumeRatio << exit(FatalError);
+    }
+
+    if (vertexSnapFraction < 0 || vertexSnapFraction > 0.10)
+    {
+        FatalErrorInFunction
+            << "Vertex snap fraction must be in [0, 0.10], got "
+            << vertexSnapFraction << exit(FatalError);
     }
 
     label keepZone = -1;
@@ -1225,6 +1758,11 @@ int main(int argc, char *argv[])
     boolList edgeIsCut(mesh.nEdges(), false);
     scalarField edgeWeights(mesh.nEdges(), -GREAT);
     labelList edgeRegions(mesh.nEdges(), -1);
+    boolList pointIsCut(mesh.nPoints(), false);
+    labelList pointRegions(mesh.nPoints(), -1);
+    DynamicList<label> cutVerts;
+    DynamicList<label> cutEdges;
+    DynamicList<scalar> cutEdgeWeights;
     boolList edgeToCheck(mesh.nEdges(), selectedCell < 0);
 
     if (selectedCell >= 0)
@@ -1308,6 +1846,34 @@ int main(int argc, char *argv[])
         const scalar edgeLengthSqr = magSqr(edgeVec);
         const scalar weight = ((hit - points[e.start()]) & edgeVec)
             / edgeLengthSqr;
+        const label regioni = surface[uniqueHit.index()].region();
+        const scalar endpointDistance = min(weight, 1 - weight);
+
+        if (vertexSnapFraction > 0 && endpointDistance <= vertexSnapFraction)
+        {
+            const label pointi =
+                weight <= 0.5 ? e.start() : e.end();
+
+            if (!pointIsCut[pointi])
+            {
+                pointIsCut[pointi] = true;
+                cutVerts.append(pointi);
+                pointRegions[pointi] = regioni;
+            }
+            else if
+            (
+                pointRegions[pointi] >= 0
+             && pointRegions[pointi] != regioni
+            )
+            {
+                pointRegions[pointi] = -2;
+            }
+
+            Info<< "Collapsed edge " << edgei
+                << " intersection at fraction " << weight
+                << " to mesh vertex " << pointi << endl;
+            continue;
+        }
 
         if (weight <= endpointTol || weight >= 1 - endpointTol)
         {
@@ -1320,14 +1886,16 @@ int main(int argc, char *argv[])
 
         edgeIsCut[edgei] = true;
         edgeWeights[edgei] = weight;
-        edgeRegions[edgei] = surface[uniqueHit.index()].region();
+        edgeRegions[edgei] = regioni;
+        cutEdges.append(edgei);
+        cutEdgeWeights.append(weight);
     }
 
-    edgeVertex cutsEncoding(mesh);
-    DynamicList<label> cutCells;
-    DynamicList<labelList> loops;
-    DynamicList<labelList> surfaceLoops;
-    DynamicList<scalarField> loopWeights;
+    cutVerts.shrink();
+    cutEdges.shrink();
+    cutEdgeWeights.shrink();
+
+    DynamicList<label> candidateCutCells;
 
     for (label celli = 0; celli < mesh.nCells(); ++celli)
     {
@@ -1337,65 +1905,174 @@ int main(int argc, char *argv[])
         }
 
         const labelList& cellEdges = mesh.cellEdges()[celli];
-        DynamicList<label> cellCutEdges(cellEdges.size());
+        const labelList& cellPoints = mesh.cellPoints(celli);
+        bool hasCut = false;
 
         forAll(cellEdges, i)
         {
             if (edgeIsCut[cellEdges[i]])
             {
-                cellCutEdges.append(cellEdges[i]);
+                hasCut = true;
+                break;
             }
         }
 
-        if (cellCutEdges.empty())
+        if (!hasCut)
         {
+            forAll(cellPoints, i)
+            {
+                if (pointIsCut[cellPoints[i]])
+                {
+                    hasCut = true;
+                    break;
+                }
+            }
+        }
+
+        if (hasCut)
+        {
+            candidateCutCells.append(celli);
+        }
+    }
+
+    candidateCutCells.shrink();
+
+    if (candidateCutCells.empty())
+    {
+        if (vertexSnapFraction > 0)
+        {
+            Info<< "No supported cut loop remains after endpoint collapse; "
+                << "the surface is represented by existing mesh topology."
+                << endl;
+
+            if (audit)
+            {
+                Info<< "Audit completed without modifying the mesh."
+                    << endl;
+                return 0;
+            }
+
+            ++runTime;
+            mesh.write();
+            return 0;
+        }
+
+        FatalErrorInFunction
+            << "Surface does not cross any selected mesh cell"
+            << exit(FatalError);
+    }
+
+    labelList candidateCells(candidateCutCells);
+    labelList cutVertLabels(cutVerts);
+    labelList cutEdgeLabels(cutEdges);
+    scalarField cutEdgeWeightField(cutEdgeWeights);
+
+    cellCuts cuts
+    (
+        mesh,
+        candidateCells,
+        cutVertLabels,
+        cutEdgeLabels,
+        cutEdgeWeightField
+    );
+
+    DynamicList<label> cutCells;
+    forAll(candidateCells, i)
+    {
+        const label celli = candidateCells[i];
+        const labelList& loop = cuts.cellLoops()[celli];
+
+        if (loop.empty())
+        {
+            bool hasEdgeCut = false;
+            const labelList& cellEdges = mesh.cellEdges()[celli];
+
+            forAll(cellEdges, edgeI)
+            {
+                if (edgeIsCut[cellEdges[edgeI]])
+                {
+                    hasEdgeCut = true;
+                    break;
+                }
+            }
+
+            if (hasEdgeCut)
+            {
+                FatalErrorInFunction
+                    << "Could not construct one supported intersection loop "
+                    << "for cell " << celli << exit(FatalError);
+            }
+
+            Info<< "Skipping endpoint-only cell " << celli
+                << " because its collapsed cuts coincide with existing "
+                << "mesh topology." << endl;
             continue;
         }
 
-        labelList orderedEdges;
-        if (!buildLoop(mesh, celli, cellCutEdges, orderedEdges))
-        {
-            FatalErrorInFunction
-                << "Could not construct one supported intersection loop for "
-                << "cell " << celli << exit(FatalError);
-        }
-
-        labelList loop(orderedEdges.size());
-        scalarField weights(orderedEdges.size(), -GREAT);
-
-        forAll(orderedEdges, i)
-        {
-            const label edgei = orderedEdges[i];
-            loop[i] = cutsEncoding.edgeToEVert(edgei);
-            weights[i] = edgeWeights[edgei];
-        }
-
         cutCells.append(celli);
-        loops.append(loop);
-        surfaceLoops.append(orderedEdges);
-        loopWeights.append(weights);
 
-        Info<< "Constructed one loop with " << orderedEdges.size()
-            << " edge intersections for cell " << celli << endl;
+        label nLoopEdges = 0;
+        forAll(loop, cutI)
+        {
+            if (edgeVertex::isEdge(mesh, loop[cutI]))
+            {
+                ++nLoopEdges;
+            }
+        }
+
+        if (nLoopEdges == loop.size())
+        {
+            Info<< "Constructed one loop with " << loop.size()
+                << " edge intersections for cell " << celli << endl;
+        }
+        else
+        {
+            Info<< "Constructed one loop with " << loop.size()
+                << " cut points/edges for cell " << celli << endl;
+        }
     }
 
     cutCells.shrink();
-    loops.shrink();
-    surfaceLoops.shrink();
-    loopWeights.shrink();
+
+    if (cutCells.empty())
+    {
+        if (vertexSnapFraction > 0)
+        {
+            Info<< "No supported cut loop remains after endpoint collapse; "
+                << "the surface is represented by existing mesh topology."
+                << endl;
+
+            if (audit)
+            {
+                Info<< "Audit completed without modifying the mesh."
+                    << endl;
+                return 0;
+            }
+
+            ++runTime;
+            mesh.write();
+            return 0;
+        }
+
+        FatalErrorInFunction
+            << "Surface does not cross any selected mesh cell"
+            << exit(FatalError);
+    }
 
     List<labelList> cutCellRegions(cutCells.size());
 
     forAll(cutCells, i)
     {
-        cutCellRegions[i] = uniqueRegions(surfaceLoops[i], edgeRegions);
-    }
-
-    if (cutCells.empty())
-    {
-        FatalErrorInFunction
-            << "Surface does not cross any selected mesh cell"
-            << exit(FatalError);
+        cutCellRegions[i] =
+            cellSurfaceRegions
+            (
+                mesh,
+                cutCells[i],
+                pointIsCut,
+                pointRegions,
+                edgeIsCut,
+                edgeRegions
+            );
     }
 
     if (audit)
@@ -1541,19 +2218,8 @@ int main(int argc, char *argv[])
         }
     }
 
-    labelListList cellLoops(cutCells.size());
-    List<scalarField> allLoopWeights(cutCells.size());
-
-    forAll(cutCells, i)
-    {
-        cellLoops[i] = loops[i];
-        allLoopWeights[i] = loopWeights[i];
-    }
-
     Info<< "Constructed " << cutCells.size() << " supported cut loop"
         << (cutCells.size() == 1 ? "" : "s") << endl;
-
-    cellCuts cuts(mesh, cutCells, cellLoops, allLoopWeights);
 
     if (cuts.nLoops() != cutCells.size())
     {
@@ -1561,6 +2227,49 @@ int main(int argc, char *argv[])
             << "OpenFOAM accepted " << cuts.nLoops() << " of "
             << cutCells.size() << " supplied cut descriptions"
             << exit(FatalError);
+    }
+
+    closedTriSurfaceMesh orientationSurface
+    (
+        IOobject
+        (
+            "cutCellOrientationSurface",
+            runTime.constant(),
+            mesh,
+            IOobject::NO_READ,
+            IOobject::NO_WRITE
+        ),
+        surface
+    );
+
+    pointField anchorPoints(cutCells.size());
+    forAll(cutCells, i)
+    {
+        const labelList& anchors = cuts.cellAnchorPoints()[cutCells[i]];
+
+        if (anchors.empty())
+        {
+            FatalErrorInFunction
+                << "Cut cell " << cutCells[i]
+                << " has no anchor point for orientation"
+                << exit(FatalError);
+        }
+
+        anchorPoints[i] = mesh.points()[anchors[0]];
+    }
+
+    List<volumeType> anchorTypes;
+    orientationSurface.getVolumeType(anchorPoints, anchorTypes);
+
+    forAll(cutCells, i)
+    {
+        if (anchorTypes[i] == volumeType::OUTSIDE)
+        {
+            cuts.flip(cutCells[i]);
+            Info<< "Flipped cut orientation for cell "
+                << cutCells[i] << " from anchor volume classification"
+                << endl;
+        }
     }
 
     List<labelList> originalCellFaces(cutCells.size());
@@ -1660,6 +2369,30 @@ int main(int argc, char *argv[])
         clippedRetainedCells
     );
 
+    if (iterativeMergeSlivers && minVolumeRatio > 0)
+    {
+        scalarField targetVolumes(mesh.nCells(), -1);
+        const Map<label>& addedCells = cutter.addedCells();
+
+        forAll(cutCells, i)
+        {
+            const label celli = mappedCutCells[i];
+            const label addedCelli = addedCells[celli];
+            const scalar parentVolume = oldCellVolumes[cutCells[i]];
+
+            targetVolumes[celli] = parentVolume;
+            targetVolumes[addedCelli] = parentVolume;
+        }
+
+        applyIterativeSliverRepair
+        (
+            mesh,
+            interfaceFaces,
+            targetVolumes,
+            minVolumeRatio
+        );
+    }
+
     if (hasInsideZone)
     {
         const word insideZoneName = args.get<word>("insideZone");
@@ -1688,7 +2421,7 @@ int main(int argc, char *argv[])
         );
     }
 
-    if (minVolumeRatio > 0)
+    if (minVolumeRatio > 0 && !iterativeMergeSlivers)
     {
         const Map<label>& addedCells = cutter.addedCells();
 
