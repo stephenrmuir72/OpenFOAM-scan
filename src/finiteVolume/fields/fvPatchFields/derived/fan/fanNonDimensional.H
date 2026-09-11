@@ -38,7 +38,7 @@ Description
         Phi = 60*Q/(PI*dm^3*rpm)
     \endverbatim
 
-    where \c Q is the volume flow rate, \c dm is the impeller diameter and 
+    where \c Q is the volume flow rate, \c dm is the impeller diameter and
     \c rpm is the fan speed.
 
     The pressure coefficient (non-dimensional \c deltaP)
