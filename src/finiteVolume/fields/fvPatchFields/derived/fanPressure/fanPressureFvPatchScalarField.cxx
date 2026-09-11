@@ -55,16 +55,18 @@ Foam::fanPressureFvPatchScalarField::fanPressureFvPatchScalarField
 :
     parent_bctype(p, iF),
     fanCurve_(nullptr),
-    rpm_(nullptr),
-    dm_(nullptr),
-    rhoRef_(defaultRho()),
+    nonDimensional_(false),
+    fanNonDimensional_
+    (
+        p,
+        iF.dimensions(),
+        iF.name(),
+        iF.objectPath()
+    ),
     relaxFactor_(-1),
     pdFan0_(0),
     timeIndex_(-1),
-    direction_(ffdOut),
-    nonDimensional_(false),
-    rhoCorrection_(false),
-    rhoRefUserProvided_(false)
+    direction_(ffdOut)
 {}
 
 
@@ -78,16 +80,19 @@ Foam::fanPressureFvPatchScalarField::fanPressureFvPatchScalarField
 :
     parent_bctype(rhs, p, iF, mapper),
     fanCurve_(rhs.fanCurve_.clone()),
-    rpm_(rhs.rpm_.clone()),
-    dm_(rhs.dm_.clone()),
-    rhoRef_(rhs.rhoRef_),
+    nonDimensional_(rhs.nonDimensional_),
+    fanNonDimensional_
+    (
+        rhs.fanNonDimensional_,
+        p,
+        iF.dimensions(),
+        iF.name(),
+        iF.objectPath()
+    ),
     relaxFactor_(rhs.relaxFactor_),
     pdFan0_(rhs.pdFan0_),
     timeIndex_(rhs.timeIndex_),
-    direction_(rhs.direction_),
-    nonDimensional_(rhs.nonDimensional_),
-    rhoCorrection_(rhs.rhoCorrection_),
-    rhoRefUserProvided_(rhs.rhoRefUserProvided_)
+    direction_(rhs.direction_)
 {}
 
 
@@ -100,16 +105,21 @@ Foam::fanPressureFvPatchScalarField::fanPressureFvPatchScalarField
 :
     parent_bctype(p, iF, dict),
     fanCurve_(nullptr),
-    rpm_(nullptr),
-    dm_(nullptr),
-    rhoRef_(defaultRho()),
+    nonDimensional_(dict.getOrDefault("nonDimensional", false)),
+    fanNonDimensional_
+    (
+        p,
+        iF.dimensions(),
+        iF.name(),
+        iF.objectPath(),
+        dict,
+        this->db(),
+        nonDimensional_
+    ),
     relaxFactor_(-1),
     pdFan0_(0),
     timeIndex_(this->db().time().timeIndex()),
-    direction_(fanFlowDirectionNames_.get("direction", dict)),
-    nonDimensional_(dict.getOrDefault("nonDimensional", false)),
-    rhoCorrection_(dict.getOrDefault("rhoCorrection", false)),
-    rhoRefUserProvided_(false)
+    direction_(fanFlowDirectionNames_.get("direction", dict))
 {
     // Validate the under-relaxation factor. The value is optional and
     // defaults to -1 (disabled); when specified it must satisfy 0 < relax <= 1.
@@ -136,69 +146,6 @@ Foam::fanPressureFvPatchScalarField::fanPressureFvPatchScalarField
         fanCurve_.reset(Function1<scalar>::New("fanCurve", dict, &this->db()));
     }
 
-    if (nonDimensional_)
-    {
-        rpm_.reset(Function1<scalar>::New("rpm", dict, &this->db()));
-        dm_.reset(Function1<scalar>::New("dm", dict, &this->db()));
-    }
-
-    // Density correction entries (only relevant for nonDimensional mode
-    // applied to dynamic pressure fields)
-    rhoRefUserProvided_ = dict.readIfPresent("rhoRef", rhoRef_);
-
-    if (nonDimensional_)
-    {
-        if (internalField().dimensions() == dimPressure)
-        {
-            if (!rhoCorrection_)
-            {
-                if (rhoRefUserProvided_)
-                {
-                    if (rhoRef_ < SMALL)
-                    {
-                        FatalIOErrorInFunction(dict)
-                            << "rhoRef cannot be zero or negative, but is "
-                            << rhoRef_ << nl
-                            << "    on patch " << this->patch().name()
-                            << " of field " << this->internalField().name()
-                            << " in file " << this->internalField().objectPath()
-                            << exit(FatalIOError);
-                    }
-                }
-                else
-                {
-                    WarningInFunction
-                        << "rhoRef not specified; using default rated density "
-                        << rhoRef_ << " [kg/m^3]" << nl
-                        << "    on patch " << this->patch().name()
-                        << " of field " << this->internalField().name()
-                        << " in file " << this->internalField().objectPath()
-                        << endl;
-                }
-            }
-        }
-        else if (rhoCorrection_ || rhoRefUserProvided_)
-        {
-            WarningInFunction
-                << "Entries 'rhoCorrection' and/or 'rhoRef' are ignored for "
-                << "kinematic pressure fields (dimPressure/dimDensity)" << nl
-                << "    on patch " << this->patch().name()
-                << " of field " << this->internalField().name()
-                << " in file " << this->internalField().objectPath()
-                << endl;
-        }
-    }
-    else if (rhoCorrection_ || rhoRefUserProvided_)
-    {
-        WarningInFunction
-            << "Entries 'rhoCorrection' and/or 'rhoRef' are ignored unless "
-            << "'nonDimensional' is true" << nl
-            << "    on patch " << this->patch().name()
-            << " of field " << this->internalField().name()
-            << " in file " << this->internalField().objectPath()
-            << endl;
-    }
-
     // Read optional saved relaxation state for restart
     if (dict.found("deltaP0"))
     {
@@ -215,16 +162,19 @@ Foam::fanPressureFvPatchScalarField::fanPressureFvPatchScalarField
 :
     parent_bctype(rhs, iF),
     fanCurve_(rhs.fanCurve_.clone()),
-    rpm_(rhs.rpm_.clone()),
-    dm_(rhs.dm_.clone()),
-    rhoRef_(rhs.rhoRef_),
+    nonDimensional_(rhs.nonDimensional_),
+    fanNonDimensional_
+    (
+        rhs.fanNonDimensional_,
+        this->patch(),
+        iF.dimensions(),
+        iF.name(),
+        iF.objectPath()
+    ),
     relaxFactor_(rhs.relaxFactor_),
     pdFan0_(rhs.pdFan0_),
     timeIndex_(rhs.timeIndex_),
-    direction_(rhs.direction_),
-    nonDimensional_(rhs.nonDimensional_),
-    rhoCorrection_(rhs.rhoCorrection_),
-    rhoRefUserProvided_(rhs.rhoRefUserProvided_)
+    direction_(rhs.direction_)
 {}
 
 
@@ -267,76 +217,36 @@ void Foam::fanPressureFvPatchScalarField::updateCoeffs()
     // Preserve the physical volume flow rate for reporting
     const scalar Q = volFlowRate;
 
-    // The non-dimensional parameters
-
-    scalar rpm(0);
-    scalar meanDiam(0);
+    // Pressure drop for this flow rate
+    scalar pdFan;
 
     if (nonDimensional_)
     {
-        rpm = rpm_->value(this->db().time().timeOutputValue());
-        meanDiam = dm_->value(this->db().time().timeOutputValue());
+        const scalar timeValue =
+            this->db().time().timeOutputValue();
 
-        // Create an non-dimensional flow rate
         volFlowRate =
-            240.0*volFlowRate
-          / stabilise
+            fanNonDimensional_.nonDimensionalFlowRate
             (
-                sqr(constant::mathematical::pi * meanDiam) * meanDiam * rpm,
-                VSMALL
+                volFlowRate,
+                timeValue
+            );
+
+        pdFan = fanCurve_->value(max(volFlowRate, scalar(0)));
+
+        pdFan =
+            fanNonDimensional_.dimensionalPressure
+            (
+                pdFan,
+                rhoName(),
+                timeValue
             );
     }
-
-    // Pressure drop for this flow rate
-    scalar pdFan = fanCurve_->value(max(volFlowRate, scalar(0)));
-
-    if (nonDimensional_)
+    else
     {
-        // Convert the non-dimensional deltap from curve into deltaP
-        if (internalField().dimensions() == dimPressure)
-        {
-            // Compressible/variable-density flow: dynamic pressure [Pa]
-            scalar rhoEff = rhoRef_;
-
-            // Use patch area-averaged density when density correction is
-            // ON, else stick with reference density
-            if (rhoCorrection_)
-            {
-                const auto& rhop =
-                    patch().lookupPatchField<volScalarField>(rhoName());
-
-                rhoEff = gWeightedAverage(patch().magSf(), rhop);
-            }
-
-            pdFan =
-                pdFan*rhoEff*sqr(constant::mathematical::pi*meanDiam*rpm)
-               /7200.0;
-        }
-        else if (internalField().dimensions() == dimPressure/dimDensity)
-        {
-            // Incompressible flow: kinematic pressure [m^2/s^2]
-            pdFan =
-                pdFan*sqr(constant::mathematical::pi*meanDiam*rpm)/7200.0;
-        }
-        else
-        {
-            FatalErrorInFunction
-                << "Incorrect pressure dimensions "
-                << internalField().dimensions() << nl
-                << "    Should be " << dimPressure
-                << " for compressible/variable density flow" << nl
-                << "    or " << dimPressure/dimDensity
-                << " for incompressible flow," << nl
-                << "    on patch " << patch().name()
-                << " of field " << internalField().name()
-                << " in file " << internalField().objectPath()
-                << exit(FatalError);
-        }
+        pdFan = fanCurve_->value(max(volFlowRate, scalar(0)));
     }
 
-    // Under-relax the pressure drop, mirroring fixedJumpFvPatchField:
-    // the reference is only advanced when the time index changes,
-    // so relaxation is confined to iterations within a time step.
     if (relaxFactor_ > 0)
     {
         pdFan = lerp(pdFan0_, pdFan, relaxFactor_);
@@ -388,14 +298,7 @@ void Foam::fanPressureFvPatchScalarField::write(Ostream& os) const
     if (nonDimensional_)
     {
         os.writeEntry("nonDimensional", "true");
-        rpm_->writeData(os);
-        dm_->writeData(os);
-        os.writeEntryIfDifferent<bool>("rhoCorrection", false, rhoCorrection_);
-
-        if (rhoRefUserProvided_)
-        {
-            os.writeEntry("rhoRef", rhoRef_);
-        }
+        fanNonDimensional_.write(os);
     }
 }
 

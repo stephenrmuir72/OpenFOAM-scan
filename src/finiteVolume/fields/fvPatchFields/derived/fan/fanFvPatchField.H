@@ -44,44 +44,6 @@ Description
     - volumeFlowRate:  deltap = F(patch volume flow rate)
     - nonDimensional:  non-dim deltap = F(non-dim volume flow rate)
 
-    Non-dimensional operation:
-
-    As inputs it needs the fan RPM (rpm) and the mean diameter (dm).
-
-    The non-dimensional flow rate for the table is calculated as follows:
-
-    \verbatim
-        phi = 240*Q/(PI^2*dm^3*rpm)
-        where:
-            Q is the volume flow rate (mass flow rate divided by rho
-              for compressible cases).
-            dm is the mean diameter.
-            rpm is the RPM of the fan.
-    \endverbatim
-
-    The non-dimensional pressure:
-
-    \verbatim
-        Psi = 7200*deltaP/(rho*(sqr(PI*rpm*dm)))
-        where:
-            deltaP is the pressure drop [Pa].
-            rho is the density used to non-dimensionalise the curve.
-    \endverbatim
-
-    For compressible/variable-density fields (pressure in Pa), the density
-    used to convert the non-dimensional pressure back to Pa is controlled by
-    the \c rhoCorrection switch:
-
-    - rhoCorrection off (default): the rated density \c rhoRef is used
-      (default 1.2 kg/m^3).
-    - rhoCorrection on: the area-weighted patch-averaged density is used.
-
-    For incompressible (kinematic pressure) fields, where the pressure has
-    dimensions of m^2/s^2, the density is omitted and the non-dimensional
-    pressure is applied directly to the kinematic pressure jump.
-
-    The non-dimensional table should be given as Psi = F(phi).
-
 Usage
     \table
         Property    | Description                           | Required | Default
@@ -90,13 +52,12 @@ Usage
         jumpTable   | jump data, e.g. \c csvFile            | yes |
         phi         | flux field name                       | no  | phi
         rho         | density field name                    | no  | rho
-        rpm         | fan rpm (non-dimensional table)       | no |
-        dm          | mean diameter (non-dimensional table) | no |
-        rhoCorrection | use patch-averaged density instead of rhoRef | no | false
-        rhoRef        | rated density (non-dimensional table)        | no | 1.2
         nonDimensional | legacy: select non-dimensional mode         | no | false
         uniformJump   | legacy: select uniform velocity mode         | no | false
     \endtable
+
+    For the inputs and formulation related to non-dimensional operation, refer
+    to \link fanNonDimensional.H \endlink.
 
     The inherited entries are elaborated in:
       - \link uniformJumpFvPatchField.H \endlink
@@ -131,6 +92,7 @@ Note
     The underlying \c patchType should be set to \c cyclic
 
 See also
+    Foam::fanNonDimensional
     Foam::Function1Types
 
 SourceFiles
@@ -144,7 +106,7 @@ SourceFiles
 #define Foam_fanFvPatchField_H
 
 #include "uniformJumpFvPatchField.H"
-#include "Function1.H"
+#include "fanNonDimensional.H"
 #include "Enum.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -183,22 +145,10 @@ public:
 
 private:
 
-    // Private Static Member Functions
-
-        //- The default reference density (1.2)
-        static constexpr scalar defaultRho() noexcept { return 1.2; }
-
-
     // Private Data
 
         //- Operating mode
         operatingMode operatingMode_;
-
-        //- Use patch-averaged density instead of rated density
-        bool rhoCorrection_;
-
-        //- Whether rhoRef was explicitly specified
-        bool rhoRefUserProvided_;
 
         //- Name of the flux transporting the field
         word phiName_;
@@ -206,17 +156,14 @@ private:
         //- Name of the density field for normalising the mass flux if necessary
         word rhoName_;
 
-        //- Fan rpm (for non-dimensional curve)
-        autoPtr<Function1<scalar>> rpm_;
-
-        //- Fan mean diameter (for non-dimensional curve)
-        autoPtr<Function1<scalar>> dm_;
-
-        //- Rated/reference density for non-dimensional curve
-        scalar rhoRef_;
+        //- Non-dimensional fan-curve formulation
+        fanNonDimensional fanNonDimensional_;
 
 
     // Private Member Functions
+
+        //- Read the operating mode, including legacy compatibility entries
+        static operatingMode mode(const dictionary&);
 
         //- Calculate the fan pressure jump
         void calcFanJump();

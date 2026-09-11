@@ -164,6 +164,7 @@ $(derivedFvPatchFields)/codedFixedValue/codedFixedValueFvPatchFields.cxx
 $(derivedFvPatchFields)/codedMixed/codedMixedFvPatchFields.cxx
 $(derivedFvPatchFields)/cylindricalInletVelocity/cylindricalInletVelocityFvPatchVectorField.cxx
 $(derivedFvPatchFields)/fan/fanFvPatchFields.cxx
+$(derivedFvPatchFields)/fan/fanNonDimensional.cxx
 $(derivedFvPatchFields)/fanPressure/fanPressureFvPatchScalarField.cxx
 $(derivedFvPatchFields)/fixedFluxPressure/fixedFluxPressureFvPatchScalarField.cxx
 $(derivedFvPatchFields)/fixedFluxExtrapolatedPressure/fixedFluxExtrapolatedPressureFvPatchScalarField.cxx

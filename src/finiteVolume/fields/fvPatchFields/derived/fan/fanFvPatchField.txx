@@ -44,6 +44,31 @@ Foam::fanFvPatchField<Type>::operatingModeNames_
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
 template<class Type>
+typename Foam::fanFvPatchField<Type>::operatingMode
+Foam::fanFvPatchField<Type>::mode(const dictionary& dict)
+{
+    operatingMode mode =
+        operatingModeNames_.getOrDefault("mode", dict, operatingMode::VELOCITY);
+
+    // Backwards compatibility
+    if (mode == operatingMode::VELOCITY)
+    {
+        if (dict.getOrDefault("nonDimensional", false))
+        {
+            mode = operatingMode::NON_DIMENSIONAL;
+        }
+
+        if (dict.getOrDefault("uniformJump", false))
+        {
+            mode = operatingMode::UNIFORM_VELOCITY;
+        }
+    }
+
+    return mode;
+}
+
+
+template<class Type>
 void Foam::fanFvPatchField<Type>::calcFanJump()
 {
     if (this->cyclicPatch().owner())
@@ -64,13 +89,15 @@ Foam::fanFvPatchField<Type>::fanFvPatchField
 :
     parent_bctype(p, iF),
     operatingMode_(operatingMode::VELOCITY),
-    rhoCorrection_(false),
-    rhoRefUserProvided_(false),
     phiName_("phi"),
     rhoName_("rho"),
-    rpm_(nullptr),
-    dm_(nullptr),
-    rhoRef_(defaultRho())
+    fanNonDimensional_
+    (
+        p,
+        iF.dimensions(),
+        iF.name(),
+        iF.objectPath()
+    )
 {}
 
 
@@ -83,101 +110,20 @@ Foam::fanFvPatchField<Type>::fanFvPatchField
 )
 :
     parent_bctype(p, iF, dict, false),  // needValue = false
-    operatingMode_
-    (
-        operatingModeNames_.getOrDefault("mode", dict, operatingMode::VELOCITY)
-    ),
-    rhoCorrection_(dict.getOrDefault("rhoCorrection", false)),
-    rhoRefUserProvided_(false),
+    operatingMode_(mode(dict)),
     phiName_(dict.getOrDefault<word>("phi", "phi")),
     rhoName_(dict.getOrDefault<word>("rho", "rho")),
-    rpm_(nullptr),
-    dm_(nullptr),
-    rhoRef_(defaultRho())
+    fanNonDimensional_
+    (
+        p,
+        iF.dimensions(),
+        iF.name(),
+        iF.objectPath(),
+        dict,
+        this->db(),
+        operatingMode_ == operatingMode::NON_DIMENSIONAL
+    )
 {
-    // Backwards compatibility
-    if (operatingMode_ == operatingMode::VELOCITY)
-    {
-        bool nonDimCompat = dict.getOrDefault("nonDimensional", false);
-        if (nonDimCompat)
-        {
-            // Warn?
-            operatingMode_ = operatingMode::NON_DIMENSIONAL;
-        }
-
-        bool uniformCompat = dict.getOrDefault("uniformJump", false);
-        if (uniformCompat)
-        {
-            // Warn?
-            operatingMode_ = operatingMode::UNIFORM_VELOCITY;
-        }
-    }
-
-
-    // Note that we've not read jumpTable_ etc
-    if (operatingMode_ == operatingMode::NON_DIMENSIONAL)
-    {
-        rpm_.reset(Function1<scalar>::New("rpm", dict, &this->db()));
-        dm_.reset(Function1<scalar>::New("dm", dict, &this->db()));
-    }
-
-    // Density correction entries (only relevant for nonDimensional mode
-    // applied to dynamic pressure fields)
-    rhoRefUserProvided_ = dict.readIfPresent("rhoRef", rhoRef_);
-
-    if (operatingMode_ == operatingMode::NON_DIMENSIONAL)
-    {
-        if (this->internalField().dimensions() == dimPressure)
-        {
-            if (!rhoCorrection_)
-            {
-                if (rhoRefUserProvided_)
-                {
-                    if (rhoRef_ < SMALL)
-                    {
-                        FatalIOErrorInFunction(dict)
-                            << "rhoRef cannot be zero or negative, but is "
-                            << rhoRef_ << nl
-                            << "    on patch " << this->patch().name()
-                            << " of field " << this->internalField().name()
-                            << " in file " << this->internalField().objectPath()
-                            << exit(FatalIOError);
-                    }
-                }
-                else
-                {
-                    WarningInFunction
-                        << "rhoRef not specified; using default rated density "
-                        << rhoRef_ << " [kg/m^3]" << nl
-                        << "    on patch " << this->patch().name()
-                        << " of field " << this->internalField().name()
-                        << " in file " << this->internalField().objectPath()
-                        << endl;
-                }
-            }
-        }
-        else if (rhoCorrection_ || rhoRefUserProvided_)
-        {
-            WarningInFunction
-                << "Entries 'rhoCorrection' and/or 'rhoRef' are ignored for "
-                << "kinematic pressure fields (dimPressure/dimDensity)" << nl
-                << "    on patch " << this->patch().name()
-                << " of field " << this->internalField().name()
-                << " in file " << this->internalField().objectPath()
-                << endl;
-        }
-    }
-    else if (rhoCorrection_ || rhoRefUserProvided_)
-    {
-        WarningInFunction
-            << "Entries 'rhoCorrection' and/or 'rhoRef' are ignored unless "
-            << "mode is 'nonDimensional'" << nl
-            << "    on patch " << this->patch().name()
-            << " of field " << this->internalField().name()
-            << " in file " << this->internalField().objectPath()
-            << endl;
-    }
-
     if (this->cyclicPatch().owner())
     {
         this->jumpTable_ = Function1<Type>::New("jumpTable", dict, &this->db());
@@ -201,13 +147,16 @@ Foam::fanFvPatchField<Type>::fanFvPatchField
 :
     parent_bctype(rhs, p, iF, mapper),
     operatingMode_(rhs.operatingMode_),
-    rhoCorrection_(rhs.rhoCorrection_),
-    rhoRefUserProvided_(rhs.rhoRefUserProvided_),
     phiName_(rhs.phiName_),
     rhoName_(rhs.rhoName_),
-    rpm_(rhs.rpm_.clone()),
-    dm_(rhs.dm_.clone()),
-    rhoRef_(rhs.rhoRef_)
+    fanNonDimensional_
+    (
+        rhs.fanNonDimensional_,
+        p,
+        iF.dimensions(),
+        iF.name(),
+        iF.objectPath()
+    )
 {}
 
 
@@ -220,13 +169,16 @@ Foam::fanFvPatchField<Type>::fanFvPatchField
 :
     parent_bctype(rhs, iF),
     operatingMode_(rhs.operatingMode_),
-    rhoCorrection_(rhs.rhoCorrection_),
-    rhoRefUserProvided_(rhs.rhoRefUserProvided_),
     phiName_(rhs.phiName_),
     rhoName_(rhs.rhoName_),
-    rpm_(rhs.rpm_.clone()),
-    dm_(rhs.dm_.clone()),
-    rhoRef_(rhs.rhoRef_)
+    fanNonDimensional_
+    (
+        rhs.fanNonDimensional_,
+        this->patch(),
+        iF.dimensions(),
+        iF.name(),
+        iF.objectPath()
+    )
 {}
 
 
@@ -258,14 +210,7 @@ void Foam::fanFvPatchField<Type>::write(Ostream& os) const
 
     if (operatingMode_ == operatingMode::NON_DIMENSIONAL)
     {
-        rpm_->writeData(os);
-        dm_->writeData(os);
-        os.writeEntryIfDifferent<bool>("rhoCorrection", false, rhoCorrection_);
-
-        if (rhoRefUserProvided_)
-        {
-            os.writeEntry("rhoRef", rhoRef_);
-        }
+        fanNonDimensional_.write(os);
     }
 }
 

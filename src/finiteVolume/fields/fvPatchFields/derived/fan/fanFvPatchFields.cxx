@@ -73,10 +73,6 @@ void Foam::fanFvPatchField<Foam::scalar>::calcFanJump()
     }
 
 
-    // The non-dimensional parameters
-    scalar rpm(0);
-    scalar meanDiam(0);
-
     scalarField pdFan(patch().size(), Zero);
 
     switch (operatingMode_)
@@ -120,66 +116,26 @@ void Foam::fanFvPatchField<Foam::scalar>::calcFanJump()
         {
             // Face-based volFlowRate converted to patch-based volFlowRate
             // for pd curve lookup
-            scalar sumVolFlowRate = gSum(volFlowRate);
+            const scalar timeValue =
+                this->db().time().timeOutputValue();
 
-            rpm = rpm_->value(this->db().time().timeOutputValue());
-            meanDiam = dm_->value(this->db().time().timeOutputValue());
-
-            // Create a non-dimensional flow rate
-            sumVolFlowRate *=
-            (
-                240.0
-               /stabilise
+            const scalar sumVolFlowRate =
+                fanNonDimensional_.nonDimensionalFlowRate
                 (
-                    sqr(constant::mathematical::pi*meanDiam)*meanDiam*rpm,
-                    VSMALL
-                )
-            );
+                    gSum(volFlowRate),
+                    timeValue
+                );
 
             const scalar pdNonDim = this->jumpTable_->value(sumVolFlowRate);
 
             // Convert uniform non-dimensional pdFan from curve into deltaP
-            if (internalField().dimensions() == dimPressure)
-            {
-                // Compressible/variable-density flow: dynamic pressure [Pa]
-                scalar rhoEff = rhoRef_;
-
-                // Use patch area-averaged density when density correction is
-                // ON, else stick with reference density
-                if (rhoCorrection_)
-                {
-                    const auto& rhop =
-                        patch().lookupPatchField<volScalarField>(rhoName_);
-
-                    rhoEff = gWeightedAverage(patch().magSf(), rhop);
-                }
-
-                pdFan =
-                    pdNonDim
-                   *rhoEff*sqr(constant::mathematical::pi*meanDiam*rpm)
-                   /7200.0;
-            }
-            else if (internalField().dimensions() == dimPressure/dimDensity)
-            {
-                // Incompressible flow: kinematic pressure [m^2/s^2]
-                pdFan =
-                    pdNonDim
-                   *sqr(constant::mathematical::pi*meanDiam*rpm)/7200.0;
-            }
-            else
-            {
-                FatalErrorInFunction
-                    << "Incorrect pressure dimensions "
-                    << internalField().dimensions() << nl
-                    << "    Should be " << dimPressure
-                    << " for compressible/variable density flow" << nl
-                    << "    or " << dimPressure/dimDensity
-                    << " for incompressible flow," << nl
-                    << "    on patch " << patch().name()
-                    << " of field " << internalField().name()
-                    << " in file " << internalField().objectPath()
-                    << exit(FatalError);
-            }
+            pdFan =
+                fanNonDimensional_.dimensionalPressure
+                (
+                    pdNonDim,
+                    rhoName_,
+                    timeValue
+                );
 
             break;
         }
