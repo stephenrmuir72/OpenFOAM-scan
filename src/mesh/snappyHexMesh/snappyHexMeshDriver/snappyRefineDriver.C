@@ -3867,4 +3867,197 @@ void Foam::snappyRefineDriver::doRefine
 }
 
 
+void Foam::snappyRefineDriver::doRefineOnly
+(
+    const dictionary& refineDict,
+    const refinementParameters& refineParams,
+    const snapParameters& snapParams,
+    const dictionary& motionDict
+)
+{
+    addProfiling(refineOnly, "snappyHexMesh::refineOnly");
+    Info<< nl
+        << "Refinement phase (no region extraction)" << nl
+        << "--------------------------------------" << nl
+        << endl;
+
+    const fvMesh& mesh = meshRefiner_.mesh();
+
+
+    // Check that all the keep points are inside the mesh.
+    refineParams.findCells(true, mesh, refineParams.locationsInMesh());
+
+    // Check that all the keep points are inside the mesh.
+    if (dryRun_)
+    {
+        refineParams.findCells(true, mesh, refineParams.locationsOutsideMesh());
+    }
+
+    // Estimate cell sizes
+    if (dryRun_)
+    {
+        snappyVoxelMeshDriver voxelDriver
+        (
+            meshRefiner_,
+            globalToMasterPatch_,
+            globalToSlavePatch_
+        );
+        voxelDriver.doRefine(refineParams);
+    }
+
+
+    // Refine around feature edges
+    featureEdgeRefine
+    (
+        refineParams,
+        100,    // maxIter
+        0       // min cells to refine
+    );
+
+
+    // Initial automatic gap-level refinement: gaps smaller than the cell size
+    if
+    (
+        max(meshRefiner_.surfaces().maxGapLevel()) > 0
+     || max(meshRefiner_.shells().maxGapLevel()) > 0
+     || max(meshRefiner_.surfaces().maxCurvatureLevel()) > 0
+    )
+    {
+        // In case we use automatic gap level refinement do some pre-refinement
+        // (fast) since it is so slow.
+
+        // Refine based on surface
+        surfaceOnlyRefine
+        (
+            refineParams,
+            20,         // maxIter
+            labelMax    // no leak detection yet since all in same cell
+        );
+
+        // Refine cells that contain a gap
+        smallFeatureRefine
+        (
+            refineParams,
+            100     // maxIter
+        );
+    }
+
+
+    // Refine based on surface
+    surfaceOnlyRefine
+    (
+        refineParams,
+        100,    // maxIter
+        0       // Iteration to start leak detection and closure
+    );
+
+    // Pass1 of automatic gap-level refinement: surface-intersected cells
+    // in narrow gaps
+    gapOnlyRefine
+    (
+        refineParams,
+        100     // maxIter
+    );
+
+    // Block cells inbetween two surfaces. Does nothing unless blockLevel was
+    // specified on the refinementSurfaces.
+    surfaceProximityBlock
+    (
+        refineParams,
+        1       // maxIter
+    );
+
+    // Pass2 of automatic gap-level refinement: all cells in gaps
+    bigGapOnlyRefine
+    (
+        refineParams,
+        true,   // spreadGapSize
+        100     // maxIter
+    );
+
+    // Internal mesh refinement
+    shellRefine
+    (
+        refineParams,
+        100    // maxIter
+    );
+
+    // Refine any hexes with 5 or 6 faces refined to make smooth edges
+    danglingCellRefine
+    (
+        refineParams,
+        21,     // 1 coarse face + 5 refined faces
+        100     // maxIter
+    );
+    danglingCellRefine
+    (
+        refineParams,
+        24,     // 0 coarse faces + 6 refined faces
+        100     // maxIter
+    );
+
+    // Refine any cells with differing refinement level on either side
+    refinementInterfaceRefine
+    (
+        refineParams,
+        10      // maxIter
+    );
+
+    // Directional shell refinement
+    directionalShellRefine
+    (
+        refineParams,
+        100    // maxIter
+    );
+
+
+    // Region extraction is deliberately not performed
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    //
+    // The remainder of snappyRefineDriver::doRefine converts the refined mesh
+    // into a castellated region and is omitted here:
+    //
+    // - removeInsideCells
+    //       removes cells beyond the surface intersections
+    // - blockLeakFaces
+    //       introduces baffles in order to close leaks
+    // - directionalSmooth
+    //       displaces mesh points
+    // - baffleAndSplitMesh
+    //       introduces baffles at the surface intersections and then removes
+    //       the sections that are unreachable from the keep points
+    // - zonify, addFaceZones, splitAndMergeBaffles
+    //       operate on those baffles
+    // - erodeNonManifoldZoneFaces, mergePatchFaces
+    //       snapping preparation, and would merge split-hex faces
+    // - deleteSmallRegions
+    //       removes small disconnected regions
+    //
+    // Omitting them leaves every cell in place, with no point motion and no
+    // new baffles, which is what a cut-cell background mesh requires.
+
+
+    if (!dryRun_ && Pstream::parRun())
+    {
+        Info<< nl
+            << "Doing final balancing" << nl
+            << "---------------------" << nl
+            << endl;
+
+        labelList singleProcPoints;
+
+        // Do final balancing. Keep zoned faces on one processor.
+        meshRefiner_.balance
+        (
+            true,                           // keepZoneFaces
+            false,                          // keepBaffles
+            singleProcPoints,               // keepZonePoints
+            scalarField(mesh.nCells(), 1),  // cellWeights
+            decomposer_,
+            distributor_
+        );
+    }
+}
+
+
 // ************************************************************************* //
