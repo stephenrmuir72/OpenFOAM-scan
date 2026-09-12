@@ -1,0 +1,3 @@
+cutCellCartesian.C
+
+EXE = $(FOAM_APPBIN)/cutCellCartesian

@@ -311,6 +311,23 @@ public:
             const dictionary& motionDict
         );
 
+        //- Perform the refinement stages of doRefine only, omitting the
+        //  region extraction that doRefine performs at the end. All cells are
+        //  retained, no points are displaced and no baffles are introduced,
+        //  so the result is a refined background mesh rather than a
+        //  castellated region.
+        //
+        //  Intended for generating the background mesh of a cut-cell mesh
+        //  generator, where both sides of the surface must be preserved and
+        //  the surface is introduced by a later cutting stage.
+        void doRefineOnly
+        (
+            const dictionary& refineDict,
+            const refinementParameters& refineParams,
+            const snapParameters& snapParams,
+            const dictionary& motionDict
+        );
+
         //- Helper: add faceZones and patches
         static void addFaceZones
         (
