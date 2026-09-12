@@ -10,5 +10,6 @@ wmakeLnInclude -u blockMesh
 wmake $targetType snappyHexMesh
 wmake $targetType blockMesh
 wmake $targetType extrudeModel
+wmake $targetType cutCellMesh
 
 #------------------------------------------------------------------------------
