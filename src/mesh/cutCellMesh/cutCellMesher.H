@@ -143,6 +143,9 @@ public:
         //- surface passes through without separating the cell
         label nSingleRegion = 0;
 
+        //- Cells absorbed into a neighbour because they were too small
+        label nAbsorbed = 0;
+
         //- Mesh points the collapse moved, and the largest move. A cut
         //- crossing within vertexSnapFraction of an edge endpoint is collapsed
         //- onto that endpoint by moving the point onto the plane of the facet,
@@ -187,6 +190,21 @@ private:
         //- Parent background cell of every cell of the cut mesh
         labelList backgroundCell_;
 
+        //- Background cells every cell of the cut mesh was built from. Entry
+        //- zero is backgroundCell_[celli]; a merged cell lists all of them.
+        List<labelList> backgroundParents_;
+
+        //- Cell volumes of the mesh before it was cut, by background cell
+        scalarField backgroundVolumes_;
+
+        //- A cell below this fraction of its parents' volume is a sliver and is
+        //- absorbed into a neighbour, until the merged group reaches
+        //- minVolumeRatio_ of it. Either being zero disables the merge.
+        //- Off by default: removeFaces still refuses some configurations, see
+        //- 07 section 4.1, and a mesh that aborts is worse than a sliver.
+        scalar sliverVolumeRatio_ = 0.0;
+        scalar minVolumeRatio_ = 0.30;
+
         //- Region cellZone of every background cell
         labelList cellRegionZone_;
 
@@ -229,6 +247,10 @@ private:
         //- through the point. Must run before findCutCells() and before the
         //- mesh geometry is otherwise used.
         void snapPoints();
+
+        //- Absorb every cell below sliverVolumeRatio_ of its parents' volume
+        //- into the neighbour the merge scores best, in one topology change
+        void mergeSlivers();
 
         //- Find the cells the surface crosses, cut them into pieces by the
         //- planes of every facet that crosses them, and classify each piece
@@ -284,6 +306,17 @@ public:
 
         //- Write backgroundCell next to the cut mesh
         void writeBackgroundCell() const;
+
+        //- Write the background cells each cell of the cut mesh came from
+        void writeBackgroundParents() const;
+
+        //- A cell below this fraction of its parents' volume is absorbed into
+        //- a neighbour of the same region. Zero disables the merge.
+        void sliverVolumeRatio(const scalar f) { sliverVolumeRatio_ = f; }
+
+        //- The volume a merged group is grown to, as a fraction of its
+        //- parents' volume. Zero disables the merge.
+        void minVolumeRatio(const scalar f) { minVolumeRatio_ = f; }
 
         //- Set the collapse fraction, 0 to 0.10, 0 disabling it
         void vertexSnapFraction(const scalar f)

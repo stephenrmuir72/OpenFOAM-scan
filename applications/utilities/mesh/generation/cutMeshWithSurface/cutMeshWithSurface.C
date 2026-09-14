@@ -144,6 +144,7 @@ int main(int argc, char* argv[])
     if (map.valid())
     {
         mesher.writeBackgroundCell();
+    mesher.writeBackgroundParents();
         mesher.writeSnapDisplacement();
 
         mesh.setInstance(writeInstance);
