@@ -840,6 +840,32 @@ int main()
         checkLabel(result.nPolygons, 1, "the triangle still crosses the cell");
     }
 
+    //- The same plane shifted off the edge by a small but real distance does
+    //- divide the cell properly, into two pieces meeting over a thin rectangle.
+    //- It is a sliver, which is S3's business, not a degeneracy, so the
+    //- threshold must not catch it.
+    {
+        const pointField thinCut
+        ({
+            P(1.5,-1,-0.499999), P(1.5,3,-0.499999), P(0.5,-1,0.500001)
+        });
+
+        cutCellResult result;
+
+        const cutState state = cutCellByTriangles
+        (
+            hex, List<pointField>(1, thinCut), 1e-9, result
+        );
+
+        checkTrue
+        (
+            state == cutState::cut,
+            "a plane just off the edge still cuts, giving a sliver"
+        );
+        checkLabel(result.pieces.size(), 2, "into two pieces");
+        checkLabel(result.sharedFaces.size(), 1, "sharing one thin face");
+    }
+
 
     //  Grouping the pieces of a cell
     //  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

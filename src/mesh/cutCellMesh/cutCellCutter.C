@@ -499,6 +499,50 @@ cutState cutCellByTriangles
                         )
                     )
                     {
+                        //- Two pieces that meet along a line rather than over an
+                        //- area share a degenerate polygon, which cannot be a
+                        //- mesh face: the cells either side would touch along an
+                        //- edge with nothing between them. Refuse the whole cut
+                        //- of this cell instead, so it stays one cell and the
+                        //- driver reports it. The test is scale free, the area
+                        //- against the squared perimeter, because a collinear
+                        //- polygon's area comes out as cancellation noise and
+                        //- is not reliably zero. The margin is wide: the
+                        //- thinnest real sliver in the oblique case is around
+                        //- 1e-8 of a face, which is 1e-8 of the squared
+                        //- perimeter for a face about 0.5 across, against a
+                        //- threshold of 1e-12.
+                        const face& sharedFace = pieceA.poly.faces()[facei];
+                        const pointField& sharedPts = pieceA.poly.points();
+
+                        pointField ring(sharedFace.size());
+
+                        forAll(sharedFace, k)
+                        {
+                            ring[k] = sharedPts[sharedFace[k]];
+                        }
+
+                        scalar perimeter = 0;
+
+                        forAll(ring, k)
+                        {
+                            perimeter += mag(ring[(k + 1) % ring.size()] - ring[k]);
+                        }
+
+                        const scalar ringArea = polygonArea(ring);
+
+                        if
+                        (
+                            ringArea <= tol*tol
+                         || ringArea <= 1e-12*perimeter*perimeter
+                        )
+                        {
+                            result.pieces.clear();
+                            result.sharedFaces.clear();
+
+                            return cutState::refused;
+                        }
+
                         cutCellPieceFace shared;
                         shared.pieceA = a;
                         shared.faceInA = facei;

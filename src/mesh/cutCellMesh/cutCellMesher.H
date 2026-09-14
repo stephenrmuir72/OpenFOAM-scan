@@ -104,6 +104,16 @@ public:
         //- Cells replaced by two sub-cells
         label nCut = 0;
 
+        //- Cells whose cut was refused as degenerate and left whole. A grazing
+        //- surface can make two pieces meet along a line rather than over an
+        //- area, and a face between them would have no area, so the cell is
+        //- left as one cell and reported. This is a geometric outcome rather
+        //- than an unsupported case, so it is counted and does not fail the run.
+        label nDegenerate = 0;
+
+        //- Their indices, in mesh order
+        labelList degenerate;
+
         //- Cells reported and left untouched
         label nUnsupported = 0;
 
