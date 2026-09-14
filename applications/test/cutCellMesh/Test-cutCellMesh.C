@@ -29,6 +29,7 @@ Description
 
 #include "cutCellPolyhedron.H"
 #include "cutCellCutter.H"
+#include "cutCellMerge.H"
 #include "plane.H"
 #include "DynamicList.H"
 #include "ListOps.H"
@@ -1037,6 +1038,93 @@ int main()
         }
 
         checkTrue(sameSide, "a group never mixes regions");
+    }
+
+
+    //  The shape of a merged cell
+    //  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    Info<< nl << "merge quality" << endl;
+
+    {
+        //- A unit cube as the boundary a merge of two cells would produce
+        List<pointField> cube
+        ({
+            pointField({P(0,0,0), P(1,0,0), P(1,1,0), P(0,1,0)}),
+            pointField({P(0,0,1), P(1,0,1), P(1,1,1), P(0,1,1)}),
+            pointField({P(0,0,0), P(1,0,0), P(1,0,1), P(0,0,1)}),
+            pointField({P(0,1,0), P(1,1,0), P(1,1,1), P(0,1,1)}),
+            pointField({P(0,0,0), P(0,1,0), P(0,1,1), P(0,0,1)}),
+            pointField({P(1,0,0), P(1,1,0), P(1,1,1), P(1,0,1)})
+        });
+
+        const mergeQuality q(evaluateMerge(cube, P(0.5, 0.5, 0.5)));
+
+        checkTrue(q.valid, "a cube boundary encloses a volume");
+        checkClose(q.volume, 1.0, "its volume is 1");
+        checkClose
+        (
+            q.minPyramidRatio,
+            1.0/6.0,
+            "every pyramid is a sixth of the volume"
+        );
+        checkLabel(q.concaveFaces, 0, "a cube has no concave face");
+
+        //- One face wound the other way: the orientation is forced outward, so
+        //- the score must not change
+        List<pointField> reversed(cube);
+        reversed[0] = pointField({P(0,1,0), P(1,1,0), P(1,0,0), P(0,0,0)});
+
+        const mergeQuality qr(evaluateMerge(reversed, P(0.5, 0.5, 0.5)));
+
+        checkTrue(qr.valid, "a reversed face does not break it");
+        checkClose(qr.volume, 1.0, "and the volume is unchanged");
+
+        //- A flat boundary encloses nothing
+        List<pointField> flat
+        ({
+            pointField({P(0,0,0), P(1,0,0), P(1,1,0), P(0,1,0)})
+        });
+
+        checkTrue
+        (
+            !evaluateMerge(flat, P(0.5, 0.5, 0.0)).valid,
+            "a flat boundary encloses no volume"
+        );
+
+        //- An L-shaped prism, which is concave and so scores concave faces
+        //- above zero: this is what a merged cut cell looks like. The
+        //- reference has to be inside the L, since an L's centroid falls in
+        //- its notch.
+        const pointField lBase
+        ({
+            P(0,0,0), P(2,0,0), P(2,1,0), P(1,1,0), P(1,2,0), P(0,2,0)
+        });
+
+        pointField lTop(lBase);
+
+        forAll(lTop, i)
+        {
+            lTop[i] += vector(0, 0, 1);
+        }
+
+        List<pointField> lPrism({lBase, lTop});
+
+        forAll(lBase, i)
+        {
+            const point& a = lBase[i];
+            const point& b = lBase[lBase.fcIndex(i)];
+
+            lPrism.append
+            (
+                pointField({a, b, b + vector(0,0,1), a + vector(0,0,1)})
+            );
+        }
+
+        const mergeQuality ql(evaluateMerge(lPrism, P(0.5, 0.5, 0.5)));
+
+        checkClose(ql.volume, 3.0, "the L prism has volume 3");
+        checkTrue(ql.concaveFaces > 0, "and it scores concave faces");
     }
 
 
