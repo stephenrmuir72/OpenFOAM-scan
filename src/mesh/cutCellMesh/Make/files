@@ -1,4 +1,6 @@
 cutCellCutter.C
+cutCellMesher.C
 cutCellPolyhedron.C
+cutCellSurface.C
 
 LIB = $(FOAM_LIBBIN)/libcutCellMesh

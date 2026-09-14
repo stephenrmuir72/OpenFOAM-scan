@@ -176,9 +176,30 @@ cutState cutCellByTriangles
     pointField& interface
 )
 {
+    cutCellDetail detail;
+
+    return cutCellByTriangles
+    (
+        cell, tris, tol, minus, plus, interface, detail
+    );
+}
+
+
+cutState cutCellByTriangles
+(
+    const cutCellPolyhedron& cell,
+    const List<pointField>& tris,
+    const scalar tol,
+    cutCellPolyhedron& minus,
+    cutCellPolyhedron& plus,
+    pointField& interface,
+    cutCellDetail& detail
+)
+{
     minus = cutCellPolyhedron();
     plus = cutCellPolyhedron();
     interface.clear();
+    detail = cutCellDetail();
 
     if (cell.empty())
     {
@@ -202,6 +223,8 @@ cutState cutCellByTriangles
         {
             continue;
         }
+
+        detail.nPolygons++;
 
         const plane pln(poly[0], poly[1], poly[2]);
 
@@ -248,7 +271,7 @@ cutState cutCellByTriangles
         return cutState::refused;
     }
 
-    if (!cell.split(planes[0], minus, plus, interface))
+    if (!cell.split(planes[0], minus, plus, interface, detail))
     {
         //- The plane touches the cell but does not divide it
         return cutState::untouched;
@@ -270,9 +293,16 @@ cutState cutCellByTriangles
         minus = cutCellPolyhedron();
         plus = cutCellPolyhedron();
         interface.clear();
+        detail = cutCellDetail();
 
         return cutState::refused;
     }
+
+    //- Accepted: report the plane, orientation preserved from the surface. Its
+    //- normal therefore points towards the positive piece, which is the outside
+    //- of an outward oriented surface.
+    detail.normal = planes[0].normal();
+    detail.refPoint = planes[0].refPoint();
 
     return cutState::cut;
 }
