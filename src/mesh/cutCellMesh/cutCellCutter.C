@@ -257,7 +257,15 @@ cutState cutCellByTriangles
     //- The plane must span the whole cross-section of the cell. Where it only
     //- covers part of it, the surface enters and leaves the cell, and the two
     //- pieces can lie in the same region.
-    if (mag(polygonArea(interface) - planeArea[0]) > 1e-6*max(1.0, planeArea[0]))
+    //-
+    //- The tolerance is relative to the area of the plane's own polygons, with
+    //- no absolute floor: a floor tied to a unit area would, at the scale of a
+    //- thin feature, amount to accepting any coverage at all.
+    if
+    (
+        mag(polygonArea(interface) - planeArea[0])
+      > 1e-6*max(SMALL, planeArea[0])
+    )
     {
         minus = cutCellPolyhedron();
         plus = cutCellPolyhedron();

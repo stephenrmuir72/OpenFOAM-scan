@@ -66,17 +66,23 @@ cutCellPolyhedron::cutCellPolyhedron
 
 scalar cutCellPolyhedron::volume() const
 {
+    //- Reference the tetrahedra to a point of the polyhedron. Taking the
+    //- origin as the apex instead cancels terms of order the coordinate cubed
+    //- against the volume, which loses most of the significant digits for a
+    //- thin cell far from the origin.
+    const point& ref = points_[0];
+
     scalar sumT = 0;
 
     forAll(faces_, fi)
     {
         const face& f = faces_[fi];
 
-        const point& p0 = points_[f[0]];
+        const vector p0(points_[f[0]] - ref);
 
         for (label i = 1; i < f.size() - 1; i++)
         {
-            sumT += triple(p0, points_[f[i]], points_[f[i + 1]]);
+            sumT += triple(p0, points_[f[i]] - ref, points_[f[i + 1]] - ref);
         }
     }
 
@@ -86,6 +92,10 @@ scalar cutCellPolyhedron::volume() const
 
 point cutCellPolyhedron::centre() const
 {
+    //- Referenced for the same reason as the volume, and the reference is added
+    //- back to the volume-weighted result at the end
+    const point& ref = points_[0];
+
     scalar sumT = 0;
     vector sumTc = Zero;
 
@@ -93,12 +103,12 @@ point cutCellPolyhedron::centre() const
     {
         const face& f = faces_[fi];
 
-        const point& p0 = points_[f[0]];
+        const vector p0(points_[f[0]] - ref);
 
         for (label i = 1; i < f.size() - 1; i++)
         {
-            const point& p1 = points_[f[i]];
-            const point& p2 = points_[f[i + 1]];
+            const vector p1(points_[f[i]] - ref);
+            const vector p2(points_[f[i + 1]] - ref);
 
             const scalar t = triple(p0, p1, p2);
 
@@ -112,7 +122,7 @@ point cutCellPolyhedron::centre() const
         return Zero;
     }
 
-    return sumTc/(4.0*sumT);
+    return ref + sumTc/(4.0*sumT);
 }
 
 
@@ -190,15 +200,34 @@ bool cutCellPolyhedron::split
 
     const vector& n = pln.normal();
 
-    //- Tolerance relative to the extent of the polyhedron
-    scalar span = 0;
+    //- Tolerance for deciding whether a point lies on the plane. The scale is
+    //- the smallest extent of the polyhedron rather than the largest, so that a
+    //- thin cell keeps a tolerance small compared with its thickness, with a
+    //- floor from the coordinate magnitude so that a vertex that is exactly on
+    //- the plane is still recognised when the cell is far from the origin.
+    scalar minExtent = GREAT;
+    scalar maxDist = 0;
+
+    for (direction axis = 0; axis < 3; axis++)
+    {
+        scalar lo = GREAT;
+        scalar hi = -GREAT;
+
+        forAll(points_, pi)
+        {
+            lo = min(lo, points_[pi][axis]);
+            hi = max(hi, points_[pi][axis]);
+        }
+
+        minExtent = min(minExtent, hi - lo);
+    }
 
     forAll(points_, pi)
     {
-        span = max(span, mag(points_[pi] - points_[0]));
+        maxDist = max(maxDist, mag(points_[pi]));
     }
 
-    const scalar tol = 1e-9*max(span, SMALL);
+    const scalar tol = 1e-9*max(minExtent, SMALL) + 1e-12*maxDist;
 
     //- Signed distance of every point, and whether both sides are occupied
     scalarField dist(points_.size());
