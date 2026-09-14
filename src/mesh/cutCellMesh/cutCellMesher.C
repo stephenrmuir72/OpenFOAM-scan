@@ -34,6 +34,8 @@ License
 #include "treeBoundBox.H"
 #include "DynamicList.H"
 #include "boundBox.H"
+#include "pointIOField.H"
+#include "boolList.H"
 #include "error.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -187,6 +189,285 @@ Foam::cutCellPolyhedron Foam::cutCellMesher::cellPolyhedron
 }
 
 
+void Foam::cutCellMesher::snapPoints()
+{
+    snapDelta_.setSize(mesh_.points().size(), Zero);
+
+    if (vertexSnapFraction_ <= 0)
+    {
+        return;
+    }
+
+    if (surfaces_.size() != 1)
+    {
+        FatalErrorInFunction
+            << "Cutting with " << surfaces_.size() << " surfaces is not"
+            << " supported in this slice. Cells the surface does not cross still"
+            << " need an inside/outside label, so give exactly one geometry"
+            << " entry." << exit(FatalError);
+    }
+
+    const cutCellSurface& surf = surfaces_[0];
+
+    const pointField& pts = mesh_.points();
+
+    const scalar f = vertexSnapFraction_;
+
+    //- The domain is the user's, so a point on a boundary patch never moves.
+    //- That is also what keeps the total volume: a closed mesh's volume depends
+    //- on its boundary alone, so interior moves leave it unchanged.
+    boolList onBoundary(pts.size(), false);
+
+    forAll(mesh_.boundaryMesh(), patchi)
+    {
+        const faceList& patchFaces = mesh_.boundaryMesh()[patchi];
+
+        forAll(patchFaces, pf)
+        {
+            const face& pF = patchFaces[pf];
+
+            forAll(pF, k)
+            {
+                onBoundary[pF[k]] = true;
+            }
+        }
+    }
+
+    //- The planes pulling each point, as a chain per point. A pull is one
+    //- (point, plane) pair: a cut crossing an edge near its endpoint.
+    Map<label> firstPull(pts.size()/64 + 16);
+    DynamicList<label> nextPull(pts.size()/64 + 16);
+    DynamicList<label> pullPoint(pts.size()/64 + 16);
+    DynamicList<vector> pullNormal(pts.size()/64 + 16);
+    DynamicList<point> pullRef(pts.size()/64 + 16);
+
+    auto addPull = [&](const label pointi, const vector& n, const point& ref)
+    {
+        //- One facet is several triangles, so the same plane can pull the same
+        //- point more than once. It is one pull, or the resolution would weigh
+        //- that plane twice.
+        for
+        (
+            label pulli = (firstPull.found(pointi) ? firstPull[pointi] : -1);
+            pulli != -1;
+            pulli = nextPull[pulli]
+        )
+        {
+            if
+            (
+                (pullNormal[pulli] & n) > 1 - 1e-6
+             && mag(pullNormal[pulli] & (pullRef[pulli] - ref)) <= tol_
+            )
+            {
+                return;
+            }
+        }
+
+        const label pulli = pullPoint.size();
+
+        pullPoint.append(pointi);
+        pullNormal.append(n);
+        pullRef.append(ref);
+        nextPull.append(firstPull.found(pointi) ? firstPull[pointi] : -1);
+        firstPull.set(pointi, pulli);
+    };
+
+    //- A cut crossing within a fraction of the edge's length of one of its
+    //- endpoints is collapsed onto that endpoint. The measure is the fraction
+    //- along the edge rather than a distance, which is what 05 section 7.1.2
+    //- describes and what makes the test independent of the refinement level.
+    forAll(mesh_.cells(), celli)
+    {
+        const cutCellPolyhedron cell(cellPolyhedron(mesh_, celli));
+
+        const boundBox bb(cell.points(), false);
+
+        const labelList cand
+        (
+            surf.search().tree().findBox(treeBoundBox(bb.min(), bb.max()))
+        );
+
+        if (cand.empty())
+        {
+            continue;
+        }
+
+        const pointField& cPts = cell.points();
+
+        forAll(cand, i)
+        {
+            const pointField tri(surf.triangle(cand[i]));
+
+            const vector nRaw = (tri[1] - tri[0]) ^ (tri[2] - tri[0]);
+
+            if (mag(nRaw) <= VSMALL)
+            {
+                continue;
+            }
+
+            const vector n = nRaw/mag(nRaw);
+            const point ref = tri[0];
+
+            const pointField poly(triangleBoxPolygon(tri, bb, tol_));
+
+            if (poly.size() < 3)
+            {
+                continue;
+            }
+
+            //- Twice the signed area of a triangle about the facet's normal
+            auto triArea2 = [&](const point& a, const point& b, const point& c)
+            {
+                return ((b - a) ^ (c - a)) & n;
+            };
+
+            scalar polyArea2 = 0;
+
+            forAll(poly, k)
+            {
+                polyArea2 += triArea2(poly[0], poly[k], poly[k + 1 < poly.size() ? k + 1 : 0]);
+            }
+
+            //- Every edge of the cell, each of them seen twice, once from each
+            //- of the faces that share it
+            forAll(cell.faces(), cfi)
+            {
+                const face& cF = cell.faces()[cfi];
+
+                forAll(cF, k)
+                {
+                    const label a = cF[k];
+                    const label b = cF[cF.fcIndex(k)];
+
+                    const scalar da = n & (cPts[a] - ref);
+                    const scalar db = n & (cPts[b] - ref);
+
+                    //- The plane has to cross the edge, not touch it
+                    if (da*db >= 0)
+                    {
+                        continue;
+                    }
+
+                    const scalar t = da/(da - db);
+
+                    label endLocal = -1;
+
+                    if (t <= f)
+                    {
+                        endLocal = a;
+                    }
+                    else if (t >= 1 - f)
+                    {
+                        endLocal = b;
+                    }
+                    else
+                    {
+                        continue;
+                    }
+
+                    //- Only a crossing the facet really contains counts: a plane
+                    //- can pass near a vertex with its facet somewhere else, and
+                    //- then there is nothing there to collapse.
+                    const point x(cPts[a] + t*(cPts[b] - cPts[a]));
+
+                    scalar area2 = 0;
+
+                    forAll(poly, pk)
+                    {
+                        area2 += triArea2
+                        (
+                            x, poly[pk], poly[pk + 1 < poly.size() ? pk + 1 : 0]
+                        );
+                    }
+
+                    if (mag(area2 - polyArea2) > 1e-6*max(mag(polyArea2), VSMALL))
+                    {
+                        continue;
+                    }
+
+                    addPull(mesh_.cellPoints()[celli][endLocal], n, ref);
+                }
+            }
+        }
+    }
+
+    //- Resolve each pulled point once, so that every cell it belongs to sees
+    //- the same move, and then move it
+    pointField newPts(pts);
+
+    forAllConstIters(firstPull, iter)
+    {
+        const label pointi = iter.key();
+
+        if (onBoundary[pointi])
+        {
+            continue;
+        }
+
+        DynamicList<vector> normals;
+        DynamicList<point> refs;
+
+        for (label pulli = iter(); pulli != -1; pulli = nextPull[pulli])
+        {
+            normals.append(pullNormal[pulli]);
+            refs.append(pullRef[pulli]);
+        }
+
+        const point& P = pts[pointi];
+
+        point target = P;
+
+        if (normals.size() == 1)
+        {
+            //- Exactly onto the plane, which is the common case
+            target = P - (normals[0] & (P - refs[0]))*normals[0];
+        }
+        else
+        {
+            //- The smallest move that best satisfies all of them: for two
+            //- planes the closest point on their line, for three their corner.
+            //- A small multiple of the identity keeps the solve well posed when
+            //- they have no common point, and leaves the answer within
+            //- round-off of the exact one when they have.
+            symmTensor A = Zero;
+            vector b = Zero;
+
+            forAll(normals, i)
+            {
+                A += sqr(normals[i]);
+                b += normals[i]*(normals[i] & refs[i]);
+            }
+
+            const scalar eps = 1e-12;
+
+            const tensor M
+            (
+                A.xx() + eps, A.xy(), A.xz(),
+                A.xy(), A.yy() + eps, A.yz(),
+                A.xz(), A.yz(), A.zz() + eps
+            );
+
+            target = inv(M) & (b + eps*P);
+        }
+
+        const vector delta(target - P);
+
+        if (mag(delta) > SMALL)
+        {
+            newPts[pointi] = target;
+            snapDelta_[pointi] = delta;
+            info_.nSnapped++;
+            info_.maxSnapDistance = max(info_.maxSnapDistance, mag(delta));
+        }
+    }
+
+    if (info_.nSnapped)
+    {
+        mesh_.movePoints(newPts);
+    }
+}
+
+
 void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
 {
     //- Every cell needs an inside/outside label, including the ones the
@@ -259,13 +540,37 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
             if (result.nPolygons > 0)
             {
                 //- Triangles cross the cell, but no plane of theirs divides it.
-                //- Reported rather than silently left alone.
-                info_.nUnsupported++;
-                info_.unsupported.append(celli);
-                info_.unsupportedReason.append
-                (
-                    "the surface touches it without dividing it"
-                );
+                //- When one of the cell's points was collapsed onto a plane,
+                //- that is exactly what this looks like: the plane passes
+                //- through the point, so there is nothing left to divide. It is
+                //- an expected outcome of the collapse, counted and reported
+                //- rather than failing the run. Otherwise it is a case we
+                //- cannot handle and is reported as one.
+                bool collapsed = false;
+
+                for (const label p : mesh_.cellPoints()[celli])
+                {
+                    if (mag(snapDelta_[p]) > 0)
+                    {
+                        collapsed = true;
+                        break;
+                    }
+                }
+
+                if (collapsed)
+                {
+                    info_.nDegenerate++;
+                    info_.degenerate.append(celli);
+                }
+                else
+                {
+                    info_.nUnsupported++;
+                    info_.unsupported.append(celli);
+                    info_.unsupportedReason.append
+                    (
+                        "the surface touches it without dividing it"
+                    );
+                }
             }
             continue;
         }
@@ -936,6 +1241,16 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                     c.planes[k].normal(), c.planes[k].refPoint(), x
                 );
 
+                //- A query within tolerance of a plane lies on it, so it does
+                //- not decide which piece it belongs to. A collapsed cut passes
+                //- through a mesh point, and a query at that point has to match
+                //- the piece on either side rather than a side chosen by the
+                //- sign of a distance that is zero.
+                if (mag(d) <= tol_)
+                {
+                    continue;
+                }
+
                 if ((d > 0 ? 1 : -1) != c.pieces[pi].side[k])
                 {
                     match = false;
@@ -1255,6 +1570,12 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::cut()
     info_ = report();
     info_.nCells = mesh_.nCells();
 
+    //- Collapse the cut crossings that fall too close to a mesh point, which
+    //- moves those points. This has to happen before anything reads the mesh
+    //- geometry, so that the cut and every query about it see one set of
+    //- positions.
+    snapPoints();
+
     //- Every cell starts as its own background cell
     backgroundCell_.setSize(mesh_.nCells());
 
@@ -1265,6 +1586,12 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::cut()
 
     List<cellCut> cuts;
     findCutCells(cuts);
+
+    if (info_.nSnapped)
+    {
+        Info<< "Intersections collapsed onto a point: " << info_.nSnapped
+            << ", largest move " << info_.maxSnapDistance << nl;
+    }
 
     Info<< "Cells crossed by the surface : " << info_.nCandidate << nl
         << "Cells cut                    : " << info_.nCut << nl
@@ -1337,6 +1664,33 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::cut()
     }
 
     return map;
+}
+
+
+void Foam::cutCellMesher::writeSnapDisplacement() const
+{
+    //- Nothing moved, so there is nothing to record. An all-zero field would
+    //- also be written in a compact form that the readers have to expand.
+    if (snapDelta_.empty() || info_.nSnapped == 0)
+    {
+        return;
+    }
+
+    pointIOField snapDisplacement
+    (
+        IOobject
+        (
+            "snapDisplacement",
+            mesh_.time().timeName(),
+            "polyMesh",             // local, so it sits with the mesh
+            mesh_.time(),
+            IOobject::NO_READ,
+            IOobject::NO_WRITE
+        ),
+        snapDelta_
+    );
+
+    snapDisplacement.write();
 }
 
 

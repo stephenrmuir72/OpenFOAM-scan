@@ -143,6 +143,13 @@ public:
         //- surface passes through without separating the cell
         label nSingleRegion = 0;
 
+        //- Mesh points the collapse moved, and the largest move. A cut
+        //- crossing within vertexSnapFraction of an edge endpoint is collapsed
+        //- onto that endpoint by moving the point onto the plane of the facet,
+        //- so the cut passes through it and no near-vertex sliver is made.
+        label nSnapped = 0;
+        scalar maxSnapDistance = 0;
+
         //- Points added to the mesh
         label nNewPoints = 0;
 
@@ -166,6 +173,16 @@ private:
 
         //- Report of the last cut()
         report info_;
+
+        //- How close, as a fraction of a cell edge's length, a cut crossing has
+        //- to be to the edge's endpoint to be collapsed onto it. 05 section
+        //- 7.1.2 gives 0.05 as the default and 0.10 as the limit. Zero disables
+        //- the collapse.
+        scalar vertexSnapFraction_ = 0.05;
+
+        //- Displacement of each mesh point by the collapse, zero for the ones
+        //- that did not move. Sized by snapPoints().
+        pointField snapDelta_;
 
         //- Parent background cell of every cell of the cut mesh
         labelList backgroundCell_;
@@ -206,6 +223,12 @@ private:
 
 
     // Private Member Functions
+
+        //- Move every mesh point that a cut crossing falls too close to onto
+        //- the plane of the facet that crosses there, so that the cut passes
+        //- through the point. Must run before findCutCells() and before the
+        //- mesh geometry is otherwise used.
+        void snapPoints();
 
         //- Find the cells the surface crosses, cut them into pieces by the
         //- planes of every facet that crosses them, and classify each piece
@@ -261,6 +284,22 @@ public:
 
         //- Write backgroundCell next to the cut mesh
         void writeBackgroundCell() const;
+
+        //- Set the collapse fraction, 0 to 0.10, 0 disabling it
+        void vertexSnapFraction(const scalar f)
+        {
+            vertexSnapFraction_ = f;
+        }
+
+        //- Displacement of each mesh point by the collapse, zero where it did
+        //- not move. Only meaningful after cut().
+        const pointField& snapDisplacement() const noexcept
+        {
+            return snapDelta_;
+        }
+
+        //- Write snapDisplacement next to the cut mesh
+        void writeSnapDisplacement() const;
 };
 
 
