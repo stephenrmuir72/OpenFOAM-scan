@@ -46,13 +46,6 @@ namespace Foam
 namespace
 {
 
-//- Key of the undirected mesh edge between two points
-inline label edgeKey(const label a, const label b, const label nPoints)
-{
-    return min(a, b)*max(label(1), nPoints) + max(a, b);
-}
-
-
 //- Signed distance of a point from the plane through 'refPoint' with normal n
 inline scalar planeDist(const vector& n, const point& refPoint, const point& x)
 {
@@ -76,33 +69,22 @@ inline bool samePlane
 }
 
 
-//- Classification of a polygon's points against a plane
-//  side = -1 if any point is strictly below, +1 if any is strictly above
-void polygonSides
-(
-    const pointField& pts,
-    const face& f,
-    const vector& n,
-    const point& refPoint,
-    const scalar tol,
-    bool& hasMinus,
-    bool& hasPlus
-)
+//- A fixed order for planes, so that a result does not depend on the order the
+//- cells that produced them happen to be in
+inline bool planeLess(const plane& a, const plane& b)
 {
-    forAll(f, i)
+    const vector na(a.normal());
+    const vector nb(b.normal());
+
+    for (direction i = 0; i < 3; i++)
     {
-        const scalar d = planeDist(n, refPoint, pts[f[i]]);
-
-        if (d < -tol)
+        if (mag(na[i] - nb[i]) > SMALL)
         {
-            hasMinus = true;
-        }
-
-        if (d > tol)
-        {
-            hasPlus = true;
+            return na[i] < nb[i];
         }
     }
+
+    return (a.normal() & a.refPoint()) < (b.normal() & b.refPoint());
 }
 
 } // End anonymous namespace
@@ -246,6 +228,8 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
 
     DynamicList<cellCut> found(cuts.size());
 
+    label maxPlanes = 0;
+
     forAll(mesh_.cells(), celli)
     {
         const cutCellPolyhedron cell(cellPolyhedron(mesh_, celli));
@@ -266,171 +250,128 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
             tris[i] = surf.triangle(cand[i]);
         }
 
-        cutCellPolyhedron minus, plus;
-        pointField interface;
-        cutCellDetail detail;
+        cutCellResult result;
 
-        const cutState state = cutCellByTriangles
-        (
-            cell, tris, tol_, minus, plus, interface, detail
-        );
+        const cutState state = cutCellByTriangles(cell, tris, tol_, result);
 
-        if (state == cutState::refused)
+        if (state == cutState::untouched)
+        {
+            if (result.nPolygons > 0)
+            {
+                //- Triangles cross the cell, but no plane of theirs divides it.
+                //- Reported rather than silently left alone.
+                info_.nUnsupported++;
+                info_.unsupported.append(celli);
+                info_.unsupportedReason.append
+                (
+                    "the surface touches it without dividing it"
+                );
+            }
+            continue;
+        }
+
+        if (state == cutState::refused || result.pieces.size() < 2)
         {
             info_.nUnsupported++;
             info_.unsupported.append(celli);
             info_.unsupportedReason.append
             (
-                "more than one plane crosses it, or the plane does not span it"
+                "the surface crosses it but produces no pieces"
             );
             continue;
         }
 
-        if (state == cutState::untouched)
+        //- Classify every piece against the surface. The pieces of one cell are
+        //- not in general one region each, because a facet can cover part of
+        //- the cross-section only.
+        pointField pieceCentres(result.pieces.size());
+
+        forAll(result.pieces, pi)
         {
-            if (detail.nPolygons > 0)
-            {
-                //- Triangles cross the cell, but the plane they lie on does not
-                //- divide it. Reported rather than silently left alone.
-                info_.nUnsupported++;
-                info_.unsupported.append(celli);
-                info_.unsupportedReason.append
-                (
-                    "a plane crosses it but does not divide it"
-                );
-            }
-            continue;
+            pieceCentres[pi] = result.pieces[pi].poly.centre();
         }
 
-        //- Crossed by one plane. The plane normal is the outward normal of the
-        //- surface, so the positive piece is the outside.
-        pointField pieces(2);
-        pieces[0] = minus.centre();
-        pieces[1] = plus.centre();
-
-        const boolList pieceInside(surf.search().calcInside(pieces));
-
-        if (pieceInside[0] == pieceInside[1])
-        {
-            FatalErrorInFunction
-                << "Both pieces of cell " << celli << " classify as "
-                << (pieceInside[0] ? "inside" : "outside") << " the surface."
-                << " The cut is not separating them, which means the geometry"
-                << " and the labelling disagree." << exit(FatalError);
-        }
-
-        if (!pieceInside[0])
-        {
-            FatalErrorInFunction
-                << "The negative piece of cell " << celli << " classifies as"
-                << " outside the surface, so the surface is not outward"
-                << " oriented with respect to the cut. Refusing to label the"
-                << " regions the wrong way round." << exit(FatalError);
-        }
+        const boolList pieceInside(surf.search().calcInside(pieceCentres));
 
         cellCut c;
         c.celli = celli;
-        c.normal = detail.normal;
-        c.refPoint = detail.refPoint;
-        c.minusZone = insideZone;
-        c.plusZone = outsideZone;
-        c.plusCelli = -1;
+        c.planes = result.planes;
+        c.pieces = result.pieces;
+        c.sharedFaces = result.sharedFaces;
+        c.pieceCell.setSize(c.pieces.size());
+        c.pieceZone.setSize(c.pieces.size());
 
-        found.append(c);
+        label nIn = 0;
+        label nOut = 0;
+
+        forAll(c.pieces, pi)
+        {
+            c.pieceZone[pi] = (pieceInside[pi] ? insideZone : outsideZone);
+
+            if (pieceInside[pi])
+            {
+                nIn++;
+            }
+            else
+            {
+                nOut++;
+            }
+        }
+
+        if (nIn == 0 || nOut == 0)
+        {
+            //- The surface passes through the cell without separating it, so
+            //- every piece is in one region. Counted, since the pieces are
+            //- still valid cells.
+            info_.nSingleRegion++;
+        }
+
+        //- The interface is the shared faces whose pieces are in different
+        //- regions, so its total area is known before the mesh exists
+        forAll(c.sharedFaces, si)
+        {
+            const cutCellPieceFace& shared = c.sharedFaces[si];
+
+            if (c.pieceZone[shared.pieceA] != c.pieceZone[shared.pieceB])
+            {
+                const cutCellPolyhedron& piece = c.pieces[shared.pieceA].poly;
+                const face& f = piece.faces()[shared.faceInA];
+
+                pointField poly(f.size());
+
+                forAll(f, i)
+                {
+                    poly[i] = piece.points()[f[i]];
+                }
+
+                info_.interfaceArea += polygonArea(poly);
+            }
+        }
 
         info_.nCut++;
-        info_.interfaceArea += polygonArea(interface);
+        info_.nPieces += c.pieces.size();
+
+        maxPlanes = max(maxPlanes, c.planes.size());
+
+        found.append(c);
     }
 
-    //- A face can only be crossed by one plane if it is to be split into one
-    //- pair of sub-faces, which is what keeps the mesh conformal. Where two
-    //- cells cut by different planes share a face, both planes cross it, and
-    //- neither cell can be cut in this slice.
-    labelHashSet conflicted;
+    //- Cut cells by the number of planes crossing them
+    info_.byPlanes.setSize(maxPlanes + 1, Zero);
 
+    forAll(found, ci)
     {
-        const pointField& pts = mesh_.points();
-        const faceList& fcs = mesh_.faces();
-
-        //- Which cuts cross each face, in the order they were found
-        Map<DynamicList<label>> faceCuts;
-
-        forAll(found, ci)
-        {
-            const cellCut& c = found[ci];
-
-            for (const label facei : mesh_.cells()[c.celli])
-            {
-                bool hasMinus = false;
-                bool hasPlus = false;
-
-                polygonSides
-                (
-                    pts, fcs[facei], c.normal, c.refPoint, tol_,
-                    hasMinus, hasPlus
-                );
-
-                if (hasMinus && hasPlus)
-                {
-                    if (!faceCuts.found(facei))
-                    {
-                        faceCuts.insert(facei, DynamicList<label>(2));
-                    }
-
-                    faceCuts[facei].append(ci);
-                }
-            }
-        }
-
-        forAllConstIters(faceCuts, iter)
-        {
-            const DynamicList<label>& onFace = iter();
-
-            forAll(onFace, i)
-            {
-                for (label j = i + 1; j < onFace.size(); j++)
-                {
-                    const cellCut& a = found[onFace[i]];
-                    const cellCut& b = found[onFace[j]];
-
-                    if
-                    (
-                        !samePlane
-                        (
-                            a.normal, a.refPoint, b.normal, b.refPoint, tol_
-                        )
-                    )
-                    {
-                        conflicted.insert(onFace[i]);
-                        conflicted.insert(onFace[j]);
-                    }
-                }
-            }
-        }
+        info_.byPlanes[found[ci].planes.size()]++;
     }
+
+    info_.nCandidate = info_.nCut + info_.nUnsupported;
 
     cuts.clear();
 
     forAll(found, ci)
     {
-        if (conflicted.found(ci))
-        {
-            info_.nCut--;
-            info_.nUnsupported++;
-            info_.unsupported.append(found[ci].celli);
-            info_.unsupportedReason.append
-            (
-                "a plane through a neighbouring cell crosses the same face, so"
-                " the face cannot be split once"
-            );
-        }
-        else
-        {
-            cuts.append(found[ci]);
-        }
+        cuts.append(found[ci]);
     }
-
-    info_.nCandidate = info_.nCut + info_.nUnsupported;
 }
 
 
@@ -444,8 +385,9 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
     const cellList& cells = mesh_.cells();
     const label nPoints = mesh_.nPoints();
 
-    //- The interface faceZone must exist before the change: polyTopoChange
-    //- validates the zoneIDs it is given against the mesh
+    //- The zones must exist before the change: polyTopoChange validates the
+    //- zoneIDs it is given against the mesh
+    const label insideZone = cellZoneID(surfaces_[0].name() + "_inside");
     const label interfaceZone = faceZoneID(surfaces_[0].name() + "_interface");
 
     //- All points, faces and cells of the mesh are taken as they are, and the
@@ -453,13 +395,29 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
     //- labels of untouched cells, and so the parent map, simple.
     polyTopoChange topoChange(mesh_);
 
+    //- Where a cut cell is, by background cell label
+    Map<label> cutOf(2*cuts.size());
 
-    //- New points, keyed by the mesh edge they lie on. One chain per edge, since
-    //- two different planes crossing one edge are two different points.
-    Map<label> edgeFirstPoint(2*cuts.size());
-    List<label> nextPoint(2*cuts.size());
-    List<point> allPointCoord(2*cuts.size());
-    List<label> allPointLabel(2*cuts.size());
+    forAll(cuts, ci)
+    {
+        cutOf.insert(cuts[ci].celli, ci);
+    }
+
+
+    //- New points, keyed by the segment they lie on, so that every cell meeting
+    //- a position refers to one point. One chain per segment, since two planes
+    //- crossing one segment are two points.
+    Map<label> firstPoint(2*cuts.size());
+    DynamicList<point> newCoord(2*cuts.size());
+    DynamicList<label> newLabel(2*cuts.size());
+    DynamicList<label> newNext(2*cuts.size());
+    DynamicList<point> newA(2*cuts.size());
+    DynamicList<point> newB(2*cuts.size());
+
+    auto coordOf = [&](const label p) -> point
+    {
+        return (p < nPoints ? pts[p] : newCoord[p - nPoints]);
+    };
 
     auto newPoint = [&]
     (
@@ -469,44 +427,53 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
         const point& refPoint
     ) -> label
     {
-        //- Where this plane crosses this mesh edge. Every cell that asks for the
-        //- same edge and plane gets the same place on it, so the cells sharing
-        //- the edge share the point, which is what makes the mesh conformal.
-        const scalar da = planeDist(n, refPoint, pts[a]);
-        const scalar db = planeDist(n, refPoint, pts[b]);
+        const point pa(coordOf(a));
+        const point pb(coordOf(b));
+
+        const scalar da = planeDist(n, refPoint, pa);
+        const scalar db = planeDist(n, refPoint, pb);
 
         const scalar w = da/(da - db);
 
-        const point x(pts[a] + w*(pts[b] - pts[a]));
+        const point x(pa + w*(pb - pa));
 
-        const label key = edgeKey(a, b, nPoints);
+        const label key = min(a, b);
+        const bool had = firstPoint.found(key);
+        const label prev = had ? firstPoint[key] : -1;
 
-        const bool had = edgeFirstPoint.found(key);
-        const label prev = had ? edgeFirstPoint[key] : -1;
-
-        for (label i = prev; i >= 0; i = nextPoint[i])
+        for (label i = prev; i >= 0; i = newNext[i])
         {
-            if (mag(allPointCoord[i] - x) <= tol_)
+            //- The same segment, whichever way round it was met. Two faces
+            //- sharing an edge traverse it in opposite orders.
+            const bool sameSegment =
+            (
+                (mag(newA[i] - pa) <= tol_ && mag(newB[i] - pb) <= tol_)
+             || (mag(newA[i] - pb) <= tol_ && mag(newB[i] - pa) <= tol_)
+            );
+
+            if (sameSegment && mag(newCoord[i] - x) <= tol_)
             {
-                return allPointLabel[i];
+                return newLabel[i];
             }
         }
 
         const label ptLabel = topoChange.addPoint(x, -1, -1, true);
 
-        const label i = allPointCoord.size();
+        const label i = newCoord.size();
 
-        allPointCoord.append(x);
-        allPointLabel.append(ptLabel);
-        nextPoint.append(prev);
+        newCoord.append(x);
+        newLabel.append(ptLabel);
+        newNext.append(prev);
+        newA.append(pa);
+        newB.append(pb);
 
         if (had)
         {
-            edgeFirstPoint[key] = i;
+            firstPoint.set(key, i);
         }
         else
         {
-            edgeFirstPoint.insert(key, i);
+            firstPoint.insert(key, i);
         }
 
         info_.nNewPoints++;
@@ -515,7 +482,7 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
     };
 
 
-    //- Split a mesh face by a cut plane, in mesh point labels. False when the
+    //- Split a face polygon by a plane, in mesh point labels. False when the
     //- face is not split, that is when all of its points lie on one side of the
     //- plane or on the plane itself.
     auto splitFace = [&]
@@ -538,8 +505,8 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
             const label a = f[i];
             const label b = f[f.fcIndex(i)];
 
-            const scalar da = planeDist(n, refPoint, pts[a]);
-            const scalar db = planeDist(n, refPoint, pts[b]);
+            const scalar da = planeDist(n, refPoint, coordOf(a));
+            const scalar db = planeDist(n, refPoint, coordOf(b));
 
             if (da <= tol_)
             {
@@ -597,98 +564,329 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
     };
 
 
-    //- 2. Split the faces, once each, from the face's own points so that both
-    //- of the cells it borders see the same two sub-polygons
-    Map<label> faceSplit(2*cuts.size());
-    List<face> splitMinus(2*cuts.size());
-    List<face> splitPlus(2*cuts.size());
-
-    forAll(cuts, ci)
+    //- Subdivide the faces the surface crosses, once each, by the planes of
+    //- every cut cell that meets them, so that all the cells on either side see
+    //- the same sub-faces. This is what keeps the mesh conformal when two cells
+    //- sharing a face are cut by different planes.
+    struct faceSplit
     {
-        const cellCut& c = cuts[ci];
+        //- The sub-faces, in mesh point labels
+        List<face> subFaces;
 
-        for (const label facei : cells[c.celli])
+        //- The points on the face and where they are
+        List<label> points;
+        List<point> coords;
+    };
+
+    Map<label> splitOf(2*cuts.size());
+    DynamicList<faceSplit> splits(2*cuts.size());
+
+    {
+        //- Which cuts meet each face
+        Map<DynamicList<label>> faceCuts(2*cuts.size());
+
+        forAll(cuts, ci)
         {
-            if (faceSplit.found(facei))
+            for (const label facei : cells[cuts[ci].celli])
+            {
+                if (!faceCuts.found(facei))
+                {
+                    faceCuts.insert(facei, DynamicList<label>(2));
+                }
+
+                faceCuts[facei].append(ci);
+            }
+        }
+
+        forAllConstIters(faceCuts, iter)
+        {
+            const label facei = iter.key();
+
+            //- The union of their planes, since every cell on the face has to
+            //- see a face split by all of them
+            DynamicList<plane> facePlanes(4);
+
+            for (const label ci : iter())
+            {
+                for (const plane& pln : cuts[ci].planes)
+                {
+                    bool known = false;
+
+                    forAll(facePlanes, pi)
+                    {
+                        if
+                        (
+                            samePlane
+                            (
+                                pln.normal(), pln.refPoint(),
+                                facePlanes[pi].normal(),
+                                facePlanes[pi].refPoint(),
+                                tol_
+                            )
+                        )
+                        {
+                            known = true;
+                            break;
+                        }
+                    }
+
+                    if (!known)
+                    {
+                        facePlanes.append(pln);
+                    }
+                }
+            }
+
+            std::sort(facePlanes.begin(), facePlanes.end(), planeLess);
+
+            //- Clip the face by each plane in turn
+            DynamicList<face> frontier(2);
+            frontier.append(fcs[facei]);
+
+            forAll(facePlanes, pi)
+            {
+                DynamicList<face> next(frontier.size() + 1);
+
+                forAll(frontier, fi)
+                {
+                    face m, p;
+
+                    if
+                    (
+                        splitFace
+                        (
+                            frontier[fi],
+                            facePlanes[pi].normal(),
+                            facePlanes[pi].refPoint(),
+                            m, p
+                        )
+                    )
+                    {
+                        next.append(m);
+                        next.append(p);
+                    }
+                    else
+                    {
+                        next.append(frontier[fi]);
+                    }
+                }
+
+                frontier.transfer(next);
+            }
+
+            if (frontier.size() < 2)
             {
                 continue;
             }
 
-            face m, p;
+            faceSplit split;
+            split.subFaces.setSize(frontier.size());
 
-            if (splitFace(fcs[facei], c.normal, c.refPoint, m, p))
+            forAll(frontier, fi)
             {
-                faceSplit.insert(facei, splitMinus.size());
-                splitMinus.append(m);
-                splitPlus.append(p);
+                split.subFaces[fi] = frontier[fi];
             }
+
+            //- The points on the face, so that a point of a piece that lies on
+            //- this face resolves to the same label
+            forAll(split.subFaces, fi)
+            {
+                forAll(split.subFaces[fi], i)
+                {
+                    const label p = split.subFaces[fi][i];
+
+                    bool known = false;
+
+                    forAll(split.points, j)
+                    {
+                        if (split.points[j] == p)
+                        {
+                            known = true;
+                            break;
+                        }
+                    }
+
+                    if (!known)
+                    {
+                        split.points.append(p);
+                        split.coords.append(coordOf(p));
+                    }
+                }
+            }
+
+            splitOf.insert(facei, splits.size());
+            splits.append(split);
         }
     }
 
 
-    //- 3. One piece keeps the label of the background cell, the other is added.
-    //- The negative piece is the inside, the positive the outside.
-    forAll(cuts, ci)
+    //- A point of a piece, as a mesh point label. A point of a cut lies either
+    //- on an edge of the cell, which the cells sharing that edge all use, or on
+    //- a face of it, which the face's subdivision has already made, or inside
+    //- it, where it belongs to this cell alone.
+    DynamicList<point> insideCoord(4);
+    DynamicList<label> insideLabel(4);
+
+    auto pointOf = [&](const cellCut& c, const point& x) -> label
     {
-        cellCut& c = const_cast<cellCut&>(cuts[ci]);
+        const labelList& cPts = mesh_.cellPoints()[c.celli];
 
-        c.plusCelli = topoChange.addCell
-        (
-            -1, -1, -1, c.celli, c.plusZone
-        );
-
-        topoChange.modifyCell(c.celli, labelList(1, c.minusZone));
-    }
-
-
-    //- 3. Cells the surface does not cross keep their label, and take the region
-    //- their centre falls in. The cells that were cut take their zones from the
-    //- two pieces instead.
-    {
-        labelHashSet isCut(2*cuts.size());
-
-        forAll(cuts, ci)
+        for (const label p : cPts)
         {
-            isCut.insert(cuts[ci].celli);
-        }
-
-        forAll(cellRegionZone_, celli)
-        {
-            if (!isCut.found(celli))
+            if (mag(pts[p] - x) <= tol_)
             {
-                topoChange.modifyCell(celli, labelList(1, cellRegionZone_[celli]));
-            }
-        }
-    }
-
-
-    //- 4. The faces of every cell that was cut. A face belongs to a piece rather
-    //- than to the background cell, so its owner and neighbour are set from
-    //- which side of the plane the piece is on. Untouched cells keep their
-    //- labels, so this is the only place the pieces are wired up.
-    labelHashSet done;
-
-    auto sideCell = [&](const label celli, const int side) -> label
-    {
-        forAll(cuts, ci)
-        {
-            if (cuts[ci].celli == celli)
-            {
-                return (side < 0 ? cuts[ci].celli : cuts[ci].plusCelli);
+                return p;
             }
         }
 
-        return celli;
+        for (const label facei : cells[c.celli])
+        {
+            const face& f = fcs[facei];
+
+            forAll(f, i)
+            {
+                const label a = f[i];
+                const label b = f[f.fcIndex(i)];
+
+                const point pa(pts[a]);
+                const point pb(pts[b]);
+
+                const vector ab(pb - pa);
+                const scalar t = ((x - pa) & ab)/(ab & ab);
+
+                if (t < -SMALL || t > 1 + SMALL)
+                {
+                    continue;
+                }
+
+                if (mag(x - (pa + t*ab)) <= tol_)
+                {
+                    //- Which of the cell's planes crosses the edge where this
+                    //- point is, if any
+                    forAll(c.planes, pi)
+                    {
+                        const vector& n = c.planes[pi].normal();
+                        const point& refPoint = c.planes[pi].refPoint();
+
+                        const scalar da = planeDist(n, refPoint, pa);
+                        const scalar db = planeDist(n, refPoint, pb);
+
+                        if
+                        (
+                            (da > tol_ && db < -tol_)
+                         || (da < -tol_ && db > tol_)
+                        )
+                        {
+                            const scalar w = da/(da - db);
+
+                            if (mag((pa + w*(pb - pa)) - x) <= tol_)
+                            {
+                                return newPoint(a, b, n, refPoint);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        for (const label facei : cells[c.celli])
+        {
+            const scalar magArea = mag(mesh_.faceAreas()[facei]);
+
+            if (magArea <= VSMALL)
+            {
+                continue;
+            }
+
+            const vector n(mesh_.faceAreas()[facei]/magArea);
+            const point refPoint(mesh_.faceCentres()[facei]);
+
+            if (mag(planeDist(n, refPoint, x)) <= tol_ && splitOf.found(facei))
+            {
+                const faceSplit& split = splits[splitOf[facei]];
+
+                forAll(split.points, j)
+                {
+                    if (mag(split.coords[j] - x) <= tol_)
+                    {
+                        return split.points[j];
+                    }
+                }
+            }
+        }
+
+        //- Inside the cell, where the point belongs to this cell alone. A cell
+        //- has few of these, so a linear scan is enough.
+        forAll(insideCoord, i)
+        {
+            if (mag(insideCoord[i] - x) <= tol_)
+            {
+                return insideLabel[i];
+            }
+        }
+
+        const label p = topoChange.addPoint(x, -1, -1, true);
+
+        insideCoord.append(x);
+        insideLabel.append(p);
+
+        info_.nNewPoints++;
+
+        return p;
     };
+
+
+    //- The mesh cell of a cut cell on the side of a point, which is the piece
+    //- whose side against every plane of the cell the point agrees with
+    auto cellAt = [&](const label celli, const point& x) -> label
+    {
+        if (!cutOf.found(celli))
+        {
+            return celli;
+        }
+
+        const cellCut& c = cuts[cutOf[celli]];
+
+        forAll(c.pieces, pi)
+        {
+            bool match = true;
+
+            forAll(c.planes, k)
+            {
+                const scalar d = planeDist
+                (
+                    c.planes[k].normal(), c.planes[k].refPoint(), x
+                );
+
+                if ((d > 0 ? 1 : -1) != c.pieces[pi].side[k])
+                {
+                    match = false;
+                    break;
+                }
+            }
+
+            if (match)
+            {
+                return c.pieceCell[pi];
+            }
+        }
+
+        FatalErrorInFunction
+            << "No piece of cell " << c.celli << " contains " << x
+            << ", although the point is inside that cell." << exit(FatalError);
+
+        return c.celli;
+    };
+
 
     //- Set a face of the new mesh, either an existing face or a new one.
     //-
     //- polyMesh keeps internal faces in upper-triangular order, meaning the
     //- lower cell label is the owner. Cutting can reverse the order of a
-    //- background face, because the sub-cell added on the positive side is
+    //- background face, because a sub-cell added for the positive side is
     //- labelled above every background cell, so reorder and reverse the face
     //- when that happens. The topology change does this itself only when it
-    //- renumbers cells, and this cut removes no cell, so it has to be done here.
+    //- renumbers cells, and this cut removes no cell, so it is done here.
     auto setFace = [&]
     (
         const face& f,
@@ -728,31 +926,86 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
         }
     };
 
+
+    //- 1. One piece keeps the label of the background cell, the others are
+    //- added. The pieces are ordered negative first against the planes, so for
+    //- a cell cut by one plane the first piece is the one inside the surface,
+    //- which is the label the mesh has always kept.
+    forAll(cuts, ci)
+    {
+        cellCut& c = const_cast<cellCut&>(cuts[ci]);
+
+        forAll(c.pieces, pi)
+        {
+            if (pi == 0)
+            {
+                c.pieceCell[pi] = c.celli;
+
+                topoChange.modifyCell
+                (
+                    c.celli, labelList(1, c.pieceZone[pi])
+                );
+            }
+            else
+            {
+                c.pieceCell[pi] = topoChange.addCell
+                (
+                    -1, -1, -1, c.celli, c.pieceZone[pi]
+                );
+            }
+        }
+    }
+
+
+    //- 2. Cells the surface does not cross keep their label, and take the
+    //- region their centre falls in
+    {
+        labelHashSet isCut(2*cuts.size());
+
+        forAll(cuts, ci)
+        {
+            isCut.insert(cuts[ci].celli);
+        }
+
+        forAll(cellRegionZone_, celli)
+        {
+            if (!isCut.found(celli))
+            {
+                topoChange.modifyCell
+                (
+                    celli, labelList(1, cellRegionZone_[celli])
+                );
+            }
+        }
+    }
+
+
+    //- 3. The faces of the cells that were cut: every sub-face goes to the
+    //- piece of the cell on its own side, and to the piece of the neighbouring
+    //- cell on the other side, or to that cell when it was not cut. A face
+    //- between two cut cells is reached from both, so it is done once.
+    labelHashSet doneFaces(2*cuts.size());
+
     forAll(cuts, ci)
     {
         const cellCut& c = cuts[ci];
 
         for (const label facei : cells[c.celli])
         {
-            if (done.found(facei))
+            if (doneFaces.found(facei))
             {
                 continue;
             }
 
-            done.insert(facei);
+            doneFaces.insert(facei);
 
             const label own = mesh_.faceOwner()[facei];
 
-            //- faceNeighbour is only defined for the internal faces, so it must
-            //- not be read for a boundary face. Reading it there returns
-            //- whatever lies past the end of the list, which shows up much
-            //- later as a corrupt neighbour in the assembled mesh.
-            const label nei =
-            (
-                mesh_.isInternalFace(facei)
+            //- faceNeighbour is only defined for internal faces, so it must not
+            //- be read for a boundary face
+            const label nei = mesh_.isInternalFace(facei)
               ? mesh_.faceNeighbour()[facei]
-              : -1
-            );
+              : -1;
 
             const label patchi = mesh_.boundaryMesh().whichPatch(facei);
 
@@ -767,48 +1020,49 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                 zoneFlip = fz.flipMap()[fz.whichFace(facei)];
             }
 
-            if (faceSplit.found(facei))
+            if (!splitOf.found(facei))
             {
-                const label sI = faceSplit[facei];
-
-                //- Each sub-face keeps the orientation of the face it came from,
-                //- so its own and neighbour are the pieces on its own side
-                setFace
-                (
-                    splitMinus[sI],
-                    facei,
-                    sideCell(own, -1),
-                    (nei >= 0 ? sideCell(nei, -1) : -1),
-                    patchi,
-                    zonei,
-                    zoneFlip
-                );
-
-                setFace
-                (
-                    splitPlus[sI],
-                    -1,
-                    sideCell(own, +1),
-                    (nei >= 0 ? sideCell(nei, +1) : -1),
-                    patchi,
-                    zonei,
-                    zoneFlip
-                );
-            }
-            else
-            {
-                //- A face the plane does not cross lies wholly on one side, so
+                //- A face the surface does not cross lies wholly on one side, so
                 //- it moves from the background cell to the piece on that side
-                const scalar d = planeDist(c.normal, c.refPoint, mesh_.faceCentres()[facei]);
-
-                const int side = (d > 0 ? +1 : -1);
+                const point x(mesh_.faceCentres()[facei]);
 
                 setFace
                 (
                     fcs[facei],
                     facei,
-                    sideCell(own, side),
-                    (nei >= 0 ? sideCell(nei, side) : -1),
+                    cellAt(own, x),
+                    (nei >= 0 ? cellAt(nei, x) : -1),
+                    patchi,
+                    zonei,
+                    zoneFlip
+                );
+
+                continue;
+            }
+
+            const faceSplit& split = splits[splitOf[facei]];
+
+            forAll(split.subFaces, sfi)
+            {
+                const face& sub = split.subFaces[sfi];
+
+                //- The centre of the sub-face, for the side tests. Sub-faces
+                //- are convex, so the average is inside them.
+                point x(Zero);
+
+                forAll(sub, i)
+                {
+                    x += coordOf(sub[i]);
+                }
+
+                x /= scalar(sub.size());
+
+                setFace
+                (
+                    sub,
+                    (sfi == 0 ? facei : -1),
+                    cellAt(own, x),
+                    (nei >= 0 ? cellAt(nei, x) : -1),
                     patchi,
                     zonei,
                     zoneFlip
@@ -818,74 +1072,61 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
     }
 
 
-    //- 5. The interface, one internal face per cut cell, oriented from the
-    //- inside piece to the outside piece and recorded in the faceZone
+    //- 4. The faces the pieces of one cell share: the interface where the two
+    //- pieces are in different regions, an ordinary internal face where they
+    //- are not
     forAll(cuts, ci)
     {
         const cellCut& c = cuts[ci];
 
-        //- Recompute the interface polygon of this cell, in mesh point labels.
-        //- The cut is redone here rather than remembered, because the points it
-        //- needs are the shared ones, which only exist now.
-        const cutCellPolyhedron cell(cellPolyhedron(mesh_, c.celli));
-
-        const boundBox bb(cell.points(), false);
-        const labelList cand(surfaces_[0].search().tree().findBox(treeBoundBox(bb.min(), bb.max())));
-
-        List<pointField> tris(cand.size());
-        forAll(cand, i)
+        forAll(c.sharedFaces, si)
         {
-            tris[i] = surfaces_[0].triangle(cand[i]);
-        }
+            const cutCellPieceFace& shared = c.sharedFaces[si];
 
-        cutCellPolyhedron minus, plus;
-        pointField interface;
-        cutCellDetail detail;
+            const bool separates =
+            (
+                c.pieceZone[shared.pieceA] != c.pieceZone[shared.pieceB]
+            );
 
-        const cutState state = cutCellByTriangles
-        (
-            cell, tris, tol_, minus, plus, interface, detail
-        );
+            //- Take the polygon from the piece inside the surface where the
+            //- face separates the regions, so its normal points out of the
+            //- solid, which is the direction the interface zone records
+            label from = shared.pieceA;
+            label to = shared.pieceB;
+            label fromFace = shared.faceInA;
 
-        if (state != cutState::cut)
-        {
-            FatalErrorInFunction
-                << "Cell " << c.celli << " was accepted and is no longer"
-                << " accepted on the second pass. The cut is not reproducible,"
-                << " so the mesh would be inconsistent." << exit(FatalError);
-        }
-
-        const labelList& cPoints = mesh_.cellPoints()[c.celli];
-
-        face f(detail.interfaceSource.size());
-
-        forAll(detail.interfaceSource, i)
-        {
-            const cutPointSource& src = detail.interfaceSource[i];
-
-            if (src.second() < 0)
+            if (separates && c.pieceZone[shared.pieceB] == insideZone)
             {
-                f[i] = cPoints[src.first()];
+                from = shared.pieceB;
+                to = shared.pieceA;
+                fromFace = shared.faceInB;
             }
-            else
-            {
-                f[i] = newPoint
-                (
-                    cPoints[src.first()],
-                    cPoints[src.second()],
-                    c.normal,
-                    c.refPoint
-                );
-            }
-        }
 
-        //- Oriented from the inside piece to the outside piece, which is the
-        //- direction the cut polygon comes out in, and recorded in the zone
-        setFace(f, -1, c.celli, c.plusCelli, -1, interfaceZone, false);
+            const cutCellPolyhedron& poly = c.pieces[from].poly;
+            const face& f = poly.faces()[fromFace];
+
+            face meshFace(f.size());
+
+            forAll(f, i)
+            {
+                meshFace[i] = pointOf(c, poly.points()[f[i]]);
+            }
+
+            setFace
+            (
+                meshFace,
+                -1,
+                c.pieceCell[from],
+                c.pieceCell[to],
+                -1,
+                (separates ? interfaceZone : -1),
+                false
+            );
+        }
     }
 
 
-    //- 6. Apply, and take the mesh with it
+    //- 5. Apply, and take the mesh with it
     autoPtr<mapPolyMesh> map = topoChange.changeMesh(mesh_, false);
 
     mesh_.updateMesh(map());
@@ -931,22 +1172,44 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::cut()
         return autoPtr<mapPolyMesh>();
     }
 
-    //- Room for the cells that will be added
-    backgroundCell_.setSize(mesh_.nCells() + cuts.size());
+    //- Every piece is a cell of the cut mesh. One piece per cut cell keeps the
+    //- label of that cell, so the rest are the cells that will be added.
+    backgroundCell_.setSize(mesh_.nCells() + info_.nPieces - info_.nCut);
 
     autoPtr<mapPolyMesh> map = assemble(cuts);
 
-    //- A sub-cell's parent is the background cell it came from. The negative
-    //- piece keeps the label of that cell, the positive piece was added, so
-    //- only the added ones still have to be recorded.
+    //- A sub-cell's parent is the background cell it came from. One piece keeps
+    //- the label of that cell, so the rest are the ones to record.
     forAll(cuts, ci)
     {
-        backgroundCell_[cuts[ci].plusCelli] = cuts[ci].celli;
+        const cellCut& c = cuts[ci];
+
+        forAll(c.pieceCell, pi)
+        {
+            backgroundCell_[c.pieceCell[pi]] = c.celli;
+        }
     }
 
     Info<< "Cells after cutting          : " << mesh_.nCells() << nl
         << "Points added                 : " << info_.nNewPoints << nl
         << "Interface area               : " << info_.interfaceArea << endl;
+
+    //- Cut cells by the number of planes of the surface inside them, which says
+    //- how much of the mesh needed the arrangement
+    for (label n = 1; n < info_.byPlanes.size(); n++)
+    {
+        if (info_.byPlanes[n])
+        {
+            Info<< "Cut by " << n << " plane(s)              : "
+                << info_.byPlanes[n] << " cell(s)" << endl;
+        }
+    }
+
+    if (info_.nSingleRegion)
+    {
+        Info<< "Cut cells whose pieces are all one region: "
+            << info_.nSingleRegion << endl;
+    }
 
     return map;
 }

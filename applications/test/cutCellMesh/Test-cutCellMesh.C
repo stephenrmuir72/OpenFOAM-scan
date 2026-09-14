@@ -195,6 +195,32 @@ bool splitAndCheck
 }
 
 
+//- Total area of the faces two pieces of a cut share
+scalar sharedArea(const cutCellResult& result)
+{
+    scalar area = 0;
+
+    forAll(result.sharedFaces, si)
+    {
+        const cutCellPieceFace& shared = result.sharedFaces[si];
+
+        const cutCellPolyhedron& piece = result.pieces[shared.pieceA].poly;
+        const face& f = piece.faces()[shared.faceInA];
+
+        pointField poly(f.size());
+
+        forAll(f, i)
+        {
+            poly[i] = piece.points()[f[i]];
+        }
+
+        area += polygonArea(poly);
+    }
+
+    return area;
+}
+
+
 //- Axis-aligned box polyhedron from two opposite corners. Lets the tests below
 //- choose their own size and position, which matters for aspect ratio and for
 //- the distance from the origin.
@@ -402,26 +428,31 @@ int main()
     //- cross-section of the unit hex
     const pointField spanTri({P(0.5,-1,-1), P(0.5,3,-1), P(0.5,-1,3)});
 
+    cutCellResult result;
+
     cutState state = cutCellByTriangles
     (
         hex,
         List<pointField>(1, spanTri),
         1e-9,
-        neg,
-        pos,
-        cut
+        result
     );
 
     checkTrue(state == cutState::cut, "spanning triangle cuts the hex");
-    checkClose(neg.volume(), 0.5, "minus volume");
-    checkClose(pos.volume(), 0.5, "plus volume");
-    checkTrue(neg.closed(), "minus closed");
-    checkTrue(pos.closed(), "plus closed");
-    checkClose(polygonArea(cut), 1.0, "interface area");
+    checkLabel(result.planes.size(), 1, "one plane");
+    checkLabel(result.pieces.size(), 2, "two pieces");
+    checkClose(result.pieces[0].poly.volume(), 0.5, "minus volume");
+    checkClose(result.pieces[1].poly.volume(), 0.5, "plus volume");
+    checkTrue(result.pieces[0].poly.closed(), "minus closed");
+    checkTrue(result.pieces[1].poly.closed(), "plus closed");
+    checkClose(sharedArea(result), 1.0, "interface area");
+    checkClose(mag(result.planes[0].normal()), 1.0, "plane normal is a unit vector");
 
-    //- A triangle in the same plane that covers only part of the cross-section:
-    //- the surface enters and leaves the cell, so both pieces can lie in the
-    //- same region and the cut is refused rather than guessed
+    //- A triangle in the same plane covering only part of the cross-section. The
+    //- cut is the same, because the plane is the same: cutting is the arrangement
+    //- of the planes, and a piece is not a region, so what the interface is, is
+    //- decided by classifying the pieces, not here. A partial facet is no longer
+    //- refused, which is what lets a surface edge cross a cell.
     const pointField partTri({P(0.5,0,0), P(0.5,0.5,0), P(0.5,0,0.5)});
 
     state = cutCellByTriangles
@@ -429,26 +460,36 @@ int main()
         hex,
         List<pointField>(1, partTri),
         1e-9,
-        neg,
-        pos,
-        cut
+        result
     );
 
-    checkTrue(state == cutState::refused, "partial triangle is refused");
+    checkTrue(state == cutState::cut, "partial triangle cuts the plane it lies on");
+    checkLabel(result.pieces.size(), 2, "two pieces, whatever the triangle covers");
+    checkClose(sharedArea(result), 1.0, "the shared face is the whole cross-section");
 
-    //- Two triangles in different planes, as where a surface edge crosses the
-    //- cell: refused in this slice, to be handled by the arrangement
+    //- Two triangles in perpendicular planes, as where a surface edge crosses a
+    //- cell. Their arrangement inside the cell is four pieces.
     List<pointField> twoPlanes(2);
     twoPlanes[0] = spanTri;
     twoPlanes[1] = pointField({P(-1,0.5,-1), P(3,0.5,-1), P(-1,0.5,3)});
 
-    state = cutCellByTriangles(hex, twoPlanes, 1e-9, neg, pos, cut);
+    state = cutCellByTriangles(hex, twoPlanes, 1e-9, result);
 
-    checkTrue
-    (
-        state == cutState::refused,
-        "two planes crossing the cell are refused"
-    );
+    checkTrue(state == cutState::cut, "two planes cut the hex");
+    checkLabel(result.planes.size(), 2, "two planes");
+    checkLabel(result.pieces.size(), 4, "four pieces");
+    checkClose(result.pieces[0].poly.volume(), 0.25, "first quarter volume");
+    checkClose(result.pieces[3].poly.volume(), 0.25, "last quarter volume");
+
+    scalar quarterTotal = 0;
+
+    forAll(result.pieces, pi)
+    {
+        quarterTotal += result.pieces[pi].poly.volume();
+    }
+
+    checkClose(quarterTotal, 1.0, "quarters sum to the cell volume");
+    checkClose(sharedArea(result), 2.0, "both plane cross-sections are shared");
 
     //- A triangle that misses the cell
     const pointField farTri({P(5,0,0), P(5,1,0), P(5,0,1)});
@@ -458,12 +499,11 @@ int main()
         hex,
         List<pointField>(1, farTri),
         1e-9,
-        neg,
-        pos,
-        cut
+        result
     );
 
     checkTrue(state == cutState::untouched, "distant triangle leaves the cell");
+    checkLabel(result.nPolygons, 0, "no polygon for a distant triangle");
 
     //- The transition cell spans [0,2]^3, so its cross-section is 2 by 2 and the
     //- triangle has to reach y + z = 4 to cover it
@@ -474,17 +514,16 @@ int main()
         trans,
         List<pointField>(1, transTri),
         1e-9,
-        neg,
-        pos,
-        cut
+        result
     );
 
     checkTrue(state == cutState::cut, "spanning triangle cuts the transition cell");
-    checkClose(neg.volume(), 4.0, "minus volume");
-    checkClose(pos.volume(), 4.0, "plus volume");
-    checkTrue(neg.closed(), "minus closed");
-    checkTrue(pos.closed(), "plus closed");
-    checkClose(polygonArea(cut), 4.0, "interface area");
+    checkLabel(result.pieces.size(), 2, "two pieces");
+    checkClose(result.pieces[0].poly.volume(), 4.0, "minus volume");
+    checkClose(result.pieces[1].poly.volume(), 4.0, "plus volume");
+    checkTrue(result.pieces[0].poly.closed(), "minus closed");
+    checkTrue(result.pieces[1].poly.closed(), "plus closed");
+    checkClose(sharedArea(result), 4.0, "interface area");
 
 
     //  Thin cells, and cells far from the origin
@@ -557,16 +596,15 @@ int main()
         small,
         List<pointField>(1, smallPart),
         1e-9,
-        neg,
-        pos,
-        cut
+        result
     );
 
     checkTrue
     (
-        smallState == cutState::refused,
-        "partial triangle on a small cell is refused"
+        smallState == cutState::cut,
+        "a partial triangle on a small cell still cuts the plane"
     );
+    checkLabel(result.pieces.size(), 2, "two pieces on a small cell");
 
     //- The same cell cut properly, as a positive control
     const pointField smallSpan
@@ -579,15 +617,13 @@ int main()
         small,
         List<pointField>(1, smallSpan),
         1e-9,
-        neg,
-        pos,
-        cut
+        result
     );
 
     checkTrue(smallState == cutState::cut, "spanning triangle cuts a small cell");
-    checkTrue(neg.closed(), "small minus closed");
-    checkTrue(pos.closed(), "small plus closed");
-    checkClose(polygonArea(cut), 1e-6, "small interface area");
+    checkTrue(result.pieces[0].poly.closed(), "small minus closed");
+    checkTrue(result.pieces[1].poly.closed(), "small plus closed");
+    checkClose(sharedArea(result), 1e-6, "small interface area");
 
 
     //  Where the points of a cut came from
@@ -703,21 +739,20 @@ int main()
             P(0.5, -1, -1), P(0.5, 3, -1), P(0.5, -1, 3)
         });
 
-        cutCellPolyhedron m, p;
-        pointField iface;
-        cutCellDetail detail;
+        cutCellResult result;
 
         const cutState state = cutCellByTriangles
         (
-            hex, List<pointField>(1, spanning), 1e-9, m, p, iface, detail
+            hex, List<pointField>(1, spanning), 1e-9, result
         );
 
-        checkTrue(state == cutState::cut, "detail reports cut");
-        checkLabel(detail.nPolygons, 1, "one clipped polygon");
-        checkClose(mag(detail.normal), 1.0, "reported plane normal is a unit vector");
+        checkTrue(state == cutState::cut, "the result reports a cut");
+        checkLabel(result.nPolygons, 1, "one clipped polygon");
+        checkLabel(result.planes.size(), 1, "one plane");
+        checkClose(mag(result.planes[0].normal()), 1.0, "reported plane normal is a unit vector");
         checkClose
         (
-            detail.normal & (P(0.5, 0, 0) - detail.refPoint),
+            result.planes[0].normal() & (P(0.5, 0, 0) - result.planes[0].refPoint()),
             0.0,
             "reported plane passes through the cut"
         );
@@ -730,11 +765,79 @@ int main()
 
         const cutState missState = cutCellByTriangles
         (
-            hex, List<pointField>(1, missing), 1e-9, m, p, iface, detail
+            hex, List<pointField>(1, missing), 1e-9, result
         );
 
         checkTrue(missState == cutState::untouched, "missing triangle is untouched");
-        checkLabel(detail.nPolygons, 0, "no clipped polygon for a missing triangle");
+        checkLabel(result.nPolygons, 0, "no clipped polygon for a missing triangle");
+    }
+
+
+    //  Arrangement of three planes
+    //  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    Info<< nl << "arrangement of three planes" << endl;
+
+    //- Three planes meeting inside the cell, as at a corner of the cube of
+    //- 05_cube_cut. The arrangement of three planes is eight pieces, and the
+    //- areas in between them are the three plane cross-sections.
+    {
+        List<pointField> threePlanes(3);
+        threePlanes[0] = pointField({P(0.25,-1,-1), P(0.25,3,-1), P(0.25,-1,3)});
+        threePlanes[1] = pointField({P(-1,0.75,-1), P(3,0.75,-1), P(-1,0.75,3)});
+        threePlanes[2] = pointField({P(-1,-1,0.5), P(3,-1,0.5), P(-1,3,0.5)});
+
+        cutCellResult result;
+
+        const cutState state = cutCellByTriangles
+        (
+            hex, threePlanes, 1e-9, result
+        );
+
+        checkTrue(state == cutState::cut, "three planes cut the hex");
+        checkLabel(result.planes.size(), 3, "three planes");
+        checkLabel(result.pieces.size(), 8, "eight pieces");
+
+        scalar total = 0;
+
+        forAll(result.pieces, pi)
+        {
+            total += result.pieces[pi].poly.volume();
+        }
+
+        checkClose(total, 1.0, "the eight pieces sum to the cell volume");
+
+        //- Ordered negative first against the planes, so the first piece is the
+        //- one on the negative side of every plane and the last on the positive
+        //- side of every one
+        checkLabel(result.pieces.first().side[0], -1, "first piece sides negative");
+        checkLabel(result.pieces.last().side[0], 1, "last piece sides positive");
+        checkLabel(result.pieces.first().side[2], -1, "first piece sides negative in z");
+        checkLabel(result.pieces.last().side[2], 1, "last piece sides positive in z");
+
+        //- Every internal face is between two pieces, and the three plane
+        //- cross-sections add up to three unit squares
+        checkClose(sharedArea(result), 3.0, "internal faces of the arrangement");
+    }
+
+    //- A plane coinciding with a face of the cell divides nothing, so the cell
+    //- is untouched rather than cut into degenerate pieces
+    {
+        const pointField onFace({P(0,-1,-1), P(0,3,-1), P(0,-1,3)});
+
+        cutCellResult result;
+
+        const cutState state = cutCellByTriangles
+        (
+            hex, List<pointField>(1, onFace), 1e-9, result
+        );
+
+        checkTrue
+        (
+            state == cutState::untouched,
+            "a plane on a face leaves the cell whole"
+        );
+        checkLabel(result.nPolygons, 1, "the triangle still crosses the cell");
     }
 
 

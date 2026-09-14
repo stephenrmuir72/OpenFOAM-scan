@@ -40,12 +40,17 @@ Description
     are no hanging nodes and no duplicated points. Three things keep it that
     way.
 
+    - A cell crossed by several facets is cut into the arrangement of their
+      planes, one convex piece per combination of sides. A piece is not a
+      region, since a facet can cover part of the cross-section only, so every
+      piece is classified against the surface instead.
     - Positions where the surface crosses a mesh edge are made once, through a
-      cache keyed by the mesh edge, so the cells sharing that edge all refer to
-      one point. A cut cell computes its own plane, and two cells sharing an
-      edge may differ in the last bits, so the cache resolves them by position.
-    - A crossed face is split from its own point list rather than from the two
-      cells' overlapping views of it, and the two sub-polygons are shared.
+      cache keyed by the mesh edge, so the cells sharing that edge refer to one
+      point. Two cells sharing an edge may compute it from different planes and
+      differ in the last bits, so the cache resolves them by position.
+    - A crossed face is subdivided once, by the planes of every cell that meets
+      it, so the cells on both sides see the same sub-faces. This is what keeps
+      the mesh conformal when the two cells are cut by different planes.
     - A cell's faces are implied by their owner and neighbour, so splitting a
       face updates both of its cells without either being touched explicitly.
 
@@ -108,6 +113,17 @@ public:
         //- Why each of them was unsupported
         wordList unsupportedReason;
 
+        //- Sub-cells the cut cells were replaced by
+        label nPieces = 0;
+
+        //- Cut cells by the number of planes crossing them, byPlanes[n] being
+        //- the number cut by n planes
+        labelList byPlanes;
+
+        //- Cut cells whose pieces all fall in one region, which means the
+        //- surface passes through without separating the cell
+        label nSingleRegion = 0;
+
         //- Points added to the mesh
         label nNewPoints = 0;
 
@@ -141,30 +157,35 @@ private:
 
     // Private Data Types
 
-        //- One cell to cut, and the two regions it is split into
+        //- One cell to cut, and the pieces it is split into
         struct cellCut
         {
             //- Background cell
             label celli;
 
-            //- Supporting plane
-            vector normal;
-            point refPoint;
+            //- Distinct planes of the surface inside it, in the cutter's order
+            List<plane> planes;
 
-            //- Region on the side the normal points away from, and on the other
-            label minusZone;
-            label plusZone;
+            //- The pieces, ordered negative first against those planes
+            List<cutCellPiece> pieces;
 
-            //- Sub-cell added on the positive side. The negative side keeps
-            //- the label of the background cell.
-            label plusCelli;
+            //- Faces shared by two pieces, which are the interfaces and the
+            //- internal faces the cell is divided by
+            List<cutCellPieceFace> sharedFaces;
+
+            //- Mesh cell of each piece. The first keeps the label of the
+            //- background cell, the others are added.
+            labelList pieceCell;
+
+            //- Region cellZone of each piece
+            labelList pieceZone;
         };
 
 
     // Private Member Functions
 
-        //- Find the cells the surface crosses, with the single plane through
-        //- each, and report the cells that cannot be cut in this slice
+        //- Find the cells the surface crosses, cut them into pieces by the
+        //- planes of every facet that crosses them, and classify each piece
         void findCutCells(List<cellCut>& cuts);
 
         //- Polyhedron of one mesh cell, faces outward oriented
