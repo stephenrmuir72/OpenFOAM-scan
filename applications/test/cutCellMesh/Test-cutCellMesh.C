@@ -841,6 +841,148 @@ int main()
     }
 
 
+    //  Grouping the pieces of a cell
+    //  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    Info<< nl << "grouping the pieces of a cell" << endl;
+
+    //- One piece, one group
+    {
+        const labelList zone(1, 0);
+
+        const labelList group = groupPieces(1, List<cutCellPieceFace>(), zone);
+
+        checkLabel(group.size(), 1, "one piece gives one group");
+        checkLabel(group[0], 0, "the first piece is group zero");
+    }
+
+    //- Two pieces sharing a face, one region each: not merged
+    {
+        cutCellPieceFace shared;
+        shared.pieceA = 0;
+        shared.faceInA = 0;
+        shared.pieceB = 1;
+        shared.faceInB = 0;
+
+        const labelList zone({0, 1});
+
+        const labelList group = groupPieces
+        (
+            2, List<cutCellPieceFace>(1, shared), zone
+        );
+
+        checkLabel(max(group) + 1, 2, "two regions stay two groups");
+        checkLabel(group[0], 0, "the inside piece keeps group zero");
+        checkLabel(group[1], 1, "the outside piece is group one");
+    }
+
+    //- The same pair in one region: merged into one cell
+    {
+        cutCellPieceFace shared;
+        shared.pieceA = 0;
+        shared.faceInA = 0;
+        shared.pieceB = 1;
+        shared.faceInB = 0;
+
+        const labelList zone({0, 0});
+
+        const labelList group = groupPieces
+        (
+            2, List<cutCellPieceFace>(1, shared), zone
+        );
+
+        checkLabel(max(group) + 1, 1, "one region sharing a face is one group");
+        checkLabel(group[0], 0, "the first piece is group zero");
+        checkLabel(group[1], 0, "the second piece joins it");
+    }
+
+    //- Two pieces of one region that share no face stay apart, since a cell has
+    //- to be face connected
+    {
+        const labelList zone({0, 0});
+
+        const labelList group = groupPieces(2, List<cutCellPieceFace>(), zone);
+
+        checkLabel(max(group) + 1, 2, "no shared face means no merge");
+    }
+
+    //- A chain of three in one region collapses to one group
+    {
+        cutCellPieceFace first;
+        first.pieceA = 0;
+        first.faceInA = 0;
+        first.pieceB = 1;
+        first.faceInB = 0;
+
+        cutCellPieceFace second;
+        second.pieceA = 1;
+        second.faceInA = 1;
+        second.pieceB = 2;
+        second.faceInB = 0;
+
+        List<cutCellPieceFace> faces(2);
+        faces[0] = first;
+        faces[1] = second;
+
+        const labelList zone({0, 0, 0});
+
+        const labelList group = groupPieces(3, faces, zone);
+
+        checkLabel(max(group) + 1, 1, "a chain of one region is one group");
+        checkLabel(group[2], 0, "the end of the chain joins it");
+    }
+
+    //- On a real cut: a hex cut by three planes, grouped by the side of the
+    //- first plane, which is the surface there
+    {
+        List<pointField> threePlanes(3);
+        threePlanes[0] = pointField({P(0.25,-1,-1), P(0.25,3,-1), P(0.25,-1,3)});
+        threePlanes[1] = pointField({P(-1,0.75,-1), P(3,0.75,-1), P(-1,0.75,3)});
+        threePlanes[2] = pointField({P(-1,-1,0.5), P(3,-1,0.5), P(-1,3,0.5)});
+
+        cutCellResult result;
+
+        cutCellByTriangles(hex, threePlanes, 1e-9, result);
+
+        labelList zone(result.pieces.size());
+
+        forAll(result.pieces, pi)
+        {
+            const scalar d = result.planes[0].signedDistance
+            (
+                result.pieces[pi].poly.centre()
+            );
+
+            zone[pi] = (d < 0 ? 0 : 1);
+        }
+
+        const labelList group = groupPieces
+        (
+            result.pieces.size(), result.sharedFaces, zone
+        );
+
+        checkLabel(result.pieces.size(), 8, "eight pieces to group");
+        checkLabel(max(group) + 1, 2, "one group per side of the first plane");
+        checkLabel(group[0], 0, "the first piece is group zero");
+
+        //- A group never mixes the two sides, which is what keeps the interface
+        bool sameSide = true;
+
+        forAll(group, gi)
+        {
+            forAll(group, gj)
+            {
+                if (group[gi] == group[gj] && zone[gi] != zone[gj])
+                {
+                    sameSide = false;
+                }
+            }
+        }
+
+        checkTrue(sameSide, "a group never mixes regions");
+    }
+
+
     Info<< nl << nChecks << " checks, " << nFail << " failed" << nl << endl;
 
     return nFail ? 1 : 0;

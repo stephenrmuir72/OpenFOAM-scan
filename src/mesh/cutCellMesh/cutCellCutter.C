@@ -248,6 +248,75 @@ bool sameFace
 }   // End anonymous namespace
 
 
+labelList groupPieces
+(
+    const label nPieces,
+    const List<cutCellPieceFace>& sharedFaces,
+    const labelList& pieceZone
+)
+{
+    //- Union-find over the pieces, with the group index of each piece kept as
+    //- the parent, so no separate array is needed
+    labelList group(nPieces);
+
+    forAll(group, pi)
+    {
+        group[pi] = pi;
+    }
+
+    auto root = [&](label pi) -> label
+    {
+        while (group[pi] != pi)
+        {
+            group[pi] = group[group[pi]];
+            pi = group[pi];
+        }
+
+        return pi;
+    };
+
+    forAll(sharedFaces, si)
+    {
+        const cutCellPieceFace& shared = sharedFaces[si];
+
+        //- A face two pieces share is a face between two regions, which is the
+        //- interface, or a face inside one region, which is what merges
+        if (pieceZone[shared.pieceA] != pieceZone[shared.pieceB])
+        {
+            continue;
+        }
+
+        const label a = root(shared.pieceA);
+        const label b = root(shared.pieceB);
+
+        if (a != b)
+        {
+            //- Keep the lower root, so the group of the earlier piece wins
+            group[max(a, b)] = min(a, b);
+        }
+    }
+
+    //- Number the groups from zero in the order their first piece appears
+    labelList groupOf(nPieces, -1);
+    labelList index(nPieces, -1);
+    label nGroups = 0;
+
+    forAll(group, pi)
+    {
+        const label r = root(pi);
+
+        if (index[r] < 0)
+        {
+            index[r] = nGroups++;
+        }
+
+        groupOf[pi] = index[r];
+    }
+
+    return groupOf;
+}
+
+
 cutState cutCellByTriangles
 (
     const cutCellPolyhedron& cell,
