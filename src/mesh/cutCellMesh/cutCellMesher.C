@@ -270,7 +270,19 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
             continue;
         }
 
-        if (state == cutState::refused || result.pieces.size() < 2)
+        if (state == cutState::refused)
+        {
+            //- Two pieces would have met along a line rather than over an area,
+            //- so there is no face to put between them. The cell is left whole.
+            //- A grazing surface is a geometric outcome rather than a case we
+            //- cannot handle, so it is counted and listed, and the run does not
+            //- fail because of it.
+            info_.nDegenerate++;
+            info_.degenerate.append(celli);
+            continue;
+        }
+
+        if (result.pieces.size() < 2)
         {
             info_.nUnsupported++;
             info_.unsupported.append(celli);
@@ -372,7 +384,7 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
         info_.byPlanes[found[ci].planes.size()]++;
     }
 
-    info_.nCandidate = info_.nCut + info_.nUnsupported;
+    info_.nCandidate = info_.nCut + info_.nUnsupported + info_.nDegenerate;
 
     cuts.clear();
 
@@ -415,16 +427,133 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
     //- New points, keyed by the segment they lie on, so that every cell meeting
     //- a position refers to one point. One chain per segment, since two planes
     //- crossing one segment are two points.
+    //- One point per location. Keyed on the coordinate rather than on the segment
+    //- between two points, because the same location is reached under different
+    //- point labels depending on which route asks for it: an edge crossing
+    //- through newPoint, the same crossing from a face split, or an interior
+    //- point of a piece that touches its neighbour along a line. Only
+    //- coincidences matter, so the key is the coordinate rounded to tol_, each
+    //- bucket carries a chain, and the look up scans the 26 neighbouring buckets
+    //- as well so that a pair whose coordinates straddle a bucket boundary is
+    //- still found.
+    //- How close two points must be to count as the same point. Derived from
+    //- tol_ rather than from the mesh bounds, because tol_ is decided once in
+    //- the constructor and guarded against being zero, while reading the bounds
+    //- here gave zero and trapped. tol_ is the geometric scale, 1e-9 of the mesh
+    //- diagonal, and identity is a thousandth of that, 1e-12 of the diagonal.
+    //- It has to be far tighter than tol_: the two routes that reach one
+    //- crossing differ by round off, around 1e-16 here, and merging at tol_
+    //- would collapse real features a nanometre across, which showed up as a
+    //- change in the total volume.
+    const scalar pointTol(1e-3*tol_);
+
     Map<label> firstPoint(2*cuts.size());
     DynamicList<point> newCoord(2*cuts.size());
     DynamicList<label> newLabel(2*cuts.size());
     DynamicList<label> newNext(2*cuts.size());
-    DynamicList<point> newA(2*cuts.size());
-    DynamicList<point> newB(2*cuts.size());
 
     auto coordOf = [&](const label p) -> point
     {
         return (p < nPoints ? pts[p] : newCoord[p - nPoints]);
+    };
+
+    //- A hash of the coordinate quantised at pointTol. Quantising at that scale
+    //- on a mesh a unit across gives indices around 1e11, which do not fit in a
+    //- 32 bit label, so the hash is folded on the scalar side and only the
+    //- result is a label. A collision costs a comparison, never a wrong answer,
+    //- because the look up tests the coordinate itself.
+    auto bucket = [&](const point& x) -> label
+    {
+        const scalar h
+        (
+            std::fmod
+            (
+                std::floor(x.x()/pointTol)*73856093.0
+              + std::floor(x.y()/pointTol)*19349663.0
+              + std::floor(x.z()/pointTol)*83492791.0,
+                2147483647.0
+            )
+        );
+
+        return label(h);
+    };
+
+    //- The label of the point already at x, or -1
+    auto findPoint = [&](const point& x) -> label
+    {
+        for (label di = -1; di <= 1; di++)
+        {
+            for (label dj = -1; dj <= 1; dj++)
+            {
+                for (label dk = -1; dk <= 1; dk++)
+                {
+                    const point probe
+                    (
+                        x + point
+                        (
+                            pointTol*scalar(di),
+                            pointTol*scalar(dj),
+                            pointTol*scalar(dk)
+                        )
+                    );
+
+                    Map<label>::const_iterator iter =
+                        firstPoint.find(bucket(probe));
+
+                    if (iter == firstPoint.end())
+                    {
+                        continue;
+                    }
+
+                    for (label n = iter(); n >= 0; n = newNext[n])
+                    {
+                        if (mag(newCoord[n] - x) <= pointTol)
+                        {
+                            return newLabel[n];
+                        }
+                    }
+                }
+            }
+        }
+
+        return -1;
+    };
+
+    //- The point at a location, made once however many routes ask for it
+    auto pointAt = [&](const point& x) -> label
+    {
+        const label found = findPoint(x);
+
+        if (found >= 0)
+        {
+            return found;
+        }
+
+        const label ptLabel = topoChange.addPoint(x, -1, -1, true);
+
+        const label n = newCoord.size();
+
+        newCoord.append(x);
+        newLabel.append(ptLabel);
+        newNext.append(-1);
+
+        const label key = bucket(x);
+
+        Map<label>::iterator iter = firstPoint.find(key);
+
+        if (iter == firstPoint.end())
+        {
+            firstPoint.insert(key, n);
+        }
+        else
+        {
+            newNext[n] = iter();
+            iter() = n;
+        }
+
+        info_.nNewPoints++;
+
+        return ptLabel;
     };
 
     auto newPoint = [&]
@@ -443,50 +572,7 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
 
         const scalar w = da/(da - db);
 
-        const point x(pa + w*(pb - pa));
-
-        const label key = min(a, b);
-        const bool had = firstPoint.found(key);
-        const label prev = had ? firstPoint[key] : -1;
-
-        for (label i = prev; i >= 0; i = newNext[i])
-        {
-            //- The same segment, whichever way round it was met. Two faces
-            //- sharing an edge traverse it in opposite orders.
-            const bool sameSegment =
-            (
-                (mag(newA[i] - pa) <= tol_ && mag(newB[i] - pb) <= tol_)
-             || (mag(newA[i] - pb) <= tol_ && mag(newB[i] - pa) <= tol_)
-            );
-
-            if (sameSegment && mag(newCoord[i] - x) <= tol_)
-            {
-                return newLabel[i];
-            }
-        }
-
-        const label ptLabel = topoChange.addPoint(x, -1, -1, true);
-
-        const label i = newCoord.size();
-
-        newCoord.append(x);
-        newLabel.append(ptLabel);
-        newNext.append(prev);
-        newA.append(pa);
-        newB.append(pb);
-
-        if (had)
-        {
-            firstPoint.set(key, i);
-        }
-        else
-        {
-            firstPoint.insert(key, i);
-        }
-
-        info_.nNewPoints++;
-
-        return ptLabel;
+        return pointAt(pa + w*(pb - pa));
     };
 
 
@@ -732,8 +818,6 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
     //- on an edge of the cell, which the cells sharing that edge all use, or on
     //- a face of it, which the face's subdivision has already made, or inside
     //- it, where it belongs to this cell alone.
-    DynamicList<point> insideCoord(4);
-    DynamicList<label> insideLabel(4);
 
     auto pointOf = [&](const cellCut& c, const point& x) -> label
     {
@@ -825,22 +909,8 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
 
         //- Inside the cell, where the point belongs to this cell alone. A cell
         //- has few of these, so a linear scan is enough.
-        forAll(insideCoord, i)
-        {
-            if (mag(insideCoord[i] - x) <= tol_)
-            {
-                return insideLabel[i];
-            }
-        }
-
-        const label p = topoChange.addPoint(x, -1, -1, true);
-
-        insideCoord.append(x);
-        insideLabel.append(p);
-
-        info_.nNewPoints++;
-
-        return p;
+        //- Inside the cell, and shared with any other piece that touches it
+        return pointAt(x);
     };
 
 
@@ -1198,7 +1268,15 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::cut()
 
     Info<< "Cells crossed by the surface : " << info_.nCandidate << nl
         << "Cells cut                    : " << info_.nCut << nl
+        << "Cells refused as degenerate  : " << info_.nDegenerate << nl
         << "Cells reported, left as is   : " << info_.nUnsupported << endl;
+
+    forAll(info_.degenerate, i)
+    {
+        Info<< "    cell " << info_.degenerate[i]
+            << ": the surface grazes it, so its pieces would meet along a line"
+            << " and it was left whole" << endl;
+    }
 
     forAll(info_.unsupported, i)
     {
