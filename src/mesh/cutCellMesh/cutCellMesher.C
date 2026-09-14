@@ -28,6 +28,9 @@ License
 #include "polyTopoChange.H"
 #include "mapPolyMesh.H"
 #include "labelIOList.H"
+#include "cutCellMerge.H"
+#include "removeFaces.H"
+#include "labelListIOList.H"
 #include "cellZone.H"
 #include "faceZone.H"
 #include "treeDataTriSurface.H"
@@ -1302,6 +1305,7 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
     };
 
 
+
     //- Set a face of the new mesh, either an existing face or a new one.
     //-
     //- polyMesh keeps internal faces in upper-triangular order, meaning the
@@ -1606,6 +1610,10 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::cut()
     //- positions.
     snapPoints();
 
+    //- The parent volumes have to be taken before the cut, since afterwards the
+    //- cells are the pieces and their parents are gone
+    backgroundVolumes_ = mesh_.cellVolumes();
+
     //- Every cell starts as its own background cell
     backgroundCell_.setSize(mesh_.nCells());
 
@@ -1665,6 +1673,19 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::cut()
         }
     }
 
+    //- The parent list starts as the parent map, one background cell each
+    backgroundParents_.setSize(mesh_.nCells());
+
+    forAll(backgroundParents_, celli)
+    {
+        backgroundParents_[celli] = labelList(1, backgroundCell_[celli]);
+    }
+
+    if (sliverVolumeRatio_ > 0 && minVolumeRatio_ > 0)
+    {
+        mergeSlivers();
+    }
+
     Info<< "Cells after cutting          : " << mesh_.nCells() << nl
         << "Points added                 : " << info_.nNewPoints << nl
         << "Interface area               : " << info_.interfaceArea << endl;
@@ -1721,6 +1742,318 @@ void Foam::cutCellMesher::writeSnapDisplacement() const
     );
 
     snapDisplacement.write();
+}
+
+
+void Foam::cutCellMesher::mergeSlivers()
+{
+    const scalarField& V = mesh_.cellVolumes();
+    const pointField& C = mesh_.cellCentres();
+    const labelList& own = mesh_.faceOwner();
+    const labelList& nei = mesh_.faceNeighbour();
+    const auto& zoneMesh = mesh_.cellZones();
+    const auto& faceZoneMesh = mesh_.faceZones();
+
+    //- Parents' volume of each cell, so eligibility means the same thing for a
+    //- cell that has already been merged
+    scalarField parentVolume(V.size(), 0);
+
+    forAll(parentVolume, celli)
+    {
+        forAll(backgroundParents_[celli], pi)
+        {
+            parentVolume[celli] +=
+                backgroundVolumes_[backgroundParents_[celli][pi]];
+        }
+    }
+
+    DynamicList<label> pierced;
+
+    forAll(V, celli)
+    {
+        const label zonei = zoneMesh.whichZone(celli);
+
+        if (zonei < 0 || parentVolume[celli] <= 0)
+        {
+            continue;
+        }
+
+        if (V[celli] > sliverVolumeRatio_*parentVolume[celli])
+        {
+            continue;
+        }
+
+        label bestFace = -1;
+        label bestConcave = labelMax;
+        scalar bestRatio = -GREAT;
+        scalar bestArea = -1;
+
+        forAll(mesh_.cells()[celli], k)
+        {
+            const label facei = mesh_.cells()[celli][k];
+
+            if (!mesh_.isInternalFace(facei))
+            {
+                continue;
+            }
+
+            //- Never remove a face of a zone: the interface lives in one, and
+            //- removing it would put the two regions in one cell
+            if (faceZoneMesh.whichZone(facei) >= 0)
+            {
+                continue;
+            }
+
+            const label nb = (own[facei] == celli ? nei[facei] : own[facei]);
+
+            //- Only within one region
+            if (zoneMesh.whichZone(nb) != zonei)
+            {
+                continue;
+            }
+
+            //- Only a single shared face can be removed: when two cells meet
+            //- over more than one, removing one of them leaves an edge with a
+            //- single face and removeFaces refuses the change
+            label nShared = 0;
+
+            forAll(mesh_.cells()[celli], i)
+            {
+                const label fi = mesh_.cells()[celli][i];
+
+                if (mesh_.isInternalFace(fi) && (own[fi] == nb || nei[fi] == nb))
+                {
+                    ++nShared;
+                }
+            }
+
+            if (nShared != 1)
+            {
+                continue;
+            }
+
+            //- removeFaces also refuses a removal that would leave one of the
+            //- face's edges with fewer than three faces, which happens when the
+            //- edge lies on the domain boundary and only the removed face and a
+            //- boundary face meet there
+            bool edgeOK = true;
+
+            forAll(mesh_.faceEdges()[facei], e)
+            {
+                if (mesh_.edgeFaces()[mesh_.faceEdges()[facei][e]].size() < 3)
+                {
+                    edgeOK = false;
+                    break;
+                }
+            }
+
+            if (!edgeOK)
+            {
+                continue;
+            }
+
+            //- The boundary the merged cell would have: the faces of both,
+            //- minus the one between them
+            List<pointField> boundary(0);
+
+            forAll(mesh_.cells()[celli], i)
+            {
+                const label fi = mesh_.cells()[celli][i];
+
+                if (fi != facei)
+                {
+                    boundary.append
+                    (
+                        pointField(mesh_.faces()[fi].points(mesh_.points()))
+                    );
+                }
+            }
+
+            forAll(mesh_.cells()[nb], i)
+            {
+                const label fi = mesh_.cells()[nb][i];
+
+                if (fi != facei)
+                {
+                    boundary.append
+                    (
+                        pointField(mesh_.faces()[fi].points(mesh_.points()))
+                    );
+                }
+            }
+
+            const point ref =
+            (
+                C[celli]*V[celli] + C[nb]*V[nb]
+            )/max(V[celli] + V[nb], VSMALL);
+
+            const mergeQuality q(evaluateMerge(boundary, ref));
+
+            if (!q.valid)
+            {
+                continue;
+            }
+
+            const scalar area = mag(mesh_.faceAreas()[facei]);
+            const bool better =
+            (
+                q.concaveFaces < bestConcave
+             || (q.concaveFaces == bestConcave && q.minPyramidRatio > bestRatio)
+             || (q.concaveFaces == bestConcave && q.minPyramidRatio == bestRatio
+                 && area > bestArea)
+            );
+
+            if (better)
+            {
+                bestConcave = q.concaveFaces;
+                bestRatio = q.minPyramidRatio;
+                bestArea = area;
+                bestFace = facei;
+            }
+        }
+
+        if (bestFace >= 0)
+        {
+            pierced.append(bestFace);
+        }
+    }
+
+    if (pierced.empty())
+    {
+        return;
+    }
+
+    const label nBefore = mesh_.nCells();
+
+    removeFaces faceRemover(mesh_, 1.0);
+
+    labelList cellRegion;
+    labelList cellRegionMaster;
+    labelList outPierced;
+
+    const label nRegions =
+        faceRemover.compatibleRemoves
+        (
+            pierced,
+            cellRegion,
+            cellRegionMaster,
+            outPierced
+        );
+
+    if (!nRegions || outPierced.empty())
+    {
+        return;
+    }
+
+    //- Parents of every region, its master's first so that entry zero stays
+    //- the primary parent
+    List<labelList> masterParents(mesh_.nCells(), labelList(0));
+
+    forAll(cellRegionMaster, celli)
+    {
+        const label m = cellRegionMaster[celli];
+
+        if (cellRegion[celli] < 0 || m < 0 || m >= mesh_.nCells())
+        {
+            continue;
+        }
+
+        if (celli == m)
+        {
+            masterParents[m] = backgroundParents_[celli];
+        }
+    }
+
+    forAll(cellRegionMaster, celli)
+    {
+        const label m = cellRegionMaster[celli];
+
+        if (cellRegion[celli] < 0 || celli == m || m < 0 || m >= mesh_.nCells())
+        {
+            continue;
+        }
+
+        forAll(backgroundParents_[celli], pi)
+        {
+            const label p = backgroundParents_[celli][pi];
+
+            if (!masterParents[m].found(p))
+            {
+                masterParents[m].append(p);
+            }
+        }
+    }
+
+    polyTopoChange topoChange(mesh_);
+
+    faceRemover.setRefinement
+    (
+        outPierced,
+        cellRegion,
+        cellRegionMaster,
+        topoChange
+    );
+
+    autoPtr<mapPolyMesh> mergeMap = topoChange.changeMesh(mesh_, false);
+
+    mesh_.updateMesh(mergeMap());
+
+    //- Route the parent lists through the change: a merged cell takes its
+    //- region's parents, every other cell keeps its own
+    const labelList& cellMap = mergeMap().cellMap();
+
+    labelList newBackground(mesh_.nCells(), -1);
+    List<labelList> newParents(mesh_.nCells(), labelList(0));
+
+    forAll(cellMap, oldCelli)
+    {
+        const label newCelli = cellMap[oldCelli];
+
+        if (newCelli < 0 || newCelli >= mesh_.nCells())
+        {
+            continue;
+        }
+
+        const label m = cellRegionMaster[oldCelli];
+
+        if (cellRegion[oldCelli] >= 0 && m >= 0 && m < mesh_.nCells())
+        {
+            newParents[newCelli] = masterParents[m];
+            newBackground[newCelli] = masterParents[m][0];
+        }
+        else
+        {
+            newParents[newCelli] = backgroundParents_[oldCelli];
+            newBackground[newCelli] = backgroundCell_[oldCelli];
+        }
+    }
+
+    backgroundCell_ = newBackground;
+    backgroundParents_ = newParents;
+    info_.nAbsorbed = nBefore - mesh_.nCells();
+
+    Info<< "Cells absorbed as slivers    : " << info_.nAbsorbed
+        << " in " << nRegions << " region(s)" << endl;
+}
+
+
+void Foam::cutCellMesher::writeBackgroundParents() const
+{
+    labelListIOList backgroundParents
+    (
+        IOobject
+        (
+            "backgroundParents",
+            mesh_.time().timeName(),
+            "polyMesh",
+            mesh_.time(),
+            IOobject::NO_READ,
+            IOobject::NO_WRITE
+        ),
+        backgroundParents_
+    );
+
+    backgroundParents.write();
 }
 
 
