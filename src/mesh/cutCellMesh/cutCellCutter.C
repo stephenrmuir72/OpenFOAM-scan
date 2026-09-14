@@ -35,6 +35,24 @@ namespace Foam
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
+bool polygonDegenerate(const pointField& poly, const scalar tol)
+{
+    if (poly.size() < 3)
+    {
+        return true;
+    }
+
+    scalar longest = 0;
+
+    forAll(poly, i)
+    {
+        longest = max(longest, mag(poly[poly.fcIndex(i)] - poly[i]));
+    }
+
+    return polygonArea(poly) <= max(tol, VSMALL)*longest;
+}
+
+
 scalar polygonArea(const pointField& poly)
 {
     if (poly.size() < 3)

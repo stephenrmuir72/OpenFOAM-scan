@@ -945,6 +945,36 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
             return false;
         }
 
+        //- A plane that grazes the face within the tolerance keeps a point on
+        //- both sides, so one of the two polygons is a strip whose vertices
+        //- coincide and which has no area. A face with no area is not a face of
+        //- a mesh and leaves the two cells it borders open, so the split is
+        //- refused and the face stays whole with respect to this plane. The
+        //- subdivision is computed once per face from the union of the planes
+        //- of every cell that meets it, so both cells still see the same
+        //- sub-faces and the mesh stays conformal.
+        pointField mCoords(m.size());
+        pointField pCoords(p.size());
+
+        forAll(m, i)
+        {
+            mCoords[i] = coordOf(m[i]);
+        }
+
+        forAll(p, i)
+        {
+            pCoords[i] = coordOf(p[i]);
+        }
+
+        if
+        (
+            polygonDegenerate(mCoords, tol_)
+         || polygonDegenerate(pCoords, tol_)
+        )
+        {
+            return false;
+        }
+
         minusPoly.setSize(m.size());
 
         forAll(m, i)
