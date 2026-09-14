@@ -115,7 +115,27 @@ int main(int argc, char* argv[])
         );
     }
 
+    //- How close a cut crossing has to be to the endpoint of a cell edge, as a
+    //- fraction of that edge's length, to be collapsed onto it. 05 section
+    //- 7.1.2 gives 0.05 as the default and 0.10 as the limit, and zero disables
+    //- the collapse.
+    scalar vertexSnapFraction
+    (
+        meshDict.getOrDefault<scalar>("vertexSnapFraction", 0.05)
+    );
+
+    if (vertexSnapFraction < 0 || vertexSnapFraction > 0.10)
+    {
+        WarningInFunction
+            << "vertexSnapFraction " << vertexSnapFraction << " is outside the"
+            << " allowable range 0 to 0.10, and is clamped to it" << endl;
+
+        vertexSnapFraction = min(max(vertexSnapFraction, 0.0), 0.10);
+    }
+
     cutCellMesher mesher(mesh, surfaces);
+
+    mesher.vertexSnapFraction(vertexSnapFraction);
 
     autoPtr<mapPolyMesh> map = mesher.cut();
 
@@ -124,6 +144,7 @@ int main(int argc, char* argv[])
     if (map.valid())
     {
         mesher.writeBackgroundCell();
+        mesher.writeSnapDisplacement();
 
         mesh.setInstance(writeInstance);
 
