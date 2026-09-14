@@ -134,6 +134,26 @@ pointField triangleBoxPolygon
 scalar polygonArea(const pointField& poly);
 
 
+//- Group the pieces of one cut cell by the faces they share, so that the pieces
+//  of one region which touch each other come out as one group and become one
+//  cell. 'pieceZone' is the region of each piece.
+//
+//  Returns the group index of each piece. Groups are numbered from zero in the
+//  order their first piece appears, so the group of the first piece is zero,
+//  which is the group that keeps the label of the background cell.
+//
+//  Only pieces that share a face are joined. A cell has to be face connected, so
+//  pieces meeting at an edge or a point stay separate, and only pieces in the
+//  same region are joined, since joining across a region would destroy the
+//  interface between them.
+labelList groupPieces
+(
+    const label nPieces,
+    const List<cutCellPieceFace>& sharedFaces,
+    const labelList& pieceZone
+);
+
+
 //- Cut a cell by the surface triangles that cross it, into the arrangement of
 //  their distinct planes inside the cell.
 //

@@ -113,8 +113,17 @@ public:
         //- Why each of them was unsupported
         wordList unsupportedReason;
 
-        //- Sub-cells the cut cells were replaced by
+        //- Sub-cells the cut cells were replaced by, before merging
         label nPieces = 0;
+
+        //- Cells the merged cut cells were replaced by
+        label nGroups = 0;
+
+        //- Sub-cells absorbed by the merge
+        label nMerged = 0;
+
+        //- Faces dropped because the two pieces they separated are one cell
+        label nMergedFaces = 0;
 
         //- Cut cells by the number of planes crossing them, byPlanes[n] being
         //- the number cut by n planes
@@ -173,9 +182,13 @@ private:
             //- internal faces the cell is divided by
             List<cutCellPieceFace> sharedFaces;
 
-            //- Mesh cell of each piece. The first keeps the label of the
-            //- background cell, the others are added.
+            //- Mesh cell of each piece. The pieces of one region that touch
+            //- each other share one cell, and the group of the first piece
+            //- keeps the label of the background cell.
             labelList pieceCell;
+
+            //- Group of each piece, from groupPieces()
+            labelList pieceGroup;
 
             //- Region cellZone of each piece
             labelList pieceZone;

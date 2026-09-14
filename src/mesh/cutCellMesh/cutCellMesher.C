@@ -348,8 +348,16 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
             }
         }
 
+        //- The pieces of one region that touch each other are one cell, so a
+        //- cell the surface crosses twice is two cells, not four
+        c.pieceGroup = groupPieces(c.pieces.size(), c.sharedFaces, c.pieceZone);
+
+        const label nCellGroups = max(c.pieceGroup) + 1;
+
         info_.nCut++;
         info_.nPieces += c.pieces.size();
+        info_.nGroups += nCellGroups;
+        info_.nMerged += c.pieces.size() - nCellGroups;
 
         maxPlanes = max(maxPlanes, c.planes.size());
 
@@ -927,32 +935,45 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
     };
 
 
-    //- 1. One piece keeps the label of the background cell, the others are
-    //- added. The pieces are ordered negative first against the planes, so for
-    //- a cell cut by one plane the first piece is the one inside the surface,
-    //- which is the label the mesh has always kept.
+    //- 1. One cell per group of pieces. The pieces of one region that share a
+    //- face are one cell, so a cell crossed by two planes is two cells, not
+    //- four. The group holding the first piece, which for a single plane is the
+    //- one inside the surface, keeps the label of the background cell.
     forAll(cuts, ci)
     {
         cellCut& c = const_cast<cellCut&>(cuts[ci]);
 
+        c.pieceCell.setSize(c.pieces.size());
+
+        //- The mesh cell of each group, and its zone, taken from the first
+        //- piece of the group
+        labelList groupCell(max(c.pieceGroup) + 1, -1);
+
         forAll(c.pieces, pi)
         {
-            if (pi == 0)
-            {
-                c.pieceCell[pi] = c.celli;
+            const label g = c.pieceGroup[pi];
 
-                topoChange.modifyCell
-                (
-                    c.celli, labelList(1, c.pieceZone[pi])
-                );
-            }
-            else
+            if (groupCell[g] < 0)
             {
-                c.pieceCell[pi] = topoChange.addCell
-                (
-                    -1, -1, -1, c.celli, c.pieceZone[pi]
-                );
+                if (g == 0)
+                {
+                    groupCell[g] = c.celli;
+
+                    topoChange.modifyCell
+                    (
+                        c.celli, labelList(1, c.pieceZone[pi])
+                    );
+                }
+                else
+                {
+                    groupCell[g] = topoChange.addCell
+                    (
+                        -1, -1, -1, c.celli, c.pieceZone[pi]
+                    );
+                }
             }
+
+            c.pieceCell[pi] = groupCell[g];
         }
     }
 
@@ -1083,10 +1104,29 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
         {
             const cutCellPieceFace& shared = c.sharedFaces[si];
 
+            if (c.pieceGroup[shared.pieceA] == c.pieceGroup[shared.pieceB])
+            {
+                //- The two pieces are one cell now, so this face is inside it
+                //- and is not a face of the mesh at all
+                const_cast<report&>(info_).nMergedFaces++;
+                continue;
+            }
+
             const bool separates =
             (
                 c.pieceZone[shared.pieceA] != c.pieceZone[shared.pieceB]
             );
+
+            //- Pieces that share a face and are in one region are one cell, so
+            //- a shared face that survives has to be an interface face
+            if (!separates)
+            {
+                FatalErrorInFunction
+                    << "Cells " << c.pieceCell[shared.pieceA] << " and "
+                    << c.pieceCell[shared.pieceB] << " of one region in cell "
+                    << c.celli << " share a face that the merge did not take."
+                    << exit(FatalError);
+            }
 
             //- Take the polygon from the piece inside the surface where the
             //- face separates the regions, so its normal points out of the
@@ -1172,9 +1212,9 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::cut()
         return autoPtr<mapPolyMesh>();
     }
 
-    //- Every piece is a cell of the cut mesh. One piece per cut cell keeps the
-    //- label of that cell, so the rest are the cells that will be added.
-    backgroundCell_.setSize(mesh_.nCells() + info_.nPieces - info_.nCut);
+    //- Every group of pieces is a cell of the cut mesh. One group per cut cell
+    //- keeps the label of that cell, so the rest are the cells that are added.
+    backgroundCell_.setSize(mesh_.nCells() + info_.nGroups - info_.nCut);
 
     autoPtr<mapPolyMesh> map = assemble(cuts);
 
@@ -1193,6 +1233,13 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::cut()
     Info<< "Cells after cutting          : " << mesh_.nCells() << nl
         << "Points added                 : " << info_.nNewPoints << nl
         << "Interface area               : " << info_.interfaceArea << endl;
+
+    if (info_.nMerged)
+    {
+        Info<< "Sub-cells merged by region   : " << info_.nMerged
+            << " of " << info_.nPieces << ", in " << info_.nGroups
+            << " cell(s), dropping " << info_.nMergedFaces << " face(s)" << endl;
+    }
 
     //- Cut cells by the number of planes of the surface inside them, which says
     //- how much of the mesh needed the arrangement
