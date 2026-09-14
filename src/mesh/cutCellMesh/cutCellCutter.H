@@ -133,6 +133,12 @@ pointField triangleBoxPolygon
 //- Area of a planar polygon
 scalar polygonArea(const pointField& poly);
 
+//- True if a planar polygon is degenerate rather than merely thin: its area is
+//- no more than the tolerance times its longest edge, which is a width of the
+//- order of the tolerance. Such a polygon cannot be a face of a mesh, so a
+//- split that would make one is better refused than built.
+bool polygonDegenerate(const pointField& poly, const scalar tol);
+
 
 //- Group the pieces of one cut cell by the faces they share, so that the pieces
 //  of one region which touch each other come out as one group and become one

@@ -419,6 +419,37 @@ int main()
     );
 
 
+    //  Degenerate polygons, which cannot be faces of a mesh
+    //  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    Info<< nl << "degenerate polygons" << endl;
+
+    const pointField square({P(0,0,0), P(1,0,0), P(1,1,0), P(0,1,0)});
+    const pointField strip({P(0,0,0), P(1,0,0), P(1,1e-12,0), P(0,1e-12,0)});
+    const pointField line({P(0,0,0), P(0.5,0,0), P(1,0,0)});
+
+    checkTrue
+    (
+        !polygonDegenerate(square, 1e-9),
+        "a square is not degenerate"
+    );
+    checkTrue
+    (
+        polygonDegenerate(strip, 1e-9),
+        "a strip thinner than the tolerance is degenerate"
+    );
+    checkTrue
+    (
+        polygonDegenerate(line, 1e-9),
+        "a polygon with no area at all is degenerate"
+    );
+    checkTrue
+    (
+        !polygonDegenerate(strip, 1e-15),
+        "and the same strip is thin rather than degenerate below the tolerance"
+    );
+
+
     //  Per-cell cutting
     // ~~~~~~~~~~~~~~~~~
 
