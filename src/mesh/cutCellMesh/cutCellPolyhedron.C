@@ -189,9 +189,27 @@ bool cutCellPolyhedron::split
     pointField& cutFace
 ) const
 {
+    cutCellDetail detail;
+
+    return split(pln, negative, positive, cutFace, detail);
+}
+
+
+bool cutCellPolyhedron::split
+(
+    const plane& pln,
+    cutCellPolyhedron& negative,
+    cutCellPolyhedron& positive,
+    pointField& cutFace,
+    cutCellDetail& detail
+) const
+{
     negative = cutCellPolyhedron();
     positive = cutCellPolyhedron();
     cutFace.clear();
+    detail.negativeSource.clear();
+    detail.positiveSource.clear();
+    detail.interfaceSource.clear();
 
     if (points_.empty() || faces_.empty())
     {
@@ -264,18 +282,24 @@ bool cutCellPolyhedron::split
     DynamicList<point> negPts;
     DynamicList<point> posPts;
 
+    //- Where each of those points came from, in the same order
+    DynamicList<cutPointSource> negSrc;
+    DynamicList<cutPointSource> posSrc;
+
     forAll(points_, pi)
     {
         if (dist[pi] <= tol)
         {
             toNeg[pi] = negPts.size();
             negPts.append(points_[pi]);
+            negSrc.append(cutPointSource(pi, -1));
         }
 
         if (dist[pi] >= -tol)
         {
             toPos[pi] = posPts.size();
             posPts.append(points_[pi]);
+            posSrc.append(cutPointSource(pi, -1));
         }
     }
 
@@ -297,6 +321,7 @@ bool cutCellPolyhedron::split
     (
         Map<label>& edgePts,
         DynamicList<point>& pts,
+        DynamicList<cutPointSource>& src,
         const label a,
         const label b
     )
@@ -314,6 +339,7 @@ bool cutCellPolyhedron::split
         const label newPtI = pts.size();
 
         pts.append(edgePoint(a, b));
+        src.append(cutPointSource(a, b));
         edgePts.insert(key, newPtI);
 
         return newPtI;
@@ -324,6 +350,9 @@ bool cutCellPolyhedron::split
     DynamicList<label> cutNegL;
     DynamicList<label> cutPosL;
     DynamicList<point> cutPts;
+
+    //- Where each interface point came from, in the same order
+    DynamicList<cutPointSource> cutSrc;
 
 
     auto toFace = [](const DynamicList<label>& lst)
@@ -378,14 +407,15 @@ bool cutCellPolyhedron::split
 
                 const bool isNew = !negEdgePts.found(key);
 
-                negPoly.append(cutEdgePoint(negEdgePts, negPts, a, b));
-                posPoly.append(cutEdgePoint(posEdgePts, posPts, a, b));
+                negPoly.append(cutEdgePoint(negEdgePts, negPts, negSrc, a, b));
+                posPoly.append(cutEdgePoint(posEdgePts, posPts, posSrc, a, b));
 
                 if (isNew)
                 {
                     cutNegL.append(negPoly.last());
                     cutPosL.append(posPoly.last());
                     cutPts.append(edgePoint(a, b));
+                    cutSrc.append(cutPointSource(a, b));
                 }
             }
         }
@@ -411,6 +441,7 @@ bool cutCellPolyhedron::split
             cutNegL.append(toNeg[pi]);
             cutPosL.append(toPos[pi]);
             cutPts.append(points_[pi]);
+            cutSrc.append(cutPointSource(pi, -1));
         }
     }
 
@@ -475,6 +506,7 @@ bool cutCellPolyhedron::split
                 Swap(cutPts[i], cutPts[j]);
                 Swap(cutNegL[i], cutNegL[j]);
                 Swap(cutPosL[i], cutPosL[j]);
+                Swap(cutSrc[i], cutSrc[j]);
             }
         }
     }
@@ -518,6 +550,27 @@ bool cutCellPolyhedron::split
     forAll(cutPts, i)
     {
         cutFace[i] = cutPts[i];
+    }
+
+    detail.negativeSource.setSize(negPts.size());
+
+    forAll(negPts, i)
+    {
+        detail.negativeSource[i] = negSrc[i];
+    }
+
+    detail.positiveSource.setSize(posPts.size());
+
+    forAll(posPts, i)
+    {
+        detail.positiveSource[i] = posSrc[i];
+    }
+
+    detail.interfaceSource.setSize(cutPts.size());
+
+    forAll(cutPts, i)
+    {
+        detail.interfaceSource[i] = cutSrc[i];
     }
 
     negative = cutCellPolyhedron(negPoints, negFaces);

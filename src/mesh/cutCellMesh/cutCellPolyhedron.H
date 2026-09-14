@@ -53,11 +53,50 @@ SourceFiles
 #include "pointField.H"
 #include "faceList.H"
 #include "plane.H"
+#include "labelPair.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 namespace Foam
 {
+
+//- Where a point produced by a cut came from: either an existing point of the
+//- input polyhedron, given as (pointi, -1), or the intersection of the edge
+//- (a, b).
+//
+//  The driver maps this to a mesh-wide identity. Two cells that share an edge
+//  report the same pair for the point where a surface crosses it, so they can
+//  be made to share one point, which is what keeps the assembled mesh
+//  conformal.
+using cutPointSource = labelPair;
+
+
+//- Detail of a cell cut, beyond the pieces themselves. The supporting plane is
+//  reported by cutCellByTriangles, which determines it, and the source lists by
+//  both it and cutCellPolyhedron::split. Everything is left empty unless the
+//  cut was accepted.
+struct cutCellDetail
+{
+    //- Supporting plane normal, pointing towards the positive side
+    vector normal = Zero;
+
+    //- A point on the supporting plane
+    point refPoint = Zero;
+
+    //- Number of triangles that clipped to a polygon of at least three points,
+    //- that is the number that actually cross the cell. Zero means the cell is
+    //- untouched because nothing crosses it, which is not the same as a plane
+    //- that was found but does not divide the cell, and the driver needs to
+    //- tell those apart rather than report a silent no-op.
+    label nPolygons = 0;
+
+    //- Source of each point of the negative piece, of the positive piece and of
+    //- the interface polygon
+    List<cutPointSource> negativeSource;
+    List<cutPointSource> positiveSource;
+    List<cutPointSource> interfaceSource;
+};
+
 
 /*---------------------------------------------------------------------------*\
                     Class cutCellPolyhedron Declaration
@@ -140,6 +179,20 @@ public:
             cutCellPolyhedron& negative,
             cutCellPolyhedron& positive,
             pointField& cutFace
+        ) const;
+
+        //- Split by a plane, and report where each point of the result came
+        //  from so that the caller can map the pieces onto a mesh.
+        //
+        //  'detail' receives the source lists only. Its plane entries belong to
+        //  the caller, which already knows the plane.
+        bool split
+        (
+            const plane& pln,
+            cutCellPolyhedron& negative,
+            cutCellPolyhedron& positive,
+            pointField& cutFace,
+            cutCellDetail& detail
         ) const;
 };
 

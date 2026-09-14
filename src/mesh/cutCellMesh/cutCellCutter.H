@@ -102,6 +102,27 @@ cutState cutCellByTriangles
 );
 
 
+//- Cut a cell by the surface triangles that cross it, and report the accepted
+//  supporting plane and where each point of the pieces came from.
+//
+//  The plane normal points towards the positive piece, which for a surface
+//  whose triangles are outward oriented is the outside of the surface. The
+//  driver needs it to tell which piece is which region, and the source lists to
+//  map the pieces onto a mesh.
+//
+//  'detail' is left empty unless the state is cut.
+cutState cutCellByTriangles
+(
+    const cutCellPolyhedron& cell,
+    const List<pointField>& tris,
+    const scalar tol,
+    cutCellPolyhedron& minus,
+    cutCellPolyhedron& plus,
+    pointField& interface,
+    cutCellDetail& detail
+);
+
+
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 } // End namespace Foam

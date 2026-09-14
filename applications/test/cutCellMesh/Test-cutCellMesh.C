@@ -590,6 +590,154 @@ int main()
     checkClose(polygonArea(cut), 1e-6, "small interface area");
 
 
+    //  Where the points of a cut came from
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    Info<< nl << "source of the cut points" << endl;
+
+    //- The hexahedron split at x = 0.5. Every interface point lies on an edge
+    //- of the polyhedron, and the driver needs that edge so that the cells
+    //- sharing it can be given one shared point.
+    {
+        cutCellPolyhedron m, p;
+        pointField iface;
+        cutCellDetail detail;
+
+        checkTrue
+        (
+            hex.split(xMid, m, p, iface, detail),
+            "split reports detail"
+        );
+
+        checkLabel(detail.interfaceSource.size(), iface.size(), "interface source count");
+        checkLabel(detail.negativeSource.size(), m.points().size(), "minus source count");
+        checkLabel(detail.positiveSource.size(), p.points().size(), "plus source count");
+
+        //- Every interface point of this cut is an edge crossing
+        label nEdge = 0;
+
+        forAll(detail.interfaceSource, i)
+        {
+            const cutPointSource& src = detail.interfaceSource[i];
+
+            if (src.second() >= 0)
+            {
+                nEdge++;
+            }
+        }
+
+        checkLabel(nEdge, iface.size(), "every interface point is an edge crossing");
+
+        //- A point reported on an edge lies on the segment between the two
+        //- points of that edge, which is what lets two cells agree on it
+        bool onEdges = true;
+
+        forAll(detail.negativeSource, i)
+        {
+            const cutPointSource& src = detail.negativeSource[i];
+
+            if (src.second() < 0)
+            {
+                onEdges = onEdges
+                  && mag(m.points()[i] - hex.points()[src.first()]) < 1e-12;
+            }
+            else
+            {
+                const point& a = hex.points()[src.first()];
+                const point& b = hex.points()[src.second()];
+
+                const vector ab(b - a);
+                const scalar t = ((m.points()[i] - a) & ab)/(ab & ab);
+
+                onEdges = onEdges
+                  && t >= -1e-12 && t <= 1 + 1e-12
+                  && mag(m.points()[i] - (a + t*ab)) < 1e-12;
+            }
+        }
+
+        checkTrue(onEdges, "minus points sit on their reported edge or point");
+
+        //- Each interface point is shared with the pieces, and the negative
+        //- piece reports the same source for it. That is what lets the driver
+        //- give the cells sharing an edge one single point, which is what keeps
+        //- the assembled mesh conformal.
+        bool sourcesMatch = true;
+
+        forAll(detail.interfaceSource, i)
+        {
+            const cutPointSource& src = detail.interfaceSource[i];
+
+            label found = -1;
+
+            forAll(m.points(), j)
+            {
+                if (mag(m.points()[j] - iface[i]) < 1e-12)
+                {
+                    found = j;
+                    break;
+                }
+            }
+
+            if (found < 0)
+            {
+                sourcesMatch = false;
+            }
+            else
+            {
+                sourcesMatch = sourcesMatch
+                  && detail.negativeSource[found].first() == src.first()
+                  && detail.negativeSource[found].second() == src.second();
+            }
+        }
+
+        checkTrue(sourcesMatch, "interface points are shared with the minus piece");
+    }
+
+
+    //- The cutter reports the plane it accepted, and how many triangles really
+    //- cross the cell, so the driver can tell a cell nothing crosses from one
+    //- that a plane fails to divide
+    {
+        const pointField spanning
+        ({
+            P(0.5, -1, -1), P(0.5, 3, -1), P(0.5, -1, 3)
+        });
+
+        cutCellPolyhedron m, p;
+        pointField iface;
+        cutCellDetail detail;
+
+        const cutState state = cutCellByTriangles
+        (
+            hex, List<pointField>(1, spanning), 1e-9, m, p, iface, detail
+        );
+
+        checkTrue(state == cutState::cut, "detail reports cut");
+        checkLabel(detail.nPolygons, 1, "one clipped polygon");
+        checkClose(mag(detail.normal), 1.0, "reported plane normal is a unit vector");
+        checkClose
+        (
+            detail.normal & (P(0.5, 0, 0) - detail.refPoint),
+            0.0,
+            "reported plane passes through the cut"
+        );
+
+        //- A triangle that misses the cell gives no polygon at all
+        const pointField missing
+        ({
+            P(2, 0, 0), P(3, 0, 0), P(3, 1, 0)
+        });
+
+        const cutState missState = cutCellByTriangles
+        (
+            hex, List<pointField>(1, missing), 1e-9, m, p, iface, detail
+        );
+
+        checkTrue(missState == cutState::untouched, "missing triangle is untouched");
+        checkLabel(detail.nPolygons, 0, "no clipped polygon for a missing triangle");
+    }
+
+
     Info<< nl << nChecks << " checks, " << nFail << " failed" << nl << endl;
 
     return nFail ? 1 : 0;
