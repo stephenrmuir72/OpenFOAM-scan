@@ -474,7 +474,41 @@ cutState cutCellByTriangles
         cutCellPiece& piece = result.pieces[fi];
 
         piece.poly = frontier[fi];
-        piece.side.setSize(result.planes.size());
+        //- A polygon with two vertices within the tolerance is not a polygon. The
+    //- driver resolves a position to one mesh point at this tolerance, so a face
+    //- built from such a polygon would have a repeated point, no area, and would
+    //- leave the cells either side open. The clipping itself works to a tighter
+    //- tolerance, which is exactly why this has to be checked here: a polygon it
+    //- considers distinct can still be one point to the driver.
+    forAll(result.pieces, ppi)
+    {
+        const cutCellPolyhedron& poly = result.pieces[ppi].poly;
+
+        forAll(poly.faces(), fi)
+        {
+            const face& f = poly.faces()[fi];
+
+            forAll(f, i)
+            {
+                for (label j = i + 1; j < f.size(); j++)
+                {
+                    if
+                    (
+                        mag(poly.points()[f[i]] - poly.points()[f[j]]) <= tol
+                    )
+                    {
+                        result.pieces.clear();
+                        result.sharedFaces.clear();
+
+                        return cutState::refused;
+                    }
+                }
+            }
+        }
+    }
+
+
+    piece.side.setSize(result.planes.size());
 
         forAll(result.planes, pi)
         {
