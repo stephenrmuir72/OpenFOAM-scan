@@ -1,4 +1,5 @@
 cutCellCutter.C
+cutCellMerge.C
 cutCellMesher.C
 cutCellPolyhedron.C
 cutCellSurface.C
