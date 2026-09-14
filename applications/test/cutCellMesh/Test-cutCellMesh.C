@@ -195,6 +195,32 @@ bool splitAndCheck
 }
 
 
+//- Axis-aligned box polyhedron from two opposite corners. Lets the tests below
+//- choose their own size and position, which matters for aspect ratio and for
+//- the distance from the origin.
+cutCellPolyhedron boxPolyhedron(const point& lo, const point& hi)
+{
+    const scalar x0 = lo.x();
+    const scalar y0 = lo.y();
+    const scalar z0 = lo.z();
+    const scalar x1 = hi.x();
+    const scalar y1 = hi.y();
+    const scalar z1 = hi.z();
+
+    List<List<point>> faces
+    ({
+        {P(x0,y0,z0), P(x1,y0,z0), P(x1,y1,z0), P(x0,y1,z0)},
+        {P(x0,y0,z1), P(x1,y0,z1), P(x1,y1,z1), P(x0,y1,z1)},
+        {P(x0,y0,z0), P(x1,y0,z0), P(x1,y0,z1), P(x0,y0,z1)},
+        {P(x0,y1,z0), P(x1,y1,z0), P(x1,y1,z1), P(x0,y1,z1)},
+        {P(x0,y0,z0), P(x0,y1,z0), P(x0,y1,z1), P(x0,y0,z1)},
+        {P(x1,y0,z0), P(x1,y1,z0), P(x1,y1,z1), P(x1,y0,z1)}
+    });
+
+    return makePolyhedron(faces, 0.5*(lo + hi));
+}
+
+
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 int main()
@@ -459,6 +485,109 @@ int main()
     checkTrue(neg.closed(), "minus closed");
     checkTrue(pos.closed(), "plus closed");
     checkClose(polygonArea(cut), 4.0, "interface area");
+
+
+    //  Thin cells, and cells far from the origin
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    Info<< nl << "thin cells and cells far from the origin" << endl;
+
+    //- High aspect ratio: 1 x 1 x 1e-4
+    const cutCellPolyhedron thin(boxPolyhedron(P(0, 0, 0), P(1, 1, 1e-4)));
+
+    checkClose(thin.volume(), 1e-4, "thin cell volume");
+
+    checkTrue
+    (
+        splitAndCheck(thin, plane(P(0.5, 0, 0), vector(1, 0, 0)), neg, pos, cut),
+        "thin cell splits"
+    );
+
+    checkClose(neg.volume(), 5e-5, "thin minus volume");
+    checkClose(pos.volume(), 5e-5, "thin plus volume");
+    checkTrue(neg.closed(), "thin minus closed");
+    checkTrue(pos.closed(), "thin plus closed");
+    checkClose(polygonArea(cut), 1e-4, "thin interface area");
+
+    //- The same proportional shape, placed far from the origin. The tetrahedron
+    //- formula must not lose the answer to cancellation between terms of order
+    //- the coordinate cubed.
+    const point farLo(1000, 1000, 1000);
+    const point farHi(farLo + vector(0.125, 0.125, 0.001));
+    const scalar farVol = 0.125*0.125*0.001;
+
+    const cutCellPolyhedron farThin(boxPolyhedron(farLo, farHi));
+
+    checkClose(farThin.volume(), farVol, "far thin cell volume");
+    checkClose(farThin.centre().z(), 1000.0005, "far thin cell centre z");
+
+    checkTrue
+    (
+        splitAndCheck
+        (
+            farThin,
+            plane(farLo + vector(0.0625, 0, 0), vector(1, 0, 0)),
+            neg,
+            pos,
+            cut
+        ),
+        "far thin cell splits"
+    );
+
+    checkClose(neg.volume(), 0.5*farVol, "far thin minus volume");
+    checkClose(pos.volume(), 0.5*farVol, "far thin plus volume");
+    checkTrue(neg.closed(), "far thin minus closed");
+    checkTrue(pos.closed(), "far thin plus closed");
+
+    //- A small cell, 1e-3 across, so its cross-section is 1e-6. The coverage
+    //- guard has to stay relative at this scale instead of falling back to an
+    //- absolute tolerance that would accept almost anything.
+    const cutCellPolyhedron small(boxPolyhedron(P(0, 0, 0), P(1e-3, 1e-3, 1e-3)));
+
+    checkClose(small.volume(), 1e-9, "small cell volume");
+
+    //- A triangle in the mid plane covering a quarter of the cross-section
+    const pointField smallPart
+    ({
+        P(5e-4, 0, 0), P(5e-4, 5e-4, 0), P(5e-4, 0, 5e-4)
+    });
+
+    cutState smallState = cutCellByTriangles
+    (
+        small,
+        List<pointField>(1, smallPart),
+        1e-9,
+        neg,
+        pos,
+        cut
+    );
+
+    checkTrue
+    (
+        smallState == cutState::refused,
+        "partial triangle on a small cell is refused"
+    );
+
+    //- The same cell cut properly, as a positive control
+    const pointField smallSpan
+    ({
+        P(5e-4, -1, -1), P(5e-4, 3, -1), P(5e-4, -1, 3)
+    });
+
+    smallState = cutCellByTriangles
+    (
+        small,
+        List<pointField>(1, smallSpan),
+        1e-9,
+        neg,
+        pos,
+        cut
+    );
+
+    checkTrue(smallState == cutState::cut, "spanning triangle cuts a small cell");
+    checkTrue(neg.closed(), "small minus closed");
+    checkTrue(pos.closed(), "small plus closed");
+    checkClose(polygonArea(cut), 1e-6, "small interface area");
 
 
     Info<< nl << nChecks << " checks, " << nFail << " failed" << nl << endl;
