@@ -26,6 +26,8 @@ License
 #include "cutCellCutter.H"
 #include "DynamicList.H"
 
+#include <algorithm>
+
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 namespace Foam
@@ -165,55 +167,108 @@ pointField triangleBoxPolygon
     return poly;
 }
 
-
-cutState cutCellByTriangles
-(
-    const cutCellPolyhedron& cell,
-    const List<pointField>& tris,
-    const scalar tol,
-    cutCellPolyhedron& minus,
-    cutCellPolyhedron& plus,
-    pointField& interface
-)
+namespace
 {
-    cutCellDetail detail;
 
-    return cutCellByTriangles
-    (
-        cell, tris, tol, minus, plus, interface, detail
-    );
+//- The side of a convex piece against a plane. The sign of the largest distance
+//- over its points is taken rather than the sign at its centre, which a sliver
+//- would make meaningless.
+label pieceSide(const cutCellPolyhedron& piece, const plane& pln)
+{
+    scalar best = 0;
+
+    forAll(piece.points(), pi)
+    {
+        const scalar d = pln.signedDistance(piece.points()[pi]);
+
+        if (mag(d) > mag(best))
+        {
+            best = d;
+        }
+    }
+
+    return (best > 0 ? 1 : -1);
 }
 
 
+//- Order the pieces by their side against the planes, negative first
+bool lowerSide(const labelList& a, const labelList& b)
+{
+    forAll(a, i)
+    {
+        if (a[i] != b[i])
+        {
+            return a[i] < b[i];
+        }
+    }
+
+    return false;
+}
+
+
+//- Do two faces of two pieces describe the same polygon? The clipper gives both
+//- copies of a cut face the same point coordinates, one reversed, so matching
+//- the point sets with a tolerance finds the faces the pieces share.
+bool sameFace
+(
+    const face& a,
+    const pointField& aPoints,
+    const face& b,
+    const pointField& bPoints,
+    const scalar tol
+)
+{
+    if (a.size() != b.size())
+    {
+        return false;
+    }
+
+    forAll(a, i)
+    {
+        bool found = false;
+
+        forAll(b, j)
+        {
+            if (mag(aPoints[a[i]] - bPoints[b[j]]) <= tol)
+            {
+                found = true;
+                break;
+            }
+        }
+
+        if (!found)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+}   // End anonymous namespace
+
+
 cutState cutCellByTriangles
 (
     const cutCellPolyhedron& cell,
     const List<pointField>& tris,
     const scalar tol,
-    cutCellPolyhedron& minus,
-    cutCellPolyhedron& plus,
-    pointField& interface,
-    cutCellDetail& detail
+    cutCellResult& result
 )
 {
-    minus = cutCellPolyhedron();
-    plus = cutCellPolyhedron();
-    interface.clear();
-    detail = cutCellDetail();
+    result = cutCellResult();
 
     if (cell.empty())
     {
         return cutState::untouched;
     }
 
-    //- The cell box, for the triangle intersection test and for clipping the
-    //- triangles down to the cell
     const boundBox bb(cell.points(), false);
 
-    //- The distinct planes of the triangle parts inside the cell, and the total
-    //- area they cover on each
-    DynamicList<plane> planes;
-    DynamicList<scalar> planeArea;
+    //- The distinct planes of the parts of the triangles inside the cell.
+    //- Facets of a closed surface that lie on one plane share its orientation,
+    //- so the orientation of the plane is the orientation of the surface there.
+    DynamicList<plane> planes(4);
 
     forAll(tris, ti)
     {
@@ -224,7 +279,7 @@ cutState cutCellByTriangles
             continue;
         }
 
-        detail.nPolygons++;
+        result.nPolygons++;
 
         const plane pln(poly[0], poly[1], poly[2]);
 
@@ -232,10 +287,9 @@ cutState cutCellByTriangles
 
         forAll(planes, pi)
         {
-            //- Same plane, allowing for the opposite orientation
             if
             (
-                mag(planes[pi].normal() & pln.normal()) > 1 - tol
+                (planes[pi].normal() & pln.normal()) > 1 - tol
              && mag
                 (
                     planes[pi].normal()
@@ -251,11 +305,7 @@ cutState cutCellByTriangles
         if (found < 0)
         {
             planes.append(pln);
-            planeArea.append(0);
-            found = planes.size() - 1;
         }
-
-        planeArea[found] += polygonArea(poly);
     }
 
     if (planes.empty())
@@ -263,46 +313,135 @@ cutState cutCellByTriangles
         return cutState::untouched;
     }
 
-    if (planes.size() > 1)
+    //- A fixed order, so that a cell always cuts the same way
+    result.planes.setSize(planes.size());
+
+    forAll(planes, pi)
     {
-        //- A surface edge or corner passes through the cell. Splitting by every
-        //- plane here would create pieces in the same region, which needs the
-        //- region classification and merging of the next slice.
-        return cutState::refused;
+        result.planes[pi] = planes[pi];
     }
 
-    if (!cell.split(planes[0], minus, plus, interface, detail))
+    std::sort
+    (
+        result.planes.begin(),
+        result.planes.end(),
+        [](const plane& a, const plane& b)
+        {
+            const vector na(a.normal());
+            const vector nb(b.normal());
+
+            for (direction i = 0; i < 3; i++)
+            {
+                if (mag(na[i] - nb[i]) > SMALL)
+                {
+                    return na[i] < nb[i];
+                }
+            }
+
+            return (a.normal() & a.refPoint()) < (b.normal() & b.refPoint());
+        }
+    );
+
+    //- The arrangement of the planes inside the cell: one plane at a time, on
+    //- every piece, carrying on the pieces a plane does not divide
+    DynamicList<cutCellPolyhedron> frontier(2);
+    frontier.append(cell);
+
+    forAll(result.planes, pi)
     {
-        //- The plane touches the cell but does not divide it
+        const plane& pln = result.planes[pi];
+
+        DynamicList<cutCellPolyhedron> next(frontier.size() + 1);
+
+        forAll(frontier, fi)
+        {
+            cutCellPolyhedron negative, positive;
+            pointField cutFace;
+
+            if (frontier[fi].split(pln, negative, positive, cutFace))
+            {
+                next.append(negative);
+                next.append(positive);
+            }
+            else
+            {
+                //- The plane touches this piece but does not divide it
+                next.append(frontier[fi]);
+            }
+        }
+
+        frontier.transfer(next);
+    }
+
+    if (frontier.size() < 2)
+    {
+        //- The surface touches the cell without dividing it
         return cutState::untouched;
     }
 
-    //- The plane must span the whole cross-section of the cell. Where it only
-    //- covers part of it, the surface enters and leaves the cell, and the two
-    //- pieces can lie in the same region.
-    //-
-    //- The tolerance is relative to the area of the plane's own polygons, with
-    //- no absolute floor: a floor tied to a unit area would, at the scale of a
-    //- thin feature, amount to accepting any coverage at all.
-    if
-    (
-        mag(polygonArea(interface) - planeArea[0])
-      > 1e-6*max(SMALL, planeArea[0])
-    )
-    {
-        minus = cutCellPolyhedron();
-        plus = cutCellPolyhedron();
-        interface.clear();
-        detail = cutCellDetail();
+    //- The pieces, with their side against every plane, ordered negative first
+    result.pieces.setSize(frontier.size());
 
-        return cutState::refused;
+    forAll(frontier, fi)
+    {
+        cutCellPiece& piece = result.pieces[fi];
+
+        piece.poly = frontier[fi];
+        piece.side.setSize(result.planes.size());
+
+        forAll(result.planes, pi)
+        {
+            piece.side[pi] = pieceSide(piece.poly, result.planes[pi]);
+        }
     }
 
-    //- Accepted: report the plane, orientation preserved from the surface. Its
-    //- normal therefore points towards the positive piece, which is the outside
-    //- of an outward oriented surface.
-    detail.normal = planes[0].normal();
-    detail.refPoint = planes[0].refPoint();
+    std::sort
+    (
+        result.pieces.begin(),
+        result.pieces.end(),
+        [](const cutCellPiece& a, const cutCellPiece& b)
+        {
+            return lowerSide(a.side, b.side);
+        }
+    );
+
+    //- The faces two pieces share. A cell has only a handful of pieces, so
+    //- matching the polygons directly is affordable and needs no bookkeeping
+    //- through the splits.
+    forAll(result.pieces, a)
+    {
+        const cutCellPiece& pieceA = result.pieces[a];
+
+        for (label b = a + 1; b < result.pieces.size(); b++)
+        {
+            const cutCellPiece& pieceB = result.pieces[b];
+
+            forAll(pieceA.poly.faces(), facei)
+            {
+                forAll(pieceB.poly.faces(), facej)
+                {
+                    if
+                    (
+                        sameFace
+                        (
+                            pieceA.poly.faces()[facei], pieceA.poly.points(),
+                            pieceB.poly.faces()[facej], pieceB.poly.points(),
+                            tol
+                        )
+                    )
+                    {
+                        cutCellPieceFace shared;
+                        shared.pieceA = a;
+                        shared.faceInA = facei;
+                        shared.pieceB = b;
+                        shared.faceInB = facej;
+
+                        result.sharedFaces.append(shared);
+                    }
+                }
+            }
+        }
+    }
 
     return cutState::cut;
 }
