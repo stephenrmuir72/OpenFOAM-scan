@@ -137,6 +137,27 @@ int main(int argc, char* argv[])
 
     mesher.vertexSnapFraction(vertexSnapFraction);
 
+    //- The sliver thresholds, either being zero disabling the merge. The sliver
+    //- ratio defaults to zero so that a case which does not ask for a merge is
+    //- untouched; 0.01 is the value the merge was designed around.
+    const scalar sliverVolumeRatio
+    (
+        meshDict.getOrDefault<scalar>("sliverVolumeRatio", 0.0)
+    );
+
+    const scalar minVolumeRatio
+    (
+        meshDict.getOrDefault<scalar>("minVolumeRatio", 0.30)
+    );
+
+    mesher.sliverVolumeRatio(sliverVolumeRatio);
+    mesher.minVolumeRatio(minVolumeRatio);
+
+    Info<< "Sliver merge thresholds       : ratio " << sliverVolumeRatio
+        << ", minVolumeRatio " << minVolumeRatio
+        << (sliverVolumeRatio > 0 && minVolumeRatio > 0 ? " (on)" : " (off)")
+        << nl << endl;
+
     autoPtr<mapPolyMesh> map = mesher.cut();
 
     const cutCellMesher::report& info = mesher.info();

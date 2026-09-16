@@ -1958,6 +1958,19 @@ void Foam::cutCellMesher::mergeSlivers()
 
     DynamicList<label> pierced;
 
+    //- Why a sliver ends without a candidate, counted per reason so the run
+    //- says what it could not do instead of dropping it silently. The last two
+    //- exist only because of removeFaces and go with it.
+    label cntNotInternal = 0;
+    label cntZonedFace = 0;
+    label cntOtherRegion = 0;
+    label cntMultiShared = 0;
+    label cntEdgeRefused = 0;
+    label cntInvalid = 0;
+    label cntNoCandidate = 0;
+    label cntRankingDiffers = 0;
+    label cntOnlyRef2 = 0;
+
     forAll(V, celli)
     {
         const label zonei = zoneMesh.whichZone(celli);
@@ -1976,6 +1989,8 @@ void Foam::cutCellMesher::mergeSlivers()
         label bestConcave = labelMax;
         scalar bestRatio = -GREAT;
         scalar bestArea = -1;
+        scalar bestHealthyArea = -1;
+        label bestHealthyFace = -1;
 
         forAll(mesh_.cells()[celli], k)
         {
@@ -1983,6 +1998,7 @@ void Foam::cutCellMesher::mergeSlivers()
 
             if (!mesh_.isInternalFace(facei))
             {
+                ++cntNotInternal;
                 continue;
             }
 
@@ -1990,6 +2006,7 @@ void Foam::cutCellMesher::mergeSlivers()
             //- removing it would put the two regions in one cell
             if (faceZoneMesh.whichZone(facei) >= 0)
             {
+                ++cntZonedFace;
                 continue;
             }
 
@@ -1998,6 +2015,7 @@ void Foam::cutCellMesher::mergeSlivers()
             //- Only within one region
             if (zoneMesh.whichZone(nb) != zonei)
             {
+                ++cntOtherRegion;
                 continue;
             }
 
@@ -2018,6 +2036,7 @@ void Foam::cutCellMesher::mergeSlivers()
 
             if (nShared != 1)
             {
+                ++cntMultiShared;
                 continue;
             }
 
@@ -2038,6 +2057,7 @@ void Foam::cutCellMesher::mergeSlivers()
 
             if (!edgeOK)
             {
+                ++cntEdgeRefused;
                 continue;
             }
 
@@ -2080,10 +2100,25 @@ void Foam::cutCellMesher::mergeSlivers()
 
             if (!q.valid)
             {
+                ++cntInvalid;
                 continue;
             }
 
             const scalar area = mag(mesh_.faceAreas()[facei]);
+
+            //- REF-2 ranks by the largest shared face area with a healthy
+            //- neighbour, healthy meaning at or above the sliver threshold
+            //- of its own parent
+            if
+            (
+                V[nb] > sliverVolumeRatio_*parentVolume[nb]
+             && area > bestHealthyArea
+            )
+            {
+                bestHealthyArea = area;
+                bestHealthyFace = facei;
+            }
+
             const bool better =
             (
                 q.concaveFaces < bestConcave
@@ -2105,7 +2140,43 @@ void Foam::cutCellMesher::mergeSlivers()
         {
             pierced.append(bestFace);
         }
+        else
+        {
+            ++cntNoCandidate;
+        }
+
+        if (bestFace >= 0 && bestHealthyFace != bestFace)
+        {
+            ++cntRankingDiffers;
+
+            if (cntRankingDiffers <= 5)
+            {
+                Info<< "  ranking differs on cell " << celli
+                    << ": quality picks face " << bestFace
+                    << " area " << bestArea
+                    << ", REF-2 picks face " << bestHealthyFace
+                    << " area " << bestHealthyArea << endl;
+            }
+        }
+        else if (bestFace < 0 && bestHealthyFace >= 0)
+        {
+            ++cntOnlyRef2;
+        }
     }
+
+    Info<< nl << "Sliver merge candidates" << nl
+        << "    selected                     : " << pierced.size() << nl
+        << "    no candidate                 : " << cntNoCandidate << nl
+        << "    ranking differs              : " << cntRankingDiffers
+        << " (REF-2 would pick where quality did not: " << cntOnlyRef2 << ")" << nl
+        << "    rejected, not an internal face    : " << cntNotInternal << nl
+        << "    rejected, face is in a zone       : " << cntZonedFace << nl
+        << "    rejected, neighbour in another zone: " << cntOtherRegion << nl
+        << "    rejected, more than one shared face: " << cntMultiShared << nl
+        << "    rejected, edge has under three faces: " << cntEdgeRefused
+        << "   <- a removeFaces requirement" << nl
+        << "    rejected, merged cell invalid      : " << cntInvalid << nl
+        << "    (the last two reasons disappear with polyTopoChange)" << endl;
 
     if (pierced.empty())
     {
