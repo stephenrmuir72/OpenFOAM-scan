@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2016-2024 OpenCFD Ltd.
+    Copyright (C) 2026 Patrick Wilhelm, Data Lab Hell
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -839,6 +840,25 @@ void Foam::fvMatrix<Type>::transferFvMatrixCoeffs()
             asymmetricAssemby = true;
         }
     }
+
+    for (label i=0; i < nMatrices() && !asymmetricAssemby; ++i)
+    {
+        const auto& bpsi = psi(i).boundaryField();
+
+        forAll(bpsi, patchi)
+        {
+            if
+            (
+                bpsi[patchi].useImplicit()
+             && bpsi[patchi].needsAsymmetricAssembly()
+            )
+            {
+                asymmetricAssemby = true;
+                break;
+            }
+        }
+    }
+
     // Move append contents into intermediate list
     for (label i=0; i < nMatrices(); ++i)
     {
