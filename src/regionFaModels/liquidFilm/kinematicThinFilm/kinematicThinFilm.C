@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2020 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -48,13 +49,14 @@ addToRunTimeSelectionTable(liquidFilmBase, kinematicThinFilm, dictionary);
 
 Foam::tmp<Foam::faVectorMatrix> kinematicThinFilm::UEqn
 (
-    areaVectorField& U
+    areaVectorField& U,
+    const bool includeMassSource
 )
 {
     const areaVectorField& ns = regionMesh().faceAreaNormals();
     const areaVectorField gs(g_ - ns*(ns & g_));
 
-    return tmp<faVectorMatrix>
+    tmp<faVectorMatrix> tUEqn
     (
         fam::ddt(h_, U)
       + fam::div(phi2s_, U)
@@ -65,6 +67,13 @@ Foam::tmp<Foam::faVectorMatrix> kinematicThinFilm::UEqn
       + forces_.correct(U)
       + USp_
     );
+
+    if (includeMassSource)
+    {
+        tUEqn.ref() += fam::SuSp(rhoSp_, U);
+    }
+
+    return tUEqn;
 }
 
 
@@ -77,7 +86,11 @@ kinematicThinFilm::kinematicThinFilm
     const dictionary& dict
 )
 :
-    liquidFilmModel(modelType, mesh, dict)
+    liquidFilmModel(modelType, mesh, dict),
+    includeMassSource_
+    (
+        dict.getOrDefault<bool>("includeMassSource", false)
+    )
 {}
 
 
@@ -105,9 +118,13 @@ void kinematicThinFilm::evolveRegion()
 
     for (int oCorr=1; oCorr<=nOuterCorr_; ++oCorr)
     {
+        // After the first one, outer corrections use updated h_, so mass
+        // source in momentum eq should be omitted in remaining outer iters.
+        const bool includeMassSource = (includeMassSource_ && oCorr == 1);
+
         pf_.storePrevIter();
 
-        faVectorMatrix UsEqn(UEqn(Uf_));
+        faVectorMatrix UsEqn(UEqn(Uf_, includeMassSource));
 
         UsEqn.relax();
 
