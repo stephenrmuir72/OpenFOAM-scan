@@ -1862,6 +1862,37 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::cut()
         }
     }
 
+    //- backgroundCell_ was grown with setSize, which leaves the new entries
+    //- uninitialised, and only the cells appearing in pieceCell have been
+    //- written. A cell the fill missed would carry garbage into its parent list
+    //- and from there into backgroundParents, so report it here rather than let
+    //- a -1 reach the output file.
+    label nNoParent = 0;
+
+    forAll(backgroundCell_, celli)
+    {
+        const label b = backgroundCell_[celli];
+
+        if (b < 0 || b >= backgroundVolumes_.size())
+        {
+            if (nNoParent < 5)
+            {
+                Info<< "  no background cell for cell " << celli
+                    << ": parent reads " << b << endl;
+            }
+
+            ++nNoParent;
+            backgroundCell_[celli] = 0;
+        }
+    }
+
+    if (nNoParent)
+    {
+        Info<< "  cells with no background parent: " << nNoParent
+            << " of " << backgroundCell_.size()
+            << " - the piece fill missed them" << endl;
+    }
+
     //- The parent list starts as the parent map, one background cell each
     backgroundParents_.setSize(mesh_.nCells());
 
@@ -2185,22 +2216,83 @@ void Foam::cutCellMesher::mergeSlivers()
 
     const label nBefore = mesh_.nCells();
 
-    removeFaces faceRemover(mesh_, 1.0);
+    //- Resolve the pierced faces into groups. The cells either side of a pierced
+    //- face become one cell, and groups chain when a sliver's partner has a pick
+    //- of its own. The master is the largest-volume cell, so the label and the
+    //- cellZone that survive belong to a substantial cell.
+    labelList cellRegionMaster(mesh_.nCells());
+    labelList cellRegion(mesh_.nCells(), -1);
+    labelList group(mesh_.nCells());
 
-    labelList cellRegion;
-    labelList cellRegionMaster;
-    labelList outPierced;
+    forAll(group, c)
+    {
+        group[c] = c;
+    }
 
-    const label nRegions =
-        faceRemover.compatibleRemoves
-        (
-            pierced,
-            cellRegion,
-            cellRegionMaster,
-            outPierced
-        );
+    scalarField groupVolume(V);
 
-    if (!nRegions || outPierced.empty())
+    auto groupRoot = [&](label c) -> label
+    {
+        while (group[c] != c)
+        {
+            group[c] = group[group[c]];
+            c = group[c];
+        }
+
+        return c;
+    };
+
+    forAll(pierced, i)
+    {
+        const label f = pierced[i];
+
+        label a = groupRoot(own[f]);
+        label b = groupRoot(nei[f]);
+
+        if (a == b)
+        {
+            continue;
+        }
+
+        if (groupVolume[a] < groupVolume[b])
+        {
+            std::swap(a, b);
+        }
+
+        group[b] = a;
+        groupVolume[a] += groupVolume[b];
+    }
+
+    //- How big each group is. A cell that ends up merged records its group,
+    //- the master included: the parent routing below uses cellRegion >= 0 to
+    //- recognise a merged cell, and leaving the master at -1 left its parent
+    //- list empty, which wrote a -1 into backgroundParents.
+    labelList groupSize(mesh_.nCells(), 0);
+
+    forAll(group, c)
+    {
+        ++groupSize[groupRoot(c)];
+    }
+
+    label nRegions = 0;
+
+    forAll(group, c)
+    {
+        const label r = groupRoot(c);
+        cellRegionMaster[c] = r;
+
+        if (groupSize[r] > 1)
+        {
+            cellRegion[c] = r;
+        }
+
+        if (r == c && groupSize[r] > 1)
+        {
+            ++nRegions;
+        }
+    }
+
+    if (!nRegions)
     {
         return;
     }
@@ -2228,7 +2320,7 @@ void Foam::cutCellMesher::mergeSlivers()
     {
         const label m = cellRegionMaster[celli];
 
-        if (cellRegion[celli] < 0 || celli == m || m < 0 || m >= mesh_.nCells())
+        if (cellRegion[celli] < 0 || m < 0 || m >= mesh_.nCells())
         {
             continue;
         }
@@ -2246,13 +2338,97 @@ void Foam::cutCellMesher::mergeSlivers()
 
     polyTopoChange topoChange(mesh_);
 
-    faceRemover.setRefinement
-    (
-        outPierced,
-        cellRegion,
-        cellRegionMaster,
-        topoChange
-    );
+    //- The topology, expressed directly. A master keeps the faces whose other
+    //- side is outside its group; the internal ones go. removeCell only marks the
+    //- cell, so a face of a removed cell has to be re-owned explicitly or the map
+    //- leaves it with a cell that no longer exists and it vanishes - which for a
+    //- boundary face would put a hole in the domain, and for an interface face
+    //- would break the CHT contract.
+    //- The cells. A cell's face list is not declared anywhere: it is composed
+    //- from the faces, so the master needs no modifyCell - there is no overload
+    //- that sets faces, only zones. The non-masters are removed into it, and the
+    //- faces below decide what the merged cell is bounded by.
+    forAll(group, c)
+    {
+        const label r = groupRoot(c);
+
+        if (r != c)
+        {
+            topoChange.removeCell(c, r);
+        }
+    }
+
+    //- Note the local faceZoneMesh above shadows the type of the same name,
+    //- so the type cannot be written here
+    const auto& fzMesh = mesh_.faceZones();
+
+    forAll(mesh_.faces(), f)
+    {
+        const bool isInternal = mesh_.isInternalFace(f);
+        const label o = own[f];
+        const label n = (isInternal ? nei[f] : -1);
+        const label ro = groupRoot(o);
+        const label rn = (isInternal ? groupRoot(n) : -1);
+
+        //- Both sides are one cell now, so the face is inside it and goes. This
+        //- covers more than the pierced faces: two cells of a group may share
+        //- another face as well
+        if (isInternal && ro == rn)
+        {
+            topoChange.removeFace(f, -1);
+            continue;
+        }
+
+        //- Nothing moved
+        if (o == ro && (!isInternal || n == rn))
+        {
+            continue;
+        }
+
+        const label zonei = fzMesh.whichZone(f);
+
+        //- The flip belongs to the zone and is indexed by the face's position
+        //- within it, not by the face label
+        bool zoneFlip = false;
+
+        if (zonei >= 0)
+        {
+            const faceZone& fz = fzMesh[zonei];
+            zoneFlip = fz.flipMap()[fz.whichFace(f)];
+        }
+
+        if (isInternal)
+        {
+            //- An internal face has to stay ordered owner < neighbour. The
+            //- winding is a geometric ordering as seen from the owner, so when
+            //- the two masters swap places the face has to be reversed too.
+            if (ro < rn)
+            {
+                topoChange.modifyFace
+                (
+                    mesh_.faces()[f], f, ro, rn, false, -1, zonei, zoneFlip
+                );
+            }
+            else
+            {
+                face reversed(mesh_.faces()[f]);
+                reversed = reversed.reverseFace();
+
+                topoChange.modifyFace
+                (
+                    reversed, f, rn, ro, false, -1, zonei, zoneFlip
+                );
+            }
+        }
+        else
+        {
+            topoChange.modifyFace
+            (
+                mesh_.faces()[f], f, ro, -1, false,
+                mesh_.boundaryMesh().whichPatch(f), zonei, zoneFlip
+            );
+        }
+    }
 
     autoPtr<mapPolyMesh> mergeMap = topoChange.changeMesh(mesh_, false);
 
@@ -2260,23 +2436,44 @@ void Foam::cutCellMesher::mergeSlivers()
 
     //- Route the parent lists through the change: a merged cell takes its
     //- region's parents, every other cell keeps its own
+    //- Route the parents driven by the new cells. Iterating the forward map
+    //- missed 61 of 556 cells on the oblique case and left their parent at -1:
+    //- a new index is not guaranteed to be visited. The reverse map names an old
+    //- cell behind each new one, and that cell's group holds the parents, so
+    //- every new cell is covered.
+    //- cellMap is indexed by the NEW cell and holds an old one: removeCell sets
+    //- cellMap_[removed] = -2 and encodes the merge target in reverseCellMap_.
+    //- Iterating its index therefore covers every new cell, one old cell each.
     const labelList& cellMap = mergeMap().cellMap();
 
     labelList newBackground(mesh_.nCells(), -1);
     List<labelList> newParents(mesh_.nCells(), labelList(0));
 
-    forAll(cellMap, oldCelli)
-    {
-        const label newCelli = cellMap[oldCelli];
+    label nNoOld = 0;
 
-        if (newCelli < 0 || newCelli >= mesh_.nCells())
+    forAll(newBackground, newCelli)
+    {
+        if
+        (
+            newCelli >= cellMap.size()
+         || cellMap[newCelli] < 0
+         || cellMap[newCelli] >= cellRegionMaster.size()
+        )
         {
+            ++nNoOld;
             continue;
         }
 
+        const label oldCelli = cellMap[newCelli];
         const label m = cellRegionMaster[oldCelli];
 
-        if (cellRegion[oldCelli] >= 0 && m >= 0 && m < mesh_.nCells())
+        if
+        (
+            cellRegion[oldCelli] >= 0
+         && m >= 0
+         && m < masterParents.size()
+         && !masterParents[m].empty()
+        )
         {
             newParents[newCelli] = masterParents[m];
             newBackground[newCelli] = masterParents[m][0];
@@ -2288,9 +2485,51 @@ void Foam::cutCellMesher::mergeSlivers()
         }
     }
 
+    if (nNoOld)
+    {
+        Info<< "  new cells with no old cell behind them: " << nNoOld << endl;
+    }
+
+    label nStillNeg = 0;
+
+    forAll(newBackground, i)
+    {
+        if (newBackground[i] < 0)
+        {
+            if (nStillNeg < 5)
+            {
+                Info<< "  new cell " << i << " still has no background parent" << endl;
+            }
+
+            ++nStillNeg;
+        }
+    }
+
+    if (nStillNeg)
+    {
+        Info<< "  cells without a background parent after the merge: "
+            << nStillNeg << endl;
+    }
+
     backgroundCell_ = newBackground;
     backgroundParents_ = newParents;
     info_.nAbsorbed = nBefore - mesh_.nCells();
+
+    //- Anything still at -1 was never written by the routing above
+    label nNeverWritten = 0;
+
+    forAll(newBackground, i)
+    {
+        if (newBackground[i] < 0)
+        {
+            if (nNeverWritten < 5)
+            {
+                Info<< "  new cell " << i << " has no background parent" << endl;
+            }
+
+            ++nNeverWritten;
+        }
+    }
 
     Info<< "Cells absorbed as slivers    : " << info_.nAbsorbed
         << " in " << nRegions << " region(s)" << endl;
