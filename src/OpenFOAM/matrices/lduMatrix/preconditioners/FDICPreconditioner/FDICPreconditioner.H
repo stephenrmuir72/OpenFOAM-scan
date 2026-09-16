@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011 OpenFOAM Foundation
     Copyright (C) 2019 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -63,9 +64,12 @@ class FDICPreconditioner
     // Private data
 
         //- The reciprocal preconditioned diagonal
-        solveScalarField rD_;
-        solveScalarField rDuUpper_;
-        solveScalarField rDlUpper_;
+        mutable solveScalarField rD_;
+        mutable solveScalarField rDuUpper_;
+        mutable solveScalarField rDlUpper_;
+
+        //- Is above valid
+        mutable bool isValid_;
 
 
     // Private Member Functions
@@ -106,6 +110,12 @@ public:
             const solveScalarField& rA,
             const direction cmpt=0
         ) const;
+
+        //- Signal end of preconditioner
+        virtual void setFinished(const solverPerformance& perf) const
+        {
+            isValid_ = false;
+        }
 };
 
 

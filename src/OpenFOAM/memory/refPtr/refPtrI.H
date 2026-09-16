@@ -65,6 +65,15 @@ inline constexpr Foam::refPtr<T>::refPtr(T* p) noexcept
 
 
 template<class T>
+template<class U, std::enable_if_t<!std::is_const<U>::value, int>>
+inline constexpr Foam::refPtr<T>::refPtr(T& obj) noexcept
+:
+    ptr_(&obj),
+    type_(REF)
+{}
+
+
+template<class T>
 inline constexpr Foam::refPtr<T>::refPtr(const T& obj) noexcept
 :
     ptr_(const_cast<T*>(&obj)),

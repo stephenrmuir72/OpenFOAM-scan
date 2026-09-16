@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011 OpenFOAM Foundation
     Copyright (C) 2019 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -62,7 +63,10 @@ class diagonalPreconditioner
     // Private data
 
         //- The reciprocal diagonal
-        solveScalarField rD;
+        solveScalarField rD_;
+
+        //- Is above valid
+        mutable bool isValid_;
 
 
     // Private Member Functions
@@ -113,6 +117,12 @@ public:
         ) const
         {
             return precondition(wT, rT, cmpt);
+        }
+
+        //- Signal end of preconditioner
+        virtual void setFinished(const solverPerformance& perf) const
+        {
+            isValid_ = false;
         }
 };
 

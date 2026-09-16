@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2015 OpenFOAM Foundation
     Copyright (C) 2019 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -50,13 +51,8 @@ Foam::DICPreconditioner::DICPreconditioner
 )
 :
     lduMatrix::preconditioner(sol),
-    rD_(sol.matrix().diag().size())
-{
-    const scalarField& diag = sol.matrix().diag();
-    std::copy(diag.begin(), diag.end(), rD_.begin());
-
-    calcReciprocalD(rD_, sol.matrix());
-}
+    isValid_(false)
+{}
 
 
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
@@ -98,6 +94,16 @@ void Foam::DICPreconditioner::precondition
     const direction
 ) const
 {
+    if (!isValid_)
+    {
+        const auto& diag = solver_.matrix().diag();
+        auto& rD = const_cast<solveScalarField&>(rD_);
+        rD.resize_nocopy(diag.size());
+        std::copy(diag.begin(), diag.end(), rD.begin());
+        calcReciprocalD(rD, solver_.matrix());
+        isValid_ = true;
+    }
+
     solveScalar* __restrict__ wAPtr = wA.begin();
     const solveScalar* __restrict__ rAPtr = rA.begin();
     const solveScalar* __restrict__ rDPtr = rD_.begin();

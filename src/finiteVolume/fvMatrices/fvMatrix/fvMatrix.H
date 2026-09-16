@@ -675,6 +675,11 @@ public:
         void operator=(const fvMatrix<Type>&);
         void operator=(const tmp<fvMatrix<Type>>&);
 
+        //- Assign all matrix components to zero, including the
+        //- non-orthogonal face flux correction (if present).
+        //  Use: pEqn = Zero;
+        void operator=(Foam::zero);
+
         //- Inplace negate
         void negate();
 

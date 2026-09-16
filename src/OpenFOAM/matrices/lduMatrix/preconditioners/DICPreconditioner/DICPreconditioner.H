@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011 OpenFOAM Foundation
     Copyright (C) 2019 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -63,6 +64,9 @@ class DICPreconditioner
         //- The reciprocal preconditioned diagonal
         solveScalarField rD_;
 
+        //- Is above valid
+        mutable bool isValid_;
+
 
 public:
 
@@ -96,6 +100,12 @@ public:
             const solveScalarField& rA,
             const direction cmpt=0
         ) const;
+
+        //- Signal end of preconditioner
+        virtual void setFinished(const solverPerformance& perf) const
+        {
+            isValid_ = false;
+        }
 };
 
 

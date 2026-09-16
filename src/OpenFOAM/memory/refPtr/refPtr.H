@@ -101,6 +101,11 @@ public:
         //- Construct, taking ownership of the pointer.
         inline explicit constexpr refPtr(T* p) noexcept;
 
+        //- Implicit construct for a non-const reference to an object.
+        //  Only available for non-const T (avoids conflict with const T& overload).
+        template<class U = T, std::enable_if_t<!std::is_const<U>::value, int> = 0>
+        inline constexpr refPtr(T& obj) noexcept;
+
         //- Implicit construct for a const reference to an object.
         inline constexpr refPtr(const T& obj) noexcept;
 
