@@ -1119,6 +1119,195 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                 split.subFaces[fi] = frontier[fi];
             }
 
+            //- Every face meeting an edge has to carry the same points on it. A
+            //- face is split only by the planes of the cut cells on its own side,
+            //- so a crossing made by a neighbouring cell's plane on a shared edge
+            //- is missing here, and the two faces' sub-polygons then leave a
+            //- sliver of area attributed to the wrong pair of cells. The point is
+            //- inserted rather than the split repeated: it lies on the edge, so
+            //- no shape changes, and its label comes from newPoint, the same
+            //- cache the split uses, so the face on the other side of the edge
+            //- receives exactly the same one.
+            for (const label edgei : mesh_.faceEdges()[facei])
+            {
+                const edge& e = mesh_.edges()[edgei];
+                const label p0 = e[0];
+                const label p1 = e[1];
+                const point q0(coordOf(p0));
+                const point q1(coordOf(p1));
+
+                const vector d(q1 - q0);
+                const scalar d2(d & d);
+
+                if (d2 <= VSMALL)
+                {
+                    continue;
+                }
+
+                //- Where a point sits along this edge, and whether it is on it
+                auto param = [&](const point& x) -> scalar
+                {
+                    return ((x - q0) & d)/d2;
+                };
+
+                auto onEdge = [&](const point& x) -> bool
+                {
+                    const scalar t = param(x);
+
+                    if (t < -SMALL || t > 1 + SMALL)
+                    {
+                        return false;
+                    }
+
+                    return mag(x - (q0 + t*d)) <= pointTol;
+                };
+
+                //- The planes of every cut cell containing this edge
+                DynamicList<plane> edgePlanes(4);
+
+                for (const label celli : mesh_.edgeCells()[edgei])
+                {
+                    if (!cutOf.found(celli))
+                    {
+                        continue;
+                    }
+
+                    for (const plane& pln : cuts[cutOf[celli]].planes)
+                    {
+                        bool known = false;
+
+                        forAll(edgePlanes, pi)
+                        {
+                            if
+                            (
+                                samePlane
+                                (
+                                    pln.normal(), pln.refPoint(),
+                                    edgePlanes[pi].normal(),
+                                    edgePlanes[pi].refPoint(),
+                                    tol_
+                                )
+                            )
+                            {
+                                known = true;
+                                break;
+                            }
+                        }
+
+                        if (!known)
+                        {
+                            edgePlanes.append(pln);
+                        }
+                    }
+                }
+
+                if (edgePlanes.empty())
+                {
+                    continue;
+                }
+
+                //- Their crossings, with the parameter along the edge
+                DynamicList<label> crossLabel(edgePlanes.size());
+                DynamicList<scalar> crossT(edgePlanes.size());
+
+                forAll(edgePlanes, pi)
+                {
+                    const plane& pln = edgePlanes[pi];
+
+                    const scalar d0 = planeDist(pln.normal(), pln.refPoint(), q0);
+                    const scalar d1 = planeDist(pln.normal(), pln.refPoint(), q1);
+
+                    if (mag(d0 - d1) <= VSMALL)
+                    {
+                        continue;
+                    }
+
+                    const scalar t = d0/(d0 - d1);
+
+                    if (t <= 0 || t >= 1)
+                    {
+                        continue;
+                    }
+
+                    crossLabel.append
+                    (
+                        newPoint(p0, p1, pln.normal(), pln.refPoint())
+                    );
+
+                    crossT.append(t);
+                }
+
+                if (crossLabel.empty())
+                {
+                    continue;
+                }
+
+                //- Few entries, so a straight insertion sort
+                for (label i = 1; i < crossLabel.size(); i++)
+                {
+                    for (label j = i; j > 0 && crossT[j] < crossT[j - 1]; j--)
+                    {
+                        std::swap(crossT[j], crossT[j - 1]);
+                        std::swap(crossLabel[j], crossLabel[j - 1]);
+                    }
+                }
+
+                //- Insert them into every sub-face edge that lies along this one
+                forAll(split.subFaces, sfi)
+                {
+                    const face& sub = split.subFaces[sfi];
+
+                    DynamicList<label> grown(sub.size() + crossLabel.size());
+
+                    forAll(sub, k)
+                    {
+                        const label a = sub[k];
+                        const label b = sub[sub.fcIndex(k)];
+
+                        grown.append(a);
+
+                        const point pa(coordOf(a));
+                        const point pb(coordOf(b));
+
+                        if (!onEdge(pa) || !onEdge(pb))
+                        {
+                            continue;
+                        }
+
+                        const scalar ta = param(pa);
+                        const scalar tb = param(pb);
+
+                        const scalar lo = min(ta, tb);
+                        const scalar hi = max(ta, tb);
+
+                        forAll(crossT, ci)
+                        {
+                            if (crossT[ci] <= lo || crossT[ci] >= hi)
+                            {
+                                continue;
+                            }
+
+                            if (crossLabel[ci] != a && crossLabel[ci] != b)
+                            {
+                                grown.append(crossLabel[ci]);
+                            }
+                        }
+                    }
+
+                    if (grown.size() != sub.size())
+                    {
+                        face newSub(grown.size());
+
+                        forAll(grown, i)
+                        {
+                            newSub[i] = grown[i];
+                        }
+
+                        split.subFaces[sfi] = newSub;
+                    }
+                }
+            }
+
             //- The points on the face, so that a point of a piece that lies on
             //- this face resolves to the same label
             forAll(split.subFaces, fi)
