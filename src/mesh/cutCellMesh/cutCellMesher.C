@@ -2050,47 +2050,10 @@ void Foam::cutCellMesher::mergeSlivers()
                 continue;
             }
 
-            //- Only a single shared face can be removed: when two cells meet
-            //- over more than one, removing one of them leaves an edge with a
-            //- single face and removeFaces refuses the change
-            label nShared = 0;
-
-            forAll(mesh_.cells()[celli], i)
-            {
-                const label fi = mesh_.cells()[celli][i];
-
-                if (mesh_.isInternalFace(fi) && (own[fi] == nb || nei[fi] == nb))
-                {
-                    ++nShared;
-                }
-            }
-
-            if (nShared != 1)
-            {
-                ++cntMultiShared;
-                continue;
-            }
-
-            //- removeFaces also refuses a removal that would leave one of the
-            //- face's edges with fewer than three faces, which happens when the
-            //- edge lies on the domain boundary and only the removed face and a
-            //- boundary face meet there
-            bool edgeOK = true;
-
-            forAll(mesh_.faceEdges()[facei], e)
-            {
-                if (mesh_.edgeFaces()[mesh_.faceEdges()[facei][e]].size() < 3)
-                {
-                    edgeOK = false;
-                    break;
-                }
-            }
-
-            if (!edgeOK)
-            {
-                ++cntEdgeRefused;
-                continue;
-            }
+            //- The two filters that were here - a single shared face, and three
+            //- faces at every edge of it - existed only because removeFaces
+            //- refused those cases. The assembly has no such requirement, and the
+            //- interface is protected by the same-region test above.
 
             //- The boundary the merged cell would have: the faces of both,
             //- minus the one between them
@@ -2296,6 +2259,122 @@ void Foam::cutCellMesher::mergeSlivers()
     {
         return;
     }
+
+    //- Grow the groups that are still short of their target. REF-2 step 6: a
+    //- group absorbs the neighbour it shares the largest boundary face with,
+    //- within its region, and keeps going until it reaches minVolumeRatio times
+    //- the volume of the background cells it came from. The target accumulates
+    //- as the group grows, and the master volume accumulates with it.
+    scalarField groupTarget(mesh_.nCells(), 0);
+
+    //- Summed over the group's members: the grouping ran before this existed, so
+    //- a target set only for the root would be minVolumeRatio times one member's
+    //- parents, which a group of six cells reaches immediately.
+    forAll(group, c)
+    {
+        groupTarget[groupRoot(c)] += minVolumeRatio_*parentVolume[c];
+    }
+
+    label nShort = 0;
+    label nGrown = 0;
+
+    const label maxGrow = 100;
+
+    for (label iter = 0; iter < maxGrow; iter++)
+    {
+        bool grew = false;
+
+        forAll(group, c)
+        {
+            if (groupRoot(c) != c)
+            {
+                continue;
+            }
+
+            if (groupVolume[c] >= groupTarget[c])
+            {
+                continue;
+            }
+
+            //- The best boundary face of the group that leads into the same
+            //- region, by area, which is REF-2's rule for growing
+            label bestFace = -1;
+            label bestOther = -1;
+            scalar bestArea = -1;
+
+            forAll(group, m)
+            {
+                if (groupRoot(m) != c)
+                {
+                    continue;
+                }
+
+                const label zonei = zoneMesh.whichZone(m);
+
+                if (zonei < 0)
+                {
+                    continue;
+                }
+
+                forAll(mesh_.cells()[m], k)
+                {
+                    const label f = mesh_.cells()[m][k];
+
+                    if (!mesh_.isInternalFace(f))
+                    {
+                        continue;
+                    }
+
+                    const label other = (own[f] == m ? nei[f] : own[f]);
+                    const label ro = groupRoot(other);
+
+                    if (ro == c || zoneMesh.whichZone(other) != zonei)
+                    {
+                        continue;
+                    }
+
+                    const scalar area = mag(mesh_.faceAreas()[f]);
+
+                    if (area > bestArea)
+                    {
+                        bestArea = area;
+                        bestFace = f;
+                        bestOther = other;
+                    }
+                }
+            }
+
+            if (bestFace < 0)
+            {
+                continue;
+            }
+
+            //- Absorb it, keeping this group's root so the surviving label is
+            //- the one the sliver already had
+            const label otherRoot = groupRoot(bestOther);
+            group[otherRoot] = c;
+            groupVolume[c] += groupVolume[otherRoot];
+            groupTarget[c] += groupTarget[otherRoot];
+            ++nGrown;
+            grew = true;
+        }
+
+        if (!grew)
+        {
+            break;
+        }
+    }
+
+    forAll(group, c)
+    {
+        if (groupRoot(c) == c && groupVolume[c] < groupTarget[c])
+        {
+            ++nShort;
+        }
+    }
+
+    Info<< "Sliver merge growth          : " << nGrown << " cell(s) absorbed"
+        << ", " << nShort << " group(s) still short of the target" << endl;
 
     //- Parents of every region, its master's first so that entry zero stays
     //- the primary parent
@@ -2544,9 +2623,28 @@ void Foam::cutCellMesher::mergeSlivers()
             {
                 if (nStill < 5)
                 {
+                    const label oldCelli =
+                    (
+                        celli < cellMap.size() && cellMap[celli] >= 0
+                      ? cellMap[celli]
+                      : -1
+                    );
+
                     Info<< "  below the trigger: cell " << celli
                         << " ratio " << ratio
-                        << " parents " << newParents[celli].size() << endl;
+                        << " parents " << newParents[celli].size()
+                        << " vol " << vol[celli]
+                        << " parentSum " << parentV;
+
+                    if (oldCelli >= 0)
+                    {
+                        //- What the growth would have compared against, for the
+                        //- one old cell the map names behind this new one
+                        Info<< " oldCell " << oldCelli
+                            << " oldParentVolume " << parentVolume[oldCelli];
+                    }
+
+                    Info<< endl;
                 }
 
                 ++nStill;
