@@ -1,0 +1,16 @@
+#!/bin/sh
+cd "${0%/*}" || exit                                # Run from this directory
+. ${WM_PROJECT_DIR:?}/bin/tools/CleanFunctions      # Tutorial clean functions
+#------------------------------------------------------------------------------
+
+cleanCase0
+
+rm -rf constant/cellToRegion
+rm -rf constant/left
+rm -rf constant/right
+rm -f system/left/fvSchemes
+rm -f system/left/fvSolution
+rm -f system/right/fvSchemes
+rm -f system/right/fvSolution
+
+#------------------------------------------------------------------------------
