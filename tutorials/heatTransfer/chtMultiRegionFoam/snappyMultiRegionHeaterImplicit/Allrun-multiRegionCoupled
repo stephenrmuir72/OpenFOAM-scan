@@ -1,0 +1,53 @@
+#!/bin/sh
+cd "${0%/*}" || exit                                # Run from this directory
+. ${WM_PROJECT_DIR:?}/bin/tools/RunFunctions        # Tutorial run functions
+#------------------------------------------------------------------------------
+
+# Like Allrun, decomposes via multiRegionCoupled rather than the
+# preserveFaceZones constraint, to keep the implicitly coupled faces co-located
+
+mkdir -p constant/triSurface
+
+cp -f "$FOAM_TUTORIALS"/resources/geometry/geom.stl.gz constant/triSurface
+
+rm -rf constant/polyMesh/sets
+
+runApplication blockMesh
+runApplication surfaceFeatureExtract
+
+runApplication snappyHexMesh -overwrite
+
+# Restore initial fields
+restore0Dir
+
+# Split the single snappy mesh into regions along the cellZones
+runApplication splitMeshRegions -cellZones -overwrite
+
+# Remove fluid fields from solid regions (important for post-processing)
+fields="nut alphat epsilon k U p_rgh"
+
+for region in $(foamListRegions solid)
+do
+    remove0DirFields -region "$region" -- $fields
+done
+
+for region in $(foamListRegions)
+do
+    runApplication -s $region changeDictionary -region $region
+done
+
+# One welded decomposition over all regions, so both cells of every coupled
+# face share a processor for the implicit (useImplicit) energy coupling
+runApplication decomposePar -allRegions \
+    -decomposeParDict system/decomposeParDict.multiRegionCoupled
+
+runParallel $(getApplication)
+
+# Reconstruct each region
+for region in $(foamListRegions)
+do
+    runParallel -s reconstruct-$region \
+        redistributePar -reconstruct -region $region
+done
+
+#------------------------------------------------------------------------------

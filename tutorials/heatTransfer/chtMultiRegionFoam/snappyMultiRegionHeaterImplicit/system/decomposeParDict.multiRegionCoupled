@@ -1,0 +1,30 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      decomposeParDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+numberOfSubdomains  3;
+
+// One welded decomposition for the implicitly coupled regions, so both
+// cells of every coupled face stay on one processor. Passed to every
+// region through decomposePar -decomposeParDict.
+method          multiRegionCoupled;
+
+multiRegionCoupledCoeffs
+{
+    method          scotch;
+}
+
+
+// ************************************************************************* //
