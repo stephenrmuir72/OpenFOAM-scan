@@ -2378,6 +2378,16 @@ void Foam::cutCellMesher::mergeSlivers()
 
     //- Parents of every region, its master's first so that entry zero stays
     //- the primary parent
+    //- The growth re-roots groups, so the master of every cell has to be
+    //- recomputed here: taken during the grouping it is stale, and it splits a
+    //- grown group's parents across several old roots. Each new cell then listed
+    //- only its share, and backgroundParents under-reported - a cell that
+    //- absorbed twelve background cells listed two.
+    forAll(cellRegionMaster, celli)
+    {
+        cellRegionMaster[celli] = groupRoot(celli);
+    }
+
     List<labelList> masterParents(mesh_.nCells(), labelList(0));
 
     forAll(cellRegionMaster, celli)
