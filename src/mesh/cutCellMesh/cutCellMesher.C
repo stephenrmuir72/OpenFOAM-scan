@@ -2511,6 +2511,53 @@ void Foam::cutCellMesher::mergeSlivers()
             << nStillNeg << endl;
     }
 
+    //- How many cells the merge left below the trigger, and the worst of them.
+    //- The counters above are per neighbour and per reason; this is the count
+    //- that matters, and it is what makes the next change measurable.
+    {
+        const scalarField& vol = mesh_.cellVolumes();
+
+        label nStill = 0;
+
+        forAll(newBackground, celli)
+        {
+            scalar parentV = 0;
+
+            forAll(newParents[celli], pi)
+            {
+                const label p = newParents[celli][pi];
+
+                if (p >= 0 && p < backgroundVolumes_.size())
+                {
+                    parentV += backgroundVolumes_[p];
+                }
+            }
+
+            if (parentV <= 0)
+            {
+                continue;
+            }
+
+            const scalar ratio = vol[celli]/parentV;
+
+            if (ratio <= sliverVolumeRatio_)
+            {
+                if (nStill < 5)
+                {
+                    Info<< "  below the trigger: cell " << celli
+                        << " ratio " << ratio
+                        << " parents " << newParents[celli].size() << endl;
+                }
+
+                ++nStill;
+            }
+        }
+
+        Info<< "Cells still below the trigger : " << nStill
+            << " of " << mesh_.nCells()
+            << " (trigger " << sliverVolumeRatio_ << ")" << endl;
+    }
+
     backgroundCell_ = newBackground;
     backgroundParents_ = newParents;
     info_.nAbsorbed = nBefore - mesh_.nCells();
