@@ -6,6 +6,7 @@ manualDecomp/manualDecomp.C
 multiLevelDecomp/multiLevelDecomp.C
 metisLikeDecomp/metisLikeDecomp.C
 structuredDecomp/structuredDecomp.C
+multiRegionCoupledDecomp/multiRegionCoupledDecomp.C
 randomDecomp/randomDecomp.cxx
 treeDecomp/treeDecomp.cxx
 noDecomp/noDecomp.cxx
