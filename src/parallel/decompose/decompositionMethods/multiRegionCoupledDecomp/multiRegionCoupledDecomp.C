@@ -231,6 +231,26 @@ Foam::multiRegionCoupledDecomp::multiRegionCoupledDecomp
             }
         }
     }
+    if (const dictionary* dictPtr = methodDict_.findDict("patchWeights"))
+    {
+        patchWeights_ = *dictPtr;
+
+        for (const entry& dEntry : patchWeights_)
+        {
+            if (!dEntry.isDict())
+            {
+                FatalIOErrorInFunction(patchWeights_)
+                    << "patchWeights entry " << dEntry.keyword()
+                    << " is not a sub-dictionary; the boundary-face weights "
+                    << "are given per region" << exit(FatalIOError);
+            }
+        }
+    }
+    else if (methodDict_.found("patchWeights"))
+    {
+        FatalIOErrorInFunction(methodDict_)
+            << "patchWeights is not a dictionary" << exit(FatalIOError);
+    }
 }
 
 
@@ -573,7 +593,60 @@ void Foam::multiRegionCoupledDecomp::buildGlobalDecomposition
             << " match no region" << endl;
     }
 
-    const bool weighted = !regionWeights_.empty();
+    // Per-face cost factors of the region's patches, charged to the cell
+    // owning the face
+    const bool patchWeighted = !patchWeights_.empty();
+    scalarField cellFaceLoad;
+    labelList cellFaceCount;
+    labelList regionFaces(nRegions, Zero);
+
+    if (patchWeighted)
+    {
+        cellFaceLoad.resize(nGlobal, Zero);
+        cellFaceCount.resize(nGlobal, Zero);
+
+        forAll(regions, regioni)
+        {
+            const dictionary* patchDictPtr =
+                patchWeights_.findDict(regions[regioni]);
+
+            if (!patchDictPtr)
+            {
+                continue;
+            }
+
+            for (const polyPatch& pp : meshes[regioni].boundaryMesh())
+            {
+                scalar w = 0;
+                if (!patchDictPtr->readIfPresent(pp.name(), w))
+                {
+                    continue;
+                }
+
+                if (w < 0)
+                {
+                    FatalIOErrorInFunction(*patchDictPtr)
+                        << "Negative weight " << w << " for patch "
+                        << regions[regioni] << '/' << pp.name()
+                        << exit(FatalIOError);
+                }
+
+                regionFaces[regioni] += pp.size();
+
+                const labelUList& fc = pp.faceCells();
+                forAll(fc, i)
+                {
+                    const label globali = regionOffsets[regioni] + fc[i];
+                    cellFaceLoad[globali] += w;
+                    ++cellFaceCount[globali];
+                }
+            }
+        }
+    }
+
+    const label nWeightedFaces = sum(regionFaces);
+
+    const bool weighted = !regionWeights_.empty() || patchWeighted;
 
     // Super-cell weights = summed cost of the welded member cells
     scalarField superWeights(nSuper, Zero);
@@ -586,6 +659,10 @@ void Foam::multiRegionCoupledDecomp::buildGlobalDecomposition
         {
             superWeights[superOf[globali]] += w;
         }
+    }
+    forAll(cellFaceLoad, globali)
+    {
+        superWeights[superOf[globali]] += cellFaceLoad[globali];
     }
 
     // Super-cell adjacency from the intra-region cell connectivity, counted
@@ -699,6 +776,28 @@ void Foam::multiRegionCoupledDecomp::buildGlobalDecomposition
         Info<< type() << " : excluding patches matching "
             << explicitPatches_ << endl;
     }
+    if (patchWeighted)
+    {
+        if (nWeightedFaces)
+        {
+            Info<< type() << " : weighting " << nWeightedFaces
+                << " boundary faces (";
+            forAll(regions, regioni)
+            {
+                if (regioni)
+                {
+                    Info<< ' ';
+                }
+                Info<< regions[regioni] << ':' << regionFaces[regioni];
+            }
+            Info<< ')' << endl;
+        }
+        else
+        {
+            WarningInFunction
+                << "patchWeights matched no boundary face" << endl;
+        }
+    }
 
     // Largest indivisible super-cell; bounds the achievable balance
     const label maxSuper = max(superCount);
@@ -712,6 +811,7 @@ void Foam::multiRegionCoupledDecomp::buildGlobalDecomposition
     const label nProcs = nDomains();
 
     labelList procCells(nProcs, Zero);
+    labelList procFaces(nProcs, Zero);
     scalarField procLoad(nProcs, Zero);
     labelListList procRegionCells(nProcs, labelList(nRegions, Zero));
     forAll(regions, regioni)
@@ -725,6 +825,12 @@ void Foam::multiRegionCoupledDecomp::buildGlobalDecomposition
             ++procRegionCells[proci][regioni];
             procLoad[proci] += regionWeight[regioni];
         }
+    }
+    forAll(cellFaceCount, globali)
+    {
+        const label proci = globalDecomp[globali];
+        procFaces[proci] += cellFaceCount[globali];
+        procLoad[proci] += cellFaceLoad[globali];
     }
 
     {
@@ -774,13 +880,32 @@ void Foam::multiRegionCoupledDecomp::buildGlobalDecomposition
             }
             Info<< regions[regioni] << ':' << procRegionCells[proci][regioni];
         }
-        Info<< ')' << nl;
+        Info<< ')';
+        if (patchWeighted)
+        {
+            Info<< "  faces:" << procFaces[proci];
+        }
+        Info<< nl;
     }
     Info<< "    Cells min:" << minCells << " max:" << maxCells
         << " mean:" << meanCells;
     if (meanCells > 0)
     {
         Info<< " imbalance:" << maxCells/meanCells - 1;
+    }
+
+    if (patchWeighted)
+    {
+        const label minFaces = min(procFaces);
+        const label maxFaces = max(procFaces);
+        const scalar meanFaces = scalar(nWeightedFaces)/nProcs;
+
+        Info<< nl << "    Faces min:" << minFaces << " max:" << maxFaces
+            << " mean:" << meanFaces;
+        if (meanFaces > 0)
+        {
+            Info<< " imbalance:" << maxFaces/meanFaces - 1;
+        }
     }
 
     if (weighted)

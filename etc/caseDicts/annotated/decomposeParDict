@@ -188,6 +188,15 @@ multiRegionCoupledCoeffs
     // {
     //     solid       0.4;
     // }
+
+    // Per-face cost factors, charged to the owning cell (default: none)
+    // patchWeights
+    // {
+    //     solid
+    //     {
+    //         "solid_to_.*"   20;
+    //     }
+    // }
 }
 
 

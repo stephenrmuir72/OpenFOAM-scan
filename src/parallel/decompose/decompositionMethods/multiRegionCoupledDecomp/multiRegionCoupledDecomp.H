@@ -44,6 +44,9 @@ Description
     \c nearestPatchFace coupling.
     \c decomposeParDict \c constraints are not supported.
 
+    \c patchWeights adds a per-face cost, nested per region since patch
+    names are unique only within a region.
+
     Method coefficients:
     \table
         Property        | Description                       | Required | Default
@@ -53,6 +56,8 @@ Description
         explicitPatches | never weld patches matching these names | no | none
         regionWeights   | per-region cost factors (sub-dictionary) <!--
                         --> | no | all 1
+        patchWeights    | per-face cost factors, a sub-dictionary of <!--
+                        --> patch weights per region | no | none
     \endtable
 
 SourceFiles
@@ -129,6 +134,9 @@ class multiRegionCoupledDecomp
 
         //- Optional per-region cost factors (region name -> weight)
         dictionary regionWeights_;
+
+        //- Optional per-face cost factors
+        dictionary patchWeights_;
 
 
     // Private Member Functions
