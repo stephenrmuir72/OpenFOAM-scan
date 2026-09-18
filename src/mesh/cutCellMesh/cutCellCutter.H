@@ -84,8 +84,14 @@ struct cutCellPieceFace
     label pieceB = -1;
     label faceInB = -1;
 
-    //- The surface region this face belongs to, inherited from the triangle
-    //- whose plane produced it. -1 when no triangle could be identified.
+    //- The triangle whose plane produced this face. Internal: it is the
+    //- provenance the four-argument form can record, and the five-argument
+    //- form resolves it to a region.
+    label tri = -1;
+
+    //- The surface region this face belongs to, inherited from that triangle.
+    //- -1 until a caller supplies the regions, so a caller that has no surface
+    //- is given no claim rather than a plausible-looking index.
     label patch = -1;
 };
 

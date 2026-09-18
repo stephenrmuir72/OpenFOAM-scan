@@ -654,7 +654,7 @@ cutState cutCellByTriangles
                                         ) <= tol
                                     )
                                     {
-                                        shared.patch = result.planeTri[pi];
+                                        shared.tri = result.planeTri[pi];
                                         break;
                                     }
                                 }
@@ -695,9 +695,9 @@ cutState cutCellByTriangles
     {
         cutCellPieceFace& sf = result.sharedFaces[i];
 
-        if (sf.patch >= 0 && sf.patch < patchOf.size())
+        if (sf.tri >= 0 && sf.tri < patchOf.size())
         {
-            sf.patch = patchOf[sf.patch];
+            sf.patch = patchOf[sf.tri];
         }
         else
         {
