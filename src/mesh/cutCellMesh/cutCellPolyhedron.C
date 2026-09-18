@@ -181,6 +181,68 @@ bool cutCellPolyhedron::closed() const
 }
 
 
+bool cutCellPolyhedron::contains(const point& x, const scalar tol) const
+{
+    if (points_.empty())
+    {
+        return false;
+    }
+
+    //- The faces are outward oriented, so a point inside is on the negative
+    //- side of every face. The tolerance is relative to the extent of the
+    //- piece, because a piece of a cut cell can be very thin.
+    scalar span = 0;
+
+    forAll(points_, pi)
+    {
+        span = max(span, mag(points_[pi] - points_[0]));
+    }
+
+    const scalar t = max(tol, 1e-12*max(span, SMALL));
+
+    forAll(faces_, fi)
+    {
+        const face& f = faces_[fi];
+
+        if (f.size() < 3)
+        {
+            continue;
+        }
+
+        const point& p0 = points_[f[0]];
+
+        //- Newell's normal, so a face of a merged piece that is not planar
+        //- does not give a misleading answer; the clipper's pieces are
+        //- planar, so for them this is the exact normal.
+        vector n = Zero;
+
+        forAll(f, k)
+        {
+            const point& a = points_[f[k]];
+            const point& b = points_[f[f.fcIndex(k)]];
+
+            n.x() += (a.y() - b.y())*(a.z() + b.z());
+            n.y() += (a.z() - b.z())*(a.x() + b.x());
+            n.z() += (a.x() - b.x())*(a.y() + b.y());
+        }
+
+        const scalar sn = mag(n);
+
+        if (sn < SMALL)
+        {
+            continue;
+        }
+
+        if ((n & (x - p0))/sn > t)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+
 bool cutCellPolyhedron::split
 (
     const plane& pln,
