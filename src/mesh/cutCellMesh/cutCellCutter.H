@@ -83,6 +83,10 @@ struct cutCellPieceFace
     label faceInA = -1;
     label pieceB = -1;
     label faceInB = -1;
+
+    //- The surface region this face belongs to, inherited from the triangle
+    //- whose plane produced it. -1 when no triangle could be identified.
+    label patch = -1;
 };
 
 
@@ -92,6 +96,11 @@ struct cutCellResult
     //- Distinct supporting planes of the surface inside the cell, outward
     //- oriented and in a fixed order
     List<plane> planes;
+
+    //- The triangle each plane came from, parallel to planes. The grouping
+    //- merges facets that share a plane, so without this the provenance of a
+    //- plane is lost and a face cannot say which surface region it belongs to.
+    labelList planeTri;
 
     //- The pieces, ordered negative first against the planes
     List<cutCellPiece> pieces;
@@ -174,6 +183,19 @@ cutState cutCellByTriangles
 (
     const cutCellPolyhedron& cell,
     const List<pointField>& tris,
+    const scalar tol,
+    cutCellResult& result
+);
+
+
+//- As above, with the surface region of each triangle, so a face a facet
+//- produces inherits the region of the triangle it came from. Boundary
+//- association by inheritance: the caller resolves the triangle label.
+cutState cutCellByTriangles
+(
+    const cutCellPolyhedron& cell,
+    const List<pointField>& tris,
+    const labelList& patchOf,
     const scalar tol,
     cutCellResult& result
 );

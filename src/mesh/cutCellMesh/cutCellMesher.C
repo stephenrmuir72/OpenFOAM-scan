@@ -536,7 +536,20 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
 
         cutCellResult result;
 
-        const cutState state = cutCellByTriangles(cell, tris, tol_, result);
+        //- Boundary association by inheritance: each triangle carries the
+        //- region of the surface it belongs to, and a face a facet produces
+        //- inherits it. This replaces matching geometry to patches afterwards.
+        labelList patchOf(cand.size());
+
+        forAll(cand, i)
+        {
+            patchOf[i] = surf.surface()[cand[i]].region();
+        }
+
+        const cutState state
+        (
+            cutCellByTriangles(cell, tris, patchOf, tol_, result)
+        );
 
         if (state == cutState::untouched)
         {

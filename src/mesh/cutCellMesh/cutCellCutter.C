@@ -357,6 +357,9 @@ cutState cutCellByTriangles
     //- so the orientation of the plane is the orientation of the surface there.
     DynamicList<plane> planes(4);
 
+    //- The triangle each plane came from, kept in step with planes
+    DynamicList<label> planeTri(4);
+
     forAll(tris, ti)
     {
         const pointField poly(triangleBoxPolygon(tris[ti], bb, tol));
@@ -392,6 +395,12 @@ cutState cutCellByTriangles
         if (found < 0)
         {
             planes.append(pln);
+
+            //- A new plane, so its provenance is this triangle. A plane
+            //- already found keeps the triangle that created it: facets on one
+            //- plane are one region in practice, and the first is as good as
+            //- any if they are not.
+            planeTri.append(ti);
         }
     }
 
@@ -400,22 +409,25 @@ cutState cutCellByTriangles
         return cutState::untouched;
     }
 
-    //- A fixed order, so that a cell always cuts the same way
-    result.planes.setSize(planes.size());
+    //- A fixed order, so that a cell always cuts the same way. An index list is
+    //- sorted rather than the planes themselves, so the triangle list takes the
+    //- same permutation: sorting in place would leave the triangles in their old
+    //- order and every patch silently wrong.
+    labelList order(planes.size());
 
-    forAll(planes, pi)
+    forAll(order, pi)
     {
-        result.planes[pi] = planes[pi];
+        order[pi] = pi;
     }
 
     std::sort
     (
-        result.planes.begin(),
-        result.planes.end(),
-        [](const plane& a, const plane& b)
+        order.begin(),
+        order.end(),
+        [&planes](const label a, const label b)
         {
-            const vector na(a.normal());
-            const vector nb(b.normal());
+            const vector na(planes[a].normal());
+            const vector nb(planes[b].normal());
 
             for (direction i = 0; i < 3; i++)
             {
@@ -425,9 +437,19 @@ cutState cutCellByTriangles
                 }
             }
 
-            return (a.normal() & a.refPoint()) < (b.normal() & b.refPoint());
+            return (planes[a].normal() & planes[a].refPoint())
+                 < (planes[b].normal() & planes[b].refPoint());
         }
     );
+
+    result.planes.setSize(planes.size());
+    result.planeTri.setSize(planeTri.size());
+
+    forAll(order, pi)
+    {
+        result.planes[pi] = planes[order[pi]];
+        result.planeTri[pi] = planeTri[order[pi]];
+    }
 
     //- The arrangement of the planes inside the cell: one plane at a time, on
     //- every piece, carrying on the pieces a plane does not divide
@@ -601,6 +623,44 @@ cutState cutCellByTriangles
                         shared.pieceB = b;
                         shared.faceInB = facej;
 
+                        //- The patch is inherited from the triangle whose
+                        //- plane produced this face. This loop is over pieces
+                        //- and faces and does not know the plane, so the face's
+                        //- own points are matched against the result's planes,
+                        //- the comparison the grouping itself performs. A face
+                        //- that matches none keeps -1 rather than a guess.
+                        {
+                            const face& sf = pieceA.poly.faces()[facei];
+                            const pointField& spts = pieceA.poly.points();
+
+                            if (sf.size() >= 3)
+                            {
+                                const plane fpln
+                                (
+                                    spts[sf[0]], spts[sf[1]], spts[sf[2]]
+                                );
+
+                                forAll(result.planes, pi)
+                                {
+                                    if
+                                    (
+                                        (result.planes[pi].normal()
+                                      & fpln.normal()) > 1 - tol
+                                     && mag
+                                        (
+                                            result.planes[pi].normal()
+                                          & (fpln.refPoint()
+                                          - result.planes[pi].refPoint())
+                                        ) <= tol
+                                    )
+                                    {
+                                        shared.patch = result.planeTri[pi];
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
                         result.sharedFaces.append(shared);
                     }
                 }
@@ -614,6 +674,41 @@ cutState cutCellByTriangles
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
+cutState cutCellByTriangles
+(
+    const cutCellPolyhedron& cell,
+    const List<pointField>& tris,
+    const labelList& patchOf,
+    const scalar tol,
+    cutCellResult& result
+)
+{
+    const cutState state = cutCellByTriangles(cell, tris, tol, result);
+
+    if (state != cutState::cut)
+    {
+        return state;
+    }
+
+    //- A face inherits the region of the triangle that produced its plane.
+    forAll(result.sharedFaces, i)
+    {
+        cutCellPieceFace& sf = result.sharedFaces[i];
+
+        if (sf.patch >= 0 && sf.patch < patchOf.size())
+        {
+            sf.patch = patchOf[sf.patch];
+        }
+        else
+        {
+            sf.patch = -1;
+        }
+    }
+
+    return state;
+}
 } // End namespace Foam
 
 // ************************************************************************* //
+
+
