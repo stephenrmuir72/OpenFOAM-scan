@@ -423,6 +423,78 @@ int main()
     //  Degenerate polygons, which cannot be faces of a mesh
     //  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+    //  The surface region carried to the cut faces
+    //  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    Info<< nl << "patch inheritance" << endl;
+
+    {
+        //- Two planes: two triangles, each on its own plane, with regions 5
+        //- and 7. The two cut faces must carry different regions, and each
+        //- must be one of the two - which is what catches the index sort
+        //- permuting one list and not the other.
+        List<pointField> twoTris(2);
+        twoTris[0] = pointField({P(0.5,-1,0), P(0.5,2,0), P(0.5,-1,2)});
+        twoTris[1] = pointField({P(-1,0.5,0), P(2,0.5,0), P(-1,0.5,2)});
+
+        const labelList patchOf({5, 7});
+
+        cutCellResult res;
+
+        const cutState st = cutCellByTriangles(hex, twoTris, patchOf, 1e-9, res);
+
+        checkTrue(st == cutState::cut, "two planes with regions cut the cell");
+
+        labelHashSet seen;
+
+        forAll(res.sharedFaces, i)
+        {
+            const label p = res.sharedFaces[i].patch;
+
+            checkTrue
+            (
+                p == 5 || p == 7,
+                "a shared face carries one of the two regions"
+            );
+
+            if (p >= 0)
+            {
+                seen.insert(p);
+            }
+        }
+
+        checkLabel(seen.size(), 2, "both regions appear on the cut faces");
+
+        //- One plane, one region: every face carries it. This is the case the
+        //- existing single-patch surfaces take, so it must be unambiguous.
+        List<pointField> oneTri(1);
+        oneTri[0] = pointField({P(0.5,-1,0), P(0.5,2,0), P(0.5,-1,2)});
+
+        const labelList onePatch({3});
+
+        cutCellResult oneRes;
+
+        const cutState oneSt = cutCellByTriangles(hex, oneTri, onePatch, 1e-9, oneRes);
+
+        checkTrue(oneSt == cutState::cut, "one plane with a region cuts the cell");
+
+        forAll(oneRes.sharedFaces, i)
+        {
+            checkLabel(oneRes.sharedFaces[i].patch, 3, "one region on every face");
+        }
+
+        //- No regions supplied: the four-argument form leaves -1, so a caller
+        //- that has no surface cannot be given a misleading region.
+        cutCellResult noneRes;
+
+        cutCellByTriangles(hex, oneTri, 1e-9, noneRes);
+
+        forAll(noneRes.sharedFaces, i)
+        {
+            checkLabel(noneRes.sharedFaces[i].patch, -1, "no region, no claim");
+        }
+    }
+
     Info<< nl << "degenerate polygons" << endl;
 
     const pointField square({P(0,0,0), P(1,0,0), P(1,1,0), P(0,1,0)});
