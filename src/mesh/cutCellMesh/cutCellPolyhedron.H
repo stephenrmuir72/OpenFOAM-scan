@@ -173,7 +173,13 @@ public:
         //  interface polygon, ordered counter-clockwise about the plane normal,
         //  and the same polygon appears in both pieces with opposite
         //  orientation.
-        bool split
+            //- True if the point is inside the polyhedron, or on one of its faces
+    //- within the tolerance. A query at a cut face belongs to the piece on
+    //- either side, so a point on a face is reported as inside.
+    bool contains(const point& x, const scalar tol) const;
+
+
+bool split
         (
             const plane& pln,
             cutCellPolyhedron& negative,
