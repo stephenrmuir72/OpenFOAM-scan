@@ -1402,6 +1402,207 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
             splitOf.insert(facei, splits.size());
             splits.append(split);
         }
+
+        //- A face the surface does not cross can still share a line with one that
+        //- is split. Step 3 visits only the faces in faceCuts - those bordering a
+        //- cut cell - so a face between two uncut cells is never visited, keeps an
+        //- edge whole, and disagrees with the neighbour that was split. Grow the
+        //- set until it is closed, adding each newly reached face the points
+        //- already computed for the line it shares.
+        //
+        //- The match cannot be by edge identity: a split neighbour's edges are the
+        //- HALVES of the shared line, so a whole edge spanning the same line shares
+        //- no edge with it. Match by whether the edge CONTAINS a split point.
+        label nGrown = 0;
+        label nSweep = 0;
+
+        for (label sweep = 0; sweep < 8; sweep++)
+        {
+            //- Every point a split face puts on one of its own edges
+            DynamicList<Tuple2<point, label>> splitPts(64);
+
+            forAllConstIters(splitOf, iter)
+            {
+                const faceSplit& sp = splits[iter()];
+
+                //- Every point the split carries. A split point is an ENDPOINT of
+                //- the sub-face edges, not interior to one, so it has to be taken
+                //- from the point list rather than found by an edge test.
+                forAll(sp.points, k)
+                {
+                    bool known = false;
+
+                    forAll(splitPts, q)
+                    {
+                        if (splitPts[q].second() == sp.points[k])
+                        {
+                            known = true;
+                        }
+                    }
+
+                    if (!known)
+                    {
+                        splitPts.append
+                        (
+                            Tuple2<point, label>(sp.coords[k], sp.points[k])
+                        );
+                    }
+                }
+            }
+
+            if (!splitPts.size())
+            {
+                break;
+            }
+
+            label addedThisSweep = 0;
+
+            forAll(mesh_.faces(), facei)
+            {
+                if (splitOf.found(facei))
+                {
+                    continue;
+                }
+
+                const face& f = mesh_.faces()[facei];
+
+                DynamicList<label> take(4);
+
+                forAll(f, i)
+                {
+                    const point pa(pts[f[i]]);
+                    const point pb(pts[f[f.fcIndex(i)]]);
+                    const vector ab(pb - pa);
+                    const scalar ab2 = ab & ab;
+
+                    if (ab2 <= SMALL)
+                    {
+                        continue;
+                    }
+
+                    forAll(splitPts, q)
+                    {
+                        const point& x = splitPts[q].first();
+
+                        if (mag(x - pa) <= tol_ || mag(x - pb) <= tol_)
+                        {
+                            continue;
+                        }
+
+                        const scalar t = ((x - pa) & ab)/ab2;
+
+                        if (t <= SMALL || t >= 1 - SMALL)
+                        {
+                            continue;
+                        }
+
+                        if (mag(x - (pa + t*ab)) > tol_)
+                        {
+                            continue;
+                        }
+
+                        if (findIndex(take, splitPts[q].second()) < 0)
+                        {
+                            take.append(splitPts[q].second());
+                        }
+                    }
+                }
+
+                if (!take.size())
+                {
+                    continue;
+                }
+
+                //- The face with the taken points inserted along its edges
+                DynamicList<label> expanded(2*f.size());
+
+                forAll(f, i)
+                {
+                    const label first = f[i];
+                    const label second = f[f.fcIndex(i)];
+
+                    const point pa(pts[first]);
+                    const point pb(pts[second]);
+                    const vector ab(pb - pa);
+                    const scalar ab2 = ab & ab;
+
+                    DynamicList<Tuple2<scalar, label>> onEdge(4);
+
+                    if (ab2 > SMALL)
+                    {
+                        forAll(take, k)
+                        {
+                            const label id = take[k];
+
+                            if (id == first || id == second)
+                            {
+                                continue;
+                            }
+
+                            const point x(coordOf(id));
+                            const scalar t = ((x - pa) & ab)/ab2;
+
+                            if (t <= SMALL || t >= 1 - SMALL)
+                            {
+                                continue;
+                            }
+
+                            if (mag(x - (pa + t*ab)) <= tol_)
+                            {
+                                onEdge.append(Tuple2<scalar, label>(t, id));
+                            }
+                        }
+                    }
+
+                    std::sort
+                    (
+                        onEdge.begin(),
+                        onEdge.end(),
+                        [](const Tuple2<scalar, label>& x,
+                           const Tuple2<scalar, label>& y)
+                        {
+                            return x.first() < y.first();
+                        }
+                    );
+
+                    expanded.append(first);
+
+                    forAll(onEdge, k)
+                    {
+                        expanded.append(onEdge[k].second());
+                    }
+                }
+
+                faceSplit grown;
+                grown.subFaces.setSize(1);
+                grown.subFaces[0].transfer(expanded);
+
+                grown.points.setSize(take.size());
+                grown.coords.setSize(take.size());
+
+                forAll(take, k)
+                {
+                    grown.points[k] = take[k];
+                    grown.coords[k] = coordOf(take[k]);
+                }
+
+                splitOf.insert(facei, splits.size());
+                splits.append(grown);
+
+                addedThisSweep++;
+                nGrown++;
+            }
+
+            nSweep = sweep + 1;
+
+            if (!addedThisSweep)
+            {
+                break;
+            }
+        }
+
+        Info<< "  faces grown to stay conformal: " << nGrown
+            << " over " << nSweep << " sweep(s)" << endl;
     }
 
 
@@ -1849,6 +2050,67 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                 false
             );
         }
+    }
+
+
+    //- Faces grown for conformality belong to no cut cell, so the emit loop above
+    //- never reaches them - it is driven by cuts. Their cells are uncut, so the
+    //- sub-face keeps the face's own owner and neighbour.
+    {
+        label nGrownEmitted = 0;
+        label nGrownInternal = 0;
+
+        forAllConstIters(splitOf, iter)
+        {
+            const label facei = iter.key();
+
+            if (doneFaces.found(facei))
+            {
+                continue;
+            }
+
+            const label own = mesh_.faceOwner()[facei];
+            const label nei = mesh_.isInternalFace(facei)
+              ? mesh_.faceNeighbour()[facei]
+              : -1;
+
+            const label patchi = mesh_.boundaryMesh().whichPatch(facei);
+            const label zonei = mesh_.faceZones().whichZone(facei);
+
+            bool zoneFlip = false;
+
+            if (zonei >= 0)
+            {
+                const faceZone& fz = mesh_.faceZones()[zonei];
+                zoneFlip = fz.flipMap()[fz.whichFace(facei)];
+            }
+
+            const faceSplit& split = splits[iter()];
+
+            forAll(split.subFaces, sfi)
+            {
+                setFace
+                (
+                    split.subFaces[sfi],
+                    (sfi == 0 ? facei : -1),
+                    own,
+                    nei,
+                    patchi,
+                    zonei,
+                    zoneFlip
+                );
+            }
+
+            nGrownEmitted++;
+
+            if (nei >= 0)
+            {
+                nGrownInternal++;
+            }
+        }
+
+        Info<< "  grown faces emitted: " << nGrownEmitted
+            << " (internal " << nGrownInternal << ")" << endl;
     }
 
 
