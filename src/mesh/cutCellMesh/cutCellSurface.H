@@ -83,8 +83,38 @@ class cutCellSurface
         //- Search structure over surface_, which refers to it
         triSurfaceSearch search_;
 
+        //- Names of the surface's regions, in the order of their first
+        //- appearance in the file. Empty when the format carries no names,
+        //- which is the case for an STL and for a dictionary shape.
+        wordList regionNames_;
+
+        //- Region of each triangle, indexed as surface_ is. Kept here because
+        //- the region is lost twice on the way to surface_: once when the
+        //- triangles are read into triFaces, and again by the triSurface
+        //- constructor from triFaces, which puts every face in region 0.
+        labelList regionOf_;
+
 
     // Private Member Functions
+
+        //- Path of the entry's surface file
+        static fileName surfacePath
+        (
+            const word& name,
+            const dictionary& dict,
+            const Time& runTime
+        );
+
+        //- Region names and per-face regions from the file. Both empty if the
+        //- format carries neither.
+        static void readRegions
+        (
+            const word& name,
+            const dictionary& dict,
+            const Time& runTime,
+            wordList& names,
+            labelList& regionOf
+        );
 
         //- Triangles of a searchableBox entry, outward oriented
         static void boxTriangles
@@ -147,6 +177,18 @@ public:
         const triSurface& surface() const noexcept
         {
             return surface_;
+        }
+
+        //- Region names, empty when the surface's format carries none
+        const wordList& regionNames() const noexcept
+        {
+            return regionNames_;
+        }
+
+        //- Region of each triangle, indexed as surface() is
+        const labelList& regionOf() const noexcept
+        {
+            return regionOf_;
         }
 
         //- Search structure

@@ -24,6 +24,7 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "cutCellSurface.H"
+#include "IFstream.H"
 #include "dictionary.H"
 #include "Time.H"
 #include "boundBox.H"
@@ -132,12 +133,7 @@ void Foam::cutCellSurface::fileTriangles
     List<triFace>& tris
 )
 {
-    const fileName file
-    (
-        dict.lookupOrDefault<fileName>("file", fileName(name + ".stl"))
-    );
-
-    const fileName path(runTime.constant()/"triSurface"/file);
+    const fileName path(surfacePath(name, dict, runTime));
 
     if (!isFile(path))
     {
@@ -235,6 +231,100 @@ void Foam::cutCellSurface::checkClosedOriented
 
 // * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * * //
 
+Foam::fileName Foam::cutCellSurface::surfacePath
+(
+    const word& name,
+    const dictionary& dict,
+    const Time& runTime
+)
+{
+    const fileName file
+    (
+        dict.lookupOrDefault<fileName>("file", fileName(name + ".stl"))
+    );
+
+    return runTime.constant()/"triSurface"/file;
+}
+
+
+void Foam::cutCellSurface::readRegions
+(
+    const word& name,
+    const dictionary& dict,
+    const Time& runTime,
+    wordList& names,
+    labelList& regionOf
+)
+{
+    const fileName path(surfacePath(name, dict, runTime));
+
+    names.clear();
+    regionOf.clear();
+
+    //- Only the native triSurface format carries regions. An STL has one solid
+    //- and a dictionary shape is generated here, so both leave these empty and
+    //- the caller falls back to a single zone.
+    if (path.ext() != "tri")
+    {
+        return;
+    }
+
+    //- The region of each face comes from the surface itself, which keeps it.
+    //- It is not asked of the file reader: that reader's per-face ids and its
+    //- name list do not share an index space, because it seeds a placeholder
+    //- for the first zone and only records the names it goes on to discover.
+    const triSurface s(path);
+
+    regionOf.setSize(s.size());
+
+    forAll(s, i)
+    {
+        regionOf[i] = s[i].region();
+    }
+
+    //- The names are the tokens in the file, in order of first appearance,
+    //- prefixed with "zone" as the reader does: a line ending 0xwall names its
+    //- region zonewall. That assignment of ids is the one the region indices
+    //- above use, so the two are consistent, and the gate checks it.
+    IFstream is(path);
+
+    string line;
+
+    while (is.good() && is.getLine(line))
+    {
+        const string::size_type at = line.rfind("0x");
+
+        if (at == string::npos)
+        {
+            continue;
+        }
+
+        const word token(line.substr(at + 2));
+
+        if (token.empty())
+        {
+            continue;
+        }
+
+        const word zoneName("zone" + token);
+
+        if (findIndex(names, zoneName) < 0)
+        {
+            names.append(zoneName);
+        }
+    }
+
+    Info<< "  surface regions : " << names.size();
+
+    forAll(names, i)
+    {
+        Info<< " \"" << names[i] << "\"";
+    }
+
+    Info<< endl;
+}
+
+
 Foam::triSurface Foam::cutCellSurface::makeSurface
 (
     const word& name,
@@ -300,7 +390,9 @@ Foam::cutCellSurface::cutCellSurface
     name_(name),
     surface_(makeSurface(name, dict, runTime)),
     search_(surface_)
-{}
+{
+    readRegions(name, dict, runTime, regionNames_, regionOf_);
+}
 
 
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
