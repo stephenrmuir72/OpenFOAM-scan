@@ -543,7 +543,14 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
 
         forAll(cand, i)
         {
-            patchOf[i] = surf.surface()[cand[i]].region();
+            //- The region comes from the surface's own record, not from
+            //- surface()[i].region(): that is 0 for every face, because the
+            //- triSurface built from our triFaces puts every face in region 0.
+            //- A format with no regions leaves the record empty, and then every
+            //- face is region 0 and the caller makes a single zone.
+            patchOf[i] = surf.regionOf().empty()
+              ? 0
+              : surf.regionOf()[cand[i]];
         }
 
         const cutState state
@@ -729,7 +736,51 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
     //- The zones must exist before the change: polyTopoChange validates the
     //- zoneIDs it is given against the mesh
     const label insideZone = cellZoneID(surfaces_[0].name() + "_inside");
-    const label interfaceZone = faceZoneID(surfaces_[0].name() + "_interface");
+
+    //- One faceZone per surface region when the surface has more than one, so a
+    //- face is filed under the region it came from and a case can name its
+    //- patches from that. The zone takes the region's own name, which is what
+    //- snappy's faceZoneNaming REGION does: faceZoneNames_ = regionNames. A
+    //- single-region surface keeps the original name, so the cases that predate
+    //- this cannot move.
+    const word& surfName = surfaces_[0].name();
+    const wordList& regionNames = surfaces_[0].regionNames();
+
+    //- The region count comes from the faces, not from surface().patches():
+    //- that returns only the patches the file declares, and a file carrying its
+    //- regions as tokens declares none, so reading it there found one patch for
+    //- a three-region surface and the per-region path never ran.
+    label maxRegion = -1;
+
+    forAll(cuts, ci)
+    {
+        forAll(cuts[ci].sharedFaces, si)
+        {
+            maxRegion = max(maxRegion, cuts[ci].sharedFaces[si].patch);
+        }
+    }
+
+    const bool multiRegion = (maxRegion > 0) && (maxRegion < regionNames.size());
+
+
+    Info<< "  interface zones: maxRegion " << maxRegion
+        << ", names " << regionNames.size()
+        << ", multiRegion " << multiRegion << endl;
+
+    labelList interfaceZoneOf(maxRegion + 1, -1);
+
+    forAll(interfaceZoneOf, ri)
+    {
+        interfaceZoneOf[ri] = faceZoneID
+        (
+            multiRegion
+          ? regionNames[ri]
+          : word(surfName + "_interface")
+        );
+    }
+
+    //- The fallback for a face whose region is unknown.
+    const label interfaceZone = (multiRegion ? -1 : interfaceZoneOf[0]);
 
     //- All points, faces and cells of the mesh are taken as they are, and the
     //- cut is expressed as modifications on top of them. That is what keeps the
@@ -1773,6 +1824,20 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                 meshFace[i] = pointOf(c, poly.points()[f[i]]);
             }
 
+            //- The face's own region decides the zone. A face whose region is
+            //- unknown falls back to the single zone when there is one, so a
+            //- single-region surface behaves exactly as it did before.
+            label zone = interfaceZone;
+
+            if
+            (
+                shared.patch >= 0
+             && shared.patch < interfaceZoneOf.size()
+            )
+            {
+                zone = interfaceZoneOf[shared.patch];
+            }
+
             setFace
             (
                 meshFace,
@@ -1780,7 +1845,7 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                 c.pieceCell[from],
                 c.pieceCell[to],
                 -1,
-                (separates ? interfaceZone : -1),
+                (separates ? zone : -1),
                 false
             );
         }
