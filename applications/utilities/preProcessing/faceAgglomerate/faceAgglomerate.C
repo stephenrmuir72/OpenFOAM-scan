@@ -154,8 +154,12 @@ int main(int argc, char *argv[])
         }
 
         const label nGlobalCoarse = returnReduce(nCoarse, sumOp<label>());
+        const scalar patchArea =
+            returnReduce(sum(mag(pp.faceAreas())), sumOp<scalar>());
 
-        Info<< "    Coarse faces : " << nGlobalCoarse << endl;
+        Info<< "    Coarse faces : " << nGlobalCoarse
+            << " (" << nGlobalCoarse/max(patchArea, VSMALL)
+            << " faces/m2)" << endl;
     }
 
     Info<< "\nTotal coarse faces : "

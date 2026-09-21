@@ -44,6 +44,25 @@ namespace Foam
 
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
+void Foam::pairPatchAgglomeration::printLevelInfo
+(
+    const label level,
+    const bPatch& patch,
+    const scalar angle,
+    const label nNonManif,
+    const label nFeat
+) const
+{
+    Pout<< "Level:" << level
+        << " nFaces:" << patch.size()
+        << " nEdges:" << patch.nEdges() << " of which:" << nl
+        << "    boundary:" << patch.nBoundaryEdges() << nl
+        << "    non-manifold:" << nNonManif << nl
+        << "    feature (angle > " << angle << "):" << nFeat << nl
+        << endl;
+}
+
+
 void Foam::pairPatchAgglomeration::writeOBJ
 (
     const label level,
@@ -173,14 +192,9 @@ void Foam::pairPatchAgglomeration::setLevel0EdgeWeights()
         }
     }
 
-    if (debug)
+    if (debug > 1)
     {
-        Pout<< "Level:" << 0
-            << " nEdges:" << coarsePatch.nEdges() << " of which:" << nl
-            << "    boundary:" << coarsePatch.nBoundaryEdges() << nl
-            << "    non-manifold:" << nNonManif << nl
-            << "    feature (angle < " << featureAngle_ << "):" << nFeat << nl
-            << endl;
+        printLevelInfo(0, coarsePatch, featureAngle_, nNonManif, nFeat);
     }
 }
 
@@ -296,14 +310,16 @@ void Foam::pairPatchAgglomeration::setEdgeWeights
         }
     }
 
-    if (debug)
+    if (debug > 1)
     {
-        Pout<< "Level:" << fineLevelIndex
-            << " nEdges:" << coarsePatch.nEdges() << " of which:" << nl
-            << "    boundary:" << coarsePatch.nBoundaryEdges() << nl
-            << "    non-manifold:" << nNonManif << nl
-            << "    feature (angle < " << featureAngle_ << "):" << nFeat << nl
-            << endl;
+        printLevelInfo
+        (
+            fineLevelIndex,
+            coarsePatch,
+            featureAngleCoarse_,
+            nNonManif,
+            nFeat
+        );
     }
 }
 
@@ -397,6 +413,78 @@ Foam::label Foam::pairPatchAgglomeration::maxValidNeighbour
 }
 
 
+void Foam::pairPatchAgglomeration::initLevel0
+(
+    const faceList& faces,
+    const pointField& points
+)
+{
+    if (debug)
+    {
+        Info<< "Patch agglomeration: " << patchName_ << nl
+            << "    mergeLevels:" << mergeLevels_ << nl
+            << "    nFacesInCoarsestLevel:" << nFacesInCoarsestLevel_ << nl
+            << "    nGlobalFacesInCoarsestLevel:"
+            << nGlobalFacesInCoarsestLevel_ << nl
+            << "    densityFacesInCoarsestLevel:"
+            << densityFacesInCoarsestLevel_ << nl
+            << "    minGlobalFacesInCoarsestLevel:"
+            << minGlobalFacesInCoarsestLevel_ << nl
+            << "    featureAngle:" << featureAngle_ << nl
+            << "    featureAngleCoarse:" << featureAngleCoarse_
+            << endl;
+    }
+
+    // Set base fine patch
+    patchLevels_.set(0, new bPatch(faces, points));
+
+    if (densityFacesInCoarsestLevel_ > 0)
+    {
+        // Global face limit from the prescribed coarse face density
+        const scalar patchArea = returnReduce
+        (
+            sum(patchLevels_[0].magFaceAreas()),
+            sumOp<scalar>()
+        );
+
+        // Cap the density product at the global count of base faces
+        const label nFine = returnReduce
+        (
+            patchLevels_[0].size(),
+            sumOp<label>()
+        );
+
+        // Work in scalar; a label would overflow on an out-of-range product
+        const label nDensityLimit = label
+        (
+            min(round(patchArea*densityFacesInCoarsestLevel_), scalar(nFine))
+        );
+
+        if (debug)
+        {
+            Info<< "    patch area:" << patchArea << nl
+                << "    coarse faces from density:" << nDensityLimit << endl;
+        }
+
+        nGlobalFacesInCoarsestLevel_ =
+            min(nGlobalFacesInCoarsestLevel_, nDensityLimit);
+    }
+
+    // Floor the global coarse face count
+    nGlobalFacesInCoarsestLevel_ = max
+    (
+        nGlobalFacesInCoarsestLevel_,
+        minGlobalFacesInCoarsestLevel_
+    );
+
+    // Set number of faces for the base patch
+    nFaces_[0] = faces.size();
+
+    // Set edge weights for level 0
+    setLevel0EdgeWeights();
+}
+
+
 // * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * //
 
 Foam::pairPatchAgglomeration::pairPatchAgglomeration
@@ -406,23 +494,29 @@ Foam::pairPatchAgglomeration::pairPatchAgglomeration
     const dictionary& controlDict
 )
 :
-    mergeLevels_
-    (
-        controlDict.getOrDefault<label>("mergeLevels", 2)
-    ),
+    mergeLevels_(controlDict.getOrDefault<label>("mergeLevels", 2)),
     maxLevels_(50),
     nFacesInCoarsestLevel_
     (
-        controlDict.get<label>("nFacesInCoarsestLevel")
+        controlDict.getOrDefault<label>("nFacesInCoarsestLevel", labelMax)
     ),
-    nGlobalFacesInCoarsestLevel_(labelMax),
-    //(
-    //    controlDict.get<label>("nGlobalFacesInCoarsestLevel")
-    //),
-    featureAngle_
+    nGlobalFacesInCoarsestLevel_
     (
-        controlDict.getOrDefault<scalar>("featureAngle", 0)
+        controlDict.getOrDefault<label>
+        (
+            "nGlobalFacesInCoarsestLevel",
+            labelMax
+        )
     ),
+    densityFacesInCoarsestLevel_
+    (
+        controlDict.getOrDefault<scalar>("densityFacesInCoarsestLevel", 0)
+    ),
+    minGlobalFacesInCoarsestLevel_
+    (
+        controlDict.getOrDefault<label>("minGlobalFacesInCoarsestLevel", 1)
+    ),
+    featureAngle_(controlDict.getOrDefault<scalar>("featureAngle", 0)),
     featureAngleCoarse_
     (
         controlDict.getOrDefault<scalar>("featureAngleCoarse", 180)
@@ -436,14 +530,41 @@ Foam::pairPatchAgglomeration::pairPatchAgglomeration
     writeLevelObj_(controlDict.getOrDefault<bool>("writeLevelObj", false)),
     patchName_(controlDict.getOrDefault<word>("patchName", word::null))
 {
-    // Set base fine patch
-    patchLevels_.set(0, new bPatch(faces, points));
+    if
+    (
+        !controlDict.found("nFacesInCoarsestLevel")
+     && !controlDict.found("nGlobalFacesInCoarsestLevel")
+     && !controlDict.found("densityFacesInCoarsestLevel")
+    )
+    {
+        FatalIOErrorInFunction(controlDict)
+            << "Require at least one of 'nFacesInCoarsestLevel',"
+            << " 'nGlobalFacesInCoarsestLevel'"
+            << " or 'densityFacesInCoarsestLevel'"
+            << exit(FatalIOError);
+    }
 
-    // Set number of faces for the base patch
-    nFaces_[0] = faces.size();
+    if
+    (
+        controlDict.found("densityFacesInCoarsestLevel")
+     && densityFacesInCoarsestLevel_ <= 0
+    )
+    {
+        FatalIOErrorInFunction(controlDict)
+            << "'densityFacesInCoarsestLevel' = "
+            << densityFacesInCoarsestLevel_ << " must be positive"
+            << exit(FatalIOError);
+    }
 
-    // Set edge weights for level 0
-    setLevel0EdgeWeights();
+    if (minGlobalFacesInCoarsestLevel_ < 1)
+    {
+        FatalIOErrorInFunction(controlDict)
+            << "'minGlobalFacesInCoarsestLevel' = "
+            << minGlobalFacesInCoarsestLevel_ << " must be one or more"
+            << exit(FatalIOError);
+    }
+
+    initLevel0(faces, points);
 }
 
 
@@ -462,6 +583,8 @@ Foam::pairPatchAgglomeration::pairPatchAgglomeration
     maxLevels_(maxLevels),
     nFacesInCoarsestLevel_(nFacesInCoarsestLevel),
     nGlobalFacesInCoarsestLevel_(nGlobalFacesInCoarsestLevel),
+    densityFacesInCoarsestLevel_(0),
+    minGlobalFacesInCoarsestLevel_(1),
     featureAngle_(featureAngle),
     featureAngleCoarse_(180),
     nFaces_(maxLevels_),
@@ -473,14 +596,7 @@ Foam::pairPatchAgglomeration::pairPatchAgglomeration
     writeLevelObj_(false),
     patchName_(word::null)
 {
-    // Set base fine patch
-    patchLevels_.set(0, new bPatch(faces, points));
-
-    // Set number of faces for the base patch
-    nFaces_[0] = faces.size();
-
-    // Set edge weights for level 0
-    setLevel0EdgeWeights();
+    initLevel0(faces, points);
 }
 
 
@@ -586,6 +702,13 @@ bool Foam::pairPatchAgglomeration::agglomeratePatch
             // Currently we have no choice but to leave agglomeration since
             // we cannot store a face-with-hole.
 
+            if (debug)
+            {
+                Pout<< "Level:" << fineLevelIndex
+                    << " agglomeration:" << coarseI
+                    << " with " << upp.edgeLoops().size()
+                    << " edge loops - redoing level" << endl;
+            }
 
             //{
             //    OBJstream os
@@ -657,10 +780,19 @@ void Foam::pairPatchAgglomeration::agglomerate()
     label nCoarseFaces = 0;
     label nCoarseFacesOld = 0;
     label nMarkedEdges = 0;
+    label nAgglomerations = 0;
 
     while (nCreatedLevels < maxLevels_)
     {
         const bPatch& patch = patchLevels_[nCreatedLevels - 1];
+
+        if (debug)
+        {
+            Info<< "Level:" << nCreatedLevels - 1
+                << " nAgglomerations:" << nAgglomerations
+                << " nGlobalFaces:"
+                << returnReduce(patch.size(), sumOp<label>()) << endl;
+        }
 
         // Agglomerate locally
         tmp<labelField> tfinalAgglom;
@@ -688,6 +820,8 @@ void Foam::pairPatchAgglomeration::agglomerate()
                     nCreatedLevels,
                     nMarkedEdges
                 );
+
+                nAgglomerations++;
             }
         }
 
