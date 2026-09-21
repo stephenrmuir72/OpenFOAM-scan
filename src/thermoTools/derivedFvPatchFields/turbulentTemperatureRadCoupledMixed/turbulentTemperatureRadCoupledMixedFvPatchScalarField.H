@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2017-2023 OpenCFD Ltd.
+    Copyright (C) 2026 Patrick Wilhelm, Data Lab Hell
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -120,6 +121,8 @@ Usage
 
 Note
   - Needs to be on underlying \c mapped(Wall)FvPatch.
+  - \c thermalInertia is refused with a contact layer, which the inertia
+    branch does not read.
 
 SourceFiles
     turbulentTemperatureRadCoupledMixedFvPatchScalarField.C

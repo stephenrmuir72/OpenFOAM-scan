@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2017-2024 OpenCFD Ltd.
+    Copyright (C) 2026 Patrick Wilhelm, Data Lab Hell
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -530,6 +531,14 @@ void turbulentTemperatureRadCoupledMixedFvPatchScalarField::updateCoeffs()
     {
         FatalErrorInFunction
             << "thermalInertia not supported in combination with multi-world"
+            << exit(FatalError);
+    }
+    if (thermalInertia_ && (thicknessLayer_ || thicknessLayers_.size()))
+    {
+        FatalErrorInFunction
+            << "thermalInertia not supported with a contact layer on "
+            << mesh.name() << ':' << patch().name() << " <- "
+            << mpp.sampleRegion() << ':' << mpp.samplePatch()
             << exit(FatalError);
     }
     if (thermalInertia_)
