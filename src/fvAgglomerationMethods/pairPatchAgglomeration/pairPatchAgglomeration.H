@@ -31,6 +31,40 @@ Class
 Description
     Primitive patch pair agglomerate method.
 
+    Agglomeration stops when the local and the global limit on the number of
+    coarse faces are both satisfied, when the global count stops changing, or
+    after \c maxLevels levels.
+
+Usage
+    Example of the agglomeration controls in \c constant/viewFactorsDict:
+    \verbatim
+    patchAgglomeration
+    {
+        "wall.*"
+        {
+            nFacesInCoarsestLevel   10;
+            featureAngle            45;
+        }
+    }
+    \endverbatim
+
+    where the entries mean:
+    \table
+      Property     | Description                       | Type  | Reqd | Deflt
+      nFacesInCoarsestLevel | Local coarse face limit           | label <!--
+                   -->                                        | yes | -
+      featureAngle | Angle between the fine face normals above which a  <!--
+                   --> pair is a feature edge [deg]   | scalar | no   | 0
+      featureAngleCoarse | The same on the coarse levels [deg]         <!--
+                   -->                               | scalar | no   | 180
+      mergeLevels  | Pair levels merged into one stored level; 1 keeps  <!--
+                   --> every pairing                    | label | no  | 2
+      writeObj     | Write the coarsest level to agglomPatch_<patch>.obj <!--
+                   --> in the run directory            | bool | no  | false
+      writeLevelObj | Every level, to agglomPatch_<patch>_level<n>.obj   <!--
+                   --> in the run directory            | bool | no  | false
+    \endtable
+
 SourceFiles
     pairPatchAgglomeration.C
 
@@ -95,6 +129,15 @@ protected:
         //- Edge weights
         EdgeMap<scalar> facePairWeight_;
 
+        //- Write the coarsest level in OBJ format
+        bool writeObj_;
+
+        //- Write all levels in OBJ format
+        bool writeLevelObj_;
+
+        //- Patch name (for messages and OBJ file names)
+        word patchName_;
+
 
 private:
 
@@ -158,6 +201,9 @@ private:
 
         //- Maps current level with base patch
         void mapBaseToTopAgglom(const label fineLevelIndex);
+
+        //- Write patch of given level in OBJ format
+        void writeOBJ(const label level, const bool finalLevel) const;
 
         //- No copy construct
         pairPatchAgglomeration(const pairPatchAgglomeration&) = delete;

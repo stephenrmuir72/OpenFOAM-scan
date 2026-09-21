@@ -32,6 +32,7 @@ License
 #include "edgeHashes.H"
 #include "unitConversion.H"
 #include "OBJstream.H"
+#include "Pstream.H"
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -42,6 +43,45 @@ namespace Foam
 
 
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
+
+void Foam::pairPatchAgglomeration::writeOBJ
+(
+    const label level,
+    const bool finalLevel
+) const
+{
+    const bPatch& patch = patchLevels_[level];
+
+    if (!patch.size())
+    {
+        return;
+    }
+
+    word name("agglomPatch");
+
+    if (!patchName_.empty())
+    {
+        name += '_' + patchName_;
+    }
+
+    if (!finalLevel)
+    {
+        name += "_level" + Foam::name(level);
+    }
+
+    if (UPstream::parRun())
+    {
+        name += "_proc" + Foam::name(UPstream::myProcNo());
+    }
+
+    OBJstream os(name + ".obj");
+
+    Pout<< "Writing patch at level:" << level
+        << " to:" << os.name() << endl;
+
+    os.write(patch, patch.points(), true);
+}
+
 
 void Foam::pairPatchAgglomeration::compactLevels(const label nCreatedLevels)
 {
@@ -391,7 +431,10 @@ Foam::pairPatchAgglomeration::pairPatchAgglomeration
     restrictAddressing_(maxLevels_),
     restrictTopBottomAddressing_(identity(faces.size())),
     patchLevels_(maxLevels_),
-    facePairWeight_(faces.size())
+    facePairWeight_(faces.size()),
+    writeObj_(controlDict.getOrDefault<bool>("writeObj", false)),
+    writeLevelObj_(controlDict.getOrDefault<bool>("writeLevelObj", false)),
+    patchName_(controlDict.getOrDefault<word>("patchName", word::null))
 {
     // Set base fine patch
     patchLevels_.set(0, new bPatch(faces, points));
@@ -425,7 +468,10 @@ Foam::pairPatchAgglomeration::pairPatchAgglomeration
     restrictAddressing_(maxLevels_),
     restrictTopBottomAddressing_(identity(faces.size())),
     patchLevels_(maxLevels_),
-    facePairWeight_(faces.size())
+    facePairWeight_(faces.size()),
+    writeObj_(false),
+    writeLevelObj_(false),
+    patchName_(word::null)
 {
     // Set base fine patch
     patchLevels_.set(0, new bPatch(faces, points));
@@ -647,13 +693,9 @@ void Foam::pairPatchAgglomeration::agglomerate()
 
         if (createdLevel)
         {
-            if (debug)
+            if (writeLevelObj_)
             {
-                const auto& agglomPatch = patchLevels_[nCreatedLevels];
-                OBJstream os("agglomPatch"+Foam::name(nCreatedLevels)+".obj");
-                Pout<< "Writing new patch at level:" << nCreatedLevels
-                    << " to:" << os.name() << endl;
-                os.write(agglomPatch, agglomPatch.points(), true);
+                writeOBJ(nCreatedLevels, false);
             }
 
             restrictAddressing_.set(nCreatedLevels, tfinalAgglom);
@@ -684,6 +726,11 @@ void Foam::pairPatchAgglomeration::agglomerate()
         }
 
         nCoarseFacesOld = nCoarseFaces;
+    }
+
+    if (writeObj_)
+    {
+        writeOBJ(nCreatedLevels - 1, true);
     }
 
     compactLevels(nCreatedLevels);
