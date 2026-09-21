@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2016-2020,2023 OpenCFD Ltd.
+    Copyright (C) 2026 Patrick Wilhelm, Data Lab Hell
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -74,6 +75,9 @@ protected:
 
         //- Feature angle
         scalar featureAngle_;
+
+        //- Feature angle for coarse levels
+        scalar featureAngleCoarse_;
 
         //- The number of faces in each level
         labelList nFaces_;

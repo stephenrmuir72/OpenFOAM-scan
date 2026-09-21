@@ -84,6 +84,7 @@ void Foam::pairPatchAgglomeration::setLevel0EdgeWeights()
     // Statistics on edges
     label nNonManif = 0;
     label nFeat = 0;
+    const scalar cosFeatureAngle = Foam::cos(degToRad(featureAngle_));
 
     for (label i = 0; i < coarsePatch.nInternalEdges(); i++)
     {
@@ -93,7 +94,7 @@ void Foam::pairPatchAgglomeration::setLevel0EdgeWeights()
 
         if (eFaces.size() == 2)
         {
-            scalar cosI =
+            const scalar cosI =
                 coarsePatch.faceNormals()[eFaces[0]]
               & coarsePatch.faceNormals()[eFaces[1]];
 
@@ -108,7 +109,8 @@ void Foam::pairPatchAgglomeration::setLevel0EdgeWeights()
                 facePairWeight_.insert(edgeCommon, edgeLength);
             }
 
-            if (cosI < Foam::cos(degToRad(featureAngle_)))
+            // Clamp the dot product: rounding may take it below -1
+            if (max(cosI, scalar(-1)) < cosFeatureAngle)
             {
                 facePairWeight_[edgeCommon] = -1.0;
                 nFeat++;
@@ -173,6 +175,7 @@ void Foam::pairPatchAgglomeration::setEdgeWeights
     // Statistics on edges
     label nNonManif = 0;
     label nFeat = 0;
+    const scalar cosFeatureAngle = Foam::cos(degToRad(featureAngleCoarse_));
 
     // Clean old weights
     facePairWeight_.clear();
@@ -186,6 +189,10 @@ void Foam::pairPatchAgglomeration::setEdgeWeights
 
         if (eFaces.size() == 2)
         {
+            const scalar cosI =
+                coarsePatch.faceNormals()[eFaces[0]]
+              & coarsePatch.faceNormals()[eFaces[1]];
+
             const edge edgeCommon(eFaces[0], eFaces[1]);
             // If the fine 'pair' faces was featured edge so it is
             // the coarse 'pair'
@@ -217,6 +224,17 @@ void Foam::pairPatchAgglomeration::setEdgeWeights
                 else
                 {
                     facePairWeight_.insert(edgeCommon, edgeLength);
+                }
+            }
+
+            // Clamp the dot product: rounding may take it below -1
+            if (max(cosI, scalar(-1)) < cosFeatureAngle)
+            {
+                auto& w = facePairWeight_[edgeCommon];
+                if (w != -1.0)
+                {
+                    w = -1.0;
+                    nFeat++;
                 }
             }
         }
@@ -365,6 +383,10 @@ Foam::pairPatchAgglomeration::pairPatchAgglomeration
     (
         controlDict.getOrDefault<scalar>("featureAngle", 0)
     ),
+    featureAngleCoarse_
+    (
+        controlDict.getOrDefault<scalar>("featureAngleCoarse", 180)
+    ),
     nFaces_(maxLevels_),
     restrictAddressing_(maxLevels_),
     restrictTopBottomAddressing_(identity(faces.size())),
@@ -398,6 +420,7 @@ Foam::pairPatchAgglomeration::pairPatchAgglomeration
     nFacesInCoarsestLevel_(nFacesInCoarsestLevel),
     nGlobalFacesInCoarsestLevel_(nGlobalFacesInCoarsestLevel),
     featureAngle_(featureAngle),
+    featureAngleCoarse_(180),
     nFaces_(maxLevels_),
     restrictAddressing_(maxLevels_),
     restrictTopBottomAddressing_(identity(faces.size())),
