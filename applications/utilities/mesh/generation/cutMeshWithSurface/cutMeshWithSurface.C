@@ -135,7 +135,29 @@ int main(int argc, char* argv[])
 
     cutCellMesher mesher(mesh, surfaces);
 
+    //- The collapse may move a point by at most this fraction of the point's
+    //- shortest edge. The trigger alone does not bound it: a point pulled by
+    //- several planes is resolved by a least-squares solve that runs away when
+    //- the planes are nearly parallel, which is what a coarsely tessellated
+    //- curved surface gives. Measured before the guard existed: a 320-triangle
+    //- sphere in a 16-cubed background moved a point by a third of a cell, and
+    //- the assembly aborted with no mesh written. Zero disables the guard.
+    scalar maxSnapMoveFraction
+    (
+        meshDict.getOrDefault<scalar>("maxSnapMoveFraction", 0.05)
+    );
+
+    if (maxSnapMoveFraction < 0 || maxSnapMoveFraction > 0.5)
+    {
+        WarningInFunction
+            << "maxSnapMoveFraction " << maxSnapMoveFraction << " is outside the"
+            << " sensible range 0 to 0.5, and is clamped to it" << endl;
+
+        maxSnapMoveFraction = min(max(maxSnapMoveFraction, 0.0), 0.5);
+    }
+
     mesher.vertexSnapFraction(vertexSnapFraction);
+    mesher.maxSnapMoveFraction(maxSnapMoveFraction);
 
     //- The sliver thresholds, either being zero disabling the merge. The sliver
     //- ratio defaults to zero so that a case which does not ask for a merge is

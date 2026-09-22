@@ -153,6 +153,10 @@ public:
         label nSnapped = 0;
         scalar maxSnapDistance = 0;
 
+        //- Collapses refused because the resolved move was larger than
+        //- maxSnapMoveFraction of the shortest edge at the point
+        label nSnapRejected = 0;
+
         //- Points added to the mesh
         label nNewPoints = 0;
 
@@ -182,6 +186,16 @@ private:
         //- 7.1.2 gives 0.05 as the default and 0.10 as the limit. Zero disables
         //- the collapse.
         scalar vertexSnapFraction_ = 0.05;
+
+        //- The largest move a collapse may make, as a fraction of the shortest
+        //- edge at the point. The trigger bounds a single pull - the crossing it
+        //- collapses onto lies within vertexSnapFraction of the edge's endpoint,
+        //- so the move is at most that fraction of that edge - but the solve for
+        //- a point pulled by several planes is unbounded: two nearly parallel
+        //- planes meet along a line that runs away as their dihedral angle
+        //- closes, and a coarsely tessellated curved surface is full of such
+        //- pairs. Zero disables the guard.
+        scalar maxSnapMoveFraction_ = 0.05;
 
         //- Displacement of each mesh point by the collapse, zero for the ones
         //- that did not move. Sized by snapPoints().
@@ -322,6 +336,13 @@ public:
         void vertexSnapFraction(const scalar f)
         {
             vertexSnapFraction_ = f;
+        }
+
+        //- Set the largest move a collapse may make, as a fraction of the
+        //- shortest edge at the point. Zero disables the guard.
+        void maxSnapMoveFraction(const scalar f)
+        {
+            maxSnapMoveFraction_ = f;
         }
 
         //- Displacement of each mesh point by the collapse, zero where it did

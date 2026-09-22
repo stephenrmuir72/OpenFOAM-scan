@@ -455,6 +455,42 @@ void Foam::cutCellMesher::snapPoints()
 
         const vector delta(target - P);
 
+        //- A resolved point can be asked to move far. A single pull cannot: the
+        //- crossing it collapses onto lies within vertexSnapFraction of the
+        //- edge's endpoint, so the move is at most that fraction of that edge.
+        //- The multi-plane solve has no such bound - two nearly parallel planes
+        //- meet along a line that runs away as their dihedral angle closes, and
+        //- a coarsely tessellated curved surface puts such pairs in one cell.
+        //- Measured on a 320-triangle sphere in a 16-cubed background: a move of
+        //- 0.0209 where the cell is 0.0625, a third of a cell, which distorted
+        //- the cells until no piece contained a point of its own cell and the
+        //- assembly aborted with no mesh written at all.
+        //-
+        //- The collapse exists to remove a sliver of the order of the trigger,
+        //- so a move of the order of the trigger is the largest that can be
+        //- doing that job. Beyond it the point is left where it is: the sliver
+        //- stays and is reported, for the agglomeration to absorb, which is a
+        //- worse mesh than a collapse would have given but a mesh nonetheless.
+        if (maxSnapMoveFraction_ > 0)
+        {
+            scalar shortestEdge = GREAT;
+
+            forAll(mesh_.pointEdges()[pointi], pei)
+            {
+                shortestEdge = min
+                (
+                    shortestEdge,
+                    mesh_.edges()[mesh_.pointEdges()[pointi][pei]].mag(pts)
+                );
+            }
+
+            if (mag(delta) > maxSnapMoveFraction_*shortestEdge)
+            {
+                info_.nSnapRejected++;
+                continue;
+            }
+        }
+
         if (mag(delta) > SMALL)
         {
             newPts[pointi] = target;
@@ -850,6 +886,24 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
         return label(h);
     };
 
+    //- The mesh point in each bucket. The cache above holds only the points this
+    //- assembly made, so without this a crossing that lands exactly on a mesh
+    //- point would be added as a second point at the same coordinates. Measured
+    //- on a 320-triangle sphere in a 16-cubed background: 18 duplicate points,
+    //- every one of them at the sphere's pole, where five facets meet and their
+    //- crossings land on existing grid points. It is one defect and not two,
+    //- because a duplicated point leaves the faces either side of it not sharing
+    //- it, which is what the 860 edges without two faces in that mesh are.
+    //-
+    //- One point per bucket is enough: two distinct mesh points cannot be within
+    //- pointTol of each other in a mesh that is not already degenerate.
+    Map<label> meshPointInBucket(pts.size());
+
+    forAll(pts, pointi)
+    {
+        meshPointInBucket.set(bucket(pts[pointi]), pointi);
+    }
+
     //- The label of the point already at x, or -1
     auto findPoint = [&](const point& x) -> label
     {
@@ -883,6 +937,39 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                         {
                             return newLabel[n];
                         }
+                    }
+                }
+            }
+        }
+
+        //- And the mesh's own points, which the cache above does not hold
+        for (label di = -1; di <= 1; di++)
+        {
+            for (label dj = -1; dj <= 1; dj++)
+            {
+                for (label dk = -1; dk <= 1; dk++)
+                {
+                    const point probe
+                    (
+                        x + point
+                        (
+                            pointTol*scalar(di),
+                            pointTol*scalar(dj),
+                            pointTol*scalar(dk)
+                        )
+                    );
+
+                    Map<label>::const_iterator iter =
+                        meshPointInBucket.find(bucket(probe));
+
+                    if (iter == meshPointInBucket.end())
+                    {
+                        continue;
+                    }
+
+                    if (mag(pts[iter()] - x) <= pointTol)
+                    {
+                        return iter();
                     }
                 }
             }
@@ -2158,6 +2245,12 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::cut()
     {
         Info<< "Intersections collapsed onto a point: " << info_.nSnapped
             << ", largest move " << info_.maxSnapDistance << nl;
+    }
+
+    if (info_.nSnapRejected)
+    {
+        Info<< "  collapses refused as too large      : " << info_.nSnapRejected
+            << nl;
     }
 
     Info<< "Cells crossed by the surface : " << info_.nCandidate << nl
