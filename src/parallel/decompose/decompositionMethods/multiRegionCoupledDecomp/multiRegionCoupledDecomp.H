@@ -104,7 +104,7 @@ class multiRegionCoupledDecomp
             labelList decomp;
 
             //- Region whose decompose() built this
-            word builtBy;
+            word ownerName;
 
             //- Coefficients it was built with; later regions must match
             dictionary coeffs;
@@ -113,6 +113,7 @@ class multiRegionCoupledDecomp
 
             explicit weldedDecomposition(const objectRegistry& obr);
 
+            //- Write data is no-op
             virtual bool writeData(Ostream&) const
             {
                 return true;

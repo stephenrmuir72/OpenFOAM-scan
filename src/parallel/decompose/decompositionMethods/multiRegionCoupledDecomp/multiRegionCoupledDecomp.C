@@ -35,6 +35,7 @@ License
 #include "DynamicList.H"
 #include "labelPair.H"
 #include "ListOps.H"
+#include "MinMax.H"
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -64,9 +65,9 @@ Foam::multiRegionCoupledDecomp::weldedDecomposition::weldedDecomposition
             typeName,
             obr.time().timeName(),
             obr,
-            IOobject::NO_READ,
-            IOobject::NO_WRITE,
-            IOobject::REGISTER
+            IOobjectOption::NO_READ,
+            IOobjectOption::NO_WRITE,
+            IOobjectOption::REGISTER
         )
     )
 {}
@@ -78,7 +79,7 @@ namespace Foam
 {
 
 // Union-find with path halving; smaller root index wins for determinism
-static inline label findRoot(labelList& parent, label celli)
+static inline label findRoot(labelUList& parent, label celli)
 {
     while (parent[celli] != celli)
     {
@@ -88,7 +89,7 @@ static inline label findRoot(labelList& parent, label celli)
     return celli;
 }
 
-static inline void unionCells(labelList& parent, const label a, const label b)
+static inline void unionCells(labelUList& parent, const label a, const label b)
 {
     const label roota = findRoot(parent, a);
     const label rootb = findRoot(parent, b);
@@ -112,9 +113,9 @@ static IOobject regionDecompDictIO(const polyMesh& mesh)
         mesh.time().system(),
         mesh.local(),
         mesh.thisDb(),
-        IOobject::MUST_READ,
-        IOobject::NO_WRITE,
-        IOobject::NO_REGISTER,
+        IOobjectOption::MUST_READ,
+        IOobjectOption::NO_WRITE,
+        IOobjectOption::NO_REGISTER,
         true    // global object
     );
 }
@@ -212,7 +213,7 @@ Foam::multiRegionCoupledDecomp::multiRegionCoupledDecomp
             methodDict_.findEntry("regionWeights", keyType::LITERAL)
     )
     {
-        if (const dictionary* dictptr = eptr->dictPtr())
+        if (const auto* dictptr = eptr->dictPtr())
         {
             regionWeights_ = *dictptr;
         }
@@ -225,15 +226,16 @@ Foam::multiRegionCoupledDecomp::multiRegionCoupledDecomp
 
     // The regions entry of this file; a region's own decomposeParDict is
     // checked in checkRegionMethods, once the region list is known
-    if (const dictionary* regionsPtr = decompDict_.findDict("regions"))
+    if (const auto* regionsPtr = decompDict_.findDict("regions"))
     {
         for (const entry& dEntry : *regionsPtr)
         {
             word regionMethod;
+            const auto* dictptr = dEntry.dictPtr();
             if
             (
-                dEntry.isDict()
-             && dEntry.dict().readIfPresent("method", regionMethod)
+                dictptr
+             && dictptr->readIfPresent("method", regionMethod)
              && regionMethod != typeName
             )
             {
@@ -253,7 +255,7 @@ Foam::multiRegionCoupledDecomp::multiRegionCoupledDecomp
             methodDict_.findEntry("patchWeights", keyType::LITERAL)
     )
     {
-        const dictionary* dictptr = eptr->dictPtr();
+        const auto* dictptr = eptr->dictPtr();
         if (!dictptr)
         {
             FatalIOErrorInFunction(methodDict_)
@@ -288,21 +290,26 @@ Foam::multiRegionCoupledDecomp::weldedDecomp(const polyMesh& mesh) const
 
     if (!weldPtr)
     {
-        weldPtr = &regIOobject::store(new weldedDecomposition(obr));
-        weldPtr->builtBy = mesh.name();
+        weldPtr = new weldedDecomposition(obr);
+        weldPtr->ownerName = mesh.name();
         weldPtr->coeffs = methodDict_;
+        regIOobject::store(weldPtr);
         buildGlobalDecomposition(mesh, *weldPtr);
     }
     // numberOfSubdomains is injected into methodDict_, so sameDict below
     // would catch a mismatch too; check it first for a message that names
     // the counts rather than pointing at two identical-looking Coeffs
-    else if (weldPtr->coeffs.get<label>("numberOfSubdomains") != nDomains())
+    else if
+    (
+        const label nWeldDomains =
+            weldPtr->coeffs.get<label>("numberOfSubdomains");
+        nWeldDomains != nDomains()
+    )
     {
         FatalErrorInFunction
             << "Region " << mesh.name() << " asks for " << nDomains()
-            << " subdomains, region " << weldPtr->builtBy << " built the"
-            << " decomposition for "
-            << weldPtr->coeffs.get<label>("numberOfSubdomains")
+            << " subdomains, region " << weldPtr->ownerName << " built the"
+            << " decomposition for " << nWeldDomains
             << "; one decomposition balances every region in regionProperties"
             << exit(FatalError);
     }
@@ -313,7 +320,7 @@ Foam::multiRegionCoupledDecomp::weldedDecomp(const polyMesh& mesh) const
         // but one decomposition balances every region in regionProperties
         FatalErrorInFunction
             << "Region " << mesh.name() << " gives different " << typeName
-            << "Coeffs than region " << weldPtr->builtBy << ", which built "
+            << "Coeffs than region " << weldPtr->ownerName << ", which built "
             << "the decomposition; every region must give the same "
             << "coefficients" << exit(FatalError);
     }
@@ -338,7 +345,7 @@ void Foam::multiRegionCoupledDecomp::buildGlobalDecomposition
     regions = regionProperties(runTime).names();
     const label nRegions = regions.size();
 
-    HashTable<label> regionId(2*nRegions);
+    HashTable<label> regionId;
     forAll(regions, regioni)
     {
         regionId.insert(regions[regioni], regioni);
@@ -366,13 +373,13 @@ void Foam::multiRegionCoupledDecomp::buildGlobalDecomposition
                         regions[regioni],
                         runTime.timeName(),
                         runTime,
-                        IOobject::MUST_READ,
-                        IOobject::NO_WRITE,
-                        IOobject::NO_REGISTER
+                        IOobjectOption::MUST_READ,
+                        IOobjectOption::NO_WRITE,
+                        IOobjectOption::NO_REGISTER
                     )
                 )
             );
-            meshes.set(regioni, &ownMeshes[regioni]);
+            meshes.set(regioni, ownMeshes.get(regioni));
         }
     }
 
@@ -403,12 +410,13 @@ void Foam::multiRegionCoupledDecomp::buildGlobalDecomposition
         {
             const polyPatch& pp = pbm[patchi];
 
-            if (!isA<mappedPatchBase>(pp))
+            const auto* mppPtr = isA<mappedPatchBase>(pp);
+            if (!mppPtr)
             {
                 continue;
             }
 
-            const mappedPatchBase& mpp = refCast<const mappedPatchBase>(pp);
+            const mappedPatchBase& mpp = *mppPtr;
 
             // A patch the filters exclude by its own name is skipped before
             // samplePatch() is read: a nearestCell patch carries none and
@@ -433,12 +441,11 @@ void Foam::multiRegionCoupledDecomp::buildGlobalDecomposition
                     << " sampleRegion and samplePatch" << exit(FatalError);
             }
 
-            const auto regFnd = regionId.cfind(mpp.sampleRegion());
-            if (!regFnd)
+            const label nbrRegioni = regionId.lookup(mpp.sampleRegion(), -1);
+            if (nbrRegioni < 0)
             {
                 continue;   // samples a region outside the coupled set
             }
-            const label nbrRegioni = regFnd();
 
             // The assembly pairs face i with neighbour face i, so only a
             // face-to-face sample mode gives a meaningful pairing
@@ -550,7 +557,7 @@ void Foam::multiRegionCoupledDecomp::buildGlobalDecomposition
                 }
                 else if (onceOnly)
                 {
-                    excluded.append(labelPair(globali, nbrGlobali));
+                    excluded.emplace_back(globali, nbrGlobali);
                 }
             }
         }
@@ -605,7 +612,7 @@ void Foam::multiRegionCoupledDecomp::buildGlobalDecomposition
 
         if (!matched)
         {
-            unmatched.append(key);
+            unmatched.push_back(key);
         }
     }
     if (!unmatched.empty())
@@ -621,15 +628,16 @@ void Foam::multiRegionCoupledDecomp::buildGlobalDecomposition
     scalarField cellFaceLoad;
     labelList cellFaceCount;
     labelList regionFaces(nRegions, Zero);
+    label nWeightedFaces = 0;
 
     if (patchWeighted)
     {
-        cellFaceLoad.resize(nGlobal, Zero);
-        cellFaceCount.resize(nGlobal, Zero);
+        cellFaceLoad.resize_fill(nGlobal, Zero);
+        cellFaceCount.resize_fill(nGlobal, Zero);
 
         forAll(regions, regioni)
         {
-            const dictionary* patchDictPtr =
+            const auto* patchDictPtr =
                 patchWeights_.findDict(regions[regioni]);
 
             if (!patchDictPtr)
@@ -654,19 +662,17 @@ void Foam::multiRegionCoupledDecomp::buildGlobalDecomposition
                 }
 
                 regionFaces[regioni] += pp.size();
+                nWeightedFaces += pp.size();
 
-                const labelUList& fc = pp.faceCells();
-                forAll(fc, i)
+                for (const label celli : pp.faceCells())
                 {
-                    const label globali = regionOffsets[regioni] + fc[i];
+                    const label globali = regionOffsets[regioni] + celli;
                     cellFaceLoad[globali] += w;
                     ++cellFaceCount[globali];
                 }
             }
         }
     }
-
-    const label nWeightedFaces = sum(regionFaces);
 
     const bool weighted = !regionWeights_.empty() || patchWeighted;
 
@@ -863,7 +869,7 @@ void Foam::multiRegionCoupledDecomp::buildGlobalDecomposition
             {
                 if (!procRegionCells[proci][regioni])
                 {
-                    starved.append(labelPair(proci, regioni));
+                    starved.emplace_back(proci, regioni);
                 }
             }
         }
@@ -884,8 +890,7 @@ void Foam::multiRegionCoupledDecomp::buildGlobalDecomposition
         }
     }
 
-    const label minCells = min(procCells);
-    const label maxCells = max(procCells);
+    const MinMax<label> cellRange = minMax(procCells);
     const scalar meanCells = scalar(nGlobal)/nProcs;
 
     Info<< type() << " : global load balance over " << nProcs
@@ -909,38 +914,36 @@ void Foam::multiRegionCoupledDecomp::buildGlobalDecomposition
         }
         Info<< nl;
     }
-    Info<< "    Cells min:" << minCells << " max:" << maxCells
+    Info<< "    Cells min:" << cellRange.min() << " max:" << cellRange.max()
         << " mean:" << meanCells;
     if (meanCells > 0)
     {
-        Info<< " imbalance:" << maxCells/meanCells - 1;
+        Info<< " imbalance:" << cellRange.max()/meanCells - 1;
     }
 
     if (patchWeighted)
     {
-        const label minFaces = min(procFaces);
-        const label maxFaces = max(procFaces);
+        const MinMax<label> faceRange = minMax(procFaces);
         const scalar meanFaces = scalar(nWeightedFaces)/nProcs;
 
-        Info<< nl << "    Faces min:" << minFaces << " max:" << maxFaces
-            << " mean:" << meanFaces;
+        Info<< nl << "    Faces min:" << faceRange.min()
+            << " max:" << faceRange.max() << " mean:" << meanFaces;
         if (meanFaces > 0)
         {
-            Info<< " imbalance:" << maxFaces/meanFaces - 1;
+            Info<< " imbalance:" << faceRange.max()/meanFaces - 1;
         }
     }
 
     if (weighted)
     {
-        const scalar minLoad = min(procLoad);
-        const scalar maxLoad = max(procLoad);
+        const MinMax<scalar> loadRange = minMax(procLoad);
         const scalar meanLoad = sum(procLoad)/nProcs;
 
-        Info<< nl << "    Load  min:" << minLoad << " max:" << maxLoad
-            << " mean:" << meanLoad;
+        Info<< nl << "    Load  min:" << loadRange.min()
+            << " max:" << loadRange.max() << " mean:" << meanLoad;
         if (meanLoad > 0)
         {
-            Info<< " imbalance:" << maxLoad/meanLoad - 1;
+            Info<< " imbalance:" << loadRange.max()/meanLoad - 1;
         }
     }
     Info<< endl;
@@ -967,7 +970,10 @@ void Foam::multiRegionCoupledDecomp::checkRegionMethods
             continue;
         }
 
-        const IOdictionary regionDict(regionDecompDictIO(regionMesh));
+        const dictionary regionDict
+        (
+            IOdictionary::readContents(regionDecompDictIO(regionMesh))
+        );
 
         // decompositionMethod::New lets a regions sub-dictionary of that
         // same file override the top-level method
@@ -975,7 +981,7 @@ void Foam::multiRegionCoupledDecomp::checkRegionMethods
 
         if
         (
-            const dictionary* regionsPtr =
+            const auto* regionsPtr =
                 cfindRegionDict(regionDict, regionMesh.name())
         )
         {
