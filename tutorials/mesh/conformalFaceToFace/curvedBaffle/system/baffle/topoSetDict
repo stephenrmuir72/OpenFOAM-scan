@@ -1,0 +1,47 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      topoSetDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+actions
+(
+    // Baffle faces coincident with the conductor inner shell
+    {
+        name    coupledInner;
+        type    faceSet;
+        action  new;
+        source  conformalFaceToFace;
+        region  region0;
+        set     coupledInner;
+    }
+
+    // Baffle faces one thickness behind the conductor outer shell
+    // Curvature drifts the target centre off the normal step and enlarges the
+    // outer face by the radius ratio
+    {
+        name    coupledOuter;
+        type    faceSet;
+        action  new;
+        source  conformalFaceToFace;
+        region  region0;
+        set     coupledOuter;
+        distance 0.005;
+        flipDistance yes;
+        tolerance 1e-4;
+        areaTolerance 0.12;
+    }
+);
+
+
+// ************************************************************************* //

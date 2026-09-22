@@ -1,0 +1,43 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      topoSetDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// The conductor cellZone comes from blockMesh
+// Extract the mid-radius shell of internal faces, to extrude into the
+// baffle region
+
+actions
+(
+    {
+        name    midShell;
+        type    faceSet;
+        action  new;
+        source  cylinderAnnulusToFace;
+        point1  (0 0 -1);
+        point2  (0 0 1);
+        innerRadius 0.0495;
+        outerRadius 0.0505;
+    }
+    {
+        name    midShell;
+        type    faceZoneSet;
+        action  new;
+        source  setToFaceZone;
+        faceSet midShell;
+    }
+);
+
+
+// ************************************************************************* //
