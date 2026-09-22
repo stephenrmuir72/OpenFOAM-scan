@@ -123,6 +123,8 @@ Note
   - Needs to be on underlying \c mapped(Wall)FvPatch.
   - \c thermalInertia is refused with a contact layer, which the inertia
     branch does not read.
+  - The two patches' contact layers must give the same conductance: each side
+    uses only its own, so a mismatch unbalances the flux and is refused.
 
 SourceFiles
     turbulentTemperatureRadCoupledMixedFvPatchScalarField.C
@@ -195,6 +197,10 @@ class turbulentTemperatureRadCoupledMixedFvPatchScalarField
 
 
      // Private Functions
+
+        //- Return the series conductance of the contact layers,
+        //- GREAT where no layer is given
+        tmp<scalarField> KDeltaLayers(const scalar t) const;
 
         //- Return local alphaSfDelta
         tmp<scalarField> alphaSfDelta() const;

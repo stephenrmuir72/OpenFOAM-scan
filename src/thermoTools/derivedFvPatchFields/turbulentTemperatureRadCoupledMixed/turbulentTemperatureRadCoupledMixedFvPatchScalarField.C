@@ -420,6 +420,39 @@ turbulentTemperatureRadCoupledMixedFvPatchScalarField::kappa
 }
 
 
+tmp<Foam::scalarField>
+turbulentTemperatureRadCoupledMixedFvPatchScalarField::KDeltaLayers
+(
+    const scalar t
+) const
+{
+    auto tKDeltaC = tmp<scalarField>::New(this->size(), GREAT);
+
+    if (thicknessLayer_ || thicknessLayers_.size())
+    {
+        scalarField& KDeltaC = tKDeltaC.ref();
+        KDeltaC = 0.0;
+
+        if (thicknessLayer_)
+        {
+            KDeltaC += thicknessLayer_().value(t)/kappaLayer_().value(t);
+        }
+
+        if (thicknessLayers_.size())
+        {
+            forAll(thicknessLayers_, iLayer)
+            {
+                KDeltaC += thicknessLayers_[iLayer]/kappaLayers_[iLayer];
+            }
+        }
+
+        KDeltaC = 1.0/(KDeltaC + SMALL);
+    }
+
+    return tKDeltaC;
+}
+
+
 void turbulentTemperatureRadCoupledMixedFvPatchScalarField::updateCoeffs()
 {
     if (updated())
@@ -449,9 +482,13 @@ void turbulentTemperatureRadCoupledMixedFvPatchScalarField::updateCoeffs()
     const scalarField KDelta(kappaTp*patch().deltaCoeffs());
 
 
+    const scalar t = db().time().timeOutputValue();
+    const scalarField KDeltaC(KDeltaLayers(t));
+
     scalarField TcNbr;
     scalarField TpNbr;
     scalarField KDeltaNbr;
+    scalarField KDeltaCNbr;
 
     if (mpp.sameWorld())
     {
@@ -470,6 +507,7 @@ void turbulentTemperatureRadCoupledMixedFvPatchScalarField::updateCoeffs()
         TcNbr = nbrField.patchInternalField();
         TpNbr = nbrField;
         KDeltaNbr = nbrField.kappa(nbrField)*nbrPatch.deltaCoeffs();
+        KDeltaCNbr = nbrField.KDeltaLayers(t);
     }
     else
     {
@@ -478,34 +516,28 @@ void turbulentTemperatureRadCoupledMixedFvPatchScalarField::updateCoeffs()
         TcNbr = patchInternalField();
         TpNbr = Tp;
         KDeltaNbr = KDelta;
+        KDeltaCNbr = KDeltaC;
     }
     distribute(this->internalField().name() + "_value", TcNbr);
     distribute(this->internalField().name() + "_patchValue", TpNbr);
     distribute(this->internalField().name() + "_weights", KDeltaNbr);
+    distribute(this->internalField().name() + "_layers", KDeltaCNbr);
 
-    scalarField KDeltaC(this->size(), GREAT);
     if (thicknessLayer_ || thicknessLayers_.size())
     {
-        // Harmonic averaging
+        const scalar maxLayerMismatch =
+            gMax(mag(KDeltaCNbr - KDeltaC)/max(KDeltaCNbr, KDeltaC));
+
+        if (maxLayerMismatch > SMALL)
         {
-            KDeltaC = 0.0;
-
-            if (thicknessLayer_)
-            {
-                const scalar t = db().time().timeOutputValue();
-                KDeltaC +=
-                     thicknessLayer_().value(t)
-                    /kappaLayer_().value(t);
-
-            }
-            if (thicknessLayers_.size())
-            {
-                forAll(thicknessLayers_, iLayer)
-                {
-                    KDeltaC += thicknessLayers_[iLayer]/kappaLayers_[iLayer];
-                }
-            }
-            KDeltaC = 1.0/(KDeltaC + SMALL);
+            FatalErrorInFunction
+                << "the same layer conductance is required on both sides of "
+                << "the coupled patch "
+                << mesh.name() << ':' << patch().name() << " <- "
+                << mpp.sampleRegion() << ':' << mpp.samplePatch()
+                << ": the layer conductances differ by "
+                << maxLayerMismatch << " relative"
+                << exit(FatalError);
         }
     }
 
