@@ -193,6 +193,15 @@ Foam::multiRegionCoupledDecomp::multiRegionCoupledDecomp
             << exit(FatalIOError);
     }
 
+    if (!constraints_.empty())
+    {
+        FatalIOErrorInFunction(decompDict_)
+            << typeName << " does not support decomposition constraints:"
+            << " applied per region, they can split a welded pair across"
+            << " processors"
+            << exit(FatalIOError);
+    }
+
     methodDict_.set("numberOfSubdomains", nDomains());
     method_ = decompositionMethod::New(methodDict_);
     methodDict_.readIfPresent("implicitPatches", implicitPatches_);
