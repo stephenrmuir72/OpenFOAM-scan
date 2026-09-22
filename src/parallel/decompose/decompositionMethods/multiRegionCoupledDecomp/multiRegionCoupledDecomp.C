@@ -197,14 +197,21 @@ Foam::multiRegionCoupledDecomp::multiRegionCoupledDecomp
     method_ = decompositionMethod::New(methodDict_);
     methodDict_.readIfPresent("implicitPatches", implicitPatches_);
     methodDict_.readIfPresent("explicitPatches", explicitPatches_);
-    if (const dictionary* dictPtr = methodDict_.findDict("regionWeights"))
+    if
+    (
+        const auto* eptr =
+            methodDict_.findEntry("regionWeights", keyType::LITERAL)
+    )
     {
-        regionWeights_ = *dictPtr;
-    }
-    else if (methodDict_.found("regionWeights"))
-    {
-        FatalIOErrorInFunction(methodDict_)
-            << "regionWeights is not a dictionary" << exit(FatalIOError);
+        if (const dictionary* dictptr = eptr->dictPtr())
+        {
+            regionWeights_ = *dictptr;
+        }
+        else
+        {
+            FatalIOErrorInFunction(methodDict_)
+                << "regionWeights is not a dictionary" << exit(FatalIOError);
+        }
     }
 
     // The regions entry of this file; a region's own decomposeParDict is
@@ -231,13 +238,24 @@ Foam::multiRegionCoupledDecomp::multiRegionCoupledDecomp
             }
         }
     }
-    if (const dictionary* dictPtr = methodDict_.findDict("patchWeights"))
+    if
+    (
+        const auto* eptr =
+            methodDict_.findEntry("patchWeights", keyType::LITERAL)
+    )
     {
-        patchWeights_ = *dictPtr;
+        const dictionary* dictptr = eptr->dictPtr();
+        if (!dictptr)
+        {
+            FatalIOErrorInFunction(methodDict_)
+                << "patchWeights is not a dictionary" << exit(FatalIOError);
+        }
+
+        patchWeights_ = *dictptr;
 
         for (const entry& dEntry : patchWeights_)
         {
-            if (!dEntry.isDict())
+            if (!dEntry.dictPtr())
             {
                 FatalIOErrorInFunction(patchWeights_)
                     << "patchWeights entry " << dEntry.keyword()
@@ -245,11 +263,6 @@ Foam::multiRegionCoupledDecomp::multiRegionCoupledDecomp
                     << "are given per region" << exit(FatalIOError);
             }
         }
-    }
-    else if (methodDict_.found("patchWeights"))
-    {
-        FatalIOErrorInFunction(methodDict_)
-            << "patchWeights is not a dictionary" << exit(FatalIOError);
     }
 }
 
