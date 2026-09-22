@@ -279,6 +279,15 @@ turbulentTemperatureRadCoupledMixedFvPatchScalarField
     if (dict.readIfPresent("thicknessLayers", thicknessLayers_))
     {
         dict.readEntry("kappaLayers", kappaLayers_);
+
+        if (thicknessLayers_.size() != kappaLayers_.size())
+        {
+            FatalIOErrorInFunction(dict)
+                << "thicknessLayers and kappaLayers must have the same size, "
+                << "found " << thicknessLayers_.size() << " and "
+                << kappaLayers_.size()
+                << exit(FatalIOError);
+        }
     }
     // Read single additional layer as PatchFunction1
     thicknessLayer_ = PatchFunction1<scalar>::NewIfPresent
