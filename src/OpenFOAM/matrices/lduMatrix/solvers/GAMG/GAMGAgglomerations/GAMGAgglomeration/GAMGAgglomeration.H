@@ -69,6 +69,7 @@ SourceFiles
 #include "runTimeSelectionTables.H"
 
 #include "boolList.H"
+#include "labelPairHashes.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -146,6 +147,15 @@ protected:
         //- Weighted interpolation weights, parallel to
         //- interpolationAddr_ (same sizes, same order)
         PtrList<List<scalarField>> interpolationWeights_;
+
+        //- Fill-in-aware coarse face lookup: (min(I,J), max(I,J)) coarse
+        //- cell index pair to coarse face index, for levels where
+        //- hasInterpolation() is true. Includes both faces that
+        //- correspond to an actual fine face and pure Galerkin "fill-in"
+        //- faces that arise only from weighted, multi-parent
+        //- interpolation (no corresponding fine face). Left unset for
+        //- levels without weighted interpolation data.
+        PtrList<labelPairLookup> coarseFaceLookup_;
 
         //- The number of (coarse) faces in each level.
         //  max(faceRestrictAddressing)+1.
@@ -494,6 +504,13 @@ public:
             ) const
             {
                 return interpolationWeights_[leveli];
+            }
+
+            //- Return the fill-in-aware coarse face lookup of given
+            //- level. Only valid if hasInterpolation(leveli)
+            const labelPairLookup& coarseFaceLookup(const label leveli) const
+            {
+                return coarseFaceLookup_[leveli];
             }
 
             //- Return face restrict addressing of given level

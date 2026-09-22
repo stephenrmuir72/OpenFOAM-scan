@@ -210,8 +210,24 @@ void Foam::GAMGSolver::Vcycle
 
     const label coarsestLevel = matrixLevels_.size() - 1;
 
-    // Restrict finest grid residual for the next level up.
-    agglomeration_.restrictField(coarseSources[0], finestResidual, 0, true);
+    // Restrict finest grid residual for the next level up. Use the
+    // weighted (P^T-consistent) restriction when level 0 has weighted
+    // interpolation data - matching the Galerkin matrix built for it
+    // (agglomerateMatrixWeighted()) - otherwise plain injection.
+    if (agglomeration_.hasInterpolation(0))
+    {
+        agglomeration_.restrictFieldWeighted
+        (
+            coarseSources[0],
+            finestResidual,
+            0,
+            true
+        );
+    }
+    else
+    {
+        agglomeration_.restrictField(coarseSources[0], finestResidual, 0, true);
+    }
 
     if (nPreSweeps_ && ((log_ >= 2) || (debug >= 2)))
     {
@@ -436,14 +452,29 @@ void Foam::GAMGSolver::Vcycle
         }
     }
 
-    // Prolong the finest level correction
-    agglomeration_.prolongField
-    (
-        finestCorrection,
-        coarseCorrFields[0],
-        0,
-        true
-    );
+    // Prolong the finest level correction. Use the weighted
+    // (Galerkin-consistent) prolongation when level 0 has weighted
+    // interpolation data, otherwise plain injection.
+    if (agglomeration_.hasInterpolation(0))
+    {
+        agglomeration_.prolongFieldWeighted
+        (
+            finestCorrection,
+            coarseCorrFields[0],
+            0,
+            true
+        );
+    }
+    else
+    {
+        agglomeration_.prolongField
+        (
+            finestCorrection,
+            coarseCorrFields[0],
+            0,
+            true
+        );
+    }
 
     if (interpolateCorrection_)
     {

@@ -60,10 +60,18 @@ Description
         multi-parent direct-interpolation data
         (interpolationAddr()/interpolationWeights()); it only reuses
         the C/F splitting to build a classical single-parent
-        restrictAddressing_ partition. See GAMGAgglomeration's
-        interpolationAddr_/interpolationWeights_ members for the
-        (currently unused by this class) weighted-interpolation
-        storage intended for a future, fully weighted RS agglomerator.
+        restrictAddressing_ partition. A weighted Galerkin (RAP)
+        coarse-matrix path now exists in GAMGAgglomeration
+        (coarseFaceLookup()/fill-in-aware topology) and GAMGSolver
+        (agglomerateMatrixWeighted()), gated behind
+        GAMGAgglomeration::hasInterpolation() - but this class
+        deliberately does not populate interpolationAddr_/
+        interpolationWeights_ yet: empirical testing found the
+        resulting coarse matrix's aggregate row-sum/conditioning
+        behaviour was not good enough to use in practice when
+        composed with GAMGSolver's deeper V-cycle machinery, and the
+        root cause was not fully isolated. Revisit only once that is
+        resolved.
 
 SourceFiles
     rugeStubenGAMGAgglomeration.C

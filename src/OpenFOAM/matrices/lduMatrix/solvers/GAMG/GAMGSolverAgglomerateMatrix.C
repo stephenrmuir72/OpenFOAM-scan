@@ -43,6 +43,17 @@ void Foam::GAMGSolver::agglomerateMatrix
     const lduInterfacePtrsList& coarseMeshInterfaces
 )
 {
+    if (agglomeration_.hasInterpolation(fineLevelIndex))
+    {
+        agglomerateMatrixWeighted
+        (
+            fineLevelIndex,
+            coarseMesh,
+            coarseMeshInterfaces
+        );
+        return;
+    }
+
     // Get fine matrix
     const lduMatrix& fineMatrix = matrixLevel(fineLevelIndex);
 
@@ -313,6 +324,210 @@ void Foam::GAMGSolver::agglomerateMatrix
                 }
             }
             #endif
+        }
+    }
+}
+
+
+void Foam::GAMGSolver::agglomerateMatrixWeighted
+(
+    const label fineLevelIndex,
+    const lduMesh& coarseMesh,
+    const lduInterfacePtrsList& coarseMeshInterfaces
+)
+{
+    // Get fine matrix
+    const lduMatrix& fineMatrix = matrixLevel(fineLevelIndex);
+
+    if (UPstream::myProcNo(fineMatrix.mesh().comm()) != -1)
+    {
+        const label nCoarseCells = agglomeration_.nCells(fineLevelIndex);
+        const label nCoarseFaces = agglomeration_.nFaces(fineLevelIndex);
+
+        // Set the coarse level matrix
+        matrixLevels_.set
+        (
+            fineLevelIndex,
+            new lduMatrix(coarseMesh)
+        );
+        lduMatrix& coarseMatrix = matrixLevels_[fineLevelIndex];
+
+        // Coarse matrix diagonal and off-diagonals are assembled from
+        // scratch below (Galerkin RAP), unlike agglomerateMatrix()'s
+        // restriction of the fine diagonal
+        scalarField& coarseDiag = coarseMatrix.diag(nCoarseCells);
+        coarseDiag = Zero;
+
+        // Get reference to fine-level interfaces
+        const lduInterfaceFieldPtrsList& fineInterfaces =
+            interfaceLevel(fineLevelIndex);
+
+        // Create coarse-level interfaces. Unchanged from the
+        // single-parent path above: cross-processor Galerkin coupling
+        // is not part of this weighted-interpolation prototype (see
+        // GAMGAgglomeration::hasInterpolation() documentation) -
+        // boundary coefficients are still restricted by plain
+        // per-patch face summation.
+        primitiveInterfaceLevels_.set
+        (
+            fineLevelIndex,
+            new PtrList<lduInterfaceField>(fineInterfaces.size())
+        );
+
+        PtrList<lduInterfaceField>& coarsePrimInterfaces =
+            primitiveInterfaceLevels_[fineLevelIndex];
+
+        interfaceLevels_.set
+        (
+            fineLevelIndex,
+            new lduInterfaceFieldPtrsList(fineInterfaces.size())
+        );
+
+        lduInterfaceFieldPtrsList& coarseInterfaces =
+            interfaceLevels_[fineLevelIndex];
+
+        interfaceLevelsBouCoeffs_.set
+        (
+            fineLevelIndex,
+            new FieldField<Field, scalar>(fineInterfaces.size())
+        );
+        FieldField<Field, scalar>& coarseInterfaceBouCoeffs =
+            interfaceLevelsBouCoeffs_[fineLevelIndex];
+
+        interfaceLevelsIntCoeffs_.set
+        (
+            fineLevelIndex,
+            new FieldField<Field, scalar>(fineInterfaces.size())
+        );
+        FieldField<Field, scalar>& coarseInterfaceIntCoeffs =
+            interfaceLevelsIntCoeffs_[fineLevelIndex];
+
+        agglomerateInterfaceCoefficients
+        (
+            fineLevelIndex,
+            coarseMeshInterfaces,
+            coarsePrimInterfaces,
+            coarseInterfaces,
+            coarseInterfaceBouCoeffs,
+            coarseInterfaceIntCoeffs
+        );
+
+        // Weighted Galerkin (RAP) sparse triple-product coarse-matrix
+        // assembly. Mirrors RugeStubenCoarsening::calcCoarseMatrix()'s
+        // algorithm, but targets the fixed, fill-in-aware coarse face
+        // addressing built once by
+        // GAMGAgglomeration::agglomerateLduAddressing() (see
+        // coarseFaceLookup()) instead of building a fresh
+        // lduPrimitiveMesh - the coarse topology cannot change from one
+        // solve to the next even though the fine coefficients do.
+        const lduAddressing& fineMeshAddr = fineMatrix.mesh().lduAddr();
+        const labelUList& upperAddr = fineMeshAddr.upperAddr();
+        const labelUList& lowerAddr = fineMeshAddr.lowerAddr();
+
+        const labelListList& addr =
+            agglomeration_.interpolationAddr(fineLevelIndex);
+        const List<scalarField>& weights =
+            agglomeration_.interpolationWeights(fineLevelIndex);
+        const labelPairLookup& faceLookup =
+            agglomeration_.coarseFaceLookup(fineLevelIndex);
+
+        const bool asymmetric = fineMatrix.hasLower();
+
+        scalarField& coarseUpper = coarseMatrix.upper(nCoarseFaces);
+        coarseUpper = Zero;
+
+        scalarField* coarseLowerPtr = nullptr;
+        if (asymmetric)
+        {
+            coarseLowerPtr = &coarseMatrix.lower(nCoarseFaces);
+            *coarseLowerPtr = Zero;
+        }
+
+        // Accumulate wI*aij*wJ into the coarse diagonal (I == J), the
+        // coarse face identified via faceLookup (I != J and I,J may or
+        // may not correspond to an existing fine face - fill-in is
+        // handled transparently since coarseFaceLookup() already
+        // includes those faces)
+        auto addTriple =
+        [&]
+        (
+            const labelList& Pi, const scalarField& Wi,
+            const scalar aij,
+            const labelList& Pj, const scalarField& Wj
+        )
+        {
+            if (aij == 0)
+            {
+                return;
+            }
+
+            forAll(Pi, a)
+            {
+                const label I = Pi[a];
+                const scalar wI = Wi[a];
+
+                forAll(Pj, b)
+                {
+                    const scalar contrib = wI*aij*Wj[b];
+                    const label J = Pj[b];
+
+                    if (I == J)
+                    {
+                        coarseDiag[I] += contrib;
+                    }
+                    else if (I < J)
+                    {
+                        const label facei = faceLookup[labelPair(I, J)];
+
+                        if (asymmetric)
+                        {
+                            (*coarseLowerPtr)[facei] += contrib;
+                        }
+                        else
+                        {
+                            coarseUpper[facei] += contrib;
+                        }
+                    }
+                    else
+                    {
+                        const label facei = faceLookup[labelPair(J, I)];
+                        coarseUpper[facei] += contrib;
+                    }
+                }
+            }
+        };
+
+        // Diagonal self-term - also the only source of fill-in from a
+        // single fine cell's own multi-parent split
+        const scalarField& fineDiag = fineMatrix.diag();
+        forAll(addr, celli)
+        {
+            addTriple
+            (
+                addr[celli], weights[celli],
+                fineDiag[celli],
+                addr[celli], weights[celli]
+            );
+        }
+
+        // Existing fine face contributions, from both rows they touch
+        const scalarField& fineUpper = fineMatrix.upper();
+
+        forAll(upperAddr, fineFacei)
+        {
+            const label i = upperAddr[fineFacei];
+            const label j = lowerAddr[fineFacei];
+
+            const scalar aij =
+                asymmetric ? fineMatrix.lower()[fineFacei] : fineUpper[fineFacei];
+
+            addTriple(addr[i], weights[i], aij, addr[j], weights[j]);
+            addTriple
+            (
+                addr[j], weights[j],
+                fineUpper[fineFacei],
+                addr[i], weights[i]
+            );
         }
     }
 }

@@ -362,8 +362,28 @@ void Foam::GAMGAgglomeration::agglomerateLduAddressing
     faceRestrictAddressing_.set(fineLevelIndex, new labelList(nFineFaces));
     labelList& faceRestrictAddr = faceRestrictAddressing_[fineLevelIndex];
 
-    // Initial neighbour array (not in upper-triangle order)
-    labelList initCoarseNeighb(nFineFaces);
+    // Initial neighbour array (not in upper-triangle order). Sized
+    // generously up front (rather than grown on demand) to also cover
+    // the weighted fill-in faces added below, which are not bounded by
+    // nFineFaces the way the plain single-parent faces are.
+    label maxInitCoarseNeighb = nFineFaces;
+    if (hasInterpolation(fineLevelIndex))
+    {
+        const labelListList& addr = interpolationAddr_[fineLevelIndex];
+
+        forAll(addr, celli)
+        {
+            const label nParents = addr[celli].size();
+            maxInitCoarseNeighb += nParents*nParents;
+        }
+        forAll(upperAddr, fineFacei)
+        {
+            maxInitCoarseNeighb +=
+                addr[upperAddr[fineFacei]].size()
+              * addr[lowerAddr[fineFacei]].size();
+        }
+    }
+    labelList initCoarseNeighb(maxInitCoarseNeighb);
 
     // Counter for coarse faces
     label& nCoarseFaces = nFaces_[fineLevelIndex];
@@ -447,6 +467,111 @@ void Foam::GAMGAgglomeration::agglomerateLduAddressing
     } // end for all fine faces
 
 
+    // Fill-in faces for weighted, possibly multi-parent interpolation.
+    // Galerkin (RAP) coarsening can couple two coarse cells that have
+    // no corresponding fine face at all (e.g. through a shared
+    // multi-parent F-point, or a single fine cell whose own diagonal
+    // splits across several coarse parents). Discover and register
+    // these extra coarse faces here, reusing the same cCellFaces/
+    // initCoarseNeighb deduplication structures as the fine-face loop
+    // above, so they are numbered and renumbered together with the
+    // "real" faces. Fine faces keep at most one faceRestrictAddr
+    // entry each (unchanged above); fill-in faces have no fine-face
+    // counterpart and are only reachable via
+    // GAMGAgglomeration::coarseFaceLookup().
+    if (hasInterpolation(fineLevelIndex))
+    {
+        const labelListList& addr = interpolationAddr_[fineLevelIndex];
+
+        auto addCoarsePair = [&](label cOwn, label cNei)
+        {
+            if (cOwn == cNei)
+            {
+                return;
+            }
+
+            if (cOwn > cNei)
+            {
+                const label tmp = cOwn;
+                cOwn = cNei;
+                cNei = tmp;
+            }
+
+            label* ccFaces = &cCellFaces[maxNnbrs*cOwn];
+            label& ccnFaces = cCellnFaces[cOwn];
+
+            for (int i=0; i<ccnFaces; i++)
+            {
+                if (initCoarseNeighb[ccFaces[i]] == cNei)
+                {
+                    return;
+                }
+            }
+
+            if (ccnFaces >= maxNnbrs)
+            {
+                label oldMaxNnbrs = maxNnbrs;
+                maxNnbrs *= 2;
+
+                cCellFaces.setSize(maxNnbrs*nCoarseCells);
+
+                forAllReverse(cCellnFaces, i)
+                {
+                    label* oldCcNbrs = &cCellFaces[oldMaxNnbrs*i];
+                    label* newCcNbrs = &cCellFaces[maxNnbrs*i];
+
+                    for (int j=0; j<cCellnFaces[i]; j++)
+                    {
+                        newCcNbrs[j] = oldCcNbrs[j];
+                    }
+                }
+
+                ccFaces = &cCellFaces[maxNnbrs*cOwn];
+            }
+
+            ccFaces[ccnFaces] = nCoarseFaces;
+            initCoarseNeighb[nCoarseFaces] = cNei;
+            ccnFaces++;
+
+            // new fill-in coarse face created (no fine-face counterpart)
+            nCoarseFaces++;
+        };
+
+        // Fill-in from existing fine faces: the two fine cells' full
+        // parent lists may create coarse-coarse coupling beyond
+        // whatever the single-parent restrictMap already produced
+        // above
+        forAll(upperAddr, fineFacei)
+        {
+            const labelList& Pi = addr[upperAddr[fineFacei]];
+            const labelList& Pj = addr[lowerAddr[fineFacei]];
+
+            for (const label I : Pi)
+            {
+                for (const label J : Pj)
+                {
+                    addCoarsePair(I, J);
+                }
+            }
+        }
+
+        // Fill-in from a single fine cell's own diagonal split across
+        // multiple parents (only possible for multi-parent fine cells)
+        forAll(addr, celli)
+        {
+            const labelList& Pi = addr[celli];
+
+            for (const label I : Pi)
+            {
+                for (const label J : Pi)
+                {
+                    addCoarsePair(I, J);
+                }
+            }
+        }
+    }
+
+
     // Renumber into upper-triangular order
 
     // All coarse owner-neighbour storage
@@ -467,6 +592,30 @@ void Foam::GAMGAgglomeration::agglomerateLduAddressing
             coarseNeighbour[coarseFacei] = initCoarseNeighb[cFaces[i]];
             coarseFaceMap[cFaces[i]] = coarseFacei;
             coarseFacei++;
+        }
+    }
+
+    // For weighted levels, record the (owner, neighbour) -> coarse face
+    // lookup (coarseOwner/coarseNeighbour are already in upper-triangular
+    // order, i.e. coarseOwner[facei] < coarseNeighbour[facei] always) so
+    // GAMGSolver can look up the coarse face for a computed Galerkin
+    // (I, J) pair, including fill-in faces with no fine-face counterpart
+    if (hasInterpolation(fineLevelIndex))
+    {
+        coarseFaceLookup_.set
+        (
+            fineLevelIndex,
+            new labelPairLookup(2*nCoarseFaces)
+        );
+        labelPairLookup& lookup = coarseFaceLookup_[fineLevelIndex];
+
+        forAll(coarseOwner, facei)
+        {
+            lookup.insert
+            (
+                labelPair(coarseOwner[facei], coarseNeighbour[facei]),
+                facei
+            );
         }
     }
 

@@ -177,6 +177,23 @@ class GAMGSolver
             const lduInterfacePtrsList& coarseMeshInterfaces
         );
 
+        //- Agglomerate coarse matrix using a genuine weighted Galerkin
+        //- (RAP) sparse triple product, driven by
+        //- agglomeration_.interpolationAddr()/interpolationWeights()
+        //- and agglomeration_.coarseFaceLookup(), instead of the
+        //- single-parent face-restriction summation used by
+        //- agglomerateMatrix() above. Only called when
+        //- agglomeration_.hasInterpolation(fineLevelIndex) is true.
+        //- Currently dormant: no shipped GAMGAgglomeration populates
+        //- weighted interpolation data yet, pending resolution of an
+        //- open row-sum/conditioning issue found in testing.
+        void agglomerateMatrixWeighted
+        (
+            const label fineLevelIndex,
+            const lduMesh& coarseMesh,
+            const lduInterfacePtrsList& coarseMeshInterfaces
+        );
+
         //- Agglomerate coarse interface coefficients
         void agglomerateInterfaceCoefficients
         (
