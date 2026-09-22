@@ -757,7 +757,10 @@ void Foam::multiRegionCoupledDecomp::buildGlobalDecomposition
     }
     forAll(superCtr, superi)
     {
-        superCtr[superi] /= superCount[superi];
+        if (superCount[superi])
+        {
+            superCtr[superi] /= superCount[superi];
+        }
     }
 
     // Load-balance the welded super-cells, then expand to per-cell processors
