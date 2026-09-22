@@ -1,0 +1,20 @@
+#!/bin/sh
+cd "${0%/*}" || exit                                # Run from this directory
+. ${WM_PROJECT_DIR:?}/bin/tools/RunFunctions        # Tutorial run functions
+#------------------------------------------------------------------------------
+
+runApplication blockMesh
+
+# Run with curvature ignored (featureAngleCoarse = 180)
+cp constant/viewFactorsDict viewFactorsDict.ignoreCurvature
+foamDictionary viewFactorsDict.ignoreCurvature \
+    -entry patchAgglomeration/curvedWall/featureAngleCoarse -set 180 > /dev/null
+runApplication -s ignoreCurvature \
+    faceAgglomerate -dict viewFactorsDict.ignoreCurvature
+mv agglomPatch_curvedWall.obj agglomPatch_curvedWall_ignoreCurvature.obj
+
+# Enable curvature aware agglomeration (featureAngleCoarse = 15)
+runApplication -s followCurvature faceAgglomerate
+mv agglomPatch_curvedWall.obj agglomPatch_curvedWall_followCurvature.obj
+
+#------------------------------------------------------------------------------

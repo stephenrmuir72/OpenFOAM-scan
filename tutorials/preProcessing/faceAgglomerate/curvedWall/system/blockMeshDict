@@ -1,0 +1,84 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      blockMeshDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+scale   1;
+
+// Curved outer wall on radius 1, spanning 90 degrees
+
+vertices
+(
+    (0.5 0   0)
+    (1.0 0   0)
+    (0   1.0 0)
+    (0   0.5 0)
+    (0.5 0   0.2)
+    (1.0 0   0.2)
+    (0   1.0 0.2)
+    (0   0.5 0.2)
+);
+
+blocks
+(
+    hex (0 1 2 3 4 5 6 7) (1 40 4) simpleGrading (1 1 1)
+);
+
+edges
+(
+    arc 1 2 (0.70711 0.70711 0)
+    arc 0 3 (0.35355 0.35355 0)
+    arc 5 6 (0.70711 0.70711 0.2)
+    arc 4 7 (0.35355 0.35355 0.2)
+);
+
+boundary
+(
+    curvedWall
+    {
+        type wall;
+        faces
+        (
+            (1 2 6 5)
+        );
+    }
+    innerWall
+    {
+        type wall;
+        faces
+        (
+            (0 3 7 4)
+        );
+    }
+    ends
+    {
+        type wall;
+        faces
+        (
+            (0 1 5 4)
+            (3 2 6 7)
+        );
+    }
+    topBottom
+    {
+        type wall;
+        faces
+        (
+            (0 1 2 3)
+            (4 5 6 7)
+        );
+    }
+);
+
+// ************************************************************************* //
