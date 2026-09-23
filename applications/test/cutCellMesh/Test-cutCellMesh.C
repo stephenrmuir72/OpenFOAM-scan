@@ -595,6 +595,58 @@ int main()
     checkClose(quarterTotal, 1.0, "quarters sum to the cell volume");
     checkClose(sharedArea(result), 2.0, "both plane cross-sections are shared");
 
+    //  The loop cut
+    //  ~~~~~~~~~~~~
+
+    Info<< nl << "the loop cut" << endl;
+
+    //- One plane. The loop separates the two sides of the surface, which is the
+    //- same cut the arrangement makes, so the pieces and the interface agree.
+    cutCellResult loopRes;
+
+    cutState loopState = cutCellByLoop
+    (
+        hex,
+        List<pointField>(1, spanTri),
+        labelList(1, 0),
+        1e-9,
+        loopRes
+    );
+
+    checkTrue(loopState == cutState::cut, "one plane: the loop cuts the hex");
+    checkLabel(loopRes.pieces.size(), 2, "one plane: two pieces");
+    checkClose(loopRes.pieces[0].poly.volume(), 0.5, "one plane: minus volume");
+    checkClose(loopRes.pieces[1].poly.volume(), 0.5, "one plane: plus volume");
+    checkTrue(loopRes.pieces[0].poly.closed(), "one plane: minus closed");
+    checkTrue(loopRes.pieces[1].poly.closed(), "one plane: plus closed");
+    checkClose(sharedArea(loopRes), 1.0, "one plane: interface area");
+
+    //- Two perpendicular sheets crossing the whole cell. Four quadrants, and
+    //- the loop must agree with the arrangement exactly here - same pieces, same
+    //- shared area - because a planar surface is the case the arrangement is
+    //- already exact on, and the loop replaces it only if it reproduces that.
+    loopState = cutCellByLoop(hex, twoPlanes, labelList(2, 0), 1e-9, loopRes);
+
+    checkTrue(loopState == cutState::cut, "corner: the loop cuts the hex");
+    checkLabel(loopRes.pieces.size(), 4, "corner: four quadrants, as the arrangement gives");
+
+    scalar cornerTotal = 0;
+
+    forAll(loopRes.pieces, pi)
+    {
+        cornerTotal += loopRes.pieces[pi].poly.volume();
+    }
+
+    checkClose(cornerTotal, 1.0, "corner: the pieces sum to the cell volume");
+    checkTrue(loopRes.pieces[0].poly.closed(), "corner: first piece closed");
+    checkTrue(loopRes.pieces[1].poly.closed(), "corner: second piece closed");
+    checkClose
+    (
+        sharedArea(loopRes),
+        2.0,
+        "corner: each plane's section is shared over both quadrants"
+    );
+
     //- A triangle that misses the cell
     const pointField farTri({P(5,0,0), P(5,1,0), P(5,0,1)});
 

@@ -156,6 +156,28 @@ int main(int argc, char* argv[])
         maxSnapMoveFraction = min(max(maxSnapMoveFraction, 0.0), 0.5);
     }
 
+    //- Which cut: "plane", the arrangement of the facet planes, or "loop",
+    //- which traces where the surface meets the cell's boundary. The loop is
+    //- the one that does not degenerate on a doubly-curved surface. Selected by
+    //- the dictionary so that both can be run on one case and compared.
+    const word cutMethod(meshDict.getOrDefault<word>("cutMethod", "plane"));
+
+    if (cutMethod != "plane" && cutMethod != "loop")
+    {
+        FatalErrorInFunction
+            << "cutMethod '" << cutMethod << "' is not one of plane or loop"
+            << exit(FatalError);
+    }
+
+    mesher.cutMethod(cutMethod);
+
+    if (meshDict.getOrDefault<bool>("cutCellLoopDebug", false))
+    {
+        cutCellLoopDebug(true);
+    }
+
+    //- One cell to dump for replay, by label. -1 is none.
+    mesher.dumpCell(meshDict.getOrDefault<label>("dumpCell", -1));
     mesher.vertexSnapFraction(vertexSnapFraction);
     mesher.maxSnapMoveFraction(maxSnapMoveFraction);
 
