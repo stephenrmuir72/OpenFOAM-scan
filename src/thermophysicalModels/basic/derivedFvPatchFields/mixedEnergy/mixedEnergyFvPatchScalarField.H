@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2021 OpenCFD Ltd.
+    Copyright (C) 2026 Patrick Wilhelm, Data Lab Hell
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -132,6 +133,13 @@ public:
 
             //- Update the coefficients associated with the patch field
             virtual void updateCoeffs();
+
+            //- Return the matrix source coefficients, blended from
+            //  he(Tw.refValue())
+            virtual tmp<scalarField> valueBoundaryCoeffs
+            (
+                const tmp<scalarField>&
+            ) const;
 
             //- Manipulate matrix
             virtual void manipulateMatrix

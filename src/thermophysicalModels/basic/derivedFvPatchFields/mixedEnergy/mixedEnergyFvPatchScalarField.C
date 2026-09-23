@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2012 OpenFOAM Foundation
     Copyright (C) 2021 OpenCFD Ltd.
+    Copyright (C) 2026 Patrick Wilhelm, Data Lab Hell
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -107,17 +108,45 @@ void Foam::mixedEnergyFvPatchScalarField::updateCoeffs()
 
     Tw.evaluate();
 
+    const scalarField Cpvw(thermo.Cpv(pw, Tw, patchi));
+
+    // Change of mixture across the wall
+    const scalarField dHe
+    (
+        thermo.he(pw, Tw, patchi) - thermo.he(pw, Tw, patch().faceCells())
+    );
+
     valueFraction() = Tw.valueFraction();
-    refValue() = thermo.he(pw, Tw.refValue(), patchi);
-    refGrad() =
-        thermo.Cpv(pw, Tw, patchi)*Tw.refGrad()
-      + patch().deltaCoeffs()*
-        (
-            thermo.he(pw, Tw, patchi)
-          - thermo.he(pw, Tw, patch().faceCells())
-        );
+    refValue() =
+        patchInternalField()
+      + Cpvw*(Tw.refValue() - Tw.patchInternalField())
+      + dHe;
+    refGrad() = Cpvw*Tw.refGrad() + patch().deltaCoeffs()*dHe;
 
     this->parent_bctype::updateCoeffs();
+}
+
+
+Foam::tmp<Foam::scalarField>
+Foam::mixedEnergyFvPatchScalarField::valueBoundaryCoeffs
+(
+    const tmp<scalarField>&
+) const
+{
+    const basicThermo& thermo = basicThermo::lookupThermo(*this);
+    const label patchi = patch().index();
+
+    const auto& Tw = refCast<const mixedFvPatchScalarField>
+    (
+        thermo.T().boundaryField()[patchi]
+    );
+
+    return lerp
+    (
+        refGrad()/patch().deltaCoeffs(),
+        thermo.he(thermo.p().boundaryField()[patchi], Tw.refValue(), patchi),
+        valueFraction()
+    );
 }
 
 
