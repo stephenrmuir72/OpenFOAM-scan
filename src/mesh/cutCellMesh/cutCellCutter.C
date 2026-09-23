@@ -521,6 +521,7 @@ cutState cutCellByTriangles
                     {
                         result.pieces.clear();
                         result.sharedFaces.clear();
+                        result.refusal = cutRefusal::malformedPiece;
 
                         return cutState::refused;
                     }
@@ -613,6 +614,8 @@ cutState cutCellByTriangles
                         {
                             result.pieces.clear();
                             result.sharedFaces.clear();
+                            result.refusal =
+                                cutRefusal::degenerateSharedFace;
 
                             return cutState::refused;
                         }

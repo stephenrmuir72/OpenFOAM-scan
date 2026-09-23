@@ -109,7 +109,20 @@ public:
         //- area, and a face between them would have no area, so the cell is
         //- left as one cell and reported. This is a geometric outcome rather
         //- than an unsupported case, so it is counted and does not fail the run.
+        //- The most pieces any one cell was cut into
+        label maxPieces = 0;
+
+        //- Cells cut into more than two pieces
+        label nManyPieces = 0;
+
+        //- Their labels, to the tenth, so a failing cell can be named
+        labelList manyPieces;
+
         label nDegenerate = 0;
+
+        //- Of those refusals, how many were each site. See cutRefusal.
+        label nRefusedMalformed = 0;
+        label nRefusedDegenerateFace = 0;
 
         //- Their indices, in mesh order
         labelList degenerate;
@@ -197,6 +210,20 @@ private:
         //- pairs. Zero disables the guard.
         scalar maxSnapMoveFraction_ = 0.05;
 
+        //- Which cut to use: "plane" arranges the facet planes, "loop" traces
+        //- where the surface meets the cell's boundary and takes the pieces as
+        //- the regions that separates. Both produce the same cutCellResult; the
+        //- loop is linear in the facets a cell meets where the arrangement is
+        //- cubic in them and its regions degenerate for a doubly-curved surface.
+        word cutMethod_ = "plane";
+
+        //- True when the loop is cutting, in which case a piece is identified
+        //- by containment rather than by its sign against each plane
+        bool loopCut_ = false;
+
+        //- Dump this one cell and the triangles crossing it, for replay
+        label dumpCell_ = -1;
+
         //- Displacement of each mesh point by the collapse, zero for the ones
         //- that did not move. Sized by snapPoints().
         pointField snapDelta_;
@@ -228,6 +255,10 @@ private:
         //- One cell to cut, and the pieces it is split into
         struct cellCut
         {
+            //- The regions of each cell face and their pieces, on the loop path
+            List<List<pointField>> faceRegions;
+            List<List<label>> faceRegionPiece;
+
             //- Background cell
             label celli;
 
@@ -343,6 +374,19 @@ public:
         void maxSnapMoveFraction(const scalar f)
         {
             maxSnapMoveFraction_ = f;
+        }
+
+        //- Set which cut to use, "plane" or "loop"
+        void cutMethod(const word& m)
+        {
+            cutMethod_ = m;
+            loopCut_ = (m == "loop");
+        }
+
+        //- Set the cell to dump for replay, or -1 for none
+        void dumpCell(const label celli)
+        {
+            dumpCell_ = celli;
         }
 
         //- Displacement of each mesh point by the collapse, zero where it did

@@ -572,6 +572,21 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
 
         cutCellResult result;
 
+        if (celli == dumpCell_)
+        {
+            //- The one cell, with the triangles crossing it, written so that a
+            //- failing cell can be replayed without running the case again.
+            dictionary d;
+            d.add("tol", tol_);
+            d.add("celli", celli);
+            d.add("cellPoints", cell.points());
+            d.add("cellFaces", cell.faces());
+            d.add("tris", tris);
+
+            OFstream os(mesh_.time().path()/"cutCellDump");
+            d.write(os, false);
+        }
+
         //- Boundary association by inheritance: each triangle carries the
         //- region of the surface it belongs to, and a face a facet produces
         //- inherits it. This replaces matching geometry to patches afterwards.
@@ -591,11 +606,26 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
 
         const cutState state
         (
-            cutCellByTriangles(cell, tris, patchOf, tol_, result)
+            cutMethod_ == "loop"
+          ? cutCellByLoop(cell, tris, patchOf, tol_, result)
+          : cutCellByTriangles(cell, tris, patchOf, tol_, result)
         );
 
         if (state == cutState::untouched)
         {
+            if (loopCut_)
+            {
+                static label nUntouched = 0;
+
+                if (nUntouched < 6)
+                {
+                    nUntouched++;
+
+                    Info<< "LOOPCELL " << celli << " untouched, polygons "
+                        << result.nPolygons << endl;
+                }
+            }
+
             if (result.nPolygons > 0)
             {
                 //- Triangles cross the cell, but no plane of theirs divides it.
@@ -643,11 +673,34 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
             //- fail because of it.
             info_.nDegenerate++;
             info_.degenerate.append(celli);
+
+            if (result.refusal == cutRefusal::malformedPiece)
+            {
+                info_.nRefusedMalformed++;
+            }
+            else if (result.refusal == cutRefusal::degenerateSharedFace)
+            {
+                info_.nRefusedDegenerateFace++;
+            }
+
             continue;
         }
 
         if (result.pieces.size() < 2)
         {
+            if (loopCut_)
+            {
+                static label nLoopWhole = 0;
+
+                if (nLoopWhole < 6)
+                {
+                    nLoopWhole++;
+
+                    Info<< "LOOPCELL " << celli << " left whole ("
+                        << result.pieces.size() << " pieces)" << endl;
+                }
+            }
+
             info_.nUnsupported++;
             info_.unsupported.append(celli);
             info_.unsupportedReason.append
@@ -672,6 +725,8 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
         cellCut c;
         c.celli = celli;
         c.planes = result.planes;
+        c.faceRegions = result.faceRegions;
+        c.faceRegionPiece = result.faceRegionPiece;
         c.pieces = result.pieces;
         c.sharedFaces = result.sharedFaces;
         c.pieceCell.setSize(c.pieces.size());
@@ -731,6 +786,33 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
         const label nCellGroups = max(c.pieceGroup) + 1;
 
         info_.nCut++;
+
+        info_.maxPieces = max(info_.maxPieces, result.pieces.size());
+
+        if (loopCut_)
+        {
+            static label nLoopReported = 0;
+
+            if (nLoopReported < 6)
+            {
+                nLoopReported++;
+
+                Info<< "LOOPCELL " << celli << " pieces "
+                    << result.pieces.size() << endl;
+            }
+        }
+
+        if (result.pieces.size() > 2)
+        {
+            info_.nManyPieces++;
+
+            if (info_.manyPieces.size() < 10)
+            {
+                info_.manyPieces.append(celli);
+            }
+        }
+
+
         info_.nPieces += c.pieces.size();
         info_.nGroups += nCellGroups;
         info_.nMerged += c.pieces.size() - nCellGroups;
@@ -1804,6 +1886,102 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
 
         const cellCut& c = cuts[cutOf[celli]];
 
+        //- The loop's pieces are the regions the surface separates, not
+        //- combinations of half-spaces, so a sign against each plane does not
+        //- identify one: a piece can straddle a plane. Containment does, and
+        //- needs no convexity of the piece to be asked.
+        if (loopCut_)
+        {
+            //- What the lookup saw, to be printed if it finds nothing
+            scalar bestPlane = GREAT;
+            label bestFace = -1;
+            label bestRegion = -1;
+            scalar bestArea = 0;
+
+            //- The piece of the region containing the query, taken from the
+            //- regions of the cell's faces rather than by asking a piece
+            //- whether it contains the point. The regions tile each face by
+            //- construction, so one of them contains it, and asking a
+            //- polyhedron instead failed as soon as the mesher's own plane
+            //- splitting and the cutter's regions disagreed about a face:
+            //- "No piece of cell 1111 contains (...) although the point is
+            //- inside that cell".
+            forAll(c.faceRegions, ffi)
+            {
+                forAll(c.faceRegions[ffi], ri)
+                {
+                    const pointField& r = c.faceRegions[ffi][ri];
+
+                    if (r.size() < 3)
+                    {
+                        continue;
+                    }
+
+                    const vector rn =
+                        normalised((r[1] - r[0]) ^ (r[2] - r[0]));
+
+                    if (mag(rn & (x - r[0])) > 100*tol_)
+                    {
+                        continue;
+                    }
+
+                    point rc = Zero;
+
+                    forAll(r, k)
+                    {
+                        rc += r[k];
+                    }
+
+                    rc /= scalar(r.size());
+
+                    bool in = true;
+
+                    forAll(r, k)
+                    {
+                        const point& a = r[k];
+                        const point& b = r[r.fcIndex(k)];
+
+                        const vector e = (b - a) ^ rn;
+                        const vector inward = (((rc - a) & e) >= 0 ? e : -e);
+
+                        if ((inward & (x - a)) < -100*tol_)
+                        {
+                            in = false;
+                            break;
+                        }
+                    }
+
+                    if (in)
+                    {
+                        return c.pieceCell[c.faceRegionPiece[ffi][ri]];
+                    }
+
+                    const scalar pd = mag(rn & (x - r[0]));
+
+                    if (pd < bestPlane)
+                    {
+                        bestPlane = pd;
+                        bestFace = ffi;
+                        bestRegion = ri;
+                        bestArea = polygonArea(r);
+                    }
+                }
+            }
+
+            static label nNotFound = 0;
+
+            if (nNotFound < 5)
+            {
+                nNotFound++;
+
+                Info<< "CELLAT cell " << celli << " at " << x
+                    << " no region: faces " << c.faceRegions.size()
+                    << " nearest face " << bestFace << " region " << bestRegion
+                    << " plane distance " << bestPlane
+                    << " area " << bestArea << endl;
+            }
+        }
+
         forAll(c.pieces, pi)
         {
             bool match = true;
@@ -1845,8 +2023,6 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
         return c.celli;
     };
 
-
-
     //- Set a face of the new mesh, either an existing face or a new one.
     //-
     //- polyMesh keeps internal faces in upper-triangular order, meaning the
@@ -1855,6 +2031,14 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
     //- labelled above every background cell, so reorder and reverse the face
     //- when that happens. The topology change does this itself only when it
     //- renumbers cells, and this cut removes no cell, so it is done here.
+    //- Which faces the emission reached. A face of a cut cell never reached is
+    //- left with no new position and mapPolyMesh aborts.
+    labelHashSet emittedFaces(4*cuts.size());
+    labelHashSet removedFaces(4*cuts.size());
+    label nDropSize = 0;
+    label nDropSame = 0;
+    label nNoRegions = 0;
+
     auto setFace = [&]
     (
         const face& f,
@@ -1863,9 +2047,47 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
         label nei,
         const label patchi,
         const label zonei,
-        bool zoneFlip
+        bool zoneFlip,
+        const char* tag = ""            //- probe: which emission path this is
     )
     {
+        emittedFaces.insert(targetFace);
+
+        //- Probe: for one cell, name every new face and the path that made it.
+        if (loopCut_ && targetFace < 0 && dumpCell_ >= 0
+            && (own == dumpCell_ || nei == dumpCell_))
+        {
+            Info<< "PROBEFACE " << tag << " own " << own << " nei " << nei
+                << " zone " << zonei << " size " << f.size() << " labels";
+            forAll(f, i)
+            {
+                Info<< ' ' << f[i];
+            }
+            Info<< endl;
+        }
+
+        if (targetFace == 2463 || (nei < 0 && patchi < 0))
+        {
+            static label nOdd = 0;
+
+            if (nOdd < 8)
+            {
+                nOdd++;
+
+                Info<< "SETFACE target " << targetFace << " size " << f.size()
+                    << " own " << own << " nei " << nei
+                    << " patch " << patchi << " zone " << zonei
+                    << " | isInternal " << (targetFace >= 0
+                        ? mesh_.isInternalFace(targetFace) : -1)
+                    << " faceNei " << (targetFace >= 0
+                        ? mesh_.faceNeighbour()[targetFace] : -1)
+                    << " faceOwner " << (targetFace >= 0
+                        ? mesh_.faceOwner()[targetFace] : -1)
+                    << " nFaces " << mesh_.nFaces()
+                    << " nInternal " << mesh_.nInternalFaces() << endl;
+            }
+        }
+
         face nf(f);
 
         bool flipFlux = false;
@@ -2001,6 +2223,311 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                 zoneFlip = fz.flipMap()[fz.whichFace(facei)];
             }
 
+            //- On the loop path the face's sub-faces ARE the regions the cutter
+            //- built, carrying their pieces, so nothing is looked up by a query.
+            //- Asking a subdivision the cutter does not know about cannot work:
+            //- the mesher's sub-faces come from the facet planes and the
+            //- cutter's regions from the loop's chains, so a sub-face crosses a
+            //- region boundary and its centre lands outside every region - "no
+            //- region: plane distance 0", which is a point in the plane and
+            //- outside the polygon.
+            if (loopCut_)
+            {
+                const label cutA = (cutOf.found(own) ? own : -1);
+                const label cutB = ((nei >= 0 && cutOf.found(nei)) ? nei : -1);
+
+                if ((cutA >= 0 || cutB >= 0) && nei >= 0)
+                {
+                    static label nB2 = 0;
+                    nB2++;
+                    if (dumpCell_ >= 0 && nB2 % 500 == 0)
+                    {
+                        Info<< "REGB2 loopCut faces reaching block 2: " << nB2 << endl;
+                    }
+
+                    const label anchor = (cutA >= 0 ? cutA : cutB);
+                    const cellCut& cc = cuts[cutOf[anchor]];
+
+                    label ffi = -1;
+
+                    forAll(cells[anchor], k)
+                    {
+                        if (cells[anchor][k] == facei)
+                        {
+                            ffi = k;
+                            break;
+                        }
+                    }
+
+                    const bool hasRegions =
+                    (
+                        ffi >= 0
+                     && ffi < cc.faceRegions.size()
+                     && !cc.faceRegions[ffi].empty()
+                    );
+
+                    if (!hasRegions)
+                    {
+                        nNoRegions++;
+                    }
+
+                    if (hasRegions)
+                    {
+                        static label nB3 = 0;
+                        static label nB3Other = 0;
+                        nB3++;
+                        if ((cutA >= 0 ? cutB : cutA) >= 0) nB3Other++;
+                        if (dumpCell_ >= 0 && nB3 % 500 == 0)
+                        {
+                            Info<< "REGB3 region block entered " << nB3
+                                << " times, other cut " << nB3Other << endl;
+                        }
+
+                        //- The neighbour's regions on this face, to give each
+                        //- sub-face its piece there as well
+                        const label other = (cutA >= 0 ? cutB : cutA);
+                        const cellCut* oc = nullptr;
+                        label offi = -1;
+
+                        if (other >= 0)
+                        {
+                            oc = &cuts[cutOf[other]];
+
+                            forAll(cells[other], k)
+                            {
+                                if (cells[other][k] == facei)
+                                {
+                                    offi = k;
+                                    break;
+                                }
+                            }
+
+                            static label nOffi = 0;
+
+                            if (dumpCell_ >= 0 && nOffi < 5)
+                            {
+                                nOffi++;
+
+                                Info<< "OFFI face " << facei
+                                    << " anchor " << anchor
+                                    << " other " << other
+                                    << " nFacesOfOther " << cells[other].size()
+                                    << " offi " << offi
+                                    << " faceRegionsOfOther "
+                                    << oc->faceRegions.size()
+                                    << " regionsOfAnchor " << cc.faceRegions.size() << endl;
+                            }
+                        }
+
+                        //- Do the two cells agree on this face's regions? They
+                        //- must, or the sub-faces of one do not meet those of
+                        //- the other and the mesh gets edges without two faces.
+                        if (oc && offi >= 0)
+                        {
+                            static label nCompared = 0;
+                            static label nMismatch = 0;
+
+                            scalar areaA = 0;
+                            scalar areaB = 0;
+
+                            forAll(cc.faceRegions[ffi], rk)
+                            {
+                                areaA += polygonArea(cc.faceRegions[ffi][rk]);
+                            }
+
+                            forAll(oc->faceRegions[offi], rk)
+                            {
+                                areaB += polygonArea(oc->faceRegions[offi][rk]);
+                            }
+
+                            nCompared++;
+
+                            const bool same =
+                            (
+                                cc.faceRegions[ffi].size()
+                             == oc->faceRegions[offi].size()
+                             && mag(areaA - areaB) <= 1e-6*max(areaA, SMALL)
+                            );
+
+                            if (!same)
+                            {
+                                nMismatch++;
+
+                                if (dumpCell_ >= 0 && nMismatch <= 6)
+                                {
+                                    Info<< "REGDIFF face " << facei
+                                        << " anchor regions " << cc.faceRegions[ffi].size()
+                                        << " area " << areaA
+                                        << " other regions " << oc->faceRegions[offi].size()
+                                        << " area " << areaB << endl;
+                                }
+                            }
+
+                            if (dumpCell_ >= 0 && nCompared % 2000 == 0)
+                            {
+                                Info<< "REGDIFF compared " << nCompared
+                                    << " mismatched " << nMismatch << endl;
+                            }
+                        }
+
+                        bool keptAny = false;
+
+                        forAll(cc.faceRegions[ffi], ri)
+                        {
+                            const pointField& r = cc.faceRegions[ffi][ri];
+
+                            if (r.size() < 3)
+                            {
+                                nDropSize++;
+                                continue;
+                            }
+
+                            point rc = Zero;
+
+                            forAll(r, k)
+                            {
+                                rc += r[k];
+                            }
+
+                            rc /= scalar(r.size());
+
+                            face sub(r.size());
+
+                            forAll(r, k)
+                            {
+                                sub[k] = pointOf(cc, r[k]);
+                            }
+
+                            const label pieceA =
+                                cc.pieceCell[cc.faceRegionPiece[ffi][ri]];
+
+                            //- Never -1 on an internal face: setFace reads a
+                            //- negative neighbour as a boundary face and
+                            //- polyTopoChange then cannot place it, aborting with
+                            //- "Did not determine new position for face ...".
+                            //- A cut neighbour starts at its own first piece and
+                            //- the region match below overwrites it.
+                            label pieceB = -1;
+
+                            if (nei >= 0)
+                            {
+                                //- The anchor is the owner when the owner is
+                                //- cut. When only the NEIGHBOUR is cut the
+                                //- anchor is the neighbour, and the other side
+                                //- of the face is the owner - which is uncut
+                                //- here. Taking the neighbour's own first piece
+                                //- instead made pieceB == pieceA, dropped the
+                                //- sub-face, and removed the face: 120 faces,
+                                //- and with them the volume they enclose.
+                                if (cutA < 0)
+                                {
+                                    pieceB = own;
+                                }
+                                else
+                                {
+                                    pieceB =
+                                        (cutB < 0
+                                      ? nei
+                                      : cuts[cutOf[cutB]].pieceCell[0]);
+                                }
+                            }
+
+                            if (oc && offi >= 0)
+                            {
+                                //- The same polygon, so its centre names the
+                                //- region the neighbour grouped it into
+                                scalar best = GREAT;
+
+                                forAll(oc->faceRegions[offi], rj)
+                                {
+                                    const pointField& ro = oc->faceRegions[offi][rj];
+
+                                    if (ro.size() < 3)
+                                    {
+                                        continue;
+                                    }
+
+                                    point roc = Zero;
+
+                                    forAll(ro, k)
+                                    {
+                                        roc += ro[k];
+                                    }
+
+                                    roc /= scalar(ro.size());
+
+                                    const scalar d = mag(roc - rc);
+
+                                    if (d < best)
+                                    {
+                                        best = d;
+                                        pieceB =
+                                            oc->pieceCell
+                                            [
+                                                oc->faceRegionPiece[offi][rj]
+                                            ];
+                                    }
+                                }
+                            }
+
+                            //- A sub-face with the same cell on both sides is
+                            //- inside a piece, not a face of the mesh. Dropping
+                            //- it is right; emitting it aborts in polyTopoChange
+                            //- with "owner 1113 neighbour 1113".
+                            if (pieceA >= 0 && pieceA == pieceB)
+                            {
+                                nDropSame++;
+
+                                if (dumpCell_ >= 0 && nDropSame <= 6)
+                                {
+                                    Info<< "DROPSAME face " << facei
+                                        << " own " << own << " nei " << nei
+                                        << " cutA " << cutA << " cutB " << cutB
+                                        << " anchor " << anchor << " other " << other
+                                        << " ffi " << ffi << " ri " << ri
+                                        << " nReg " << cc.faceRegions[ffi].size()
+                                        << " pieceA " << pieceA
+                                        << " pieceB " << pieceB
+                                        << " anchorCell " << cc.celli
+                                        << " anchorPieces " << cc.pieceCell
+                                        << " otherCell " << (oc ? oc->celli : -1)
+                                        << " otherPieces "
+                                        << (oc ? oc->pieceCell : labelList())
+                                        << endl;
+                                }
+
+                                continue;
+                            }
+
+                            setFace
+                            (
+                                sub,
+                                (keptAny ? -1 : facei),
+                                pieceA,
+                                pieceB,
+                                patchi,
+                                zonei,
+                                zoneFlip,
+                                "loop-sub"
+                            );
+
+                            keptAny = true;
+                        }
+
+                        //- Every sub-face was inside one piece, so the old face
+                        //- has no successor and must go, or mapPolyMesh has no
+                        //- position for it
+                        if (!keptAny)
+                        {
+                            removedFaces.insert(facei);
+                            topoChange.removeFace(facei, -1);
+                        }
+
+                        continue;
+                    }
+                }
+            }
+
             if (!splitOf.found(facei))
             {
                 //- A face the surface does not cross lies wholly on one side, so
@@ -2015,7 +2542,8 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                     (nei >= 0 ? cellAt(nei, x) : -1),
                     patchi,
                     zonei,
-                    zoneFlip
+                    zoneFlip,
+                    "whole"
                 );
 
                 continue;
@@ -2046,7 +2574,8 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                     (nei >= 0 ? cellAt(nei, x) : -1),
                     patchi,
                     zonei,
-                    zoneFlip
+                    zoneFlip,
+                    "split"
                 );
             }
         }
@@ -2060,9 +2589,33 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
     {
         const cellCut& c = cuts[ci];
 
+        //- Probe: how many times does section 4 reach the cell, and with how
+        //- many shared faces each time?
+        if (loopCut_ && dumpCell_ >= 0 && c.celli == dumpCell_)
+        {
+            Info<< "PROBECUT ci " << ci << " cell " << c.celli
+                << " sharedFaces " << c.sharedFaces.size()
+                << " pieces " << c.pieces.size()
+                << " nCells " << mesh_.nCells() << endl;
+        }
+
         forAll(c.sharedFaces, si)
         {
             const cutCellPieceFace& shared = c.sharedFaces[si];
+
+            if (loopCut_ && dumpCell_ >= 0 && c.celli == dumpCell_)
+            {
+                const face& pf = c.pieces[shared.pieceA].poly.faces()
+                    [shared.faceInA];
+                const point p0 = c.pieces[shared.pieceA].poly.points()[pf[0]];
+
+                Info<< "   PROBESHARED si " << si
+                    << " pieceA " << shared.pieceA
+                    << " pieceB " << shared.pieceB
+                    << " faceInA " << shared.faceInA
+                    << " size " << pf.size()
+                    << " p0 " << p0 << endl;
+            }
 
             if (c.pieceGroup[shared.pieceA] == c.pieceGroup[shared.pieceB])
             {
@@ -2134,7 +2687,8 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                 c.pieceCell[to],
                 -1,
                 (separates ? zone : -1),
-                false
+                false,
+                "iface"
             );
         }
     }
@@ -2184,7 +2738,8 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                     nei,
                     patchi,
                     zonei,
-                    zoneFlip
+                    zoneFlip,
+                    "grown"
                 );
             }
 
@@ -2200,6 +2755,41 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
             << " (internal " << nGrownInternal << ")" << endl;
     }
 
+
+    {
+        label nMissed = 0;
+        label nRemoved = 0;
+
+        forAll(cuts, ci)
+        {
+            for (const label facei : cells[cuts[ci].celli])
+            {
+                if (!emittedFaces.found(facei))
+                {
+                    if (removedFaces.found(facei))
+                    {
+                        nRemoved++;
+                    }
+
+                    if (nMissed < 6)
+                    {
+                        Info<< "MISSED face " << facei
+                            << " owner " << mesh_.faceOwner()[facei]
+                            << " patch " << mesh_.boundaryMesh().whichPatch(facei)
+                            << " inSplit " << splitOf.found(facei)
+                            << " removed " << removedFaces.found(facei) << endl;
+                    }
+
+                    nMissed++;
+                }
+            }
+        }
+
+        Info<< "faces of cut cells not emitted: " << nMissed
+            << " (removed: " << nRemoved << "), sub-faces dropped by size "
+            << nDropSize << ", by same piece " << nDropSame
+            << ", cut-cell faces with no regions " << nNoRegions << endl;
+    }
 
     //- 5. Apply, and take the mesh with it
     autoPtr<mapPolyMesh> map = topoChange.changeMesh(mesh_, false);
@@ -2253,9 +2843,14 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::cut()
             << nl;
     }
 
+    Info<< "Cells cut into >2 pieces     : " << info_.nManyPieces
+        << " (most " << info_.maxPieces << ") " << info_.manyPieces << nl;
+
     Info<< "Cells crossed by the surface : " << info_.nCandidate << nl
         << "Cells cut                    : " << info_.nCut << nl
         << "Cells refused as degenerate  : " << info_.nDegenerate << nl
+        << "  of those, piece malformed   : " << info_.nRefusedMalformed << nl
+        << "  of those, face has no area  : " << info_.nRefusedDegenerateFace << nl
         << "Cells reported, left as is   : " << info_.nUnsupported << endl;
 
     forAll(info_.degenerate, i)

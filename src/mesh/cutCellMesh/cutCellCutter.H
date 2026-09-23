@@ -63,6 +63,18 @@ enum class cutState
 };
 
 
+//- Why a cut was refused. The two sites are different defects: one is the
+//- arrangement's own split producing a malformed piece, the other is two pieces
+//- meeting over a face of no area. They are counted apart because a fix for one
+//- is not a fix for the other, and which one dominates decides what to build.
+enum class cutRefusal
+{
+    none,                  //- not refused
+    malformedPiece,        //- a piece has a face with two coincident vertices
+    degenerateSharedFace   //- two pieces would share a face of no area
+};
+
+
 //- One piece of a cut cell
 struct cutCellPiece
 {
@@ -99,6 +111,9 @@ struct cutCellPieceFace
 //- Result of cutting one cell
 struct cutCellResult
 {
+    //- Why the cut was refused, when it was. Set at the site that refused it.
+    cutRefusal refusal = cutRefusal::none;
+
     //- Distinct supporting planes of the surface inside the cell, outward
     //- oriented and in a fixed order
     List<plane> planes;
@@ -116,6 +131,13 @@ struct cutCellResult
     //- divided by where they are not.
     List<cutCellPieceFace> sharedFaces;
 
+    //- The regions of each of the cell's faces, and the piece each belongs to.
+    //- The assembly needs these rather than a point query: the regions tile the
+    //- face by construction, so which piece a sub-face is in is a lookup in a
+    //- set we built, not a question asked of a polyhedron.
+    List<List<pointField>> faceRegions;
+    List<List<label>> faceRegionPiece;
+
     //- Number of triangles that clipped to a polygon of at least three points,
     //- that is the number that actually cross the cell
     label nPolygons = 0;
@@ -130,6 +152,30 @@ pointField clipPolygon
     const pointField& poly,
     const plane& pln,
     const scalar tol
+);
+
+
+//- Cut a cell by the surface facets by way of the closed loop where the surface
+//- meets the cell's boundary, rather than by arranging the facet planes. The
+//- facets are still clipped to the cell and grouped by plane - that is what an
+//- interface face is - but the pieces come from the loop: the cell's boundary is
+//- split along it, the regions are stitched into pieces by shared edges, and
+//- every piece sees the interface faces. Cost is linear in the facets crossing
+//- the cell, where the arrangement of their planes is cubic and its regions are
+//- thin wedges for a doubly-curved surface, which is where it refuses.
+//- Turn the loop's per-cell-edge report on or off. It prints, for each edge of
+//- the cell, the sub-edges each of its two faces contributes and whether they
+//- agree, which is where regions fail to stitch into pieces.
+void cutCellLoopDebug(const bool on);
+
+
+cutState cutCellByLoop
+(
+    const cutCellPolyhedron& cell,
+    const List<pointField>& tris,
+    const labelList& patchOf,
+    const scalar tol,
+    cutCellResult& result
 );
 
 
