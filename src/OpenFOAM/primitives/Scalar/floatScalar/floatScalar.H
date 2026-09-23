@@ -66,7 +66,7 @@ __host__ __device__
 #endif
 inline Scalar mag(const Scalar s)
 {
-    return std::fabsf(s);
+    return std::fabs(s);
 }
 
 #if defined(FOAM_OFFLOAD) && defined(__HIP_DEVICE_COMPILE__)
@@ -74,7 +74,7 @@ __host__ __device__
 #endif
 inline Scalar hypot(const Scalar x, const Scalar y)
 {
-    return std::hypotf(x, y);
+    return ::hypotf(x, y);
 }
 
 #if defined(FOAM_OFFLOAD) && defined(__HIP_DEVICE_COMPILE__)
@@ -82,7 +82,7 @@ __host__ __device__
 #endif
 inline Scalar atan2(const Scalar y, const Scalar x)
 {
-    return std::atan2f(y, x);
+    return ::atan2f(y, x);
 }
 
 // Single-precision transcendental functions (with 'f' appended to the name)

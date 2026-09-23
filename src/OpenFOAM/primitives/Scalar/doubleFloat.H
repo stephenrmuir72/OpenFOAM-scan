@@ -51,6 +51,12 @@ namespace Foam
     (std::pow(double(base), double(exp)))
 #endif
 
+#if defined(__HIP_DEVICE_COMPILE__)
+    #define FOAM_HOST_DEVICE __host__ __device__
+#else
+    #define FOAM_HOST_DEVICE
+#endif
+
 #undef  MAXMINPOW
 #define MAXMINPOW(RetType, Type1, Type2)                                       \
                                                                                \
@@ -67,9 +73,7 @@ inline constexpr RetType max(Type1 s1, Type2 s2) noexcept                      \
 }                                                                              \
                                                                                \
 /*! \brief Raise base to the power expon, returning double */                  \
-#if defined(__HIP_DEVICE_COMPILE__)                                            \
-__host__ __device__                                                            \
-#endif                                                                         \
+FOAM_HOST_DEVICE                                                               \
 inline RetType pow(const Type1 base, const Type2 expon)                        \
 {                                                                              \
     return FOAM_POW_CALL(base, expon);                                         \
@@ -95,6 +99,7 @@ MAXMINPOW(float, int64_t, float)
 #endif
 
 #undef MAXMINPOW
+#undef FOAM_HOST_DEVICE
 
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
