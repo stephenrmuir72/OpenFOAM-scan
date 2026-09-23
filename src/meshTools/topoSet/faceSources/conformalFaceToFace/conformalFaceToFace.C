@@ -59,10 +59,21 @@ static const Foam::scalar relTol = 1e-3;
 
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
+Foam::scalar Foam::conformalFaceToFace::faceTolerance(const scalar area) const
+{
+    return (tolerance_ > 0 ? tolerance_ : relTol*Foam::sqrt(area));
+}
+
+
 void Foam::conformalFaceToFace::combine(topoSet& set, const bool add) const
 {
     const polyMesh& meshSource = *meshSourcePtr_;
-    const faceSet setSource(meshSource, sourceSetName_, IOobject::NO_REGISTER);
+    const faceSet setSource
+    (
+        meshSource,
+        sourceSetName_,
+        IOobjectOption::NO_REGISTER
+    );
 
     const vectorField& CfSource = meshSource.faceCentres();
     const vectorField& SfSource = meshSource.faceAreas();
@@ -96,9 +107,9 @@ void Foam::conformalFaceToFace::combine(topoSet& set, const bool add) const
                 << exit(FatalError);
         }
 
-        localCf.append(CfSource[facei]);
-        localNf.append(SfSource[facei]/a);
-        localArea.append(a);
+        localCf.push_back(CfSource[facei]);
+        localNf.push_back(SfSource[facei]/a);
+        localArea.push_back(a);
     }
 
     // Gather the source faces onto every rank, so each rank matches the whole
@@ -150,11 +161,10 @@ void Foam::conformalFaceToFace::combine(topoSet& set, const bool add) const
     const vectorField& CfTarget = mesh_.faceCentres();
     const vectorField& SfTarget = mesh_.faceAreas();
 
-    pointField ctrsTarget(faceiEnd - faceiBegin);
-    forAll(ctrsTarget, i)
-    {
-        ctrsTarget[i] = CfTarget[faceiBegin + i];
-    }
+    const pointField ctrsTarget
+    (
+        SubField<point>(CfTarget, faceiEnd - faceiBegin, faceiBegin)
+    );
 
     // A rank may hold no part of the target boundary; only the whole boundary
     // being empty is an error
@@ -167,15 +177,9 @@ void Foam::conformalFaceToFace::combine(topoSet& set, const bool add) const
 
     const scalar distanceSigned = flip_ ? -distance_ : distance_;
 
-    // The box must hold the largest per-face bound over all source faces
-    scalar maxTol = tolerance_;
-    if (!absTolerance_)
-    {
-        for (const scalar a : aSrc)
-        {
-            maxTol = max(maxTol, relTol*Foam::sqrt(a));
-        }
-    }
+    // The box must hold the largest per-face bound over all source faces.
+    // max() of an empty list is -VGREAT.
+    const scalar maxTol = aSrc.empty() ? tolerance_ : faceTolerance(max(aSrc));
 
     const bool haveTarget = !ctrsTarget.empty();
 
@@ -208,15 +212,12 @@ void Foam::conformalFaceToFace::combine(topoSet& set, const bool add) const
     {
         const indexedOctree<treeDataPoint>& treeTarget = treePtr();
 
-        for (label g = 0; g < nSrc; ++g)
+        forAll(CfSrc, g)
         {
             const point& Cf = CfSrc[g];
             const vector& nf = nfSrc[g];
 
-            const scalar tol =
-                absTolerance_
-              ? tolerance_
-              : relTol*Foam::sqrt(aSrc[g]);
+            const scalar tol = faceTolerance(aSrc[g]);
 
             // Target search points: one signed separation along the normal
             // (directional), and one either way (anySign)
@@ -294,12 +295,9 @@ void Foam::conformalFaceToFace::combine(topoSet& set, const bool add) const
             continue;
         }
 
-        const scalar tol =
-            absTolerance_ ? tolerance_ : relTol*Foam::sqrt(aSrc[g]);
-
         FatalErrorInFunction
             << "No target face matches source face at " << CfSrc[g]
-            << " within tolerance " << tol << nl;
+            << " within tolerance " << faceTolerance(aSrc[g]) << nl;
 
         if (directional_ && nNear[g])
         {
@@ -392,7 +390,6 @@ Foam::conformalFaceToFace::conformalFaceToFace
     (
         dict.getCheckOrDefault<scalar>("distance", 0, scalarMinMax::ge(0))
     ),
-    absTolerance_(dict.found("tolerance")),
     tolerance_
     (
         dict.getCheckOrDefault<scalar>("tolerance", 0, scalarMinMax::ge(0))
@@ -431,9 +428,9 @@ Foam::conformalFaceToFace::conformalFaceToFace
                 sourceRegionName_,
                 mesh.time().timeName(),
                 mesh.time(),
-                IOobject::MUST_READ,
-                IOobject::NO_WRITE,
-                IOobject::NO_REGISTER
+                IOobjectOption::MUST_READ,
+                IOobjectOption::NO_WRITE,
+                IOobjectOption::NO_REGISTER
             )
         )
     );

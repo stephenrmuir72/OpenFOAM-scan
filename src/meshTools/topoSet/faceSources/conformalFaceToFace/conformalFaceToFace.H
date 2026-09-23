@@ -80,7 +80,7 @@ Usage
       distance   | Separation of matched face centres  | scalar | no | 0
       flipDistance | Seek the target against the normal | bool | no | false
       anySign    | Seek either way, no normal test     | bool | no | false
-      tolerance  | Match tolerance as a length         | scalar | no | -
+      tolerance  | Match tolerance as a length         | scalar | no | 0
       areaTolerance | Relative bound on the area diff  | scalar | no | 1e-3
     \endtable
 
@@ -131,16 +131,13 @@ class conformalFaceToFace
         //- Name of the input faceSet in the source region
         const word sourceSetName_;
 
-        //- Restrict matching to this target patch (empty: all patches)
+        //- Restrict matching to this target patch
         const word patchName_;
 
         //- Separation between matched face centres
         const scalar distance_;
 
-        //- Whether tolerance overrides the per-face bound
-        const bool absTolerance_;
-
-        //- Match tolerance as a length
+        //- Match tolerance as a length, zero for the per-face bound
         const scalar tolerance_;
 
         //- Relative bound on the area difference of a matched pair
@@ -157,6 +154,9 @@ class conformalFaceToFace
 
 
     // Private Member Functions
+
+        //- The centre match bound for a source face of the given area
+        scalar faceTolerance(const scalar area) const;
 
         //- Select the conformal target faces
         void combine(topoSet& set, const bool add) const;
