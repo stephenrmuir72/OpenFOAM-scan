@@ -58,6 +58,7 @@ Usage
         set         <faceSetName>;
 
         // Optional entries
+        patches     (<patchName1> <patchName2> ... <patchNameN>);
         patch       <patchName>;
         distance    <scalar>;
         flipDistance <bool>;
@@ -76,7 +77,8 @@ Usage
       source     | Source name: conformalFaceToFace    | word |  yes  | -
       region     | Region holding the input faceSet    | word |  yes  | -
       set        | Name of the input faceSet           | word |  yes  | -
-      patch      | Restrict matching to a target patch | word | no | all
+      patches    | Restrict matching to target patches | wordRes | no | all
+      patch      | Restrict matching to a target patch | wordRe | no | all
       distance   | Separation of matched face centres  | scalar | no | 0
       flipDistance | Seek the target against the normal | bool | no | false
       anySign    | Seek either way, no normal test     | bool | no | false
@@ -90,6 +92,9 @@ Usage
       add      | Add selected faces into this faceSet
       subtract | Remove selected faces from this faceSet
     \endverbatim
+
+Note
+    \c patches takes precedence over \c patch.
 
 See also
     - Foam::topoSetSource
@@ -106,6 +111,7 @@ SourceFiles
 
 #include "topoSetFaceSource.H"
 #include "polyMesh.H"
+#include "wordRes.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -131,8 +137,8 @@ class conformalFaceToFace
         //- Name of the input faceSet in the source region
         const word sourceSetName_;
 
-        //- Restrict matching to this target patch
-        const word patchName_;
+        //- Target patches to match against, empty for all
+        wordRes selectedPatches_;
 
         //- Separation between matched face centres
         const scalar distance_;

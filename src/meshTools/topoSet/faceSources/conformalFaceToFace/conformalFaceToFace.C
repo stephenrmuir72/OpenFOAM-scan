@@ -31,6 +31,7 @@ License
 #include "indexedOctree.H"
 #include "treeDataPoint.H"
 #include "mappedPatchBase.H"
+#include "processorPolyPatch.H"
 #include "globalIndex.H"
 #include "addToRunTimeSelectionTable.H"
 
@@ -126,45 +127,51 @@ void Foam::conformalFaceToFace::combine(topoSet& set, const bool add) const
 
     const label nSrc = CfSrc.size();
 
-    // Range of local target boundary faces to search
+    // Local target boundary faces to search
     const polyBoundaryMesh& patchesTarget = mesh_.boundaryMesh();
 
-    label patchiTarget = -1;
+    const labelList patchIDs
+    (
+        selectedPatches_.empty()
+      ? identity(patchesTarget.size())
+      : patchesTarget.indices(selectedPatches_)
+    );
 
-    if (!patchName_.empty())
+    DynamicList<label> facesTarget(mesh_.nBoundaryFaces());
+    bool foundPatch = false;
+
+    for (const label patchi : patchIDs)
     {
-        patchiTarget = patchesTarget.findPatchID(patchName_);
+        const polyPatch& pp = patchesTarget[patchi];
 
-        if (patchiTarget < 0)
+        // Processor faces lie inside the region
+        if (isA<processorPolyPatch>(pp))
         {
-            FatalErrorInFunction
-                << "Cannot find patch " << patchName_
-                << " in region " << mesh_.name() << nl
-                << "Valid patches: " << patchesTarget.names()
-                << exit(FatalError);
+            continue;
+        }
+
+        foundPatch = true;
+
+        for (const label facei : pp.range())
+        {
+            facesTarget.push_back(facei);
         }
     }
 
-    const label faceiBegin =
-    (
-        patchiTarget < 0
-      ? mesh_.nInternalFaces()
-      : patchesTarget[patchiTarget].start()
-    );
-    const label faceiEnd =
-    (
-        patchiTarget < 0
-      ? mesh_.nFaces()
-      : faceiBegin + patchesTarget[patchiTarget].size()
-    );
+    if (!foundPatch)
+    {
+        FatalErrorInFunction
+            << "Cannot find any patches matching "
+            << flatOutput(selectedPatches_)
+            << " in region " << mesh_.name() << nl
+            << "Valid patches: " << patchesTarget.names()
+            << exit(FatalError);
+    }
 
     const vectorField& CfTarget = mesh_.faceCentres();
     const vectorField& SfTarget = mesh_.faceAreas();
 
-    const pointField ctrsTarget
-    (
-        SubField<point>(CfTarget, faceiEnd - faceiBegin, faceiBegin)
-    );
+    const pointField ctrsTarget(UIndirectList<point>(CfTarget, facesTarget));
 
     // A rank may hold no part of the target boundary; only the whole boundary
     // being empty is an error
@@ -237,7 +244,7 @@ void Foam::conformalFaceToFace::combine(topoSet& set, const bool add) const
 
                 for (const label i : nearL)
                 {
-                    const label facej = faceiBegin + i;
+                    const label facej = facesTarget[i];
                     const vector nt = normalised(SfTarget[facej]);
                     const scalar d = mag(CfTarget[facej] - pf);
 
@@ -259,7 +266,7 @@ void Foam::conformalFaceToFace::combine(topoSet& set, const bool add) const
 
                 for (const label i : nearL)
                 {
-                    const label facej = faceiBegin + i;
+                    const label facej = facesTarget[i];
                     const scalar d = min
                     (
                         mag(CfTarget[facej] - pfAlong),
@@ -385,7 +392,6 @@ Foam::conformalFaceToFace::conformalFaceToFace
     topoSetFaceSource(mesh, dict),
     sourceRegionName_(dict.get<word>("region")),
     sourceSetName_(dict.get<word>("set")),
-    patchName_(dict.getOrDefault<word>("patch", word::null)),
     distance_
     (
         dict.getCheckOrDefault<scalar>("distance", 0, scalarMinMax::ge(0))
@@ -405,6 +411,16 @@ Foam::conformalFaceToFace::conformalFaceToFace
     flip_(dict.getOrDefault("flipDistance", false)),
     meshSourcePtr_(nullptr)
 {
+    if (!dict.readIfPresent("patches", selectedPatches_))
+    {
+        wordRe patchName;
+
+        if (dict.readIfPresent("patch", patchName))
+        {
+            selectedPatches_.push_back(patchName);
+        }
+    }
+
     if (!directional_ && flip_)
     {
         FatalErrorInFunction
