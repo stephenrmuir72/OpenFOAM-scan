@@ -298,8 +298,32 @@ bool onBoundary
 }
 
 
+//- The distance within which two points are the same mesh point. The cell's
+//- geometry produces a vertex on more than one polygon - a facet's clipping, a
+//- region's walk, an interface part - and each carries its own arithmetic
+//- error, so identity needs a margin over the tolerance itself. Ten times is
+//- the margin the rest of this file was already written with; naming it here
+//- keeps the builder and every matcher that reads what it built in step.
+inline scalar samePointTol(const scalar tol)
+{
+    return 10*tol;
+}
+
+
 //- Build a polyhedron from a set of polygons that share their edges, keeping
 //- one point per distinct location and orienting every face outwards
+//-
+//- The merge has to admit that margin: measured on 06_oblique_box, whose
+//- oblique intersections carry more error than an axis-aligned case, 146
+//- vertices missed a merge at 1.07 to 1.20 times tol, and one pair at 2.2. A
+//- vertex that misses is a second label for the same point, the faces either
+//- side of it do not pair up, and the polyhedron is then not a closed solid -
+//- its volume and centre, integrals over the whole boundary, mean nothing. On
+//- 07_sphere_cut the same probe found no near-miss at all, so this is not a
+//- general widening, it is the measured margin. The distinct vertices of a
+//- piece are a cell edge or more apart, on the order of a thousandth of the
+//- cell, which ten times a tolerance that is a billionth of the domain cannot
+//- merge.
 cutCellPolyhedron polyhedronFrom
 (
     const List<pointField>& polys,
@@ -307,6 +331,8 @@ cutCellPolyhedron polyhedronFrom
     const scalar tol
 )
 {
+    const scalar mergeTol = samePointTol(tol);
+
     pointField pts;
     faceList fcs(polys.size());
 
@@ -322,7 +348,7 @@ cutCellPolyhedron polyhedronFrom
 
             forAll(pts, j)
             {
-                if (mag(pts[j] - p[i]) <= tol)
+                if (mag(pts[j] - p[i]) <= mergeTol)
                 {
                     found = j;
                     break;
@@ -357,6 +383,55 @@ cutCellPolyhedron polyhedronFrom
     }
 
     return cutCellPolyhedron(pts, fcs);
+}
+
+
+//- How many of the polyhedron's edges are not shared by exactly two of its
+//- faces. Not used as a guard: a piece's own faces legitimately meet at
+//- T-junctions, because a facet's clipped polygon and a region's walk do not
+//- subdivide the chain alike, and the mesher resolves those when it emits the
+//- faces. Kept for a dump, where the count says how far from closed a piece is.
+label nOpenEdges(const cutCellPolyhedron& poly)
+{
+    const faceList& fcs = poly.faces();
+
+    DynamicList<Pair<label>> edges;
+    edges.reserve(4*fcs.size());
+
+    forAll(fcs, fi)
+    {
+        const face& f = fcs[fi];
+
+        forAll(f, i)
+        {
+            edges.append
+            (
+                Pair<label>(min(f[i], f.fcIndex(i)), max(f[i], f.fcIndex(i)))
+            );
+        }
+    }
+
+    label nOpen = 0;
+
+    forAll(edges, ei)
+    {
+        label n = 0;
+
+        forAll(edges, ej)
+        {
+            if (edges[ej] == edges[ei])
+            {
+                n++;
+            }
+        }
+
+        if (n != 2)
+        {
+            nOpen++;
+        }
+    }
+
+    return nOpen;
 }
 
 } // End anonymous namespace
@@ -559,6 +634,12 @@ cutState cutCellByLoop
 
     label nChains = 0;
     label nChainsSkipped = 0;
+
+    //- Set when a chain closed on itself and split no region of its face. Such a
+    //- chain cannot split that face at all - its far side would be the face minus
+    //- the loop's interior, an annulus - so the cell is refused rather than cut
+    //- with the face left whole. See the refusal at the end of this function.
+    bool closedChainSplitNothing = false;
 
     //- Where a point sits on a polygon's boundary, as an edge and a parameter
     auto onBoundaryEdge = [&](const pointField& poly, const point& x,
@@ -1280,6 +1361,18 @@ cutState cutCellByLoop
             if (!done)
             {
                 nChainsSkipped++;
+
+                //- A chain whose two ends are the same point closed on itself. If
+                //- it split nothing, that face cannot be split by it.
+                if
+                (
+                    chains[chi].size() >= 3
+                 && mag(chains[chi].first() - chains[chi].last())
+                    <= samePointTol(tol)
+                )
+                {
+                    closedChainSplitNothing = true;
+                }
 
                 if (loopDebug)
                 {
@@ -2642,7 +2735,8 @@ cutState cutCellByLoop
                         if
                         (
                             !used[m]
-                         && mag(poly.points()[f[k]] - want[m]) <= tol
+                         && mag(poly.points()[f[k]] - want[m])
+                            <= samePointTol(tol)
                         )
                         {
                             used[m] = true;
@@ -2787,9 +2881,43 @@ cutState cutCellByLoop
         return cutState::untouched;
     }
 
+    //- A chain that closed on itself and split nothing means a face is crossed
+    //- by a closed loop. That face cannot be split: its far side would be the
+    //- face minus the loop's interior, which is an annulus, and a polyMesh face
+    //- cannot have a hole. Left whole, it is given to one piece and the other
+    //- piece is open across it - and an open piece is not a solid. Its volume
+    //- comes out larger than the cell it came from and its centre can land in
+    //- any region, which is how such a cell came out with every piece in one
+    //- region and its surface represented nowhere. Refused, and named.
+    //-
+    //- Measured on 06_oblique_box: the box's corner sits 0.0038 below one cell's
+    //- face, so the loop round it covers 0.3 per cent of that face and the rest
+    //- of the face is the other side of the surface. Refusing is honest - the
+    //- method cannot represent the cell - where the pieces it was emitting were
+    //- not.
+    if (closedChainSplitNothing)
+    {
+        //- The pieces this cell produced are what the refusal is about: the one
+        //- that should have taken the rest of the looped face is open across it.
+        if (loopDebug)
+        {
+            forAll(result.pieces, piecei)
+            {
+                Info<< "   HOLECHAIN piece " << piecei << " openEdges "
+                    << nOpenEdges(result.pieces[piecei].poly)
+                    << " nfaces " << result.pieces[piecei].poly.faces().size()
+                    << " vol " << result.pieces[piecei].poly.volume() << endl;
+            }
+        }
+
+        result.pieces.clear();
+        result.sharedFaces.clear();
+        result.refusal = cutRefusal::faceWithHole;
+        return cutState::refused;
+    }
+
     return cutState::cut;
 }
-
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
