@@ -682,6 +682,10 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
             {
                 info_.nRefusedDegenerateFace++;
             }
+            else if (result.refusal == cutRefusal::faceWithHole)
+            {
+                info_.nRefusedFaceWithHole++;
+            }
 
             continue;
         }
@@ -2851,6 +2855,7 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::cut()
         << "Cells refused as degenerate  : " << info_.nDegenerate << nl
         << "  of those, piece malformed   : " << info_.nRefusedMalformed << nl
         << "  of those, face has no area  : " << info_.nRefusedDegenerateFace << nl
+        << "  of those, face has a hole  : " << info_.nRefusedFaceWithHole << nl
         << "Cells reported, left as is   : " << info_.nUnsupported << endl;
 
     forAll(info_.degenerate, i)

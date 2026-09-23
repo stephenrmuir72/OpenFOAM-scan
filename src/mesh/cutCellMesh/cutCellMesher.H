@@ -123,6 +123,7 @@ public:
         //- Of those refusals, how many were each site. See cutRefusal.
         label nRefusedMalformed = 0;
         label nRefusedDegenerateFace = 0;
+        label nRefusedFaceWithHole = 0;
 
         //- Their indices, in mesh order
         labelList degenerate;
