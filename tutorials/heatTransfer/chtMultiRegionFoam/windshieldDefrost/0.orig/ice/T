@@ -37,6 +37,10 @@ boundaryField
         Tnbr            T;
         kappaMethod     fluidThermo;
         kappa           none;
+
+        // windshield 3 mm
+        thicknessLayers (0.003);
+        kappaLayers     (0.9);
     }
 
     ice_to_exterior
