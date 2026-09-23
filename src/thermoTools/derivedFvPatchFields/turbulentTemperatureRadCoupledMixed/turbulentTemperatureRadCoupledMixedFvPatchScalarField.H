@@ -64,6 +64,8 @@ Usage
             thicknessLayer  <PatchFunction1<scalar>>;
             kappaLayer      <PatchFunction1<scalar>>;
 
+            kappaLayerTolerance <scalar>;
+
         // Inherited entries
         kappaMethod         <word>;
         kappa               <word>;
@@ -111,6 +113,8 @@ Usage
               -->                   | PatchFunction1\<scalar\>| choice | -
       kappaLayer     | Corresponding thermal conductivity [W/m/K]      <!--
               -->                   | PatchFunction1\<scalar\>| choice | -
+      kappaLayerTolerance | Relative tolerance on the layer conductance <!--
+              -->                                      | scalar | no | SMALL
     \endtable
 
     The inherited entries are elaborated in:
@@ -179,6 +183,9 @@ class turbulentTemperatureRadCoupledMixedFvPatchScalarField
         //- Conductivity of layers
         scalarList kappaLayers_;
         autoPtr<PatchFunction1<scalar>> kappaLayer_;
+
+        //- Relative tolerance on the layer conductance
+        const scalar kappaLayerTolerance_;
 
         //- Log-file output frequency
         scalar logInterval_;

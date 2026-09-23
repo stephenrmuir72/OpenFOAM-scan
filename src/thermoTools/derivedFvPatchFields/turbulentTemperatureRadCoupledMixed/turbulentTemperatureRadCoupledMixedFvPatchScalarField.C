@@ -146,6 +146,7 @@ turbulentTemperatureRadCoupledMixedFvPatchScalarField
     TnbrName_("undefined-Tnbr"),
     qrNbrName_("undefined-qrNbr"),
     qrName_("undefined-qr"),
+    kappaLayerTolerance_(SMALL),
     logInterval_(-1),
     executionIndex_(0),
     thermalInertia_(false),
@@ -184,6 +185,7 @@ turbulentTemperatureRadCoupledMixedFvPatchScalarField
     thicknessLayer_(psf.thicknessLayer_.clone(p.patch())),
     kappaLayers_(psf.kappaLayers_),
     kappaLayer_(psf.kappaLayer_.clone(p.patch())),
+    kappaLayerTolerance_(psf.kappaLayerTolerance_),
     logInterval_(psf.logInterval_),
     executionIndex_(psf.executionIndex_),
     thermalInertia_(psf.thermalInertia_),
@@ -218,6 +220,10 @@ turbulentTemperatureRadCoupledMixedFvPatchScalarField
     TnbrName_(dict.getOrDefault<word>("Tnbr", "T")),
     qrNbrName_(dict.getOrDefault<word>("qrNbr", "none")),
     qrName_(dict.getOrDefault<word>("qr", "none")),
+    kappaLayerTolerance_
+    (
+        dict.getOrDefault<scalar>("kappaLayerTolerance", SMALL)
+    ),
     logInterval_(dict.getOrDefault<scalar>("logInterval", -1)),
     executionIndex_(0),
     thermalInertia_(dict.getOrDefault<Switch>("thermalInertia", false)),
@@ -361,6 +367,7 @@ turbulentTemperatureRadCoupledMixedFvPatchScalarField
     thicknessLayer_(psf.thicknessLayer_.clone(patch().patch())),
     kappaLayers_(psf.kappaLayers_),
     kappaLayer_(psf.kappaLayer_.clone(patch().patch())),
+    kappaLayerTolerance_(psf.kappaLayerTolerance_),
     logInterval_(psf.logInterval_),
     executionIndex_(psf.executionIndex_),
     thermalInertia_(psf.thermalInertia_),
@@ -528,7 +535,7 @@ void turbulentTemperatureRadCoupledMixedFvPatchScalarField::updateCoeffs()
         const scalar maxLayerMismatch =
             gMax(mag(KDeltaCNbr - KDeltaC)/max(KDeltaCNbr, KDeltaC));
 
-        if (maxLayerMismatch > SMALL)
+        if (maxLayerMismatch > kappaLayerTolerance_)
         {
             FatalErrorInFunction
                 << "the same layer conductance is required on both sides of "
@@ -536,7 +543,8 @@ void turbulentTemperatureRadCoupledMixedFvPatchScalarField::updateCoeffs()
                 << mesh.name() << ':' << patch().name() << " <- "
                 << mpp.sampleRegion() << ':' << mpp.samplePatch()
                 << ": the layer conductances differ by "
-                << maxLayerMismatch << " relative"
+                << maxLayerMismatch << " relative, above kappaLayerTolerance "
+                << kappaLayerTolerance_
                 << exit(FatalError);
         }
     }
@@ -992,6 +1000,12 @@ void turbulentTemperatureRadCoupledMixedFvPatchScalarField::write
         thicknessLayers_.writeEntry("thicknessLayers", os);
         kappaLayers_.writeEntry("kappaLayers", os);
     }
+    os.writeEntryIfDifferent<scalar>
+    (
+        "kappaLayerTolerance",
+        SMALL,
+        kappaLayerTolerance_
+    );
 
     // Write writeFile entries
     os.writeEntry<label>("writePrecision", writePrecision_);
