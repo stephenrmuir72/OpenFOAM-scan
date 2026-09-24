@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2012 OpenFOAM Foundation
     Copyright (C) 2021 OpenCFD Ltd.
+    Copyright (C) 2026 Patrick Wilhelm, Data Lab Hell
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -105,7 +106,16 @@ void Foam::mixedEnergyFvPatchScalarField::updateCoeffs()
         const_cast<fvPatchScalarField&>(thermo.T().boundaryField()[patchi])
     );
 
-    Tw.evaluate();
+    if (this->useImplicit())
+    {
+        // Evaluated after the solve: the coupled regions read the patch T
+        // while building their matrices
+        Tw.updateCoeffs();
+    }
+    else
+    {
+        Tw.evaluate();
+    }
 
     valueFraction() = Tw.valueFraction();
     refValue() = thermo.he(pw, Tw.refValue(), patchi);
@@ -118,6 +128,31 @@ void Foam::mixedEnergyFvPatchScalarField::updateCoeffs()
         );
 
     this->parent_bctype::updateCoeffs();
+}
+
+
+void Foam::mixedEnergyFvPatchScalarField::evaluate
+(
+    const Pstream::commsTypes commsType
+)
+{
+    this->parent_bctype::evaluate(commsType);
+
+    if (this->useImplicit())
+    {
+        const basicThermo& thermo = basicThermo::lookupThermo(*this);
+
+        auto& Tw = const_cast<fvPatchScalarField&>
+        (
+            thermo.T().boundaryField()[patch().index()]
+        );
+
+        // Deferred from updateCoeffs
+        if (Tw.updated())
+        {
+            Tw.evaluate(commsType);
+        }
+    }
 }
 
 
