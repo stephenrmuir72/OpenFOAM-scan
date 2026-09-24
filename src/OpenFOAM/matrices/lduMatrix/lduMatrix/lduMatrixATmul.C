@@ -51,7 +51,7 @@ namespace Foam
 template<int nUnroll>
 struct matrixMultiplyFunctor
 {
-    const scalarField& psi_;
+    const solveScalarField& psi_;
     const scalarField& diag_;
     const scalarField& lower_;
     const scalarField& upper_;
@@ -64,7 +64,7 @@ struct matrixMultiplyFunctor
 
     matrixMultiplyFunctor
     (
-        const scalarField& psi,
+        const solveScalarField& psi,
         const scalarField& diag,
         const scalarField& lower,
         const scalarField& upper,
@@ -86,10 +86,10 @@ struct matrixMultiplyFunctor
         losort_(losort)
     {}
 
-    scalar operator()(const label celli) const
+    solveScalar operator()(const label celli) const
     {
-        scalar tmpSum[2*nUnroll] = {Zero};
-        scalar nbrSum = Zero;
+        solveScalar tmpSum[2*nUnroll] = {Zero};
+        solveScalar nbrSum = Zero;
 
         const label ownStart = ownStart_[celli];
         const label ownSize = ownStart_[celli + 1] - ownStart;
@@ -97,7 +97,7 @@ struct matrixMultiplyFunctor
         const label neiStart = losortStart_[celli];
         const label neiSize = losortStart_[celli + 1] - neiStart;
 
-        scalar result = diag_[celli]*psi_[celli];
+        solveScalar result = diag_[celli]*psi_[celli];
 
         for (label i = 0; i < nUnroll; ++i)
         {
@@ -512,21 +512,21 @@ void Foam::lduMatrix::residual
         rA.begin(),
         rA,
         lduAddr(),
-        matrixCoeffsMultiplyFunctor<scalar, scalar,
-        negateUnaryOperatorFunctor<scalar, scalar>>
+        matrixCoeffsMultiplyFunctor<solveScalar, scalar,
+        negateUnaryOperatorFunctor<solveScalar, scalar>>
         (
             psi,
             upper(),
             lduAddr().upperAddr(),
-            negateUnaryOperatorFunctor<scalar,scalar>()
+            negateUnaryOperatorFunctor<solveScalar,scalar>()
         ),
-        matrixCoeffsMultiplyFunctor<scalar, scalar,
-        negateUnaryOperatorFunctor<scalar, scalar>>
+        matrixCoeffsMultiplyFunctor<solveScalar, scalar,
+        negateUnaryOperatorFunctor<solveScalar, scalar>>
         (
             psi,
             lower(),
             lduAddr().lowerAddr(),
-            negateUnaryOperatorFunctor<scalar,scalar>()
+            negateUnaryOperatorFunctor<solveScalar,scalar>()
         )
     );
     #else

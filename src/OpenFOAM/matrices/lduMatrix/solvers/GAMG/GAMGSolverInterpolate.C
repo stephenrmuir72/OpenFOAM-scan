@@ -76,14 +76,14 @@ void Foam::GAMGSolver::interpolate
         Apsi.begin(),
         Apsi,
         m.lduAddr(),
-        matrixCoeffsMultiplyFunctor<scalar, scalar, decltype(rfun)>
+        matrixCoeffsMultiplyFunctor<solveScalar, scalar, decltype(rfun)>
         (
             psi,
             m.upper(),
             m.lduAddr().upperAddr(),
             rfun
         ),
-        matrixCoeffsMultiplyFunctor<scalar, scalar, decltype(rfun)>
+        matrixCoeffsMultiplyFunctor<solveScalar, scalar, decltype(rfun)>
         (
             psi,
             m.lower(),
@@ -112,7 +112,7 @@ void Foam::GAMGSolver::interpolate
 
     const label nCells = m.diag().size();
 
-    labelRange cellRange(nCells);
+    const labelRange cellRange(nCells);
 
     apply_policy(nCells, [&](auto policy)
     {
@@ -173,7 +173,7 @@ void Foam::GAMGSolver::interpolate
     #ifdef FOAM_OFFLOAD
     const label nTargets = restrictTargetStartAddressing.size() - 1;
 
-    labelRange fineCellRange(nTargets);
+    const labelRange fineCellRange(nTargets);
 
     apply_policy(nTargets, [&](auto policy)
     {
@@ -207,7 +207,7 @@ void Foam::GAMGSolver::interpolate
     });
 
 
-    labelRange coarseCellRange(nCCells);
+    const labelRange coarseCellRange(nCCells);
 
     apply_policy(nCCells, [&](auto policy)
     {

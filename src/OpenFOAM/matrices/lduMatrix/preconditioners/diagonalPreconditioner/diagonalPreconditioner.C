@@ -54,7 +54,7 @@ Foam::diagonalPreconditioner::diagonalPreconditioner
     lduMatrix::preconditioner(sol),
     rD(sol.matrix().diag().size())
 {
-    const solveScalarField& diag = solver_.matrix().diag();
+    const auto& diag = solver_.matrix().diag();
 
     apply_policy(static_cast<std::size_t>(diag.size()), [&](auto policy)
     {
