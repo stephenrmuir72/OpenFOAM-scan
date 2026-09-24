@@ -128,6 +128,12 @@ public:
                 return false;
             }
 
+            //- The two rows of a coupled face carry each side's own Cpv
+            virtual bool needsAsymmetricAssembly() const override
+            {
+                return true;
+            }
+
 
         // Evaluation functions
 

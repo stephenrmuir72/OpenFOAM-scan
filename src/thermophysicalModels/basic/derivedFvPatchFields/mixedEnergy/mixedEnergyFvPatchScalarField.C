@@ -191,6 +191,8 @@ void Foam::mixedEnergyFvPatchScalarField::manipulateMatrix
 
     const scalarField sourceCorr(fPatch.source());
 
+    const scalarField heC(this->patchInternalField());
+
     const labelList& faceMap =
         matrix.lduMeshAssembly().faceBoundMap()[mat][index];
 
@@ -202,71 +204,30 @@ void Foam::mixedEnergyFvPatchScalarField::manipulateMatrix
 
     forAll(faceMap, j)
     {
-        label globalFaceI = faceMap[j];
+        const label globalFaceI = faceMap[j];
 
-        label myCellI = myCells[j];
-        label nbrCellI = nbrCells[j];
+        const label myCellI = myCells[j];
+        const label nbrCellI = nbrCells[j];
 
         const scalar intCorr = -intCoeffsCmpt[j];
         const scalar srcCorr = -sourceCorr[j];
 
-        if (this->patch().patch().masterImplicit())
+        // Off-diagonal into the neighbour cell's row, so each row carries
+        // the neighbour-side Cpv off the diagonal and its own on it
+        if (nbrCellI < myCellI)
         {
-            if (myCellI > nbrCellI)
-            {
-                if (matrix.asymmetric())
-                {
-                    matrix.lower()[globalFaceI] += intCorr;
-                }
-            }
-            else
-            {
-                matrix.upper()[globalFaceI] += intCorr;
-            }
-
-            matrix.diag()[myCellI] -= intCorr;
-            matrix.source()[myCellI] += srcCorr;
+            matrix.upper()[globalFaceI] += intCorr;
         }
         else
         {
-            if (myCellI < nbrCellI)
-            {
-                matrix.upper()[globalFaceI] += intCorr;
-            }
-            else
-            {
-                if (matrix.asymmetric())
-                {
-                    matrix.lower()[globalFaceI] += intCorr;
-                }
-            }
-
-            matrix.diag()[myCellI] -= intCorr;
-            matrix.source()[myCellI] += srcCorr;
+            matrix.lower()[globalFaceI] += intCorr;
         }
 
-
-//         if (globalFaceI != -1)
-//         {
-//             const scalar intCorr = -intCoeffsCmpt[j];
-//             const scalar srcCorr = -sourceCorr[j];
-//
-//             if (this->patch().patch().masterImplicit())
-//             {
-//                 matrix.diag()[u[globalFaceI]] -= intCorr;
-//                 if (matrix.asymmetric())
-//                 {
-//                     matrix.lower()[globalFaceI] += intCorr;
-//                 }
-//                 matrix.source()[u[globalFaceI]] += srcCorr;
-//             }
-//             else
-//             {
-//                 matrix.diag()[l[globalFaceI]] -= intCorr;
-//                 matrix.upper()[globalFaceI] += intCorr;
-//                 matrix.source()[l[globalFaceI]] += srcCorr;
-//             }
-//         }
+        // source() is the wall flux at the current state, the he terms
+        // about the current cell he cancel between the two rows
+        matrix.diag()[myCellI] -= intCorr;
+        matrix.source()[myCellI] += srcCorr - intCorr*heC[j];
+        matrix.source()[nbrCellI] += intCorr*heC[j];
     }
 }
 
