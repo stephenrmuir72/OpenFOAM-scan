@@ -445,7 +445,8 @@ cutState cutCellByLoop
     const List<pointField>& tris,
     const labelList& patchOf,
     const scalar tol,
-    cutCellResult& result
+    cutCellResult& result,
+    const bool dump
 )
 {
     const boundBox bb(cell.points(), false);
@@ -2538,6 +2539,45 @@ cutState cutCellByLoop
                 }
             }
 
+            //- The dump of this cell's parts, one line each, with the polygon
+            //- when nothing was found to separate. Printed for the one cell the
+            //- mesher was asked to dump, and for no other, so a dropped part can
+            //- be read whole without loopDebug's budget cutting it off.
+            if (dump)
+            {
+                //- How much surface this part would carry if it were accepted:
+                //- the area of the part that lies in the patch. For a part the
+                //- edge test drops, it is the surface the drop costs, so the
+                //- dropped parts' clipped areas must sum to the cell's IFACE
+                //- `lost` - and if they do not, the loss is in the clip and not
+                //- in the drop decision.
+                scalar clippedArea = 0;
+
+                {
+                    const DynamicList<pointField> cp(clipToPatch(part));
+
+                    forAll(cp, m)
+                    {
+                        clippedArea += polygonArea(cp[m]);
+                    }
+                }
+
+                Info<< "PARTDUMP pi " << pi << " k " << k
+                    << " size " << part.size()
+                    << " sides " << sides.size()
+                    << " area " << polygonArea(part)
+                    << " patchArea " << patchArea
+                    << " clipped " << clippedArea
+                    << " nFacets " << planeFacets[pi].size()
+                    << " nRegions " << allRegions.size()
+                    << " nPieces " << pieceOf.size() << nl;
+
+                if (sides.size() != 2 && clippedArea > 0)
+                {
+                    Info<< "         part " << part << nl;
+                }
+            }
+
             if (sides.size() != 2)
             {
                 droppedArea += polygonArea(part);
@@ -2552,7 +2592,7 @@ cutState cutCellByLoop
                 {
                     static label nFar = 0;
 
-                    if (loopDebug && nFar < 4)
+                    if ((loopDebug && nFar < 4) || dump)
                     {
                         nFar++;
 

@@ -607,7 +607,7 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
         const cutState state
         (
             cutMethod_ == "loop"
-          ? cutCellByLoop(cell, tris, patchOf, tol_, result)
+          ? cutCellByLoop(cell, tris, patchOf, tol_, result, celli == dumpCell_)
           : cutCellByTriangles(cell, tris, patchOf, tol_, result)
         );
 
