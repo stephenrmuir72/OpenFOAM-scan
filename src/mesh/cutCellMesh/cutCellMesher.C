@@ -450,6 +450,26 @@ void Foam::cutCellMesher::snapPoints()
                 A.xz(), A.yz(), A.zz() + eps
             );
 
+            //- The solve is a division by that determinant, and it is the
+            //- division that can trap: two pulls a fraction of a degree
+            //- apart give a determinant at the scale of the formula's own
+            //- rounding, and dividing by it raised SIGFPE and aborted a run
+            //- whose geometry is sound. Measured: `07_sphere_cut`'s 63
+            //- solves bottom out at 1.4e-14, a pair about seven degrees
+            //- apart, while `10_box_regions` gave 1.0e-17 and then exactly 0
+            //- for a pair a fifth of a degree apart. The normals are unit
+            //- vectors, so those determinants are scale free and one
+            //- threshold fits every mesh; it sits at about 1.8 degrees. An
+            //- ill-conditioned pair leaves the point where it is, which is
+            //- what the move bound does with the runaway answer it would
+            //- otherwise produce, and what the collapse's policy already
+            //- says: the sliver stays and is reported.
+            if (mag(det(M)) <= 1e-15)
+            {
+                info_.nSnapRejected++;
+                continue;
+            }
+
             target = inv(M) & (b + eps*P);
         }
 
