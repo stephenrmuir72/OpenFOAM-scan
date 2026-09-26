@@ -2880,7 +2880,51 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
 
     mesh_.updateMesh(map());
 
-    return map;
+    //- 6. Drop the points nothing uses. The subdivision makes a crossing point
+    //- for every sub-face it builds, and on the loop path the polygon emitted for
+    //- a face the cutter has regions for is the cutter's region, not the
+    //- subdivision's sub-face, so most of those points are never referenced by a
+    //- face. They are points and nothing else - no face, no cell, no zone - so
+    //- removing them takes nothing out of the mesh but the points themselves.
+    boolList used(mesh_.points().size(), false);
+    label nUsed = 0;
+
+    forAll(mesh_.faces(), facei)
+    {
+        for (const label p : mesh_.faces()[facei])
+        {
+            if (!used[p])
+            {
+                used[p] = true;
+                nUsed++;
+            }
+        }
+    }
+
+    const label nUnused = mesh_.points().size() - nUsed;
+
+    if (nUnused == 0)
+    {
+        return map;
+    }
+
+    polyTopoChange dropUnused(mesh_);
+
+    forAll(used, p)
+    {
+        if (!used[p])
+        {
+            dropUnused.removePoint(p, -1);
+        }
+    }
+
+    autoPtr<mapPolyMesh> dropMap = dropUnused.changeMesh(mesh_, false);
+
+    mesh_.updateMesh(dropMap());
+
+    Info<< "points no face used, dropped from the mesh: " << nUnused << nl;
+
+    return dropMap;
 }
 
 
