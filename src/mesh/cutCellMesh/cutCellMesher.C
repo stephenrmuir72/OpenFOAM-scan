@@ -670,6 +670,12 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
                 {
                     info_.nDegenerate++;
                     info_.degenerate.append(celli);
+                    info_.degenerateReason.append
+                    (
+                        "one of its points was collapsed onto the surface, so"
+                        " the plane passes through it and there is nothing left"
+                        " to divide"
+                    );
                 }
                 else
                 {
@@ -697,14 +703,28 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
             if (result.refusal == cutRefusal::malformedPiece)
             {
                 info_.nRefusedMalformed++;
+                info_.degenerateReason.append
+                (
+                    "its pieces are malformed, so no face of one is a face of"
+                    " the other"
+                );
             }
             else if (result.refusal == cutRefusal::degenerateSharedFace)
             {
                 info_.nRefusedDegenerateFace++;
+                info_.degenerateReason.append
+                (
+                    "the face between its pieces has no area"
+                );
             }
             else if (result.refusal == cutRefusal::faceWithHole)
             {
                 info_.nRefusedFaceWithHole++;
+                info_.degenerateReason.append
+                (
+                    "a chain closes on itself inside one of its faces, so that"
+                    " face's far side is a face with a hole"
+                );
             }
 
             continue;
@@ -3194,7 +3214,16 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::cut()
 
             findCutCells(cuts);
 
-            if (info_.nDegenerate)
+            //- A refusal that is a face with a hole is not the collapse's
+            //- doing, so it must not veto the reversion of the refusals that
+            //- are: with the veto left whole, one geometric refusal kept the
+            //- collapse's own damage in place everywhere. Measured on
+            //- 06_oblique_box at the tool's own collapse: 50 refusals, of which
+            //- 4 were holes and 46 were the collapse's, all 46 reverting once
+            //- the 4 stopped vetoing - cells cut 68 to 112 and the interface
+            //- 0.648324617528 to 1.1315630264, which is what the same case cuts
+            //- with the collapse off.
+            if (info_.nDegenerate - info_.nRefusedFaceWithHole > 0)
             {
                 //- Not the collapse's doing. Put the collapsed positions back and
                 //- take the original cut again, so that the result is the one the
@@ -3238,9 +3267,8 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::cut()
 
     forAll(info_.degenerate, i)
     {
-        Info<< "    cell " << info_.degenerate[i]
-            << ": the surface grazes it, so its pieces would meet along a line"
-            << " and it was left whole" << endl;
+        Info<< "    cell " << info_.degenerate[i] << ": "
+            << info_.degenerateReason[i] << ", and it was left whole" << endl;
     }
 
     forAll(info_.unsupported, i)
