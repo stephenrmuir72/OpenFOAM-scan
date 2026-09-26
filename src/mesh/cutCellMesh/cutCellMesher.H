@@ -157,6 +157,15 @@ public:
         //- surface passes through without separating the cell
         label nSingleRegion = 0;
 
+        //- Cut cells whose pieces were re-decided by the surface's own planes
+        //- because a shared face (a piece of the surface) had both of its
+        //- pieces in one region, which that face's two sides cannot be
+        label nZoneRepaired = 0;
+
+        //- And those where the planes could not separate it either, so the
+        //- centre's verdict stands: the condition is reported, not dropped
+        label nZoneUnresolved = 0;
+
         //- Cells absorbed into a neighbour because they were too small
         label nAbsorbed = 0;
 

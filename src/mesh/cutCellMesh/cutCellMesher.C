@@ -773,28 +773,74 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
             }
         }
 
-        if (nIn == 0 || nOut == 0)
+        //- Whether the surface's own planes should decide this cell, and there
+        //- are two reasons to ask, both of them evidence rather than
+        //- preference.
+        //-
+        //- The first is that the centre's verdict left every piece in one
+        //- region, so the cell is not separated at all. Measured on
+        //- 10_box_regions: 17 of its 698 crossed cells were left whole this way
+        //- and carried 5.3% of the interface area of an exact planar solid away
+        //- with them, silently.
+        //-
+        //- The second is that it left a **shared face with both of its pieces in
+        //- one region**. A shared face lies on the surface, so its two pieces are
+        //- on opposite sides of it and cannot be one region: where they are, the
+        //- verdict is demonstrably wrong for this cell. Measured on the same
+        //- case, cell 2945: pieces 0 and 1 were both put in the inside zone
+        //- while the surface separates them, piece 1 standing 0.027 - half a
+        //- cell - in front of the first plane's facet, and the two faces between
+        //- them were then dropped as internal to a merged cell, taking 0.0031 of
+        //- interface area with them.
+        //-
+        //- The cause in both cases is the same: a piece's mean centre is not a
+        //- sound witness, because the loop builds a piece by joining the
+        //- polygons of the chains, so a piece can be non-convex and its mean can
+        //- lie on the other side of the surface from the piece itself. On the 17
+        //- cells above, the solid's own geometry agrees with the query: both
+        //- pieces' means really are inside the box.
+        //-
+        //- So the pieces are asked the surface's own question instead. The
+        //- facets crossing the cell give outward-oriented planes, and a piece is
+        //- inside when every one of its own points is behind every one of those
+        //- planes. That is the rule the arrangement has always used to order its
+        //- pieces - the sign of the largest distance over a piece's points
+        //- rather than the sign at its centre, which a sliver makes meaningless -
+        //- and it is asked *only* where the evidence above says the centre has
+        //- failed, so a cell that separates cleanly cannot be changed by it.
+        bool decideByPlanes = (nIn == 0 || nOut == 0);
+        bool byDisagreement = false;
+
+        if (!decideByPlanes)
         {
-            //- Every piece landed in one region. That is wrong wherever the
-            //- surface really does separate the cell. Measured on
-            //- 10_box_regions: 17 of its 698 crossed cells were left whole this
-            //- way and carried 5.3% of the interface area of an exact planar
-            //- solid away with them, silently. The cause is that a piece's mean
-            //- centre is not a sound witness here - the loop builds a piece by
-            //- joining the polygons of the chains, so a piece can be non-convex
-            //- and its mean can lie on the other side of the surface from the
-            //- piece itself. The solid's own geometry agrees with the query on
-            //- all 17: both pieces' means really are inside the box.
-            //-
-            //- So the pieces are asked the surface's own question instead. The
-            //- facets crossing the cell give outward-oriented planes, and a
-            //- piece is inside when every one of its own points is behind every
-            //- one of those planes. That is the rule the arrangement has always
-            //- used to order its pieces - the sign of the largest distance over
-            //- a piece's points rather than the sign at its centre, which a
-            //- sliver makes meaningless - and it is asked *only* here, after the
-            //- centre has failed to separate the cell, so a cell that separates
-            //- cleanly cannot be changed by it.
+            forAll(c.sharedFaces, si)
+            {
+                const cutCellPieceFace& shared = c.sharedFaces[si];
+
+                if
+                (
+                    shared.pieceA < 0 || shared.pieceA >= c.pieceZone.size()
+                 || shared.pieceB < 0 || shared.pieceB >= c.pieceZone.size()
+                )
+                {
+                    continue;
+                }
+
+                if
+                (
+                    shared.patch >= 0
+                 && c.pieceZone[shared.pieceA] == c.pieceZone[shared.pieceB]
+                )
+                {
+                    decideByPlanes = true;
+                    byDisagreement = true;
+                    break;
+                }
+            }
+        }
+
+        if (decideByPlanes)
+        {
             //- The margin the pieces were built with: cutCellLoop merges a
             //- piece's points within ten times the caller's tolerance
             const scalar surfaceTol = 10*tol_;
@@ -853,6 +899,18 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
                       ? insideZone
                       : outsideZone;
                 }
+
+                if (byDisagreement)
+                {
+                    info_.nZoneRepaired++;
+                }
+            }
+            else if (byDisagreement)
+            {
+                //- The planes could not separate it either, so the centre's
+                //- verdict stands and the faces this cell shares stay internal.
+                //- Counted and reported rather than dropped in silence.
+                info_.nZoneUnresolved++;
             }
             else
             {
@@ -2783,6 +2841,7 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                 << " sharedFaces " << c.sharedFaces.size()
                 << " pieces " << c.pieces.size()
                 << " nCells " << mesh_.nCells() << endl;
+
         }
 
         forAll(c.sharedFaces, si)
@@ -3284,6 +3343,20 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::cut()
     {
         Info<< "Cut cells whose pieces are all one region: "
             << info_.nSingleRegion << endl;
+    }
+
+    if (info_.nZoneRepaired)
+    {
+        Info<< "Cut cells whose zones the surface's planes re-decided, a"
+            << " shared face having both its pieces in one region: "
+            << info_.nZoneRepaired << endl;
+    }
+
+    if (info_.nZoneUnresolved)
+    {
+        Info<< "Cut cells whose zones could not be separated by the surface's"
+            << " planes either, so the centre's verdict stands: "
+            << info_.nZoneUnresolved << endl;
     }
 
     return map;
