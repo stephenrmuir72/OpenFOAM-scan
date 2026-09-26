@@ -174,13 +174,19 @@ pointField clipPolygon
 void cutCellLoopDebug(const bool on);
 
 
+//- True when the mesher is dumping this one cell (dumpCell in the dictionary).
+//  It lifts the print budget of the part and nearest-region-edge probes for that
+//  cell alone, so that a part the enumeration drops can be read whole without
+//  turning on cutCellLoopDebug for the entire run. Added 26-Sep-2026 to dump one
+//  part out of IFACE's `0` bucket, per 06 B.3 item 0.
 cutState cutCellByLoop
 (
     const cutCellPolyhedron& cell,
     const List<pointField>& tris,
     const labelList& patchOf,
     const scalar tol,
-    cutCellResult& result
+    cutCellResult& result,
+    const bool dump = false
 );
 
 
