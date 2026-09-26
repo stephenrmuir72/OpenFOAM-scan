@@ -2306,6 +2306,76 @@ cutState cutCellByLoop
         return (hi - lo)*mag(da) > 10*tol;
     };
 
+    //- Probe: the cell's own face planes, built only for the dumped cell. The
+    //- regions are pieces of these faces, so every region edge lies in one of
+    //- them - which is checked below rather than assumed - and a part's boundary
+    //- can then be tested against the same planes the regions live in. Added
+    //- 26-Sep-2026 to settle why one plane's patch is dropped where nine others
+    //- are accepted, per 06 B.3 item (0).
+    DynamicList<plane> facePlanes;
+
+    if (dump)
+    {
+        const pointField& cps = cell.points();
+
+        forAll(cell.faces(), fi)
+        {
+            const face& f = cell.faces()[fi];
+
+            facePlanes.append(plane(cps[f[0]], cps[f[1]], cps[f[2]]));
+        }
+
+        //- A number that must be zero: regions carrying a vertex off the plane
+        //- of the cell face they are a piece of. If it is not zero then the
+        //- regions are not pieces of those faces, and every conclusion drawn
+        //- from that - including the whole of this probe - has to be re-read.
+        label nOffPlane = 0;
+
+        forAll(faceRegions, ffi)
+        {
+            forAll(faceRegions[ffi], ri)
+            {
+                forAll(faceRegions[ffi][ri], pk)
+                {
+                    if
+                    (
+                        mag
+                        (
+                            facePlanes[ffi].signedDistance
+                            (
+                                faceRegions[ffi][ri][pk]
+                            )
+                        ) > 10*tol
+                    )
+                    {
+                        nOffPlane++;
+                        break;
+                    }
+                }
+            }
+        }
+
+        //- How many pieces the cell was grouped into, and which piece owns each
+        //- region. Read beside `sides` on the part lines: if the accepted parts
+        //- all name the same pair, that pair is the two sides of this cell's
+        //- surface and a part could take it from them.
+        labelList distinctPieces;
+
+        forAll(pieceOf, i)
+        {
+            if (findIndex(distinctPieces, pieceOf[i]) < 0)
+            {
+                distinctPieces.append(pieceOf[i]);
+            }
+        }
+
+        Info<< "REGIONPLANE cellfaces " << cell.nFaces()
+            << " planes " << facePlanes.size()
+            << " regionsOffTheirPlane " << nOffPlane
+            << " pieces " << distinctPieces.size() << " " << distinctPieces
+            << nl << "            pieceOf " << pieceOf << nl;
+    }
+
     List<pointField> ifacePoly;
     List<label> ifacePlane;
 
@@ -2572,10 +2642,81 @@ cutState cutCellByLoop
                     << " nRegions " << allRegions.size()
                     << " nPieces " << pieceOf.size() << nl;
 
-                if (sides.size() != 2 && clippedArea > 0)
+                Info<< "         part " << part << nl;
+
+                //- Probe: how this part's boundary sits relative to the planes
+                //- the regions live in. `touch` counts its vertices lying on a
+                //- cell-face plane, `onFace` its edges lying in one, and `match`
+                //- the edges the meeting test reached. A dropped part with
+                //- onFace 0 is one the edge test *could not* have matched, and
+                //- one with onFace greater than 0 is a tolerance or predicate
+                //- defect instead - which is the whole question.
+                label touch = 0;
+                label onFace = 0;
+                label match = 0;
+
+                forAll(part, m)
                 {
-                    Info<< "         part " << part << nl;
+                    forAll(facePlanes, fi)
+                    {
+                        if
+                        (
+                            mag(facePlanes[fi].signedDistance(part[m]))
+                          < 10*tol
+                        )
+                        {
+                            touch++;
+                            break;
+                        }
+                    }
                 }
+
+                forAll(part, m)
+                {
+                    const point& pa = part[m];
+                    const point& pb = part[part.fcIndex(m)];
+
+                    forAll(facePlanes, fi)
+                    {
+                        if
+                        (
+                            mag(facePlanes[fi].signedDistance(pa)) < 10*tol
+                         && mag(facePlanes[fi].signedDistance(pb)) < 10*tol
+                        )
+                        {
+                            onFace++;
+                            break;
+                        }
+                    }
+
+                    forAll(allRegions, ri)
+                    {
+                        const pointField& r = allRegions[ri];
+
+                        bool hit = false;
+
+                        forAll(r, e)
+                        {
+                            if (edgesOverlap(pa, pb, r[e], r[r.fcIndex(e)]))
+                            {
+                                hit = true;
+                                break;
+                            }
+                        }
+
+                        if (hit)
+                        {
+                            match++;
+                            break;
+                        }
+                    }
+                }
+
+                Info<< "EDGES onFace " << onFace
+                    << " of " << part.size()
+                    << " touch " << touch
+                    << " match " << match
+                    << " sides " << sides.size() << " " << sides << nl;
             }
 
             if (sides.size() != 2)
