@@ -1591,71 +1591,43 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
 
         for (label sweep = 0; sweep < 8; sweep++)
         {
-            //- Every point a split face puts on one of its own edges
-            DynamicList<Tuple2<point, label>> splitPts(64);
+            //- Every point a split face puts on one of its own edges, keyed by
+            //- that mesh edge. A split point lies on a mesh edge, so the only two
+            //- faces that can take it are the two faces of that edge; keeping the
+            //- points by edge lets a candidate face look at the few points on its
+            //- own edge instead of at every split point the cut has made.
+            //-
+            //- Visited in the same order as the flat list it replaces, and a point
+            //- is appended to its edge only the first time it is met, so each
+            //- edge's list is that flat list restricted to the edge: the points a
+            //- face takes, and the order it takes them, are unchanged.
+            Map<DynamicList<Tuple2<point, label>>> edgeSplitPts;
 
             forAllConstIters(splitOf, iter)
             {
                 const faceSplit& sp = splits[iter()];
+                const face& sf = mesh_.faces()[iter.key()];
+                const labelList& sfEdges = mesh_.faceEdges()[iter.key()];
 
                 //- Every point the split carries. A split point is an ENDPOINT of
                 //- the sub-face edges, not interior to one, so it has to be taken
                 //- from the point list rather than found by an edge test.
                 forAll(sp.points, k)
                 {
-                    bool known = false;
+                    const point& x = sp.coords[k];
+                    const label p = sp.points[k];
 
-                    forAll(splitPts, q)
+                    forAll(sf, i)
                     {
-                        if (splitPts[q].second() == sp.points[k])
+                        const point& pa = pts[sf[i]];
+                        const point& pb = pts[sf[sf.fcIndex(i)]];
+                        const vector ab(pb - pa);
+                        const scalar ab2 = ab & ab;
+
+                        if (ab2 <= SMALL)
                         {
-                            known = true;
+                            continue;
                         }
-                    }
-
-                    if (!known)
-                    {
-                        splitPts.append
-                        (
-                            Tuple2<point, label>(sp.coords[k], sp.points[k])
-                        );
-                    }
-                }
-            }
-
-            if (!splitPts.size())
-            {
-                break;
-            }
-
-            label addedThisSweep = 0;
-
-            forAll(mesh_.faces(), facei)
-            {
-                if (splitOf.found(facei))
-                {
-                    continue;
-                }
-
-                const face& f = mesh_.faces()[facei];
-
-                DynamicList<label> take(4);
-
-                forAll(f, i)
-                {
-                    const point pa(pts[f[i]]);
-                    const point pb(pts[f[f.fcIndex(i)]]);
-                    const vector ab(pb - pa);
-                    const scalar ab2 = ab & ab;
-
-                    if (ab2 <= SMALL)
-                    {
-                        continue;
-                    }
-
-                    forAll(splitPts, q)
-                    {
-                        const point& x = splitPts[q].first();
 
                         if (mag(x - pa) <= tol_ || mag(x - pb) <= tol_)
                         {
@@ -1674,9 +1646,117 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                             continue;
                         }
 
-                        if (findIndex(take, splitPts[q].second()) < 0)
+                        DynamicList<Tuple2<point, label>>& onEdge =
+                            edgeSplitPts(sfEdges[i]);
+
+                        bool known = false;
+
+                        forAll(onEdge, q)
                         {
-                            take.append(splitPts[q].second());
+                            if (onEdge[q].second() == p)
+                            {
+                                known = true;
+                                break;
+                            }
+                        }
+
+                        if (!known)
+                        {
+                            onEdge.append(Tuple2<point, label>(x, p));
+                        }
+
+                        break;
+                    }
+                }
+            }
+
+            if (!edgeSplitPts.size())
+            {
+                break;
+            }
+
+            label addedThisSweep = 0;
+
+            //- Only a face that shares a mesh edge with an already-split face can
+            //- carry one of these points: a split point lies on a mesh edge, so
+            //- the face either side of that edge is the only place it can be
+            //- taken. Scanning every face of the mesh tested all 13056 of them
+            //- against every split point and was 244 s of a 258 s run at 25.5
+            //- facets per cell. The grown set is unchanged - a face with no split
+            //- point strictly inside one of its edges is never taken - and the
+            //- candidates are still visited in label order, so the mesh the
+            //- assembly builds is the same one.
+            boolList candidate(mesh_.nFaces(), false);
+
+            forAllConstIters(splitOf, splIter)
+            {
+                for (const label edgei : mesh_.faceEdges()[splIter.key()])
+                {
+                    for (const label nei : mesh_.edgeFaces()[edgei])
+                    {
+                        candidate[nei] = true;
+                    }
+                }
+            }
+
+            forAll(candidate, facei)
+            {
+                if (!candidate[facei] || splitOf.found(facei))
+                {
+                    continue;
+                }
+
+                const face& f = mesh_.faces()[facei];
+                const labelList& fEdges = mesh_.faceEdges()[facei];
+
+                DynamicList<label> take(4);
+
+                forAll(f, i)
+                {
+                    //- Only the split points on this face's own edge, which is the
+                    //- few the edge index holds
+                    if (!edgeSplitPts.found(fEdges[i]))
+                    {
+                        continue;
+                    }
+
+                    const point pa(pts[f[i]]);
+                    const point pb(pts[f[f.fcIndex(i)]]);
+                    const vector ab(pb - pa);
+                    const scalar ab2 = ab & ab;
+
+                    if (ab2 <= SMALL)
+                    {
+                        continue;
+                    }
+
+                    const DynamicList<Tuple2<point, label>>& onEdge =
+                        edgeSplitPts[fEdges[i]];
+
+                    forAll(onEdge, q)
+                    {
+                        const point& x = onEdge[q].first();
+
+                        if (mag(x - pa) <= tol_ || mag(x - pb) <= tol_)
+                        {
+                            continue;
+                        }
+
+                        const scalar t = ((x - pa) & ab)/ab2;
+
+                        if (t <= SMALL || t >= 1 - SMALL)
+                        {
+                            continue;
+                        }
+
+                        if (mag(x - (pa + t*ab)) > tol_)
+                        {
+                            continue;
+                        }
+
+                        if (findIndex(take, onEdge[q].second()) < 0)
+                        {
+                            take.append(onEdge[q].second());
                         }
                     }
                 }
