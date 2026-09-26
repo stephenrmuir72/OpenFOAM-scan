@@ -2325,6 +2325,74 @@ cutState cutCellByLoop
             continue;
         }
 
+        //- The surface actually in this plane, as the facets of the plane
+        //- clipped to the cell. The parts below are pieces of the plane's WHOLE
+        //- cross-section, and that is the surface only where a facet fills the
+        //- cross-section. At a corner it is not: the cross-section runs on past
+        //- the surface, and the parts beyond it still have a piece on each side,
+        //- because both pieces exist there - they are merely the same two pieces
+        //- - so the meeting test passes them and they are counted as interface.
+        scalar patchArea = 0;
+
+        forAll(planeFacets[pi], fj)
+        {
+            patchArea += polygonArea(facet[planeFacets[pi][fj]]);
+        }
+
+        //- The part of a polygon that lies in the patch, as one polygon per
+        //- facet it meets. Both shapes are convex - a facet is a clipped
+        //- triangle, a part is a section of a hex cut by planes - so each of a
+        //- facet's edges is a half-space, `clipPolygon` does the work, and the
+        //- facet's own centre says which side is inside.
+        auto clipToPatch = [&](const pointField& poly) -> DynamicList<pointField>
+        {
+            DynamicList<pointField> pieces;
+
+            forAll(planeFacets[pi], fj)
+            {
+                const pointField& f = facet[planeFacets[pi][fj]];
+
+                if (f.size() < 3)
+                {
+                    continue;
+                }
+
+                point fc = Zero;
+
+                forAll(f, k)
+                {
+                    fc += f[k];
+                }
+
+                fc /= scalar(f.size());
+
+                pointField out(poly);
+
+                forAll(f, i)
+                {
+                    const point& a = f[i];
+                    const vector n = (f[f.fcIndex(i)] - a) ^ planes[pi].normal();
+
+                    //- The facet's centre must be on the side that is KEPT, and
+                    //- `clipPolygon` keeps the negative one, so the plane's
+                    //- normal points away from it.
+                    out = clipPolygon(out, plane(a, ((fc - a) & n) <= 0 ? n : -n), tol);
+
+                    if (out.size() < 3)
+                    {
+                        break;
+                    }
+                }
+
+                if (out.size() >= 3 && polygonArea(out) > tol*tol)
+                {
+                    pieces.append(out);
+                }
+            }
+
+            return pieces;
+        };
+
         DynamicList<pointField> parts(4);
         parts.append(sec);
 
@@ -2407,6 +2475,7 @@ cutState cutCellByLoop
 
             c /= scalar(part.size());
 
+
             //- Which pieces meet over this part: the ones owning the regions
             //- along its boundary edges. Every edge of the loop lies on the
             //- cell's boundary, so it is shared with a region of exactly one
@@ -2461,7 +2530,11 @@ cutState cutCellByLoop
                         << " size " << part.size()
                         << " sides " << sides.size()
                         << " nRegions " << allRegions.size()
-                        << " nPieces " << pieceOf.size() << endl;
+                        << " nPieces " << pieceOf.size()
+                        << " area " << polygonArea(part)
+                        << " secArea " << polygonArea(sec)
+                        << " patchArea " << patchArea
+                        << " nFacets " << planeFacets[pi].size() << endl;
                 }
             }
 
@@ -2512,14 +2585,47 @@ cutState cutCellByLoop
                 continue;
             }
 
-            cutCellPieceFace shared;
-            shared.pieceA = sides[0];
-            shared.pieceB = sides[1];
-            shared.tri = planeTri[pi];
-            shared.patch = (shared.tri >= 0 && shared.tri < patchOf.size())
-              ? patchOf[shared.tri] : -1;
-            shared.faceInA = -1;
-            shared.faceInB = -1;
+            //- The interface is the surface, not the plane. The part is a piece of
+            //- the plane's WHOLE cross-section, so clip it to the patch: that is
+            //- the identity wherever the part is already inside - every cell of
+            //- every case that was already exact, so nothing in those can move -
+            //- and a cut at a corner, which is where the surplus is.
+            const DynamicList<pointField> patchPiece(clipToPatch(part));
+
+            scalar patchPieceArea = 0;
+
+            forAll(patchPiece, m)
+            {
+                patchPieceArea += polygonArea(patchPiece[m]);
+            }
+
+            if (patchPiece.empty())
+            {
+                //- The part lies entirely outside the surface. It separates the
+                //- two pieces, but there is no surface along it, so it is not an
+                //- interface: the plane extended past the patch is not a face.
+                droppedArea += polygonArea(part);
+                nDropped++;
+                nDropped0++;
+                continue;
+            }
+
+            //- Kept as one polygon where the part lies inside the patch, which is
+            //- what makes a run of coplanar facets of a developable surface ONE
+            //- interface face rather than one per facet; the pieces otherwise.
+            DynamicList<pointField> emit(1);
+
+            if (mag(patchPieceArea - polygonArea(part)) <= 1e-6*polygonArea(part))
+            {
+                emit.append(part);
+            }
+            else
+            {
+                forAll(patchPiece, m)
+                {
+                    emit.append(patchPiece[m]);
+                }
+            }
 
             //- Probe: is this part the same polygon as one already appended for
             //- this cell? Matching is order-free, because the same polygon can
@@ -2584,13 +2690,28 @@ cutState cutCellByLoop
                     Info<< "APPEND n " << nAppend
                         << " pi " << pi << " size " << part.size()
                         << " area " << polygonArea(part)
+                        << " emit " << emit.size()
+                        << " pieceArea " << patchPieceArea
+                        << " patchArea " << patchArea
                         << " p0 " << part[0] << endl;
                 }
             }
 
-            result.sharedFaces.append(shared);
-            ifacePoly.append(part);
-            ifacePlane.append(pi);
+            forAll(emit, ei)
+            {
+                cutCellPieceFace shared;
+                shared.pieceA = sides[0];
+                shared.pieceB = sides[1];
+                shared.tri = planeTri[pi];
+                shared.patch = (shared.tri >= 0 && shared.tri < patchOf.size())
+                  ? patchOf[shared.tri] : -1;
+                shared.faceInA = -1;
+                shared.faceInB = -1;
+
+                result.sharedFaces.append(shared);
+                ifacePoly.append(emit[ei]);
+                ifacePlane.append(pi);
+            }
         }
     }
 
