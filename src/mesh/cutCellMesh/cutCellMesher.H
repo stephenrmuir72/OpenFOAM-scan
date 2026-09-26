@@ -128,6 +128,9 @@ public:
         //- Their indices, in mesh order
         labelList degenerate;
 
+        //- Why each of them was refused
+        wordList degenerateReason;
+
         //- Cells reported and left untouched
         label nUnsupported = 0;
 
