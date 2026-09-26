@@ -2915,6 +2915,99 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::cut()
     List<cellCut> cuts;
     findCutCells(cuts);
 
+    //- The collapse is what makes a cell graze. It puts a mesh point exactly on
+    //- the plane of a facet, so the surface passes through a corner of every cell
+    //- that point is a corner of, and such a cell's two pieces would meet along a
+    //- line, with no face to put between them. A mesh point is shared, so the
+    //- choice is per point and not per cell: the moved corners of the refused
+    //- cells are put back and the cut is taken again.
+    //-
+    //- The collapse is kept only where that clears the refusals. Where it does
+    //- not, the refusals were not the collapse's doing - a piece that is malformed
+    //- or a face with a hole - and putting the points back would buy nothing while
+    //- costing the slivers the collapse removed, so the collapsed positions are
+    //- restored exactly and the original cut stands. Measured: on the 320-triangle
+    //- sphere 12 points and 72 refused cells, and the reversion cuts 272 of 272
+    //- where the collapse cut 200 and failed the case's gate; on `06_oblique_box`
+    //- 4 refused cells remain either way, so its cut is left as it was.
+    if (info_.nSnapped && info_.nDegenerate)
+    {
+        const pointField snappedPts(mesh_.points());
+        const pointField snappedDeltas(snapDelta_);
+        const label snappedCount = info_.nSnapped;
+        const scalar snapDistance = info_.maxSnapDistance;
+        const label nSnapRejected = info_.nSnapRejected;
+
+        boolList restore(mesh_.points().size(), false);
+        label nRestore = 0;
+
+        forAll(info_.degenerate, i)
+        {
+            for (const label p : mesh_.cellPoints()[info_.degenerate[i]])
+            {
+                if (mag(snapDelta_[p]) > 0 && !restore[p])
+                {
+                    restore[p] = true;
+                    nRestore++;
+                }
+            }
+        }
+
+        if (nRestore)
+        {
+            pointField pts(mesh_.points());
+
+            forAll(restore, p)
+            {
+                if (restore[p])
+                {
+                    pts[p] -= snapDelta_[p];
+                    snapDelta_[p] = Zero;
+                }
+            }
+
+            mesh_.movePoints(pts);
+
+            label nStillSnapped = 0;
+            scalar maxStillSnapped = 0;
+
+            forAll(snapDelta_, p)
+            {
+                const scalar d = mag(snapDelta_[p]);
+
+                if (d > 0)
+                {
+                    nStillSnapped++;
+                    maxStillSnapped = max(maxStillSnapped, d);
+                }
+            }
+
+            info_ = report();
+            info_.nSnapped = nStillSnapped;
+            info_.maxSnapDistance = maxStillSnapped;
+            info_.nSnapRejected = nSnapRejected;
+
+            findCutCells(cuts);
+
+            if (info_.nDegenerate)
+            {
+                //- Not the collapse's doing. Put the collapsed positions back and
+                //- take the original cut again, so that the result is the one the
+                //- collapse was applied for rather than one that lost it and
+                //- gained nothing.
+                mesh_.movePoints(snappedPts);
+                snapDelta_ = snappedDeltas;
+
+                info_ = report();
+                info_.nSnapped = snappedCount;
+                info_.maxSnapDistance = snapDistance;
+                info_.nSnapRejected = nSnapRejected;
+
+                findCutCells(cuts);
+            }
+        }
+    }
+
     if (info_.nSnapped)
     {
         Info<< "Intersections collapsed onto a point: " << info_.nSnapped
