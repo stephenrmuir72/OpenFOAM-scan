@@ -2464,6 +2464,13 @@ cutState cutCellByLoop
     label nDropped1 = 0;
     label nDropped0 = 0;
 
+    //- Interface polygons whose own vertices are not distinct at the identity
+    //- margin, and so cannot be matched back to a face of either piece: dropped,
+    //- and the surface they carried, which at 25+ facets per cell was a numerical
+    //- fragment of the real patch (26-Sep-2026, 07 section 24).
+    scalar degenerateArea = 0;
+    label nDegenerate = 0;
+
 
     forAll(planes, pi)
     {
@@ -2974,6 +2981,51 @@ cutState cutCellByLoop
 
             forAll(emit, ei)
             {
+                //- The polygon handed to the pieces must have distinct vertices
+                //- at samePointTol. The builder merges points within that margin,
+                //- so a polygon carrying two vertices closer than it cannot come
+                //- back as a face of the piece and `faceOf` has no bijection to
+                //- find - at 25+ facets per cell the clip produced such fragments
+                //- beside the real patch, and the run aborted on the first of
+                //- them (26-Sep-2026, 07 section 24). Collapse the duplicates
+                //- here; a fragment left with fewer than three points carries no
+                //- surface and is dropped, its area counted.
+                {
+                    const pointField& raw = emit[ei];
+                    pointField keep(raw.size());
+                    label nk = 0;
+
+                    forAll(raw, ri)
+                    {
+                        bool dup = false;
+
+                        for (label kj = 0; kj < nk; kj++)
+                        {
+                            if (mag(keep[kj] - raw[ri]) <= samePointTol(tol))
+                            {
+                                dup = true;
+                                break;
+                            }
+                        }
+
+                        if (!dup)
+                        {
+                            keep[nk++] = raw[ri];
+                        }
+                    }
+
+                    keep.setSize(nk);
+
+                    if (nk < 3)
+                    {
+                        degenerateArea += polygonArea(raw);
+                        nDegenerate++;
+                        continue;
+                    }
+
+                    emit[ei] = keep;
+                }
+
                 cutCellPieceFace shared;
                 shared.pieceA = pair[0];
                 shared.pieceB = pair[1];
@@ -2988,6 +3040,13 @@ cutState cutCellByLoop
                 ifacePlane.append(pi);
             }
         }
+    }
+
+    if (nDegenerate > 0)
+    {
+        Info<< "Interface fragments dropped, vertices not distinct at "
+            << samePointTol(tol) << ": " << nDegenerate
+            << ", area " << degenerateArea << nl;
     }
 
     if (loopDebug)
@@ -3031,7 +3090,9 @@ cutState cutCellByLoop
                 ? 100*(facetArea - ifaceArea)/facetArea : 0) << "%)"
             << " | dropped " << nDropped << " area " << droppedArea
             << " (>2 " << nDropped3 << ", 1 " << nDropped1
-            << ", 0 " << nDropped0 << ")" << endl;
+            << ", 0 " << nDropped0 << ")"
+            << " | degenerate " << nDegenerate
+            << " area " << degenerateArea << endl;
     }
 
     //- 7. Put each interface face into both of its pieces. The pieces are
