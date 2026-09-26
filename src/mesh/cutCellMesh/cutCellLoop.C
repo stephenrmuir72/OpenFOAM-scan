@@ -2306,6 +2306,19 @@ cutState cutCellByLoop
         return (hi - lo)*mag(da) > 10*tol;
     };
 
+    //- The pieces this cell was grouped into. Two is the generic answer - one
+    //- cap crossing a cell - and it is the fallback pair for a patch part whose
+    //- own boundary reaches no region at all; see the decision in the parts loop.
+    labelList cellPieces;
+
+    forAll(pieceOf, i)
+    {
+        if (findIndex(cellPieces, pieceOf[i]) < 0)
+        {
+            cellPieces.append(pieceOf[i]);
+        }
+    }
+
     //- Probe: the cell's own face planes, built only for the dumped cell. The
     //- regions are pieces of these faces, so every region edge lies in one of
     //- them - which is checked below rather than assumed - and a part's boundary
@@ -2355,32 +2368,71 @@ cutState cutCellByLoop
             }
         }
 
-        //- How many pieces the cell was grouped into, and which piece owns each
-        //- region. Read beside `sides` on the part lines: if the accepted parts
-        //- all name the same pair, that pair is the two sides of this cell's
-        //- surface and a part could take it from them.
-        labelList distinctPieces;
-
-        forAll(pieceOf, i)
-        {
-            if (findIndex(distinctPieces, pieceOf[i]) < 0)
-            {
-                distinctPieces.append(pieceOf[i]);
-            }
-        }
-
         Info<< "REGIONPLANE cellfaces " << cell.nFaces()
             << " planes " << facePlanes.size()
             << " regionsOffTheirPlane " << nOffPlane
-            << " pieces " << distinctPieces.size() << " " << distinctPieces
+            << " pieces " << cellPieces.size() << " " << cellPieces
             << nl << "            pieceOf " << pieceOf << nl;
     }
+
+    //- Which pieces meet over a part: the ones owning the regions along its
+    //- boundary edges. Every edge of the loop lies on the cell's boundary, so it
+    //- is shared with a region of exactly one piece, and a part of the surface
+    //- separates two pieces. That holds for the loop; a facet wholly inside the
+    //- cell has no edge on that boundary, which is why the caller keeps a
+    //- fallback pair (26-Sep-2026, 06 B.3 item (0)).
+    //-
+    //- Asking the pieces directly with a containment test was tried and does not
+    //- work: a piece is built from its regions alone at this point, so it is
+    //- open, and a point outside it tests as inside.
+    auto piecesOf = [&](const pointField& part) -> labelList
+    {
+        labelList sides;
+
+        forAll(part, m)
+        {
+            const point& pa = part[m];
+            const point& pb = part[part.fcIndex(m)];
+
+            forAll(allRegions, ri)
+            {
+                const pointField& r = allRegions[ri];
+
+                bool matches = false;
+
+                forAll(r, e)
+                {
+                    if (edgesOverlap(pa, pb, r[e], r[r.fcIndex(e)]))
+                    {
+                        matches = true;
+                        break;
+                    }
+                }
+
+                if (matches)
+                {
+                    const label gp = pieceOf[ri];
+
+                    if (findIndex(sides, gp) < 0)
+                    {
+                        sides.append(gp);
+                    }
+                }
+            }
+        }
+
+        return sides;
+    };
 
     List<pointField> ifacePoly;
     List<label> ifacePlane;
 
-    //- Probe: what the enumeration discards, and how much of it
+    //- Probe: what the enumeration discards, how much of it, and where the pair
+    //- for a part whose boundary reached no region came from.
     scalar droppedArea = 0;
+    label nPairedFromPatch = 0;
+    label nPairedFromCell = 0;
+    label nPairless = 0;
     label nDropped = 0;
     label nDropped3 = 0;
     label nDropped1 = 0;
@@ -2528,6 +2580,29 @@ cutState cutCellByLoop
             parts.transfer(next);
         }
 
+        //- The pair this plane's patch separates, taken from any part of it
+        //- whose boundary does reach the regions, and every part's own sides -
+        //- matched once here so that the decision below reads rather than
+        //- re-matches, and so that a pair found later in the plane still counts
+        //- for a part earlier in it.
+        List<labelList> sidesOf(parts.size());
+        labelList patchPair;
+
+        forAll(parts, k)
+        {
+            if (parts[k].size() < 3)
+            {
+                continue;
+            }
+
+            sidesOf[k] = piecesOf(parts[k]);
+
+            if (patchPair.empty() && sidesOf[k].size() == 2)
+            {
+                patchPair = sidesOf[k];
+            }
+        }
+
         forAll(parts, k)
         {
             const pointField& part = parts[k];
@@ -2547,47 +2622,8 @@ cutState cutCellByLoop
             c /= scalar(part.size());
 
 
-            //- Which pieces meet over this part: the ones owning the regions
-            //- along its boundary edges. Every edge of the loop lies on the
-            //- cell's boundary, so it is shared with a region of exactly one
-            //- piece, and a part of the surface separates two pieces.
-            //-
-            //- Asking the pieces directly with a containment test was tried and
-            //- does not work: a piece is built from its regions alone at this
-            //- point, so it is open, and a point outside it tests as inside.
-            labelList sides;
-
-            forAll(part, m)
-            {
-                const point& pa = part[m];
-                const point& pb = part[part.fcIndex(m)];
-
-                forAll(allRegions, ri)
-                {
-                    const pointField& r = allRegions[ri];
-
-                    bool matches = false;
-
-                    forAll(r, e)
-                    {
-                        if (edgesOverlap(pa, pb, r[e], r[r.fcIndex(e)]))
-                        {
-                            matches = true;
-                            break;
-                        }
-                    }
-
-                    if (matches)
-                    {
-                        const label gp = pieceOf[ri];
-
-                        if (findIndex(sides, gp) < 0)
-                        {
-                            sides.append(gp);
-                        }
-                    }
-                }
-            }
+            //- This part's own sides, matched once for the whole plane above.
+            const labelList& sides = sidesOf[k];
 
             //- Probe: what each interface candidate found
             {
@@ -2719,8 +2755,53 @@ cutState cutCellByLoop
                     << " sides " << sides.size() << " " << sides << nl;
             }
 
-            if (sides.size() != 2)
+            //- The interface is the surface, not the plane. The part is a piece of
+            //- the plane's WHOLE cross-section, so clip it to the patch: that is
+            //- the identity wherever the part is already inside - every cell of
+            //- every case that was already exact, so nothing in those can move -
+            //- and a cut at a corner, which is where the surplus is.
+            const DynamicList<pointField> patchPiece(clipToPatch(part));
+
+            scalar patchPieceArea = 0;
+
+            forAll(patchPiece, m)
             {
+                patchPieceArea += polygonArea(patchPiece[m]);
+            }
+
+            //- The pair this part separates. Its own boundary is the primary
+            //- source; a part of the patch whose boundary reaches no region has
+            //- none, and then the pair is the patch's own - every accepted part
+            //- of a cell was measured naming the same pair (26-Sep-2026, cell
+            //- 2952: nine of nine are (0 1)) - or the cell's two pieces when the
+            //- whole patch found nothing. Only a part that carries surface is
+            //- paired this way: without that, it lies outside the patch and its
+            //- drop below is unchanged.
+            labelList pair(sides);
+
+            if (pair.size() != 2 && patchPieceArea > 0)
+            {
+                if (!patchPair.empty())
+                {
+                    pair = patchPair;
+                    nPairedFromPatch++;
+                }
+                else if (cellPieces.size() == 2)
+                {
+                    pair = cellPieces;
+                    nPairedFromCell++;
+                }
+            }
+
+            if (pair.size() != 2)
+            {
+                //- Counted, so that the part the policy still cannot place is a
+                //- number in the log and not a silence.
+                if (patchPieceArea > 0)
+                {
+                    nPairless++;
+                }
+
                 droppedArea += polygonArea(part);
                 nDropped++;
 
@@ -2764,20 +2845,6 @@ cutState cutCellByLoop
                 }
 
                 continue;
-            }
-
-            //- The interface is the surface, not the plane. The part is a piece of
-            //- the plane's WHOLE cross-section, so clip it to the patch: that is
-            //- the identity wherever the part is already inside - every cell of
-            //- every case that was already exact, so nothing in those can move -
-            //- and a cut at a corner, which is where the surplus is.
-            const DynamicList<pointField> patchPiece(clipToPatch(part));
-
-            scalar patchPieceArea = 0;
-
-            forAll(patchPiece, m)
-            {
-                patchPieceArea += polygonArea(patchPiece[m]);
             }
 
             if (patchPiece.empty())
@@ -2854,7 +2921,7 @@ cutState cutCellByLoop
                         Info<< "DUPPART plane " << pi << " repeats earlier "
                             << "plane " << ifacePlane[qi] << " size "
                             << part.size() << " area " << polygonArea(part)
-                            << " pieces " << sides[0] << "/" << sides[1] << endl;
+                            << " pieces " << pair[0] << "/" << pair[1] << endl;
                     }
 
                     break;
@@ -2881,8 +2948,8 @@ cutState cutCellByLoop
             forAll(emit, ei)
             {
                 cutCellPieceFace shared;
-                shared.pieceA = sides[0];
-                shared.pieceB = sides[1];
+                shared.pieceA = pair[0];
+                shared.pieceB = pair[1];
                 shared.tri = planeTri[pi];
                 shared.patch = (shared.tri >= 0 && shared.tri < patchOf.size())
                   ? patchOf[shared.tri] : -1;
@@ -2923,6 +2990,10 @@ cutState cutCellByLoop
         }
 
         ccen /= scalar(cell.points().size());
+
+        Info<< "PAIR fromPatch " << nPairedFromPatch
+            << " fromCell " << nPairedFromCell
+            << " pairless " << nPairless << nl;
 
         Info<< "IFACE cellc " << ccen
             << " parts " << ifacePoly.size()
