@@ -775,10 +775,92 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
 
         if (nIn == 0 || nOut == 0)
         {
-            //- The surface passes through the cell without separating it, so
-            //- every piece is in one region. Counted, since the pieces are
-            //- still valid cells.
-            info_.nSingleRegion++;
+            //- Every piece landed in one region. That is wrong wherever the
+            //- surface really does separate the cell. Measured on
+            //- 10_box_regions: 17 of its 698 crossed cells were left whole this
+            //- way and carried 5.3% of the interface area of an exact planar
+            //- solid away with them, silently. The cause is that a piece's mean
+            //- centre is not a sound witness here - the loop builds a piece by
+            //- joining the polygons of the chains, so a piece can be non-convex
+            //- and its mean can lie on the other side of the surface from the
+            //- piece itself. The solid's own geometry agrees with the query on
+            //- all 17: both pieces' means really are inside the box.
+            //-
+            //- So the pieces are asked the surface's own question instead. The
+            //- facets crossing the cell give outward-oriented planes, and a
+            //- piece is inside when every one of its own points is behind every
+            //- one of those planes. That is the rule the arrangement has always
+            //- used to order its pieces - the sign of the largest distance over
+            //- a piece's points rather than the sign at its centre, which a
+            //- sliver makes meaningless - and it is asked *only* here, after the
+            //- centre has failed to separate the cell, so a cell that separates
+            //- cleanly cannot be changed by it.
+            //- The margin the pieces were built with: cutCellLoop merges a
+            //- piece's points within ten times the caller's tolerance
+            const scalar surfaceTol = 10*tol_;
+
+            labelList fromSurface(c.pieces.size(), -1);
+            label nInSurface = 0;
+            label nOutSurface = 0;
+
+            forAll(c.pieces, pi)
+            {
+                bool behindAll = !result.planes.empty();
+
+                forAll(result.planes, pli)
+                {
+                    const vector& n = result.planes[pli].normal();
+                    const point& p0 = result.planes[pli].refPoint();
+
+                    scalar deepest = -GREAT;
+
+                    forAll(c.pieces[pi].poly.points(), qi)
+                    {
+                        deepest = max
+                        (
+                            deepest,
+                            (n & (c.pieces[pi].poly.points()[qi] - p0))
+                        );
+                    }
+
+                    if (deepest > surfaceTol)
+                    {
+                        behindAll = false;
+                        break;
+                    }
+                }
+
+                fromSurface[pi] = (behindAll ? 1 : 0);
+
+                if (behindAll)
+                {
+                    nInSurface++;
+                }
+                else
+                {
+                    nOutSurface++;
+                }
+            }
+
+            if (nInSurface > 0 && nOutSurface > 0)
+            {
+                nIn = nInSurface;
+                nOut = nOutSurface;
+
+                forAll(c.pieces, pi)
+                {
+                    c.pieceZone[pi] = (fromSurface[pi] == 1)
+                      ? insideZone
+                      : outsideZone;
+                }
+            }
+            else
+            {
+                //- The surface passes through the cell without separating it, so
+                //- every piece is in one region. Counted, since the pieces are
+                //- still valid cells.
+                info_.nSingleRegion++;
+            }
         }
 
         //- The interface is the shared faces whose pieces are in different
