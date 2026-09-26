@@ -84,30 +84,56 @@ pointField planeSection
             const scalar da = pln.signedDistance(pts[a]);
             const scalar db = pln.signedDistance(pts[b]);
 
-            if (da*db >= 0)
+            //- A vertex lying on the plane is part of the section. A strict
+            //- crossing test alone loses it, and with it the sliver between that
+            //- vertex and the crossings either side of it. At the sphere's pole
+            //- the facet's plane passes through the cell's corner, and the section
+            //- then came out 4.68e-05 SMALLER than the patch clipped to the same
+            //- cell - which the patch cannot be, and the enumeration dropped that
+            //- much surface in each of the six pole cells (26-Sep-2026, 07
+            //- section 22).
+            const bool onA = mag(da) <= tol;
+            const bool onB = mag(db) <= tol;
+
+            DynamicList<point> add(2);
+
+            if (onA)
             {
-                continue;
+                add.append(pts[a]);
             }
 
-            const point x = pts[a] + (da/(da - db))*(pts[b] - pts[a]);
+            if (onB)
+            {
+                add.append(pts[b]);
+            }
+
+            if (!onA && !onB && da*db < 0)
+            {
+                add.append(pts[a] + (da/(da - db))*(pts[b] - pts[a]));
+            }
 
             //- The cell has no edge list, so its edges are walked once per face
             //- and each crossing is met twice. Kept once, or the section polygon
             //- carries coincident points and its edges cannot pair up.
-            bool known = false;
-
-            forAll(section, k)
+            forAll(add, ai)
             {
-                if (mag(section[k] - x) <= tol)
+                const point& x = add[ai];
+
+                bool known = false;
+
+                forAll(section, k)
                 {
-                    known = true;
-                    break;
+                    if (mag(section[k] - x) <= tol)
+                    {
+                        known = true;
+                        break;
+                    }
                 }
-            }
 
-            if (!known)
-            {
-                section.append(x);
+                if (!known)
+                {
+                    section.append(x);
+                }
             }
         }
     }
@@ -2672,6 +2698,7 @@ cutState cutCellByLoop
                     << " size " << part.size()
                     << " sides " << sides.size()
                     << " area " << polygonArea(part)
+                    << " secArea " << polygonArea(sec)
                     << " patchArea " << patchArea
                     << " clipped " << clippedArea
                     << " nFacets " << planeFacets[pi].size()
