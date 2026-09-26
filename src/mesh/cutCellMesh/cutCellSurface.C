@@ -29,6 +29,8 @@ License
 #include "Time.H"
 #include "boundBox.H"
 #include "error.H"
+#include "geometricSurfacePatch.H"
+#include "surfZoneIdentifier.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -256,23 +258,23 @@ void Foam::cutCellSurface::readRegions
     labelList& regionOf
 )
 {
-    const fileName path(surfacePath(name, dict, runTime));
-
     names.clear();
     regionOf.clear();
 
-    //- Only the native triSurface format carries regions. An STL has one solid
-    //- and a dictionary shape is generated here, so both leave these empty and
-    //- the caller falls back to a single zone.
-    if (path.ext() != "tri")
+    const word type(dict.lookup("type"));
+
+    //- A dictionary shape is generated here and carries no regions, so the
+    //- caller falls back to a single zone.
+    if (type != "triSurfaceMesh" && type != "closedTriSurfaceMesh")
     {
         return;
     }
 
-    //- The region of each face comes from the surface itself, which keeps it.
-    //- It is not asked of the file reader: that reader's per-face ids and its
-    //- name list do not share an index space, because it seeds a placeholder
-    //- for the first zone and only records the names it goes on to discover.
+    const fileName path(surfacePath(name, dict, runTime));
+
+    //- The region of every face is the file's own record and the reader keeps
+    //- it whatever the format is: the solids of an ASCII STL, and the per-face
+    //- 0x<token> of the native triSurface format.
     const triSurface s(path);
 
     regionOf.setSize(s.size());
@@ -282,35 +284,68 @@ void Foam::cutCellSurface::readRegions
         regionOf[i] = s[i].region();
     }
 
-    //- The names are the tokens in the file, in order of first appearance,
-    //- prefixed with "zone" as the reader does: a line ending 0xwall names its
-    //- region zonewall. That assignment of ids is the one the region indices
-    //- above use, so the two are consistent, and the gate checks it.
-    IFstream is(path);
+    //- The reader generates a name for a region the file did not name itself:
+    //- patch0, patch1, ... from geometricSurfacePatch, and zone0, ... from
+    //- surfZoneIdentifier. So a name that is one of those means the file said
+    //- nothing, and the native triSurface format is the one whose names sit on
+    //- its faces as tokens instead.
+    bool declared = false;
 
-    string line;
-
-    while (is.good() && is.getLine(line))
+    forAll(s.patches(), patchi)
     {
-        const string::size_type at = line.rfind("0x");
+        const word& patchn = s.patches()[patchi].name();
 
-        if (at == string::npos)
+        if
+        (
+            patchn != geometricSurfacePatch::defaultName(patchi)
+         && patchn != surfZoneIdentifier::defaultName(patchi)
+        )
         {
-            continue;
+            declared = true;
+            break;
         }
+    }
 
-        const word token(line.substr(at + 2));
-
-        if (token.empty())
+    if (declared)
+    {
+        //- An STL's solids, or any other format that names its own regions.
+        forAll(s.patches(), patchi)
         {
-            continue;
+            names.append(s.patches()[patchi].name());
         }
+    }
+    else if (path.ext() == "tri")
+    {
+        //- The names are the tokens in the file, in order of first appearance,
+        //- prefixed with "zone" as the reader does: a line ending 0xwall names
+        //- its region zonewall. That assignment of ids is the one the region
+        //- indices above use, so the two are consistent, and the gate checks it.
+        IFstream is(path);
 
-        const word zoneName("zone" + token);
+        string line;
 
-        if (findIndex(names, zoneName) < 0)
+        while (is.good() && is.getLine(line))
         {
-            names.append(zoneName);
+            const string::size_type at = line.rfind("0x");
+
+            if (at == string::npos)
+            {
+                continue;
+            }
+
+            const word token(line.substr(at + 2));
+
+            if (token.empty())
+            {
+                continue;
+            }
+
+            const word zoneName("zone" + token);
+
+            if (findIndex(names, zoneName) < 0)
+            {
+                names.append(zoneName);
+            }
         }
     }
 
