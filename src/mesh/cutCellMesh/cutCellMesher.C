@@ -2467,28 +2467,6 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
             Info<< endl;
         }
 
-        if (targetFace == 2463 || (nei < 0 && patchi < 0))
-        {
-            static label nOdd = 0;
-
-            if (nOdd < 8)
-            {
-                nOdd++;
-
-                Info<< "SETFACE target " << targetFace << " size " << f.size()
-                    << " own " << own << " nei " << nei
-                    << " patch " << patchi << " zone " << zonei
-                    << " | isInternal " << (targetFace >= 0
-                        ? mesh_.isInternalFace(targetFace) : -1)
-                    << " faceNei " << (targetFace >= 0
-                        ? mesh_.faceNeighbour()[targetFace] : -1)
-                    << " faceOwner " << (targetFace >= 0
-                        ? mesh_.faceOwner()[targetFace] : -1)
-                    << " nFaces " << mesh_.nFaces()
-                    << " nInternal " << mesh_.nInternalFaces() << endl;
-            }
-        }
-
         face nf(f);
 
         bool flipFlux = false;
