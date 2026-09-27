@@ -58,6 +58,8 @@ Description
 #include "mapPolyMesh.H"
 #include "error.H"
 
+#include <algorithm>
+
 using namespace Foam;
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -113,6 +115,150 @@ int main(int argc, char* argv[])
             surfI++,
             new cutCellSurface(e.keyword(), e.dict(), runTime)
         );
+    }
+
+    //- The snap, and it is a mesh motion rather than a cut setting. A surface
+    //- vertex within snapPlanes of a background plane makes the surface graze
+    //- that plane, which is the annulus's multiply-connected face; the plane is
+    //- then moved past the vertex by the vertex's own gap plus the clearance,
+    //- each plane on its own, because the two vertices of an antipodal pair want
+    //- opposite moves and no rigid move satisfies both (07 section 32.2). Zero
+    //- disables it. A plane is moved only where the mesh's own points lie on it,
+    //- so a refined background needs no assumption beyond that.
+    const scalar snapPlanes
+    (
+        meshDict.getOrDefault<scalar>("snapPlanes", 0.0)
+    );
+
+    const scalar snapPlanesClearance
+    (
+        meshDict.getOrDefault<scalar>("snapPlanesClearance", 0.005)
+    );
+
+    if (snapPlanes > 0)
+    {
+        const pointField& pts = mesh.points();
+
+        pointField moved(pts);
+
+        const scalar coordTol =
+            1e-9*mag(mesh.bounds().max() - mesh.bounds().min());
+
+        label nMovedPlanes = 0;
+
+        Info<< "Snap planes" << nl << "-----------" << nl;
+
+        for (direction dir = 0; dir < 3; dir++)
+        {
+            scalarField all(pts.size());
+
+            forAll(pts, i)
+            {
+                all[i] = pts[i][dir];
+            }
+
+            std::sort(all.begin(), all.end());
+
+            //- The distinct coordinates along this axis, and its finest spacing.
+            scalarField coords(all.size());
+
+            label nC = 0;
+
+            forAll(all, i)
+            {
+                if (nC == 0 || all[i] - coords[nC - 1] > coordTol)
+                {
+                    coords[nC++] = all[i];
+                }
+            }
+
+            coords.setSize(nC);
+
+            scalar cellSize = GREAT;
+
+            for (label i = 1; i < nC; i++)
+            {
+                cellSize = min(cellSize, coords[i] - coords[i - 1]);
+            }
+
+            if (nC < 2 || cellSize <= VSMALL)
+            {
+                continue;
+            }
+
+            //- The move each plane needs: the largest over the vertices near it.
+            scalarField move(nC, 0.0);
+
+            forAll(surfaces, si)
+            {
+                const pointField& spts = surfaces[si].surface().points();
+
+                forAll(spts, vi)
+                {
+                    const scalar v = spts[vi][dir];
+
+                    label best = -1;
+                    scalar bestD = GREAT;
+
+                    for (label i = 0; i < nC; i++)
+                    {
+                        const scalar d = mag(coords[i] - v);
+
+                        if (d < bestD)
+                        {
+                            bestD = d;
+                            best = i;
+                        }
+                    }
+
+                    if (best >= 0 && bestD <= snapPlanes*cellSize)
+                    {
+                        const scalar want
+                        (
+                            (v > coords[best] ? 1 : -1)
+                          * (bestD + snapPlanesClearance*cellSize)
+                        );
+
+                        if (mag(want) > mag(move[best]))
+                        {
+                            move[best] = want;
+                        }
+                    }
+                }
+            }
+
+            //- Apply, to every point that lies on a moved plane.
+            for (label j = 0; j < nC; j++)
+            {
+                if (mag(move[j]) <= VSMALL)
+                {
+                    continue;
+                }
+
+                forAll(pts, i)
+                {
+                    if (mag(pts[i][dir] - coords[j]) <= coordTol)
+                    {
+                        moved[i][dir] = coords[j] + move[j];
+                    }
+                }
+
+                nMovedPlanes++;
+
+                Info<< "    " << ("xyz"[dir]) << " = " << coords[j]
+                    << " moved by " << move[j] << " to "
+                    << coords[j] + move[j] << nl;
+            }
+        }
+
+        Info<< "    " << nMovedPlanes << " plane(s) moved, "
+            << mag(snapPlanes)*100 << "% trigger, "
+            << mag(snapPlanesClearance)*100 << "% clearance" << nl << endl;
+
+        if (nMovedPlanes)
+        {
+            mesh.movePoints(moved);
+        }
     }
 
     //- How close a cut crossing has to be to the endpoint of a cell edge, as a
