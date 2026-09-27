@@ -2106,6 +2106,14 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
             }
         }
 
+        //- Whether any of the cell's faces claims the point by its plane. A point
+        //- that a face claims is that face's business, even when the face's
+        //- subdivision has nothing at the same place: the next route must not
+        //- take it over. Measured, taking it over gave the loop's `09` mesh 96
+        //- fewer points and a new `invalidVertexLabels`, on faces no collapse
+        //- had bent.
+        bool faceClaimed = false;
+
         for (const label facei : cells[c.celli])
         {
             const scalar magArea = mag(mesh_.faceAreas()[facei]);
@@ -2118,16 +2126,108 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
             const vector n(mesh_.faceAreas()[facei]/magArea);
             const point refPoint(mesh_.faceCentres()[facei]);
 
-            if (mag(planeDist(n, refPoint, x)) <= tol_ && splitOf.found(facei))
+            const scalar d = mag(planeDist(n, refPoint, x));
+
+            if (d <= tol_)
             {
-                const faceSplit& split = splits[splitOf[facei]];
+                faceClaimed = true;
+
+                if (splitOf.found(facei))
+                {
+                    const faceSplit& split = splits[splitOf[facei]];
+
+                    forAll(split.points, j)
+                    {
+                        if (mag(split.coords[j] - x) <= tol_)
+                        {
+                            return split.points[j];
+                        }
+                    }
+                }
+            }
+        }
+
+        //- A face the collapse has bent is not a plane, so a piece's vertex on it
+        //- can miss the plane test above by far more than any identity tolerance
+        //- - 4.55e-4 against 1.7e-9 on 06_oblique_box. The vertex is still that
+        //- face's: the cutter's successive cuts and the face's subdivision draw
+        //- different chords across the same bent face, so the piece carries one
+        //- crossing where the subdivision has already made the other, and they
+        //- are 1.34e-5 apart (07 section 36.10). Both are found by a nearest
+        //- choice, and each choice is guarded by the margin to its runner-up
+        //- rather than by a distance, so no constant enters: measured there the
+        //- nearest face wins by 6.7 over the next and its nearest subdivision
+        //- point by about 300 over the next, against the 2 asked of both.
+        //- Reached only when **no** face claims the point, which is where a bent
+        //- face puts a piece's vertex: its plane test then fails for every face of
+        //- the cell. The guard is what keeps a face that does claim its point from
+        //- being taken over - without it the loop's `09` mesh lost 96 points and
+        //- gained `invalidVertexLabels`, on faces no collapse had bent.
+        if (!faceClaimed)
+        {
+            scalar bestFaceD = GREAT;
+            scalar nextFaceD = GREAT;
+            label bestFace = -1;
+
+            for (const label facei : cells[c.celli])
+            {
+                const scalar magArea = mag(mesh_.faceAreas()[facei]);
+
+                if (magArea <= VSMALL || !splitOf.found(facei))
+                {
+                    continue;
+                }
+
+                const scalar d =
+                    mag
+                    (
+                        planeDist
+                        (
+                            mesh_.faceAreas()[facei]/magArea,
+                            mesh_.faceCentres()[facei],
+                            x
+                        )
+                    );
+
+                if (d < bestFaceD)
+                {
+                    nextFaceD = bestFaceD;
+                    bestFaceD = d;
+                    bestFace = facei;
+                }
+                else if (d < nextFaceD)
+                {
+                    nextFaceD = d;
+                }
+            }
+
+            if (bestFace != -1 && 2*bestFaceD < nextFaceD)
+            {
+                const faceSplit& split = splits[splitOf[bestFace]];
+
+                scalar bestPtD = GREAT;
+                scalar nextPtD = GREAT;
+                label bestPt = -1;
 
                 forAll(split.points, j)
                 {
-                    if (mag(split.coords[j] - x) <= tol_)
+                    const scalar d = mag(split.coords[j] - x);
+
+                    if (d < bestPtD)
                     {
-                        return split.points[j];
+                        nextPtD = bestPtD;
+                        bestPtD = d;
+                        bestPt = split.points[j];
                     }
+                    else if (d < nextPtD)
+                    {
+                        nextPtD = d;
+                    }
+                }
+
+                if (bestPt != -1 && 2*bestPtD < nextPtD)
+                {
+                    return bestPt;
                 }
             }
         }
