@@ -2412,9 +2412,46 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
         const label patchi,
         const label zonei,
         bool zoneFlip,
-        const char* tag = ""            //- probe: which emission path this is
+        const char* tag = ""            //- which emission path this is: named by
+                                        //- the probe and, if the face is not a
+                                        //- polygon, by the guard below
     )
     {
+        //- A face of the new mesh must be a polygon: three labels at least, and
+        //- no label twice. Refuse one that is not, here at the emission - the one
+        //- funnel every emitted face passes, whichever cutter made it - so the
+        //- class stops at its source instead of reaching the mesh, where
+        //- checkMesh reports an invalid vertex label far from its cause. Both
+        //- cutters drop a repeated label they can make, so this firing means that
+        //- repair was missed: it is an abort rather than a repair, deliberately,
+        //- because a face that is not a polygon is not one to write.
+        {
+            bool notPolygon = (f.size() < 3);
+
+            for (label i = 0; !notPolygon && i < f.size(); ++i)
+            {
+                for (label j = i + 1; j < f.size(); ++j)
+                {
+                    if (f[i] == f[j])
+                    {
+                        notPolygon = true;
+
+                        break;
+                    }
+                }
+            }
+
+            if (notPolygon)
+            {
+                FatalErrorInFunction
+                    << "The " << tag << " path emits a face that is not a polygon: "
+                    << f
+                    << ", own " << own << ", neighbour " << nei
+                    << ", patch " << patchi << ", zone " << zonei
+                    << exit(FatalError);
+            }
+        }
+
         emittedFaces.insert(targetFace);
 
         //- Probe: for one cell, name every new face and the path that made it.
