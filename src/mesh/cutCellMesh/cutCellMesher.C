@@ -2895,14 +2895,44 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
             if (!splitOf.found(facei))
             {
                 //- A face the surface does not cross lies wholly on one side, so
-                //- it moves from the background cell to the piece on that side
+                //- it moves from the background cell to the piece on that side.
+                //-
+                //- That piece is taken from the face's own regions - one source
+                //- with the split path above - rather than from cellAt at the
+                //- face's centre. The two disagreed on a snapped cell: cellAt
+                //- answered 272 where the face's own region says piece 1, whose
+                //- cell is 584, and the face was emitted with 272, which left
+                //- both cells open with no counter reporting it. A face the
+                //- surface does not cross has all of its regions on one side, so
+                //- one of them answers for all of them.
                 const point x(mesh_.faceCentres()[facei]);
+
+                label owner = cellAt(own, x);
+
+                forAll(cells[c.celli], ffi)
+                {
+                    if (cells[c.celli][ffi] != facei)
+                    {
+                        continue;
+                    }
+
+                    if
+                    (
+                        ffi < label(c.faceRegionPiece.size())
+                     && !c.faceRegionPiece[ffi].empty()
+                    )
+                    {
+                        owner = c.pieceCell[c.faceRegionPiece[ffi][0]];
+                    }
+
+                    break;
+                }
 
                 setFace
                 (
                     fcs[facei],
                     facei,
-                    cellAt(own, x),
+                    owner,
                     (nei >= 0 ? cellAt(nei, x) : -1),
                     patchi,
                     zonei,
