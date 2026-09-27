@@ -2985,20 +2985,58 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
             {
                 const face& sub = split.subFaces[sfi];
 
+                //- PROBE: the sub-face's labels, distinct. A sub-face that names one
+                //- label at two of its vertices is the repeated vertex label that
+                //- checkMesh reports, and this path is where the arrangement's 144
+                //- come from. A face left with fewer than three distinct labels has
+                //- no area and is dropped, as the loop's own region drop does.
+                DynamicList<label> subDistinct(sub.size());
+
+                forAll(sub, i)
+                {
+                    bool have = false;
+
+                    forAll(subDistinct, j)
+                    {
+                        if (subDistinct[j] == sub[i])
+                        {
+                            have = true;
+                            break;
+                        }
+                    }
+
+                    if (!have)
+                    {
+                        subDistinct.append(sub[i]);
+                    }
+                }
+
+                if (subDistinct.size() < 3)
+                {
+                    continue;
+                }
+
+                face subClean(subDistinct.size());
+
+                forAll(subDistinct, i)
+                {
+                    subClean[i] = subDistinct[i];
+                }
+
                 //- The centre of the sub-face, for the side tests. Sub-faces
                 //- are convex, so the average is inside them.
                 point x(Zero);
 
-                forAll(sub, i)
+                forAll(subClean, i)
                 {
-                    x += coordOf(sub[i]);
+                    x += coordOf(subClean[i]);
                 }
 
-                x /= scalar(sub.size());
+                x /= scalar(subClean.size());
 
                 setFace
                 (
-                    sub,
+                    subClean,
                     (sfi == 0 ? facei : -1),
                     cellAt(own, x),
                     (nei >= 0 ? cellAt(nei, x) : -1),
