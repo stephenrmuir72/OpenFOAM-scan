@@ -2755,11 +2755,47 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
 
                             rc /= scalar(r.size());
 
-                            face sub(r.size());
+                            //- The region's labels, one per distinct vertex. A region
+                            //- can name one point at two of its vertices - the loop's
+                            //- walk closes a zero-length edge - and a face that lists a
+                            //- label twice is the invalid vertex label `checkMesh`
+                            //- reports. The repeated label is dropped, and a region left
+                            //- with fewer than three distinct labels is dropped whole,
+                            //- on the same ground as the one above: it has no area.
+                            DynamicList<label> distinct(r.size());
 
                             forAll(r, k)
                             {
-                                sub[k] = pointOf(cc, r[k]);
+                                const label v = pointOf(cc, r[k]);
+
+                                bool have = false;
+
+                                forAll(distinct, j)
+                                {
+                                    if (distinct[j] == v)
+                                    {
+                                        have = true;
+                                        break;
+                                    }
+                                }
+
+                                if (!have)
+                                {
+                                    distinct.append(v);
+                                }
+                            }
+
+                            if (distinct.size() < 3)
+                            {
+                                nDropSize++;
+                                continue;
+                            }
+
+                            face sub(distinct.size());
+
+                            forAll(distinct, k)
+                            {
+                                sub[k] = distinct[k];
                             }
 
                             const label pieceA =
