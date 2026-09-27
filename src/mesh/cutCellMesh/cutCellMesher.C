@@ -1697,16 +1697,27 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                         const scalar lo = min(ta, tb);
                         const scalar hi = max(ta, tb);
 
-                        forAll(crossT, ci)
+                        //- The crossings are held in ascending parameter order,
+                        //- so they are appended in the direction this edge is
+                        //- traversed: a->b with ta < tb, b->a the other way. In
+                        //- ascending order on an edge walked the other way the
+                        //- chain doubles back along the line and the sub-face
+                        //- folds on itself, which is what leaves one of its edges
+                        //- used by a single face - `07` section 38's spanning
+                        //- class, whose instance is a run of collinear vertices
+                        //- emitted in ascending order on a descending edge.
+                        for (label ci = 0; ci < crossT.size(); ++ci)
                         {
-                            if (crossT[ci] <= lo || crossT[ci] >= hi)
+                            const label c = (tb >= ta ? ci : crossT.size() - 1 - ci);
+
+                            if (crossT[c] <= lo || crossT[c] >= hi)
                             {
                                 continue;
                             }
 
-                            if (crossLabel[ci] != a && crossLabel[ci] != b)
+                            if (crossLabel[c] != a && crossLabel[c] != b)
                             {
-                                grown.append(crossLabel[ci]);
+                                grown.append(crossLabel[c]);
                             }
                         }
                     }
