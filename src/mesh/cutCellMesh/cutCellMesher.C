@@ -1300,13 +1300,12 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
         return pointAt(pa + w*(pb - pa));
     };
 
-
     //- Split a face polygon by a plane, in mesh point labels. False when the
     //- face is not split, that is when all of its points lie on one side of the
     //- plane or on the plane itself.
     auto splitFace = [&]
     (
-        const face& f,
+        face& f,
         const vector& n,
         const point& refPoint,
         face& minusPoly,
@@ -1386,12 +1385,48 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
             pCoords[i] = coordOf(p[i]);
         }
 
-        if
-        (
-            polygonDegenerate(mCoords, tol_)
-         || polygonDegenerate(pCoords, tol_)
-        )
+        const bool minusDegenerate = polygonDegenerate(mCoords, tol_);
+        const bool plusDegenerate = polygonDegenerate(pCoords, tol_);
+
+        if (minusDegenerate || plusDegenerate)
         {
+            //- The split is too thin to keep as two faces, but its crossings
+            //- still subdivide the unsplit face's boundary. Keep those points
+            //- so adjacent cut faces share the same edge chain without changing
+            //- the face's area or shape.
+            DynamicList<label> boundary(f.size() + 2);
+
+            forAll(f, i)
+            {
+                const label a = f[i];
+                const label b = f[f.fcIndex(i)];
+                const scalar da = planeDist(n, refPoint, coordOf(a));
+                const scalar db = planeDist(n, refPoint, coordOf(b));
+
+                boundary.append(a);
+
+                if
+                (
+                    (da > tol_ && db < -tol_)
+                 || (da < -tol_ && db > tol_)
+                )
+                {
+                    boundary.append(newPoint(a, b, n, refPoint));
+                }
+            }
+
+            if (boundary.size() > f.size())
+            {
+                face expanded(boundary.size());
+
+                forAll(boundary, i)
+                {
+                    expanded[i] = boundary[i];
+                }
+
+                f = expanded;
+            }
+
             return false;
         }
 
