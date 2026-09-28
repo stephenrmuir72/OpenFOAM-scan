@@ -201,17 +201,6 @@ void Foam::cutCellMesher::snapPoints()
         return;
     }
 
-    if (surfaces_.size() != 1)
-    {
-        FatalErrorInFunction
-            << "Cutting with " << surfaces_.size() << " surfaces is not"
-            << " supported in this slice. Cells the surface does not cross still"
-            << " need an inside/outside label, so give exactly one geometry"
-            << " entry." << exit(FatalError);
-    }
-
-    const cutCellSurface& surf = surfaces_[0];
-
     const pointField& pts = mesh_.points();
 
     const scalar f = vertexSnapFraction_;
@@ -285,21 +274,23 @@ void Foam::cutCellMesher::snapPoints()
 
         const boundBox bb(cell.points(), false);
 
-        const labelList cand
-        (
-            surf.search().tree().findBox(treeBoundBox(bb.min(), bb.max()))
-        );
-
-        if (cand.empty())
-        {
-            continue;
-        }
-
         const pointField& cPts = cell.points();
 
-        forAll(cand, i)
+        forAll(surfaces_, surfi)
         {
-            const pointField tri(surf.triangle(cand[i]));
+            const cutCellSurface& surf = surfaces_[surfi];
+
+            const labelList cand
+            (
+                surf.search().tree().findBox
+                (
+                    treeBoundBox(bb.min(), bb.max())
+                )
+            );
+
+            forAll(cand, i)
+            {
+                const pointField tri(surf.triangle(cand[i]));
 
             const vector nRaw = (tri[1] - tri[0]) ^ (tri[2] - tri[0]);
 
@@ -388,7 +379,8 @@ void Foam::cutCellMesher::snapPoints()
                         continue;
                     }
 
-                    addPull(mesh_.cellPoints()[celli][endLocal], n, ref);
+                        addPull(mesh_.cellPoints()[celli][endLocal], n, ref);
+                    }
                 }
             }
         }
@@ -529,21 +521,22 @@ void Foam::cutCellMesher::snapPoints()
 
 void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
 {
-    //- Every cell needs an inside/outside label, including the ones the
-    //- surface does not cross, so a single closed surface is required here
-    if (surfaces_.size() != 1)
+    if (surfaces_.empty())
     {
         FatalErrorInFunction
-            << "Cutting with " << surfaces_.size() << " surfaces is not"
-            << " supported in this slice. Cells the surface does not cross still"
-            << " need an inside/outside label, so give exactly one geometry"
-            << " entry." << exit(FatalError);
+            << "No surfaces were supplied for cutting"
+            << exit(FatalError);
     }
 
-    const cutCellSurface& surf = surfaces_[0];
+    labelList insideZone(surfaces_.size());
+    labelList outsideZone(surfaces_.size());
 
-    const label insideZone = cellZoneID(surf.name() + "_inside");
-    const label outsideZone = cellZoneID(surf.name() + "_outside");
+    forAll(surfaces_, surfi)
+    {
+        const cutCellSurface& surf = surfaces_[surfi];
+        insideZone[surfi] = cellZoneID(surf.name() + "_inside");
+        outsideZone[surfi] = cellZoneID(surf.name() + "_outside");
+    }
 
     //- Inside/outside of the cell centres, for the cells the surface does not
     //- cross. Ray casting against the same triangulation the cutting uses, so
@@ -555,15 +548,25 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
         centres[celli] = mesh_.cellCentres()[celli];
     }
 
-    const boolList cellInside(surf.search().calcInside(centres));
+    cellRegionZones_.setSize(mesh_.nCells());
 
-    //- Region zone of every cell, including the ones the surface does not
-    //- cross, so that the whole mesh ends up labelled
-    cellRegionZone_.setSize(mesh_.nCells());
-
-    forAll(cellInside, celli)
+    forAll(cellRegionZones_, celli)
     {
-        cellRegionZone_[celli] = (cellInside[celli] ? insideZone : outsideZone);
+        cellRegionZones_[celli].setSize(surfaces_.size());
+    }
+
+    forAll(surfaces_, surfi)
+    {
+        const boolList cellInside
+        (
+            surfaces_[surfi].search().calcInside(centres)
+        );
+
+        forAll(cellInside, celli)
+        {
+            cellRegionZones_[celli][surfi] =
+                (cellInside[celli] ? insideZone[surfi] : outsideZone[surfi]);
+        }
     }
 
     DynamicList<cellCut> found(cuts.size());
@@ -576,18 +579,43 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
 
         const boundBox bb(cell.points(), false);
 
-        const labelList cand(surf.search().tree().findBox(treeBoundBox(bb.min(), bb.max())));
+        List<labelList> candidates(surfaces_.size());
+        label nTriangles = 0;
 
-        if (cand.empty())
+        forAll(surfaces_, surfi)
+        {
+            candidates[surfi] = surfaces_[surfi].search().tree().findBox
+            (
+                treeBoundBox(bb.min(), bb.max())
+            );
+            nTriangles += candidates[surfi].size();
+        }
+
+        if (!nTriangles)
         {
             continue;
         }
 
-        List<pointField> tris(cand.size());
+        List<pointField> tris(nTriangles);
+        labelList patchOf(nTriangles);
+        labelList surfaceOf(nTriangles);
+        label triI = 0;
 
-        forAll(cand, i)
+        forAll(surfaces_, surfi)
         {
-            tris[i] = surf.triangle(cand[i]);
+            const cutCellSurface& surf = surfaces_[surfi];
+
+            forAll(candidates[surfi], i)
+            {
+                const label tri = candidates[surfi][i];
+
+                tris[triI] = surf.triangle(tri);
+                patchOf[triI] = surf.regionOf().empty()
+                  ? 0
+                  : surf.regionOf()[tri];
+                surfaceOf[triI] = surfi;
+                triI++;
+            }
         }
 
         cutCellResult result;
@@ -602,26 +630,10 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
             d.add("cellPoints", cell.points());
             d.add("cellFaces", cell.faces());
             d.add("tris", tris);
+            d.add("triangleSurfaces", surfaceOf);
 
             OFstream os(mesh_.time().path()/"cutCellDump");
             d.write(os, false);
-        }
-
-        //- Boundary association by inheritance: each triangle carries the
-        //- region of the surface it belongs to, and a face a facet produces
-        //- inherits it. This replaces matching geometry to patches afterwards.
-        labelList patchOf(cand.size());
-
-        forAll(cand, i)
-        {
-            //- The region comes from the surface's own record, not from
-            //- surface()[i].region(): that is 0 for every face, because the
-            //- triSurface built from our triFaces puts every face in region 0.
-            //- A format with no regions leaves the record empty, and then every
-            //- face is region 0 and the caller makes a single zone.
-            patchOf[i] = surf.regionOf().empty()
-              ? 0
-              : surf.regionOf()[cand[i]];
         }
 
         const cutState state
@@ -630,6 +642,16 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
           ? cutCellByLoop(cell, tris, patchOf, tol_, result, celli == dumpCell_)
           : cutCellByTriangles(cell, tris, patchOf, tol_, result)
         );
+
+        forAll(result.sharedFaces, si)
+        {
+            cutCellPieceFace& shared = result.sharedFaces[si];
+
+            if (shared.tri >= 0 && shared.tri < surfaceOf.size())
+            {
+                shared.surfacei = surfaceOf[shared.tri];
+            }
+        }
 
         if (state == cutState::untouched)
         {
@@ -754,17 +776,15 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
             continue;
         }
 
-        //- Classify every piece against the surface. The pieces of one cell are
-        //- not in general one region each, because a facet can cover part of
-        //- the cross-section only.
+        //- Classify every piece against every closed surface. The pieces of
+        //- one cell are not in general one region each, because a facet can
+        //- cover part of the cross-section only.
         pointField pieceCentres(result.pieces.size());
 
         forAll(result.pieces, pi)
         {
             pieceCentres[pi] = result.pieces[pi].poly.centre();
         }
-
-        const boolList pieceInside(surf.search().calcInside(pieceCentres));
 
         cellCut c;
         c.celli = celli;
@@ -774,93 +794,104 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
         c.pieces = result.pieces;
         c.sharedFaces = result.sharedFaces;
         c.pieceCell.setSize(c.pieces.size());
-        c.pieceZone.setSize(c.pieces.size());
-
-        label nIn = 0;
-        label nOut = 0;
+        c.pieceZones.setSize(c.pieces.size());
 
         forAll(c.pieces, pi)
         {
-            c.pieceZone[pi] = (pieceInside[pi] ? insideZone : outsideZone);
-
-            if (pieceInside[pi])
-            {
-                nIn++;
-            }
-            else
-            {
-                nOut++;
-            }
+            c.pieceZones[pi].setSize(surfaces_.size());
         }
 
-        //- Whether the surface's own planes should decide this cell, and there
-        //- are two reasons to ask, both of them evidence rather than
-        //- preference.
-        //-
-        //- The first is that the centre's verdict left every piece in one
-        //- region, so the cell is not separated at all. Measured on
-        //- 10_box_regions: 17 of its 698 crossed cells were left whole this way
-        //- and carried 5.3% of the interface area of an exact planar solid away
-        //- with them, silently.
-        //-
-        //- The second is that it left a **shared face with both of its pieces in
-        //- one region**. A shared face lies on the surface, so its two pieces are
-        //- on opposite sides of it and cannot be one region: where they are, the
-        //- verdict is demonstrably wrong for this cell. Measured on the same
-        //- case, cell 2945: pieces 0 and 1 were both put in the inside zone
-        //- while the surface separates them, piece 1 standing 0.027 - half a
-        //- cell - in front of the first plane's facet, and the two faces between
-        //- them were then dropped as internal to a merged cell, taking 0.0031 of
-        //- interface area with them.
-        //-
-        //- The cause in both cases is the same: a piece's mean centre is not a
-        //- sound witness, because the loop builds a piece by joining the
-        //- polygons of the chains, so a piece can be non-convex and its mean can
-        //- lie on the other side of the surface from the piece itself. On the 17
-        //- cells above, the solid's own geometry agrees with the query: both
-        //- pieces' means really are inside the box.
-        //-
-        //- So the pieces are asked the surface's own question instead. The
-        //- facets crossing the cell give outward-oriented planes, and a piece is
-        //- inside when every one of its own points is behind every one of those
-        //- planes. That is the rule the arrangement has always used to order its
-        //- pieces - the sign of the largest distance over a piece's points
-        //- rather than the sign at its centre, which a sliver makes meaningless -
-        //- and it is asked *only* where the evidence above says the centre has
-        //- failed, so a cell that separates cleanly cannot be changed by it.
-        bool decideByPlanes = (nIn == 0 || nOut == 0);
-        bool byDisagreement = false;
-
-        if (!decideByPlanes)
+        forAll(surfaces_, surfi)
         {
-            forAll(c.sharedFaces, si)
+            const cutCellSurface& surf = surfaces_[surfi];
+            const boolList pieceInside
+            (
+                surf.search().calcInside(pieceCentres)
+            );
+
+            label nIn = 0;
+            label nOut = 0;
+
+            forAll(c.pieces, pi)
             {
-                const cutCellPieceFace& shared = c.sharedFaces[si];
+                c.pieceZones[pi][surfi] =
+                    (pieceInside[pi] ? insideZone[surfi] : outsideZone[surfi]);
 
-                if
-                (
-                    shared.pieceA < 0 || shared.pieceA >= c.pieceZone.size()
-                 || shared.pieceB < 0 || shared.pieceB >= c.pieceZone.size()
-                )
+                if (pieceInside[pi])
                 {
-                    continue;
+                    nIn++;
                 }
+                else
+                {
+                    nOut++;
+                }
+            }
+
+            bool hasPlane = false;
+
+            forAll(result.planeTri, pli)
+            {
+                const label tri = result.planeTri[pli];
 
                 if
                 (
-                    shared.patch >= 0
-                 && c.pieceZone[shared.pieceA] == c.pieceZone[shared.pieceB]
+                    tri >= 0
+                 && tri < surfaceOf.size()
+                 && surfaceOf[tri] == surfi
                 )
                 {
-                    decideByPlanes = true;
-                    byDisagreement = true;
+                    hasPlane = true;
                     break;
                 }
             }
-        }
 
-        if (decideByPlanes)
-        {
+            if (!hasPlane)
+            {
+                continue;
+            }
+
+            //- A centre can misclassify a non-convex piece. Recheck against
+            //- this surface's own planes when all centres agree, or when one
+            //- of its shared faces contradicts the centre result.
+            bool decideByPlanes = (nIn == 0 || nOut == 0);
+            bool byDisagreement = false;
+
+            if (!decideByPlanes)
+            {
+                forAll(c.sharedFaces, si)
+                {
+                    const cutCellPieceFace& shared = c.sharedFaces[si];
+
+                    if
+                    (
+                        shared.pieceA < 0
+                     || shared.pieceA >= c.pieceZones.size()
+                     || shared.pieceB < 0
+                     || shared.pieceB >= c.pieceZones.size()
+                    )
+                    {
+                        continue;
+                    }
+
+                    if
+                    (
+                        shared.surfacei == surfi
+                     && c.pieceZones[shared.pieceA][surfi]
+                        == c.pieceZones[shared.pieceB][surfi]
+                    )
+                    {
+                        decideByPlanes = true;
+                        byDisagreement = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!decideByPlanes)
+            {
+                continue;
+            }
+
             //- The margin the pieces were built with: cutCellLoop merges a
             //- piece's points within ten times the caller's tolerance
             const scalar surfaceTol = 10*tol_;
@@ -871,10 +902,22 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
 
             forAll(c.pieces, pi)
             {
-                bool behindAll = !result.planes.empty();
+                bool behindAll = true;
 
                 forAll(result.planes, pli)
                 {
+                    const label tri = result.planeTri[pli];
+
+                    if
+                    (
+                        tri < 0
+                     || tri >= surfaceOf.size()
+                     || surfaceOf[tri] != surfi
+                    )
+                    {
+                        continue;
+                    }
+
                     const vector& n = result.planes[pli].normal();
                     const point& p0 = result.planes[pli].refPoint();
 
@@ -910,14 +953,12 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
 
             if (nInSurface > 0 && nOutSurface > 0)
             {
-                nIn = nInSurface;
-                nOut = nOutSurface;
-
                 forAll(c.pieces, pi)
                 {
-                    c.pieceZone[pi] = (fromSurface[pi] == 1)
-                      ? insideZone
-                      : outsideZone;
+                    c.pieceZones[pi][surfi] =
+                        (fromSurface[pi] == 1
+                      ? insideZone[surfi]
+                      : outsideZone[surfi]);
                 }
 
                 if (byDisagreement)
@@ -947,7 +988,14 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
         {
             const cutCellPieceFace& shared = c.sharedFaces[si];
 
-            if (c.pieceZone[shared.pieceA] != c.pieceZone[shared.pieceB])
+            if
+            (
+                !samePieceZones
+                (
+                    c.pieceZones[shared.pieceA],
+                    c.pieceZones[shared.pieceB]
+                )
+            )
             {
                 const cutCellPolyhedron& piece = c.pieces[shared.pieceA].poly;
                 const face& f = piece.faces()[shared.faceInA];
@@ -965,7 +1013,8 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
 
         //- The pieces of one region that touch each other are one cell, so a
         //- cell the surface crosses twice is two cells, not four
-        c.pieceGroup = groupPieces(c.pieces.size(), c.sharedFaces, c.pieceZone);
+        c.pieceGroup =
+            groupPieces(c.pieces.size(), c.sharedFaces, c.pieceZones);
 
         const label nCellGroups = max(c.pieceGroup) + 1;
 
@@ -1037,57 +1086,99 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
 
     //- The zones must exist before the change: polyTopoChange validates the
     //- zoneIDs it is given against the mesh
-    const label insideZone = cellZoneID(surfaces_[0].name() + "_inside");
+    labelList insideZone(surfaces_.size());
+    List<labelList> interfaceZoneOf(surfaces_.size());
+    labelList interfaceZone(surfaces_.size(), -1);
 
-    //- One faceZone per surface region when the surface has more than one, so a
-    //- face is filed under the region it came from and a case can name its
-    //- patches from that. The zone takes the region's own name, which is what
-    //- snappy's faceZoneNaming REGION does: faceZoneNames_ = regionNames. A
-    //- single-region surface keeps the original name, so the cases that predate
-    //- this cannot move.
-    const word& surfName = surfaces_[0].name();
-    const wordList& regionNames = surfaces_[0].regionNames();
-
-    //- The region count comes from the faces, not from surface().patches():
-    //- that returns only the patches the file declares, and a file carrying its
-    //- regions as tokens declares none, so reading it there found one patch for
-    //- a three-region surface and the per-region path never ran.
-    label maxRegion = -1;
-
-    forAll(cuts, ci)
+    forAll(surfaces_, surfi)
     {
-        forAll(cuts[ci].sharedFaces, si)
+        const cutCellSurface& surf = surfaces_[surfi];
+        insideZone[surfi] = cellZoneID(surf.name() + "_inside");
+        cellZoneID(surf.name() + "_outside");
+
+        //- One faceZone per surface region when the surface has more than one.
+        //- A single-region surface keeps its original <name>_interface zone.
+        const wordList& regionNames = surf.regionNames();
+        label maxRegion = -1;
+
+        forAll(cuts, ci)
         {
-            maxRegion = max(maxRegion, cuts[ci].sharedFaces[si].patch);
+            forAll(cuts[ci].sharedFaces, si)
+            {
+                const cutCellPieceFace& shared = cuts[ci].sharedFaces[si];
+
+                if (shared.surfacei == surfi)
+                {
+                    maxRegion = max(maxRegion, shared.patch);
+                }
+            }
         }
+
+        const bool multiRegion =
+            (maxRegion > 0) && (maxRegion < regionNames.size());
+        const label nZones = (multiRegion ? regionNames.size() : 1);
+
+        Info<< "  interface zones for " << surf.name()
+            << ": maxRegion " << maxRegion
+            << ", names " << regionNames.size()
+            << ", multiRegion " << multiRegion << endl;
+
+        interfaceZoneOf[surfi].setSize(nZones, -1);
+
+        forAll(interfaceZoneOf[surfi], ri)
+        {
+            interfaceZoneOf[surfi][ri] = faceZoneID
+            (
+                multiRegion
+              ? regionNames[ri]
+              : word(surf.name() + "_interface")
+            );
+        }
+
+        //- The fallback for a face whose region is unknown.
+        interfaceZone[surfi] =
+            (multiRegion ? -1 : interfaceZoneOf[surfi][0]);
     }
-
-    const bool multiRegion = (maxRegion > 0) && (maxRegion < regionNames.size());
-
-
-    Info<< "  interface zones: maxRegion " << maxRegion
-        << ", names " << regionNames.size()
-        << ", multiRegion " << multiRegion << endl;
-
-    labelList interfaceZoneOf(maxRegion + 1, -1);
-
-    forAll(interfaceZoneOf, ri)
-    {
-        interfaceZoneOf[ri] = faceZoneID
-        (
-            multiRegion
-          ? regionNames[ri]
-          : word(surfName + "_interface")
-        );
-    }
-
-    //- The fallback for a face whose region is unknown.
-    const label interfaceZone = (multiRegion ? -1 : interfaceZoneOf[0]);
 
     //- All points, faces and cells of the mesh are taken as they are, and the
     //- cut is expressed as modifications on top of them. That is what keeps the
     //- labels of untouched cells, and so the parent map, simple.
     polyTopoChange topoChange(mesh_);
+
+    auto cellZoneMembership =
+    [&](const label celli, const labelList& surfaceZones) -> labelList
+    {
+        DynamicList<label> zones;
+        mesh_.cellZones().whichZones(celli, zones);
+
+        forAll(surfaceZones, si)
+        {
+            bool found = false;
+
+            forAll(zones, zi)
+            {
+                if (zones[zi] == surfaceZones[si])
+                {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found)
+            {
+                zones.append(surfaceZones[si]);
+            }
+        }
+
+        labelList result(zones.size());
+
+        forAll(zones, zi)
+        {
+            result[zi] = zones[zi];
+        }
+
+        return result;
+    };
 
     //- Where a cut cell is, by background cell label
     Map<label> cutOf(2*cuts.size());
@@ -2655,14 +2746,19 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
 
                     topoChange.modifyCell
                     (
-                        c.celli, labelList(1, c.pieceZone[pi])
+                        c.celli,
+                        cellZoneMembership(c.celli, c.pieceZones[pi])
                     );
                 }
                 else
                 {
                     groupCell[g] = topoChange.addCell
                     (
-                        -1, -1, -1, c.celli, c.pieceZone[pi]
+                        -1,
+                        -1,
+                        -1,
+                        c.celli,
+                        cellZoneMembership(c.celli, c.pieceZones[pi])
                     );
                 }
             }
@@ -2682,13 +2778,14 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
             isCut.insert(cuts[ci].celli);
         }
 
-        forAll(cellRegionZone_, celli)
+        forAll(cellRegionZones_, celli)
         {
             if (!isCut.found(celli))
             {
                 topoChange.modifyCell
                 (
-                    celli, labelList(1, cellRegionZone_[celli])
+                    celli,
+                    cellZoneMembership(celli, cellRegionZones_[celli])
                 );
             }
         }
@@ -3247,7 +3344,11 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
 
             const bool separates =
             (
-                c.pieceZone[shared.pieceA] != c.pieceZone[shared.pieceB]
+                !samePieceZones
+                (
+                    c.pieceZones[shared.pieceA],
+                    c.pieceZones[shared.pieceB]
+                )
             );
 
             //- Pieces that share a face and are in one region are one cell, so
@@ -3261,6 +3362,14 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                     << exit(FatalError);
             }
 
+            if (shared.surfacei < 0 || shared.surfacei >= insideZone.size())
+            {
+                FatalErrorInFunction
+                    << "Interface in cell " << c.celli
+                    << " has no valid source surface"
+                    << exit(FatalError);
+            }
+
             //- Take the polygon from the piece inside the surface where the
             //- face separates the regions, so its normal points out of the
             //- solid, which is the direction the interface zone records
@@ -3268,7 +3377,11 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
             label to = shared.pieceB;
             label fromFace = shared.faceInA;
 
-            if (separates && c.pieceZone[shared.pieceB] == insideZone)
+            if
+            (
+                c.pieceZones[shared.pieceB][shared.surfacei]
+             == insideZone[shared.surfacei]
+            )
             {
                 from = shared.pieceB;
                 to = shared.pieceA;
@@ -3288,15 +3401,15 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
             //- The face's own region decides the zone. A face whose region is
             //- unknown falls back to the single zone when there is one, so a
             //- single-region surface behaves exactly as it did before.
-            label zone = interfaceZone;
+            label zone = interfaceZone[shared.surfacei];
 
             if
             (
                 shared.patch >= 0
-             && shared.patch < interfaceZoneOf.size()
+             && shared.patch < interfaceZoneOf[shared.surfacei].size()
             )
             {
-                zone = interfaceZoneOf[shared.patch];
+                zone = interfaceZoneOf[shared.surfacei][shared.patch];
             }
 
             setFace
