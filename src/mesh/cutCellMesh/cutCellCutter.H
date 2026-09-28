@@ -101,6 +101,9 @@ struct cutCellPieceFace
     label pieceB = -1;
     label faceInB = -1;
 
+    //- The surface that produced this face
+    label surfacei = -1;
+
     //- The triangle whose plane produced this face. Internal: it is the
     //- provenance the four-argument form can record, and the five-argument
     //- form resolves it to a region.
@@ -212,9 +215,21 @@ scalar polygonArea(const pointField& poly);
 bool polygonDegenerate(const pointField& poly, const scalar tol);
 
 
-//- Group the pieces of one cut cell by the faces they share, so that the pieces
-//  of one region which touch each other come out as one group and become one
-//  cell. 'pieceZone' is the region of each piece.
+//- True when two pieces have the same zone membership across all surfaces
+bool samePieceZones(const labelList& a, const labelList& b);
+
+
+//- Group the pieces of one cut cell by the faces they share, so that pieces
+//  with the same per-surface zone membership become one group.
+labelList groupPieces
+(
+    const label nPieces,
+    const List<cutCellPieceFace>& sharedFaces,
+    const List<labelList>& pieceZones
+);
+
+
+//- Single-zone compatibility form of groupPieces()
 //
 //  Returns the group index of each piece. Groups are numbered from zero in the
 //  order their first piece appears, so the group of the first piece is zero,

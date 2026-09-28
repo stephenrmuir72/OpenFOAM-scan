@@ -1078,6 +1078,32 @@ int main()
         checkLabel(group[1], 0, "the second piece joins it");
     }
 
+    //- Pieces merge only when their memberships agree for every surface
+    {
+        cutCellPieceFace first;
+        first.pieceA = 0;
+        first.pieceB = 1;
+
+        cutCellPieceFace second;
+        second.pieceA = 1;
+        second.pieceB = 2;
+
+        List<cutCellPieceFace> faces(2);
+        faces[0] = first;
+        faces[1] = second;
+
+        List<labelList> zones(3);
+        zones[0] = labelList({0, 2});
+        zones[1] = labelList({0, 2});
+        zones[2] = labelList({1, 2});
+
+        const labelList group = groupPieces(3, faces, zones);
+
+        checkLabel(max(group) + 1, 2, "a second surface keeps distinct groups");
+        checkLabel(group[0], group[1], "equal memberships on both surfaces merge");
+        checkTrue(group[1] != group[2], "different membership on one surface stays split");
+    }
+
     //- Two pieces of one region that share no face stay apart, since a cell has
     //- to be face connected
     {

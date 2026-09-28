@@ -266,11 +266,30 @@ bool sameFace
 }   // End anonymous namespace
 
 
+bool samePieceZones(const labelList& a, const labelList& b)
+{
+    if (a.size() != b.size())
+    {
+        return false;
+    }
+
+    forAll(a, i)
+    {
+        if (a[i] != b[i])
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+
 labelList groupPieces
 (
     const label nPieces,
     const List<cutCellPieceFace>& sharedFaces,
-    const labelList& pieceZone
+    const List<labelList>& pieceZones
 )
 {
     //- Union-find over the pieces, with the group index of each piece kept as
@@ -299,7 +318,14 @@ labelList groupPieces
 
         //- A face two pieces share is a face between two regions, which is the
         //- interface, or a face inside one region, which is what merges
-        if (pieceZone[shared.pieceA] != pieceZone[shared.pieceB])
+        if
+        (
+            !samePieceZones
+            (
+                pieceZones[shared.pieceA],
+                pieceZones[shared.pieceB]
+            )
+        )
         {
             continue;
         }
@@ -332,6 +358,24 @@ labelList groupPieces
     }
 
     return groupOf;
+}
+
+
+labelList groupPieces
+(
+    const label nPieces,
+    const List<cutCellPieceFace>& sharedFaces,
+    const labelList& pieceZone
+)
+{
+    List<labelList> pieceZones(nPieces);
+
+    forAll(pieceZones, pi)
+    {
+        pieceZones[pi] = labelList(1, pieceZone[pi]);
+    }
+
+    return groupPieces(nPieces, sharedFaces, pieceZones);
 }
 
 
@@ -371,7 +415,31 @@ cutState cutCellByTriangles
 
         result.nPolygons++;
 
-        const plane pln(poly[0], poly[1], poly[2]);
+        label second = -1;
+        label third = -1;
+
+        for (label i = 1; i < poly.size() && third < 0; i++)
+        {
+            for (label j = i + 1; j < poly.size(); j++)
+            {
+                if
+                (
+                    mag((poly[i] - poly[0]) ^ (poly[j] - poly[0])) > VSMALL
+                )
+                {
+                    second = i;
+                    third = j;
+                    break;
+                }
+            }
+        }
+
+        if (third < 0)
+        {
+            continue;
+        }
+
+        const plane pln(poly[0], poly[second], poly[third]);
 
         label found = -1;
 
@@ -638,23 +706,30 @@ cutState cutCellByTriangles
 
                             if (sf.size() >= 3)
                             {
-                                const plane fpln
-                                (
-                                    spts[sf[0]], spts[sf[1]], spts[sf[2]]
-                                );
-
                                 forAll(result.planes, pi)
                                 {
+                                    const plane& pln = result.planes[pi];
+                                    bool onPlane = true;
+
+                                    forAll(sf, fi)
+                                    {
+                                        if
+                                        (
+                                            mag
+                                            (
+                                                pln.normal()
+                                              & (spts[sf[fi]] - pln.refPoint())
+                                            ) > tol
+                                        )
+                                        {
+                                            onPlane = false;
+                                            break;
+                                        }
+                                    }
+
                                     if
                                     (
-                                        (result.planes[pi].normal()
-                                      & fpln.normal()) > 1 - tol
-                                     && mag
-                                        (
-                                            result.planes[pi].normal()
-                                          & (fpln.refPoint()
-                                          - result.planes[pi].refPoint())
-                                        ) <= tol
+                                        onPlane
                                     )
                                     {
                                         shared.tri = result.planeTri[pi];
@@ -713,5 +788,3 @@ cutState cutCellByTriangles
 } // End namespace Foam
 
 // ************************************************************************* //
-
-

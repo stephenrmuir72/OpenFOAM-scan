@@ -274,7 +274,7 @@ private:
         scalar minVolumeRatio_ = 0.30;
 
         //- Region cellZone of every background cell
-        labelList cellRegionZone_;
+        List<labelList> cellRegionZones_;
 
 
     // Private Data Types
@@ -289,7 +289,7 @@ private:
             //- Background cell
             label celli;
 
-            //- Distinct planes of the surface inside it, in the cutter's order
+            //- Distinct planes of all surfaces inside it, in cutter order
             List<plane> planes;
 
             //- The pieces, ordered negative first against those planes
@@ -307,8 +307,8 @@ private:
             //- Group of each piece, from groupPieces()
             labelList pieceGroup;
 
-            //- Region cellZone of each piece
-            labelList pieceZone;
+            //- CellZone memberships, one per surface, of each piece
+            List<labelList> pieceZones;
         };
 
 
