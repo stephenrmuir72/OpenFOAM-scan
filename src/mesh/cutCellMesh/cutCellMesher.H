@@ -251,8 +251,8 @@ private:
         //- Dump this one cell and the triangles crossing it, for replay
         label dumpCell_ = -1;
 
-        //- Displacement of each mesh point by the collapse, zero for the ones
-        //- that did not move. Sized by snapPoints().
+        //- Displacement of each background point by the collapse, in background
+        //- point numbering for parent-volume checks
         pointField snapDelta_;
 
         //- Parent background cell of every cell of the cut mesh
@@ -275,6 +275,9 @@ private:
 
         //- Region cellZone of every background cell
         List<labelList> cellRegionZones_;
+
+        //- Interface faceZones created by the surfaces, by surface
+        List<labelList> interfaceZoneOf_;
 
 
     // Private Data Types
@@ -362,6 +365,9 @@ public:
         //- Cut the mesh. Returns the topology map, which is empty when the
         //- surface crosses nothing.
         autoPtr<mapPolyMesh> cut();
+
+        //- Retain the connected region containing location and remove the rest
+        void retainLocation(const point& location);
 
         //- Report of the last cut()
         const report& info() const noexcept

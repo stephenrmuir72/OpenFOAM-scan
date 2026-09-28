@@ -99,6 +99,26 @@ int main(int argc, char* argv[])
     #include "setSystemMeshDictionaryIO.H"
 
     const IOdictionary meshDict(dictIO);
+    const dictionary& castellatedControls
+    (
+        meshDict.subDict("castellatedMeshControls")
+    );
+
+    if (castellatedControls.found("locationsInMesh"))
+    {
+        FatalErrorInFunction
+            << "locationsInMesh is not supported; use one locationInMesh point"
+            << exit(FatalError);
+    }
+
+    const bool hasLocationInMesh =
+        castellatedControls.found("locationInMesh");
+    point locationInMesh(Zero);
+
+    if (hasLocationInMesh)
+    {
+        locationInMesh = castellatedControls.get<point>("locationInMesh");
+    }
 
     const dictionary& geometryDict(meshDict.subDict("geometry"));
 
@@ -350,12 +370,24 @@ int main(int argc, char* argv[])
 
     autoPtr<mapPolyMesh> map = mesher.cut();
 
+    if (hasLocationInMesh)
+    {
+        if (!map.valid())
+        {
+            FatalErrorInFunction
+                << "locationInMesh was specified, but the surface cut made no "
+                << "topology change" << exit(FatalError);
+        }
+
+        mesher.retainLocation(locationInMesh);
+    }
+
     const cutCellMesher::report& info = mesher.info();
 
     if (map.valid())
     {
         mesher.writeBackgroundCell();
-    mesher.writeBackgroundParents();
+        mesher.writeBackgroundParents();
         mesher.writeSnapDisplacement();
 
         mesh.setInstance(writeInstance);

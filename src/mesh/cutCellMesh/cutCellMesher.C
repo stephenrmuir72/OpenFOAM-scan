@@ -30,9 +30,13 @@ License
 #include "labelIOList.H"
 #include "cutCellMerge.H"
 #include "removeFaces.H"
+#include "removeCells.H"
 #include "labelListIOList.H"
 #include "cellZone.H"
 #include "faceZone.H"
+#include "regionSplit.H"
+#include "polyPatch.H"
+#include "Pstream.H"
 #include "treeDataTriSurface.H"
 #include "treeBoundBox.H"
 #include "DynamicList.H"
@@ -1139,6 +1143,8 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
         interfaceZone[surfi] =
             (multiRegion ? -1 : interfaceZoneOf[surfi][0]);
     }
+
+    interfaceZoneOf_ = interfaceZoneOf;
 
     //- All points, faces and cells of the mesh are taken as they are, and the
     //- cut is expressed as modifications on top of them. That is what keeps the
@@ -4243,6 +4249,205 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::cut()
 }
 
 
+void Foam::cutCellMesher::retainLocation(const point& location)
+{
+    if (Pstream::parRun())
+    {
+        FatalErrorInFunction
+            << "locationInMesh retention is currently supported in serial only"
+            << abort(FatalError);
+    }
+
+    if
+    (
+        backgroundCell_.size() != mesh_.nCells()
+     || backgroundParents_.size() != mesh_.nCells()
+    )
+    {
+        FatalErrorInFunction
+            << "background mapping sizes do not match the cut mesh: "
+            << "backgroundCell " << backgroundCell_.size()
+            << ", backgroundParents " << backgroundParents_.size()
+            << ", cells " << mesh_.nCells()
+            << abort(FatalError);
+    }
+
+    const label seedCell = mesh_.findCell(location, polyMesh::FACE_DIAG_TRIS);
+
+    if (seedCell < 0)
+    {
+        FatalErrorInFunction
+            << "locationInMesh " << location << " is outside the cut mesh"
+            << abort(FatalError);
+    }
+
+    boolList blockedFace(mesh_.nFaces(), false);
+    label nBlockedInternalFaces = 0;
+
+    forAll(interfaceZoneOf_, surfi)
+    {
+        forAll(interfaceZoneOf_[surfi], zonei)
+        {
+            const label faceZonei = interfaceZoneOf_[surfi][zonei];
+
+            if
+            (
+                faceZonei < 0
+             || faceZonei >= mesh_.faceZones().size()
+            )
+            {
+                FatalErrorInFunction
+                    << "invalid interface faceZone " << faceZonei
+                    << " for surface " << surfi << abort(FatalError);
+            }
+
+            const faceZone& zone = mesh_.faceZones()[faceZonei];
+
+            forAll(zone, i)
+            {
+                const label facei = zone[i];
+
+                if (facei < mesh_.nInternalFaces() && !blockedFace[facei])
+                {
+                    blockedFace[facei] = true;
+                    ++nBlockedInternalFaces;
+                }
+            }
+        }
+    }
+
+    if (!nBlockedInternalFaces)
+    {
+        FatalErrorInFunction
+            << "no internal interface faces are available to split regions"
+            << abort(FatalError);
+    }
+
+    const regionSplit cellRegions
+    (
+        mesh_,
+        blockedFace,
+        List<labelPair>(),
+        false
+    );
+    const label keepRegion = cellRegions[seedCell];
+
+    if (keepRegion < 0)
+    {
+        FatalErrorInFunction
+            << "locationInMesh cell " << seedCell
+            << " has no connected-region label" << abort(FatalError);
+    }
+
+    DynamicList<label> cellsToRemove(mesh_.nCells());
+
+    forAll(cellRegions, celli)
+    {
+        if (cellRegions[celli] != keepRegion)
+        {
+            cellsToRemove.append(celli);
+        }
+    }
+
+    const label nCellsToKeep = mesh_.nCells() - cellsToRemove.size();
+
+    Info<< "locationInMesh " << location << " found in cell " << seedCell
+        << " and region " << keepRegion << nl
+        << "    Retaining " << nCellsToKeep << " of " << mesh_.nCells()
+        << " cells; removing " << cellsToRemove.size() << nl
+        << "    Region split blocked by " << nBlockedInternalFaces
+        << " internal interface faces" << endl;
+
+    if (cellsToRemove.empty())
+    {
+        return;
+    }
+
+    label defaultPatch = -1;
+
+    forAll(mesh_.boundaryMesh(), patchi)
+    {
+        const polyPatch& patch = mesh_.boundaryMesh()[patchi];
+
+        if
+        (
+            !patch.coupled()
+         && !polyPatch::constraintType(patch.type())
+        )
+        {
+            defaultPatch = patchi;
+            break;
+        }
+    }
+
+    if (defaultPatch < 0)
+    {
+        FatalErrorInFunction
+            << "cannot assign exposed retention faces: the mesh has no "
+            << "uncoupled, non-constraint boundary patch" << abort(FatalError);
+    }
+
+    removeCells cellRemover(mesh_);
+    const labelList exposedFaces
+    (
+        cellRemover.getExposedFaces(cellsToRemove)
+    );
+    const labelList exposedPatches(exposedFaces.size(), defaultPatch);
+
+    Info<< "    Assigning exposed faces to existing patch "
+        << mesh_.boundaryMesh()[defaultPatch].name()
+        << " until per-surface patch emission is implemented" << endl;
+
+    polyTopoChange topoChange(mesh_);
+    cellRemover.setRefinement
+    (
+        cellsToRemove,
+        exposedFaces,
+        exposedPatches,
+        topoChange
+    );
+
+    autoPtr<mapPolyMesh> map = topoChange.changeMesh(mesh_, false);
+    mesh_.updateMesh(map());
+
+    const labelList& cellMap = map().cellMap();
+
+    if (cellMap.size() != mesh_.nCells())
+    {
+        FatalErrorInFunction
+            << "cell map size " << cellMap.size() << " does not match retained "
+            << "mesh size " << mesh_.nCells() << abort(FatalError);
+    }
+
+    labelList newBackgroundCell(cellMap.size(), -1);
+    List<labelList> newBackgroundParents(cellMap.size());
+
+    forAll(cellMap, newCelli)
+    {
+        const label oldCelli = cellMap[newCelli];
+
+        if
+        (
+            oldCelli < 0
+         || oldCelli >= backgroundCell_.size()
+         || oldCelli >= backgroundParents_.size()
+        )
+        {
+            FatalErrorInFunction
+                << "retained cell " << newCelli
+                << " maps to invalid old cell " << oldCelli
+                << abort(FatalError);
+        }
+
+        newBackgroundCell[newCelli] = backgroundCell_[oldCelli];
+        newBackgroundParents[newCelli] = backgroundParents_[oldCelli];
+    }
+
+    backgroundCell_.transfer(newBackgroundCell);
+    backgroundParents_.transfer(newBackgroundParents);
+}
+
+
 void Foam::cutCellMesher::writeSnapDisplacement() const
 {
     //- Nothing moved, so there is nothing to record. An all-zero field would
@@ -4279,6 +4484,40 @@ void Foam::cutCellMesher::mergeSlivers()
     const auto& zoneMesh = mesh_.cellZones();
     const auto& faceZoneMesh = mesh_.faceZones();
 
+    auto sameCellZones = [&](const label a, const label b) -> bool
+    {
+        DynamicList<label> zonesA;
+        DynamicList<label> zonesB;
+        zoneMesh.whichZones(a, zonesA);
+        zoneMesh.whichZones(b, zonesB);
+
+        if (zonesA.size() != zonesB.size())
+        {
+            return false;
+        }
+
+        forAll(zonesA, zi)
+        {
+            bool found = false;
+
+            forAll(zonesB, zj)
+            {
+                if (zonesA[zi] == zonesB[zj])
+                {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    };
+
     //- Parents' volume of each cell, so eligibility means the same thing for a
     //- cell that has already been merged
     scalarField parentVolume(V.size(), 0);
@@ -4309,9 +4548,10 @@ void Foam::cutCellMesher::mergeSlivers()
 
     forAll(V, celli)
     {
-        const label zonei = zoneMesh.whichZone(celli);
+        DynamicList<label> cellZones;
+        zoneMesh.whichZones(celli, cellZones);
 
-        if (zonei < 0 || parentVolume[celli] <= 0)
+        if (cellZones.empty() || parentVolume[celli] <= 0)
         {
             continue;
         }
@@ -4349,7 +4589,7 @@ void Foam::cutCellMesher::mergeSlivers()
             const label nb = (own[facei] == celli ? nei[facei] : own[facei]);
 
             //- Only within one region
-            if (zoneMesh.whichZone(nb) != zonei)
+            if (!sameCellZones(celli, nb))
             {
                 ++cntOtherRegion;
                 continue;
@@ -4633,7 +4873,12 @@ void Foam::cutCellMesher::mergeSlivers()
                     const label other = (own[f] == m ? nei[f] : own[f]);
                     const label ro = groupRoot(other);
 
-                    if (ro == c || zoneMesh.whichZone(other) != zonei)
+                    if
+                    (
+                        ro == c
+                     || faceZoneMesh.whichZone(f) >= 0
+                     || !sameCellZones(m, other)
+                    )
                     {
                         continue;
                     }
