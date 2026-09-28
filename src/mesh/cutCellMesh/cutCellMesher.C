@@ -2414,6 +2414,96 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
     label nDropSame = 0;
     label nNoRegions = 0;
 
+    struct pendingFace
+    {
+        face polygon;
+        label targetFace;
+        label own;
+        label nei;
+        label patchi;
+        label zonei;
+        bool zoneFlip;
+        label sourceCell;
+        word tag;
+
+        pendingFace()
+        :
+            targetFace(-1),
+            own(-1),
+            nei(-1),
+            patchi(-1),
+            zonei(-1),
+            zoneFlip(false),
+            sourceCell(-1)
+        {}
+
+        pendingFace
+        (
+            const face& f,
+            const label target,
+            const label owner,
+            const label neighbour,
+            const label patch,
+            const label zone,
+            const bool flip,
+            const label source,
+            const char* path
+        )
+        :
+            polygon(f),
+            targetFace(target),
+            own(owner),
+            nei(neighbour),
+            patchi(patch),
+            zonei(zone),
+            zoneFlip(flip),
+            sourceCell(source),
+            tag(path)
+        {}
+    };
+
+    DynamicList<pendingFace> pendingFaces(4*cuts.size());
+
+    auto emitFace =
+    [&]
+    (
+        const face& f,
+        const label targetFace,
+        label own,
+        label nei,
+        const label patchi,
+        const label zonei,
+        bool zoneFlip
+    )
+    {
+        face nf(f);
+
+        bool flipFlux = false;
+
+        if (nei >= 0 && nei < own)
+        {
+            nf.flip();
+            std::swap(own, nei);
+            zoneFlip = !zoneFlip;
+            flipFlux = true;
+        }
+
+        if (targetFace >= 0)
+        {
+            topoChange.modifyFace
+            (
+                nf, targetFace, own, nei, flipFlux, patchi, zonei, zoneFlip
+            );
+        }
+        else
+        {
+            topoChange.addFace
+            (
+                nf, own, nei, -1, -1, -1, flipFlux, patchi, zonei, zoneFlip
+            );
+        }
+    };
+
     auto setFace = [&]
     (
         const face& f,
@@ -2423,9 +2513,10 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
         const label patchi,
         const label zonei,
         bool zoneFlip,
-        const char* tag = ""            //- which emission path this is: named by
-                                        //- the probe and, if the face is not a
-                                        //- polygon, by the guard below
+        const label sourceCell,
+        const char* tag              //- which emission path this is: named by
+                                     //- the probe and, if the face is not a
+                                     //- polygon, by the guard below
     )
     {
         //- A face of the new mesh must be a polygon: three labels at least, and
@@ -2478,31 +2569,27 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
             Info<< endl;
         }
 
-        face nf(f);
-
-        bool flipFlux = false;
-
-        if (nei >= 0 && nei < own)
+        if (loopCut_)
         {
-            nf.flip();
-            std::swap(own, nei);
-            zoneFlip = !zoneFlip;
-            flipFlux = true;
-        }
-
-        if (targetFace >= 0)
-        {
-            topoChange.modifyFace
+            pendingFaces.append
             (
-                nf, targetFace, own, nei, flipFlux, patchi, zonei, zoneFlip
+            pendingFace
+            (
+                f,
+                targetFace,
+                own,
+                nei,
+                patchi,
+                zonei,
+                zoneFlip,
+                sourceCell,
+                tag
+            )
             );
         }
         else
         {
-            topoChange.addFace
-            (
-                nf, own, nei, -1, -1, -1, flipFlux, patchi, zonei, zoneFlip
-            );
+            emitFace(f, targetFace, own, nei, patchi, zonei, zoneFlip);
         }
     };
 
@@ -2934,6 +3021,7 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                                 patchi,
                                 zonei,
                                 zoneFlip,
+                                cc.celli,
                                 "loop-sub"
                             );
 
@@ -2999,6 +3087,7 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                     patchi,
                     zonei,
                     zoneFlip,
+                    c.celli,
                     "whole"
                 );
 
@@ -3069,6 +3158,7 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                     patchi,
                     zonei,
                     zoneFlip,
+                    c.celli,
                     "split"
                 );
             }
@@ -3183,6 +3273,7 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                 -1,
                 (separates ? zone : -1),
                 false,
+                c.celli,
                 "iface"
             );
         }
@@ -3234,6 +3325,7 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                     patchi,
                     zonei,
                     zoneFlip,
+                    own,
                     "grown"
                 );
             }
@@ -3284,6 +3376,388 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
             << " (removed: " << nRemoved << "), sub-faces dropped by size "
             << nDropSize << ", by same piece " << nDropSame
             << ", cut-cell faces with no regions " << nNoRegions << endl;
+    }
+
+    if (loopCut_)
+    {
+        Map<DynamicList<Tuple2<scalar, label>>> edgePoints;
+        Map<DynamicList<label>> sourceEdgeCache;
+        labelList wholeEdgeUses(mesh_.nEdges(), 0);
+
+        auto cellEdges = [&](const label celli) -> DynamicList<label>
+        {
+            DynamicList<label> result;
+
+            for (const label facei : cells[celli])
+            {
+                for (const label edgei : mesh_.faceEdges()[facei])
+                {
+                    bool known = false;
+
+                    forAll(result, i)
+                    {
+                        if (result[i] == edgei)
+                        {
+                            known = true;
+                            break;
+                        }
+                    }
+
+                    if (!known)
+                    {
+                        result.append(edgei);
+                    }
+                }
+            }
+
+            return result;
+        };
+
+        auto sourceEdgesFor =
+        [&](const label celli) -> const DynamicList<label>&
+        {
+            Map<DynamicList<label>>::iterator iter =
+                sourceEdgeCache.find(celli);
+
+            if (iter == sourceEdgeCache.end())
+            {
+                sourceEdgeCache.insert(celli, cellEdges(celli));
+                iter = sourceEdgeCache.find(celli);
+            }
+
+            return iter();
+        };
+
+        auto edgeParameter =
+        [&](const label edgei, const label pointi, scalar& t) -> bool
+        {
+            const edge& e = mesh_.edges()[edgei];
+            const point& p0 = pts[e[0]];
+            const vector d(pts[e[1]] - p0);
+            const scalar d2(d & d);
+
+            if (d2 <= VSMALL)
+            {
+                return false;
+            }
+
+            const point& x = coordOf(pointi);
+            t = ((x - p0) & d)/d2;
+
+            if (t < -SMALL || t > 1 + SMALL)
+            {
+                return false;
+            }
+
+            return mag(x - (p0 + t*d)) <= pointTol;
+        };
+
+        //- Gather the labels every pending face carries along each mesh edge.
+        //- The loop and the face subdivision can split the same edge
+        //- differently, so a face emitted by either path must receive their
+        //- union before the topology change is applied.
+        forAll(pendingFaces, pfi)
+        {
+            const pendingFace& emission = pendingFaces[pfi];
+
+            if
+            (
+                emission.sourceCell < 0
+             || emission.sourceCell >= mesh_.nCells()
+            )
+            {
+                FatalErrorInFunction
+                    << "Invalid source cell " << emission.sourceCell
+                    << " for the " << emission.tag << " face emission"
+                    << exit(FatalError);
+            }
+
+            const DynamicList<label>& sourceEdges =
+                sourceEdgesFor(emission.sourceCell);
+
+            for (const label edgei : sourceEdges)
+            {
+                Map<DynamicList<Tuple2<scalar, label>>>::iterator iter =
+                    edgePoints.find(edgei);
+
+                if (iter == edgePoints.end())
+                {
+                    edgePoints.insert
+                    (
+                        edgei,
+                        DynamicList<Tuple2<scalar, label>>(4)
+                    );
+                    iter = edgePoints.find(edgei);
+                }
+
+                DynamicList<Tuple2<scalar, label>>& onEdge = iter();
+
+                forAll(emission.polygon, i)
+                {
+                    const label a = emission.polygon[i];
+                    const label b =
+                        emission.polygon[emission.polygon.fcIndex(i)];
+                    const edge& meshEdge = mesh_.edges()[edgei];
+
+                    if
+                    (
+                        (a == meshEdge[0] && b == meshEdge[1])
+                     || (a == meshEdge[1] && b == meshEdge[0])
+                    )
+                    {
+                        wholeEdgeUses[edgei]++;
+                    }
+
+                    const label pointi = emission.polygon[i];
+                    scalar t = 0;
+
+                    if (!edgeParameter(edgei, pointi, t))
+                    {
+                        continue;
+                    }
+
+                    bool known = false;
+
+                    forAll(onEdge, j)
+                    {
+                        if (onEdge[j].second() == pointi)
+                        {
+                            known = true;
+                            break;
+                        }
+                    }
+
+                    if (!known)
+                    {
+                        onEdge.append(Tuple2<scalar, label>(t, pointi));
+                    }
+                }
+            }
+        }
+
+        forAll(mesh_.edges(), edgei)
+        {
+            for (const label facei : mesh_.edgeFaces()[edgei])
+            {
+                if
+                (
+                    !emittedFaces.found(facei)
+                 && !removedFaces.found(facei)
+                )
+                {
+                    wholeEdgeUses[edgei]++;
+                }
+            }
+        }
+
+        forAll(mesh_.edges(), edgei)
+        {
+            if (!edgePoints.found(edgei))
+            {
+                continue;
+            }
+
+            DynamicList<Tuple2<scalar, label>>& onEdge = edgePoints[edgei];
+
+            std::sort
+            (
+                onEdge.begin(),
+                onEdge.end(),
+                [](const Tuple2<scalar, label>& a,
+                   const Tuple2<scalar, label>& b)
+                {
+                    if (a.first() == b.first())
+                    {
+                        return a.second() < b.second();
+                    }
+
+                    return a.first() < b.first();
+                }
+            );
+        }
+
+        //- Only reconcile a whole mesh edge used once when another emitted
+        //- face carries an interior point on it. A shorter edge contained by a
+        //- longer one is the accepted T-junction class, not a spanning defect.
+        boolList needsUnion(mesh_.nEdges(), false);
+
+        forAll(mesh_.edges(), edgei)
+        {
+            if (wholeEdgeUses[edgei] != 1 || !edgePoints.found(edgei))
+            {
+                continue;
+            }
+
+            const edge& e = mesh_.edges()[edgei];
+            const scalar edgeLength = mag(pts[e[1]] - pts[e[0]]);
+
+            if (edgeLength <= VSMALL)
+            {
+                continue;
+            }
+
+            const scalar tTol = pointTol/edgeLength;
+            const DynamicList<Tuple2<scalar, label>>& onEdge =
+                edgePoints[edgei];
+
+            forAll(onEdge, i)
+            {
+                const scalar t = onEdge[i].first();
+
+                if (t > tTol && t < 1 - tTol)
+                {
+                    needsUnion[edgei] = true;
+                    break;
+                }
+            }
+        }
+
+        label nFacesChanged = 0;
+        label nLabelsInserted = 0;
+        label nEdgesReconciled = 0;
+
+        forAll(needsUnion, edgei)
+        {
+            if (needsUnion[edgei])
+            {
+                nEdgesReconciled++;
+            }
+        }
+
+        //- Impose each edge's union on every emitted face that lies along it,
+        //- not just on the face whose split first supplied the point.
+        forAll(pendingFaces, pfi)
+        {
+            pendingFace& emission = pendingFaces[pfi];
+            const DynamicList<label>& sourceEdges =
+                sourceEdgesFor(emission.sourceCell);
+            DynamicList<label> grown(emission.polygon.size() + 4);
+
+            forAll(emission.polygon, i)
+            {
+                const label a = emission.polygon[i];
+                const label b =
+                    emission.polygon[emission.polygon.fcIndex(i)];
+
+                grown.append(a);
+
+                for (const label edgei : sourceEdges)
+                {
+                    if (!needsUnion[edgei])
+                    {
+                        continue;
+                    }
+
+                    scalar ta = 0;
+                    scalar tb = 0;
+
+                    if
+                    (
+                        !edgeParameter(edgei, a, ta)
+                     || !edgeParameter(edgei, b, tb)
+                    )
+                    {
+                        continue;
+                    }
+
+                    const Map<DynamicList<Tuple2<scalar, label>>>::const_iterator
+                        iter = edgePoints.find(edgei);
+
+                    if (iter == edgePoints.end())
+                    {
+                        break;
+                    }
+
+                    const DynamicList<Tuple2<scalar, label>>& onEdge = iter();
+                    const edge& meshEdge = mesh_.edges()[edgei];
+                    const scalar edgeLength =
+                        mag(pts[meshEdge[1]] - pts[meshEdge[0]]);
+                    const scalar tTol = pointTol/edgeLength;
+                    const scalar lo = min(ta, tb);
+                    const scalar hi = max(ta, tb);
+                    DynamicList<label> between(onEdge.size());
+
+                    forAll(onEdge, j)
+                    {
+                        const scalar t = onEdge[j].first();
+
+                        if (t <= lo + tTol || t >= hi - tTol)
+                        {
+                            continue;
+                        }
+
+                        const label pointi = onEdge[j].second();
+                        bool alreadyPresent = false;
+
+                        forAll(emission.polygon, k)
+                        {
+                            if (emission.polygon[k] == pointi)
+                            {
+                                alreadyPresent = true;
+                                break;
+                            }
+                        }
+
+                        if (!alreadyPresent)
+                        {
+                            between.append(pointi);
+                        }
+                    }
+
+                    if (ta <= tb)
+                    {
+                        forAll(between, j)
+                        {
+                            grown.append(between[j]);
+                            nLabelsInserted++;
+                        }
+                    }
+                    else
+                    {
+                        for (label j = between.size() - 1; j >= 0; --j)
+                        {
+                            grown.append(between[j]);
+                            nLabelsInserted++;
+                        }
+                    }
+
+                    break;
+                }
+            }
+
+            if (grown.size() != emission.polygon.size())
+            {
+                face refined(grown.size());
+
+                forAll(grown, i)
+                {
+                    refined[i] = grown[i];
+                }
+
+                emission.polygon = refined;
+                nFacesChanged++;
+            }
+        }
+
+        Info<< "  loop edge union: " << nEdgesReconciled
+            << " mesh edges, " << nFacesChanged << " faces refined, "
+            << nLabelsInserted << " labels inserted" << endl;
+
+        forAll(pendingFaces, pfi)
+        {
+            const pendingFace& emission = pendingFaces[pfi];
+
+            emitFace
+            (
+                emission.polygon,
+                emission.targetFace,
+                emission.own,
+                emission.nei,
+                emission.patchi,
+                emission.zonei,
+                emission.zoneFlip
+            );
+        }
     }
 
     //- 5. Apply, and take the mesh with it
