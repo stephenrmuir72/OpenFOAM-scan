@@ -402,6 +402,8 @@ void Foam::multiRegionCoupledDecomp::buildGlobalDecomposition
     DynamicList<labelPair> excluded;
     label nWelded = 0;
 
+    const wordRes::filter weldFilter(implicitPatches_, explicitPatches_);
+
     forAll(regions, regioni)
     {
         const polyBoundaryMesh& pbm = meshes[regioni].boundaryMesh();
@@ -421,12 +423,7 @@ void Foam::multiRegionCoupledDecomp::buildGlobalDecomposition
             // A patch the filters exclude by its own name is skipped before
             // samplePatch() is read: a nearestCell patch carries none and
             // the accessor aborts on it
-            const bool ownExcluded =
-                (
-                    !implicitPatches_.empty()
-                 && !implicitPatches_.match(pp.name())
-                )
-             || explicitPatches_.match(pp.name());
+            const bool ownExcluded = !weldFilter(pp.name());
 
             if (!mpp.coupleGroup().empty())
             {
@@ -463,28 +460,24 @@ void Foam::multiRegionCoupledDecomp::buildGlobalDecomposition
                     << exit(FatalError);
             }
 
-            bool welded = true;
-
             const word& nbrName = mpp.samplePatch();
 
-            if
-            (
-                (
-                    !implicitPatches_.empty()
-                 && !implicitPatches_.match(pp.name())
-                 && !implicitPatches_.match(nbrName)
-                )
+            // weldFilter over both sides of the pair
+            const auto ownMatch = wordRes::matched(implicitPatches_, pp.name());
+            const auto nbrMatch = wordRes::matched(implicitPatches_, nbrName);
+
+            const bool welded =
+                ownMatch == wordRe::LITERAL
+             || nbrMatch == wordRe::LITERAL
              || (
-                    !explicitPatches_.empty()
-                 && (
-                        explicitPatches_.match(pp.name())
-                     || explicitPatches_.match(nbrName)
+                    (
+                        implicitPatches_.empty()
+                     || ownMatch == wordRe::REGEX
+                     || nbrMatch == wordRe::REGEX
                     )
-                )
-            )
-            {
-                welded = false;
-            }
+                 && !explicitPatches_.match(pp.name())
+                 && !explicitPatches_.match(nbrName)
+                );
 
             const label nbrPatchi =
                 meshes[nbrRegioni].boundaryMesh().findPatchID(nbrName);

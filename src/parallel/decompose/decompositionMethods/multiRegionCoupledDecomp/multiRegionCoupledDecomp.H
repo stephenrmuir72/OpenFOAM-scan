@@ -53,7 +53,8 @@ Description
         method          | sub-method balancing the welded graph | yes | -
         implicitPatches | weld only patches matching these names <!--
                         --> | no | all mapped
-        explicitPatches | never weld patches matching these names | no | none
+        explicitPatches | do not weld patches matching these names, <!--
+                        --> unless literal in implicitPatches | no | none
         regionWeights   | per-region cost factors (sub-dictionary) <!--
                         --> | no | all 1
         patchWeights    | per-face cost factors, a sub-dictionary of <!--
