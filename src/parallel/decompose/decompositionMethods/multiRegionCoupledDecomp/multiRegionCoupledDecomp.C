@@ -120,49 +120,6 @@ static IOobject regionDecompDictIO(const polyMesh& mesh)
     );
 }
 
-
-// Compare dictionaries by content, independent of the entry order
-static bool sameDict(const dictionary& a, const dictionary& b)
-{
-    const wordList keys(a.sortedToc());
-
-    if (keys != b.sortedToc())
-    {
-        return false;
-    }
-
-    for (const word& key : keys)
-    {
-        const entry& ea = *a.findEntry(key, keyType::LITERAL);
-        const entry& eb = *b.findEntry(key, keyType::LITERAL);
-
-        if (ea.isDict() != eb.isDict())
-        {
-            return false;
-        }
-
-        if (ea.isDict())
-        {
-            if (!sameDict(ea.dict(), eb.dict()))
-            {
-                return false;
-            }
-        }
-        else
-        {
-            const tokenList& ta = ea.stream();
-            const tokenList& tb = eb.stream();
-
-            if (ta != tb)
-            {
-                return false;
-            }
-        }
-    }
-
-    return true;
-}
-
 } // End namespace Foam
 
 
@@ -296,9 +253,6 @@ Foam::multiRegionCoupledDecomp::weldedDecomp(const polyMesh& mesh) const
         regIOobject::store(weldPtr);
         buildGlobalDecomposition(mesh, *weldPtr);
     }
-    // numberOfSubdomains is injected into methodDict_, so sameDict below
-    // would catch a mismatch too; check it first for a message that names
-    // the counts rather than pointing at two identical-looking Coeffs
     else if
     (
         const label nWeldDomains =
@@ -313,7 +267,7 @@ Foam::multiRegionCoupledDecomp::weldedDecomp(const polyMesh& mesh) const
             << "; one decomposition balances every region in regionProperties"
             << exit(FatalError);
     }
-    else if (!sameDict(methodDict_, weldPtr->coeffs))
+    else if (!dictionary::equal_contents(methodDict_, weldPtr->coeffs))
     {
         // decomposePar resolves the coefficients per region, from
         // system/<region>/decomposeParDict or a regions sub-dictionary,
