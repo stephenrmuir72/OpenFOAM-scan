@@ -3919,12 +3919,24 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
 
     mesh_.updateMesh(map());
 
-    //- 6. Drop the points nothing uses. The subdivision makes a crossing point
-    //- for every sub-face it builds, and on the loop path the polygon emitted for
-    //- a face the cutter has regions for is the cutter's region, not the
-    //- subdivision's sub-face, so most of those points are never referenced by a
-    //- face. They are points and nothing else - no face, no cell, no zone - so
-    //- removing them takes nothing out of the mesh but the points themselves.
+    //- 6. Drop the points nothing uses
+    return dropUnusedPoints(map);
+}
+
+
+Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::dropUnusedPoints
+(
+    autoPtr<mapPolyMesh> map
+)
+{
+    //- The subdivision makes a crossing point for every sub-face it builds, and
+    //- on the loop path the polygon emitted for a face the cutter has regions
+    //- for is the cutter's region, not the subdivision's sub-face, so most of
+    //- those points are never referenced by a face. The merge runs after this
+    //- and deletes the faces between a group's members, which can orphan points
+    //- of its own. Such a point is a point and nothing else - no face, no cell,
+    //- no zone - so removing it takes nothing out of the mesh but the point
+    //- itself.
     boolList used(mesh_.points().size(), false);
     label nUsed = 0;
 
@@ -5238,6 +5250,14 @@ void Foam::cutCellMesher::mergeSlivers()
 
     Info<< "Cells absorbed as slivers    : " << info_.nAbsorbed
         << " in " << nRegions << " region(s)" << endl;
+
+    //- The faces between a group's members are gone, so a point that only they
+    //- used is now referenced by nothing. The cut drops such points when it
+    //- finishes, and this pass runs after that, so it has to drop them again or
+    //- the merged mesh carries them and checkMesh reports them - 4 on
+    //- 06_oblique_box, 408 on 07_sphere_cut, 4 on 09_pipe_cut and 2 on
+    //- 10_box_regions, against none on any cut-only frame.
+    dropUnusedPoints(autoPtr<mapPolyMesh>());
 }
 
 

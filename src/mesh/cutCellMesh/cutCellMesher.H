@@ -327,6 +327,13 @@ private:
         //- into the neighbour the merge scores best, in one topology change
         void mergeSlivers();
 
+        //- Drop the points no face references, returning 'map' when there is
+        //- nothing to drop and the removal's own map when there is. The
+        //- subdivision makes crossing points for sub-faces the loop path never
+        //- emits, and the merge removes the faces that used others, so both the
+        //- cut and the merge finish by calling this.
+        autoPtr<mapPolyMesh> dropUnusedPoints(autoPtr<mapPolyMesh> map);
+
         //- Find the cells the surface crosses, cut them into pieces by the
         //- planes of every facet that crosses them, and classify each piece
         void findCutCells(List<cellCut>& cuts);
