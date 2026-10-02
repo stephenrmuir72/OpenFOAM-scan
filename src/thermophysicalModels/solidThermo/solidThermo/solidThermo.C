@@ -31,6 +31,11 @@ License
 #include "fvm.H"
 #include "fvc.H"
 #include "surfaceFields.H"
+#include "surfaceInterpolationScheme.H"
+#include "snGradScheme.H"
+#include "linear.H"
+#include "correctedSnGrad.H"
+#include "fvcGrad.H"
 #include "addToRunTimeSelectionTable.H"
 
 
@@ -182,6 +187,25 @@ calcHarmonicCoeffs
     return {std::move(talphaf), std::move(tkappaf)};
 }
 
+
+tmp<surfaceSymmTensorField> zoneKappaFace
+(
+    const fvMesh& mesh,
+    const volSymmTensorField& aniAlpha,
+    const volScalarField& cp,
+    const surfaceScalarField& kappafHarm
+)
+{
+    tmp<surfaceSymmTensorField> tKappaFace =
+        fvc::interpolate(aniAlpha*cp);
+    surfaceSymmTensorField& kappaFace = tKappaFace.ref();
+    const surfaceVectorField n(mesh.Sf()/mesh.magSf());
+    const surfaceScalarField nnKappa(n & kappaFace & n);
+
+    kappaFace += (kappafHarm - nnKappa)*symm(n*n);
+    return tKappaFace;
+}
+
 } // End anonymous namespace
 } // End namespace Foam
 
@@ -287,6 +311,124 @@ bool Foam::solidThermo::read()
 }
 
 
+Foam::solidThermo::anisotropicWallFlux Foam::solidThermo::wallFlux
+(
+    const label patchi,
+    const volScalarField* betav
+) const
+{
+    if (isotropic())
+    {
+        FatalErrorInFunction
+            << "Anisotropic wall flux requested for an isotropic solid"
+            << exit(FatalError);
+    }
+
+    const fvMesh& mesh = T().mesh();
+    const volScalarField& vf = isZoneMixture() ? T() : he();
+    const word schemeName
+    (
+        isZoneMixture() ? "laplacian(kappa,T)" : "laplacian(alpha,h)"
+    );
+    Istream& schemeData = mesh.laplacianScheme(schemeName);
+    const word schemeType(schemeData);
+
+    if (schemeType != "Gauss")
+    {
+        FatalErrorInFunction
+            << "Anisotropic wall flux on patch " << mesh.boundary()[patchi].name()
+            << " requires a Gauss Laplacian for " << schemeName
+            << ", but found " << schemeType << exit(FatalError);
+    }
+
+    tmp<surfaceInterpolationScheme<symmTensor>> tInterp;
+    tmp<fv::snGradScheme<scalar>> tSnGrad;
+    if (schemeData.eof())
+    {
+        tInterp.reset(new linear<symmTensor>(mesh));
+        tSnGrad.reset(new fv::correctedSnGrad<scalar>(mesh));
+    }
+    else
+    {
+        tInterp = surfaceInterpolationScheme<symmTensor>::New(mesh, schemeData);
+        tSnGrad = fv::snGradScheme<scalar>::New(mesh, schemeData);
+    }
+
+    tmp<surfaceSymmTensorField> tGammaFace;
+
+    if (isZoneMixture())
+    {
+        tmp<volScalarField> tCp = Cp();
+        auto harmonicCoeffs =
+            calcHarmonicCoeffs(mesh, aniAlpha(), tCp());
+        tGammaFace = zoneKappaFace
+        (
+            mesh,
+            aniAlpha(),
+            tCp(),
+            harmonicCoeffs.second()
+        );
+
+        if (betav)
+        {
+            tGammaFace.ref() *= fvc::interpolate(*betav);
+        }
+    }
+    else if (betav)
+    {
+        tmp<volSymmTensorField> tGamma = (*betav)*aniAlpha();
+        tGammaFace = tInterp().interpolate(tGamma());
+    }
+    else
+    {
+        tGammaFace = tInterp().interpolate(aniAlpha());
+    }
+
+    const surfaceVectorField n(mesh.Sf()/mesh.magSf());
+    const surfaceVectorField SfGamma(mesh.Sf() & tGammaFace());
+    const surfaceScalarField SfGammaSn(SfGamma & n);
+    const surfaceVectorField SfGammaCorr(SfGamma - SfGammaSn*n);
+
+    tmp<surfaceScalarField> tCorrection =
+        fvc::dotInterpolate(SfGammaCorr, fvc::grad(vf.component(0)));
+    if (tSnGrad().corrected())
+    {
+        tCorrection.ref() += SfGammaSn*tSnGrad().correction(vf);
+    }
+
+    const fvPatch& patch = mesh.boundary()[patchi];
+    scalarField normalCoeffArea(SfGammaSn.boundaryField()[patchi]);
+    scalarField correctionFlux(tCorrection().boundaryField()[patchi]);
+
+    if (!isZoneMixture())
+    {
+        const scalarField& pp = p().boundaryField()[patchi];
+        const scalarField& Tp = T().boundaryField()[patchi];
+        tmp<scalarField> tCpv = Cpv(pp, Tp, patchi);
+        tmp<scalarField> tHSnGrad = he().boundaryField()[patchi].snGrad();
+        tmp<scalarField> tTSnGrad = T().boundaryField()[patchi].snGrad();
+
+        forAll(patch, facei)
+        {
+            const scalar alphaArea = normalCoeffArea[facei];
+            normalCoeffArea[facei] *= tCpv()[facei];
+            correctionFlux[facei] +=
+                alphaArea
+               *(
+                    tHSnGrad()[facei]
+                  - tCpv()[facei]*tTSnGrad()[facei]
+                );
+        }
+    }
+
+    return
+    {
+        std::move(normalCoeffArea),
+        std::move(correctionFlux)
+    };
+}
+
+
 Foam::tmp<Foam::fvScalarMatrix> Foam::solidThermo::heatDiffusion
 (
     const volScalarField& betav,
@@ -346,11 +488,6 @@ Foam::tmp<Foam::fvScalarMatrix> Foam::solidThermo::heatDiffusion
             // 2. Linearly-interpolated full tensors at faces
             const surfaceSymmTensorField A_f_lin(fvc::interpolate(aniAlpha));
 
-            const surfaceSymmTensorField kappa_f_lin
-            (
-                 fvc::interpolate(aniAlpha*cp)
-            );
-
             // 3. Face unit normal
             const surfaceVectorField n(mesh.Sf() / mesh.magSf());
 
@@ -361,9 +498,8 @@ Foam::tmp<Foam::fvScalarMatrix> Foam::solidThermo::heatDiffusion
             surfaceSymmTensorField A_f_corr(A_f_lin);
             A_f_corr += (alphaf_harm - nnAlpha) * symm(n * n);
 
-            surfaceSymmTensorField kappa_f_corr(kappa_f_lin);
-            const surfaceScalarField nnKappa(n & kappa_f_lin & n);
-            kappa_f_corr += (kappaf_harm - nnKappa) * symm(n * n);
+            tmp<surfaceSymmTensorField> kappa_f_corr =
+                zoneKappaFace(mesh, aniAlpha, cp, kappaf_harm);
 
             // 6. Apply porosity factor
             const surfaceScalarField betav_f(fvc::interpolate(betav));
@@ -376,7 +512,12 @@ Foam::tmp<Foam::fvScalarMatrix> Foam::solidThermo::heatDiffusion
             return
                 fvm::laplacian(betav_f * A_f_corr, h, "laplacian(alpha,h)")
               - fvc::laplacian(betav_f * A_f_corr, h, "laplacian(alpha,h)")
-              + fvc::laplacian(betav_f * kappa_f_corr, T(), "laplacian(kappa,T)");
+              + fvc::laplacian
+                (
+                    betav_f*kappa_f_corr(),
+                    T(),
+                    "laplacian(kappa,T)"
+                );
         }
     }
 }

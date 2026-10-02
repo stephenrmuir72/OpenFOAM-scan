@@ -103,10 +103,6 @@ class wall
         //- Wall patches to process (optionally filtered by name)
         labelList patchIDs_;
 
-        //- Set once the anisotropic-solid warning has been given
-        bool warnedAnisotropic_;
-
-
     // Private Member Functions
 
         //- Write file-header information

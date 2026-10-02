@@ -153,6 +153,13 @@ public:
 
     // Member functions
 
+        //- Wall-normal flux expressed as A*snGrad(T) + explicit correction
+        struct anisotropicWallFlux
+        {
+            scalarField normalCoeffArea;
+            scalarField correctionFlux;
+        };
+
         // Fields derived from thermodynamic state variables
 
             //- Density [kg/m^3]
@@ -187,6 +194,14 @@ public:
             (
                 const volScalarField& betav,
                 const volScalarField& h
+            ) const;
+
+            //- Discrete outward conductive face flux on an anisotropic wall.
+            //  betav is optional for solvers without a volume fraction field.
+            anisotropicWallFlux wallFlux
+            (
+                const label patchi,
+                const volScalarField* betav = nullptr
             ) const;
 
 
