@@ -34,6 +34,9 @@ License
 #include "basicThermo.H"
 #include "IOField.H"
 #include "mappedPatchFieldBase.H"
+#include "solidThermo.H"
+
+#include <utility>
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -435,13 +438,17 @@ void turbulentTemperatureRadCoupledMixedFvPatchScalarField::updateCoeffs()
     const scalarField Tc(patchInternalField());
     const scalarField& Tp = *this;
 
+    const auto myFlux = wallCoupledFlux(Tp);
     const scalarField kappaTp(kappa(Tp));
-    const scalarField KDelta(kappaTp*patch().deltaCoeffs());
+    scalarField KDelta(kappaTp*patch().deltaCoeffs());
 
 
     scalarField TcNbr;
     scalarField TpNbr;
     scalarField KDeltaNbr;
+    scalarField correctionNbr;
+    scalarField resistanceNbr;
+    scalarField directionalNbr(patch().size(), myFlux.directional ? 1 : 0);
 
     if (mpp.sameWorld())
     {
@@ -459,7 +466,15 @@ void turbulentTemperatureRadCoupledMixedFvPatchScalarField::updateCoeffs()
         // Swap to obtain full local values of neighbour K*delta
         TcNbr = nbrField.patchInternalField();
         TpNbr = nbrField;
-        KDeltaNbr = nbrField.kappa(nbrField)*nbrPatch.deltaCoeffs();
+        auto nbrFlux = nbrField.wallCoupledFlux(nbrField);
+        KDeltaNbr = std::move(nbrFlux.conductance);
+        correctionNbr = std::move(nbrFlux.correction);
+        resistanceNbr = nbrField.layerResistance();
+        directionalNbr = scalarField
+        (
+            nbrPatch.size(),
+            nbrFlux.directional ? 1 : 0
+        );
     }
     else
     {
@@ -467,39 +482,58 @@ void turbulentTemperatureRadCoupledMixedFvPatchScalarField::updateCoeffs()
         // do the reordering.
         TcNbr = patchInternalField();
         TpNbr = Tp;
-        KDeltaNbr = KDelta;
+        KDeltaNbr = myFlux.conductance;
+        correctionNbr = myFlux.correction;
+        resistanceNbr = layerResistance();
     }
     distribute(this->internalField().name() + "_value", TcNbr);
     distribute(this->internalField().name() + "_patchValue", TpNbr);
     distribute(this->internalField().name() + "_weights", KDeltaNbr);
+    distribute
+    (
+        this->internalField().name() + "_correction",
+        correctionNbr
+    );
+    distribute
+    (
+        this->internalField().name() + "_layerResistance",
+        resistanceNbr
+    );
+    distribute
+    (
+        this->internalField().name() + "_directional",
+        directionalNbr
+    );
 
-    scalarField KDeltaC(this->size(), GREAT);
-    if (thicknessLayer_ || thicknessLayers_.size())
+    const bool useTensor =
+        myFlux.directional || (max(directionalNbr) > 0.5);
+    if (useTensor)
     {
-        // Harmonic averaging
+        KDelta = myFlux.conductance;
+    }
+    scalarField kappaNormal(kappaTp);
+    if (useTensor)
+    {
+        kappaNormal = KDelta/patch().deltaCoeffs();
+    }
+
+    scalarField KDeltaC(layerConductance());
+    if (useTensor)
+    {
+        const scalarField totalResistance
+        (
+            layerResistance() + resistanceNbr
+        );
+        forAll(KDeltaC, facei)
         {
-            KDeltaC = 0.0;
-
-            if (thicknessLayer_)
-            {
-                const scalar t = db().time().timeOutputValue();
-                KDeltaC +=
-                     thicknessLayer_().value(t)
-                    /kappaLayer_().value(t);
-
-            }
-            if (thicknessLayers_.size())
-            {
-                forAll(thicknessLayers_, iLayer)
-                {
-                    KDeltaC += thicknessLayers_[iLayer]/kappaLayers_[iLayer];
-                }
-            }
-            KDeltaC = 1.0/(KDeltaC + SMALL);
+            KDeltaC[facei] =
+                totalResistance[facei] > 0
+              ? 1/(totalResistance[facei] + SMALL)
+              : GREAT;
         }
     }
 
-    scalarField alpha(kappaTp*(1 + KDeltaNbr/KDeltaC)*patch().deltaCoeffs());
+    scalarField alpha(KDelta*(1 + KDeltaNbr/KDeltaC));
 
     scalarField qr(Tp.size(), Zero);
     if (qrName_ != "none")
@@ -524,6 +558,15 @@ void turbulentTemperatureRadCoupledMixedFvPatchScalarField::updateCoeffs()
         }
         distribute(qrNbrName_, qrNbr);
     }
+
+    scalarField correction(Tp.size(), Zero);
+    if (useTensor)
+    {
+        correction =
+            myFlux.correction
+          + correctionNbr/(1 + KDeltaNbr/KDeltaC);
+    }
+    const scalarField netRadiation(qr + qrNbr - correction);
 
     // inertia therm
     if (thermalInertia_ && !mpp.sameWorld())
@@ -601,19 +644,27 @@ void turbulentTemperatureRadCoupledMixedFvPatchScalarField::updateCoeffs()
 
         const fvPatchField<scalar>& TpOld = T.oldTime().boundaryField()[patchi];
 
-        scalarField alpha(KDeltaNbr + mCpDt + mCpDtNbr);
+        scalarField neighbourConductance(KDeltaNbr);
+        if (useTensor)
+        {
+            neighbourConductance /= 1 + KDeltaNbr/KDeltaC;
+        }
+        scalarField alpha(neighbourConductance + mCpDt + mCpDtNbr);
 
         valueFraction() = alpha/(alpha + KDelta);
-        scalarField c(KDeltaNbr*TcNbr + (mCpDt + mCpDtNbr)*TpOld);
+        scalarField c
+        (
+            neighbourConductance*TcNbr + (mCpDt + mCpDtNbr)*TpOld
+        );
         refValue() = c/alpha;
-        refGrad() = (qr + qrNbr)/kappaTp;
+        refGrad() = netRadiation/kappaNormal;
     }
     else
     {
 
         valueFraction() = KDeltaNbr/(KDeltaNbr + alpha);
         refValue() = TcNbr;
-        refGrad() = (qr + qrNbr)/kappaTp;
+        refGrad() = netRadiation/kappaNormal;
     }
 
     source() = Zero;
@@ -625,7 +676,7 @@ void turbulentTemperatureRadCoupledMixedFvPatchScalarField::updateCoeffs()
             alphaSfDelta()*
             (
                 valueFraction()*deltaH()
-              + (qr + qrNbr)/beta()
+              + netRadiation/beta()
             );
     }
 
@@ -635,17 +686,18 @@ void turbulentTemperatureRadCoupledMixedFvPatchScalarField::updateCoeffs()
     if (verbose_)
     {
         // Calculate heat-transfer rate and heat flux
-        const scalar Q = gSum(kappaTp*patch().magSf()*snGrad());
+        const scalarField qField
+        (
+            kappaNormal*snGrad()
+          + (useTensor ? myFlux.correction : scalarField(Tp.size(), Zero))
+        );
+        const scalar Q = gSum(qField*patch().magSf());
         const scalar magSf = gSum(patch().magSf());
         const scalar q = Q/max(magSf, SMALL);
 
 
         // Calculate heat-transfer coeff based on the first definition
         // [W/m^2] = [W/m/K K * 1/m]
-        const scalarField qField
-        (
-            kappaTp*snGrad()
-        );
         const scalarField deltaT(TcNbr - Tc);
         scalarField htc(deltaT.size(), Zero);
 
@@ -776,7 +828,39 @@ tmp<Field<scalar>> turbulentTemperatureRadCoupledMixedFvPatchScalarField::coeffs
 tmp<scalarField>
 turbulentTemperatureRadCoupledMixedFvPatchScalarField::alphaSfDelta() const
 {
-    return (alpha(*this)*patch().deltaCoeffs()*patch().magSf());
+    return alphaDelta(*this)*patch().magSf();
+}
+
+
+tmp<scalarField>
+turbulentTemperatureRadCoupledMixedFvPatchScalarField::alphaDelta
+(
+    const scalarField& Tp
+) const
+{
+    const auto flux = wallCoupledFlux(Tp);
+    if (!flux.directional)
+    {
+        return alpha(Tp)*patch().deltaCoeffs();
+    }
+
+    const auto& solid = patch().boundaryMesh().mesh().lookupObject<solidThermo>
+    (
+        solidThermo::dictName
+    );
+    const label patchi = patch().index();
+    if (solid.isZoneMixture())
+    {
+        tmp<volScalarField> tCp = solid.Cp();
+        tmp<scalarField> tCpCell =
+            tCp().boundaryField()[patchi].patchInternalField();
+        return flux.conductance/tCpCell();
+    }
+
+    const scalarField& pp = solid.p().boundaryField()[patchi];
+    tmp<scalarField> tCpv =
+        solid.Cpv(pp, solid.T().boundaryField()[patchi], patchi);
+    return flux.conductance/tCpv();
 }
 
 
@@ -808,18 +892,63 @@ beta() const
     scalarField TcNbr(nbrField.patchInternalField());
     mpp.distribute(TcNbr);
 
+    const auto nbrFlux = nbrField.wallCoupledFlux(nbrField);
     scalarField alphaDeltaNbr
     (
-        nbrField.alpha(TcNbr)*nbrPatch.deltaCoeffs()
+        nbrFlux.directional
+      ? nbrField.alphaDelta(nbrField)
+      : nbrField.alpha(TcNbr)*nbrPatch.deltaCoeffs()
     );
     mpp.distribute(alphaDeltaNbr);
 
-    scalarField alphaDelta
-    (
-         alpha(*this)*patch().deltaCoeffs()
-    );
+    scalarField alphaDeltaLocal(alphaDelta(*this));
 
-    return (alphaDeltaNbr + alphaDelta);
+    const auto localFlux = wallCoupledFlux(*this);
+    if (localFlux.directional || nbrFlux.directional)
+    {
+        scalarField normalNbr(nbrFlux.conductance);
+        mpp.distribute(normalNbr);
+        scalarField resistanceNbr(nbrField.layerResistance());
+        mpp.distribute(resistanceNbr);
+        const scalarField combinedResistance
+        (
+            layerResistance() + resistanceNbr
+        );
+        alphaDeltaNbr /= 1 + normalNbr*combinedResistance;
+    }
+
+    return (alphaDeltaNbr + alphaDeltaLocal);
+}
+
+
+scalarField
+turbulentTemperatureRadCoupledMixedFvPatchScalarField::layerConductance()
+const
+{
+    scalarField conductance(patch().size(), GREAT);
+    if (thicknessLayer_ || thicknessLayers_.size())
+    {
+        conductance = 1/(layerResistance() + SMALL);
+    }
+    return conductance;
+}
+
+
+scalarField
+turbulentTemperatureRadCoupledMixedFvPatchScalarField::layerResistance()
+const
+{
+    scalarField resistance(patch().size(), Zero);
+    if (thicknessLayer_)
+    {
+        const scalar t = db().time().timeOutputValue();
+        resistance += thicknessLayer_().value(t)/kappaLayer_().value(t);
+    }
+    forAll(thicknessLayers_, iLayer)
+    {
+        resistance += thicknessLayers_[iLayer]/kappaLayers_[iLayer];
+    }
+    return resistance;
 }
 
 

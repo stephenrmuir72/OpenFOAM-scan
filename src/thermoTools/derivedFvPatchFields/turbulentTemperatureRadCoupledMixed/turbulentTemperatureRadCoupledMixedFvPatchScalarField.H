@@ -196,11 +196,20 @@ class turbulentTemperatureRadCoupledMixedFvPatchScalarField
         //- Return local alphaSfDelta
         tmp<scalarField> alphaSfDelta() const;
 
+        //- Conductance per area for the energy equation
+        tmp<scalarField> alphaDelta(const scalarField& Tp) const;
+
         //- Return delta enthalpy between regions
         tmp<scalarField> deltaH() const;
 
         //- Return the sum of deltaCoeff*alpha from nbr and local
         tmp<scalarField> beta() const;
+
+        //- Surface layer conductance [W/m2/K]
+        scalarField layerConductance() const;
+
+        //- Surface layer resistance [m2 K/W]
+        scalarField layerResistance() const;
 
         //- Calculate coefficients for assembly matrix
         tmp<Field<scalar>> coeffs

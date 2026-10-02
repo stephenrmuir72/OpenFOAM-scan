@@ -142,8 +142,18 @@ protected:
         //- Function1 for alpha
         autoPtr<PatchFunction1<scalar>> alphaFunction1_;
 
+        //- Suppress repeated warnings for legacy anisotropic coupling
+        mutable bool warnedAnisotropicCoupling_;
+
 
 public:
+
+    struct coupledFlux
+    {
+        scalarField conductance;
+        scalarField correction;
+        bool directional;
+    };
 
     // Constructors
 
@@ -222,6 +232,10 @@ public:
 
         //- Given patch temperature calculate corresponding K field
         virtual tmp<scalarField> kappa(const scalarField& Tp) const;
+
+        //- Local conductive flux: conductance*(Tp - Tcell) + correction
+        //  (per unit area), using the solid's discrete tensor flux if selected
+        coupledFlux wallCoupledFlux(const scalarField& Tp) const;
 
         //- Given patch temperature calculate corresponding alphaEff field
         virtual tmp<scalarField> alpha(const scalarField& Tp) const;

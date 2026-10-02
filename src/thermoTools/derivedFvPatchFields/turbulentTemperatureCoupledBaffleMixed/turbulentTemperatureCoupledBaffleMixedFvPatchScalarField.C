@@ -32,6 +32,8 @@ License
 #include "volFields.H"
 #include "mappedPatchBase.H"
 
+#include <utility>
+
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 namespace Foam
@@ -234,6 +236,24 @@ void turbulentTemperatureCoupledBaffleMixedFvPatchScalarField::rmap
 }
 
 
+scalarField
+turbulentTemperatureCoupledBaffleMixedFvPatchScalarField::layerResistance()
+const
+{
+    scalarField resistance(patch().size(), Zero);
+    if (thicknessLayer_)
+    {
+        const scalar t = db().time().timeOutputValue();
+        resistance += thicknessLayer_().value(t)/kappaLayer_().value(t);
+    }
+    forAll(thicknessLayers_, iLayer)
+    {
+        resistance += thicknessLayers_[iLayer]/kappaLayers_[iLayer];
+    }
+    return resistance;
+}
+
+
 tmp<Foam::scalarField>
 turbulentTemperatureCoupledBaffleMixedFvPatchScalarField::kappa
 (
@@ -251,20 +271,7 @@ turbulentTemperatureCoupledBaffleMixedFvPatchScalarField::kappa
         // Harmonic averaging of kappa*deltaCoeffs
         {
             KDelta = 1.0/KDelta;
-            if (thicknessLayer_)
-            {
-                const scalar t = db().time().timeOutputValue();
-                KDelta +=
-                    thicknessLayer_().value(t)
-                   /kappaLayer_().value(t);
-            }
-            if (thicknessLayers_.size())
-            {
-                forAll(thicknessLayers_, iLayer)
-                {
-                    KDelta += thicknessLayers_[iLayer]/kappaLayers_[iLayer];
-                }
-            }
+            KDelta += layerResistance();
             KDelta = 1.0/KDelta;
         }
 
@@ -296,12 +303,15 @@ void turbulentTemperatureCoupledBaffleMixedFvPatchScalarField::updateCoeffs()
         );
 
     const scalarField& Tp = *this;
-    const scalarField kappaTp(kappa(Tp));
-    const tmp<scalarField> myKDelta = kappaTp*patch().deltaCoeffs();
-
+    const auto myFlux = wallCoupledFlux(Tp);
+    const scalarField myResistance(layerResistance());
 
     scalarField nbrIntFld;
     scalarField nbrKDelta;
+    scalarField nbrNormalKDelta;
+    scalarField nbrCorrection;
+    scalarField nbrResistance;
+    scalarField nbrDirectional(patch().size(), myFlux.directional ? 1 : 0);
     if (mpp.sameWorld())
     {
         // Same world so lookup
@@ -317,42 +327,96 @@ void turbulentTemperatureCoupledBaffleMixedFvPatchScalarField::updateCoeffs()
         // Swap to obtain full local values of neighbour K*delta
         nbrIntFld = nbrField.patchInternalField();
         nbrKDelta = nbrField.kappa(nbrField)*nbrPatch.deltaCoeffs();
+        auto nbrFlux = nbrField.wallCoupledFlux(nbrField);
+        nbrNormalKDelta = std::move(nbrFlux.conductance);
+        nbrCorrection = std::move(nbrFlux.correction);
+        nbrResistance = nbrField.layerResistance();
+        nbrDirectional = scalarField
+        (
+            nbrPatch.size(),
+            nbrFlux.directional ? 1 : 0
+        );
     }
     else
     {
         // Different world so use my region,patch. Distribution below will
         // do the reordering.
         nbrIntFld = patchInternalField();
-        nbrKDelta = myKDelta.ref();
+        nbrKDelta = kappa(Tp)*patch().deltaCoeffs();
+        nbrNormalKDelta = myFlux.conductance;
+        nbrCorrection = myFlux.correction;
+        nbrResistance = myResistance;
     }
     distribute(this->internalField().name() + "_value", nbrIntFld);
     distribute(this->internalField().name() + "_weights", nbrKDelta);
+    distribute
+    (
+        this->internalField().name() + "_normalWeights",
+        nbrNormalKDelta
+    );
+    distribute
+    (
+        this->internalField().name() + "_correction",
+        nbrCorrection
+    );
+    distribute
+    (
+        this->internalField().name() + "_layerResistance",
+        nbrResistance
+    );
+    distribute
+    (
+        this->internalField().name() + "_directional",
+        nbrDirectional
+    );
+
+    const bool useTensor =
+        myFlux.directional || (max(nbrDirectional) > 0.5);
+
+    scalarField myKDelta;
+    scalarField myCorrection;
+    if (useTensor)
+    {
+        myKDelta = myFlux.conductance;
+        myCorrection = myFlux.correction;
+
+        const scalarField rawNbrKDelta(nbrNormalKDelta);
+        nbrKDelta =
+            1/(1/rawNbrKDelta + myResistance + nbrResistance);
+        nbrCorrection *= nbrKDelta/rawNbrKDelta;
+    }
+    else
+    {
+        myKDelta = kappa(Tp)*patch().deltaCoeffs();
+        myCorrection.setSize(patch().size(), Zero);
+    }
 
 
-    // Both sides agree on
-    // - temperature : (myKDelta*fld + nbrKDelta*nbrFld)/(myKDelta+nbrKDelta)
-    // - gradient    : (temperature-fld)*delta
-    // We've got a degree of freedom in how to implement this in a mixed bc.
-    // (what gradient, what fixedValue and mixing coefficient)
-    // Two reasonable choices:
-    // 1. specify above temperature on one side (preferentially the high side)
-    //    and above gradient on the other. So this will switch between pure
-    //    fixedvalue and pure fixedgradient
-    // 2. specify gradient and temperature such that the equations are the
-    //    same on both sides. This leads to the choice of
-    //    - refGradient = zero gradient
-    //    - refValue = neighbour value
-    //    - mixFraction = nbrKDelta / (nbrKDelta + myKDelta())
+    // The mapped conductance includes both layers; refGrad balances the
+    // explicit face flux on both sides.
 
     this->refValue() = nbrIntFld;
     this->refGrad() = Zero;
-    this->valueFraction() = nbrKDelta/(nbrKDelta + myKDelta());
+    if (useTensor)
+    {
+        this->refGrad() =
+            -(myCorrection + nbrCorrection)
+           *patch().deltaCoeffs()/myKDelta;
+    }
+    this->valueFraction() = nbrKDelta/(nbrKDelta + myKDelta);
 
     this->parent_bctype::updateCoeffs();
 
     if (debug)
     {
-        scalar Q = gSum(kappaTp*patch().magSf()*snGrad());
+        const scalar Q =
+            useTensor
+          ? gSum
+            (
+                patch().magSf()
+               *(myKDelta*snGrad()/patch().deltaCoeffs() + myCorrection)
+            )
+          : gSum(kappa(Tp)*patch().magSf()*snGrad());
 
         auto limits = gMinMax(*this);
         auto avg = gAverage(*this);
