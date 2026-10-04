@@ -354,7 +354,7 @@ void Foam::SurfaceFilmModel<CloudType>::inject(TrackCloudType& cloud)
 
                 if (diameterParcelPatch_[filmFacei] > 0)
                 {
-                    film.addSources
+                    film.cacheFilmToLagrangianSources
                     (
                         patchi,
                         facei,

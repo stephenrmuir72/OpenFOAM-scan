@@ -187,6 +187,19 @@ protected:
             //- Normal pressure by particles
             volScalarField pnSource_;
 
+            //- Optional mass-weighted parcel diameter [kg m]
+            //  Accumulates mass*diameter per face for source spreading
+            autoPtr<volScalarField> massDiameterSourcePtr_;
+
+            //- Optional mass withdrawn from the film for cloud injection
+            autoPtr<volScalarField> filmToLagMassSourcePtr_;
+
+            //- Optional tangential momentum withdrawn for cloud injection
+            autoPtr<volVectorField> filmToLagMomentumSourcePtr_;
+
+            //- Optional normal momentum withdrawn for cloud injection
+            autoPtr<volScalarField> filmToLagPnSourcePtr_;
+
             //- Total mass added
             scalar addedMassTotal_;
 
@@ -354,7 +367,7 @@ public:
         // External hook to add sources and mass exchange variables
 
 
-            //- Add sources
+            //- Add Lagrangian-to-film parcel sources already spatially spread
             virtual void addSources
             (
                 const label patchi,            // patchi on primary region
@@ -363,6 +376,39 @@ public:
                 const vector& momentumSource,  // [kg.m/s] (tang'l momentum)
                 const scalar pressureSource,   // [kg.m/s] (normal momentum)
                 const scalar energySource = 0  // [J]
+            );
+
+            //- Hook to accumulate film-to-Lagrangian sources
+            //  Prevents spatial spreading of film-to-Lagrangian sources
+            virtual void cacheFilmToLagrangianSources
+            (
+                const label patchi,
+                const label facei,
+                const scalar massSource,
+                const vector& momentumSource,
+                const scalar pressureSource,
+                const scalar energySource = 0
+            );
+
+            //- Hook to accumulate mass*diameter of deposited parcels
+            virtual void addMassDiameterSource
+            (
+                const label patchi,            // patchi on primary region
+                const label facei,             // facei of patchi
+                const scalar mass,             // [kg]
+                const scalar diameter          // [m]
+            );
+
+            //- Hook to add sources to the film with optional spatial spreading
+            virtual void addParcelImpact
+            (
+                const label patchi,
+                const label facei,
+                const scalar mass,
+                const vector& momentum,
+                const scalar normalImpulse,
+                const scalar energy,
+                const scalar diameter
             );
 };
 

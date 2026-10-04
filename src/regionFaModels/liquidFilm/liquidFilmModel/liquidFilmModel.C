@@ -245,6 +245,8 @@ liquidFilmModel::liquidFilmModel
         Tf_ = dimensionedScalar("T0", dimTemperature, dict);
     }
     correctThermoFields();
+
+    spatialSpreadingPtr_ = spatialSpreading::NewIfPresent(regionMesh(), dict);
 }
 
 
@@ -259,6 +261,89 @@ const volScalarField& liquidFilmModel::cloudMassTrans() const
 const volScalarField& liquidFilmModel::cloudDiameterTrans() const
 {
     return cloudDiameterTrans_;
+}
+
+
+void liquidFilmModel::addParcelImpact
+(
+    const label patchi,
+    const label facei,
+    const scalar mass,
+    const vector& momentum,
+    const scalar normalImpulse,
+    const scalar energy,
+    const scalar diameter
+)
+{
+    if (debug && !std::isfinite(mass))
+    {
+        FatalErrorInFunction
+            << "Invalid non-finite parcel mass on patch " << patchi
+            << ", face " << facei << ": mass=" << mass
+            << abort(FatalError);
+    }
+
+    if (spatialSpreadingPtr_ && (mass > 0))
+    {
+        if
+        (
+            debug
+         && (
+                !std::isfinite(Foam::mag(momentum))
+             || !std::isfinite(normalImpulse)
+             || !std::isfinite(diameter)
+             || !(diameter > 0)
+            )
+        )
+        {
+            FatalErrorInFunction
+                << "Invalid parcel impact on patch " << patchi
+                << ", face " << facei << ": mass=" << mass
+                << ", diameter=" << diameter
+                << abort(FatalError);
+        }
+
+        const polyBoundaryMesh& patches = primaryMesh().boundaryMesh();
+
+        if
+        (
+            debug
+         && (
+                patchi < 0
+             || patchi >= patches.size()
+             || facei < 0
+             || facei >= patches[patchi].size()
+            )
+        )
+        {
+            FatalErrorInFunction
+                << "Invalid parcel impact patch/face "
+                << patchi << ':' << facei
+                << abort(FatalError);
+        }
+
+        const label meshFace = patches[patchi].start() + facei;
+        const label areaFace = regionMesh().whichFace(meshFace);
+
+        // Do not aggregate parcel data, but store them individually
+        if (areaFace >= 0)
+        {
+            spatialSpreading::sourceInput& impact = impacts_.emplace_back();
+            impact.face = areaFace;
+            impact.mass = mass;
+            impact.momentum = momentum;
+            impact.normalImpulse = normalImpulse;
+            impact.diameter = diameter;
+        }
+
+        return;
+    }
+
+    // Aggregate parcel data
+    liquidFilmBase::addParcelImpact
+    (
+        patchi, facei, mass, momentum, normalImpulse, energy, diameter
+    );
 }
 
 
@@ -281,6 +366,116 @@ void liquidFilmModel::preEvolveRegion()
 
     vsm().mapToSurface(pnSource_, pnSp_.primitiveFieldRef());
 
+    // Spatially-spread Lagrangian-to-film sources
+    if (spatialSpreadingPtr_)
+    {
+        auto tDiameterSp = areaScalarField::New
+        (
+            "diameterSp",
+            IOobjectOption::NO_REGISTER,
+            regionMesh(),
+            dimensionedScalar(dimLength, Zero)
+        );
+        areaScalarField& diameterSp = tDiameterSp.ref();
+
+        vsm().mapToSurface
+        (
+            massDiameterSourcePtr_(),
+            diameterSp.primitiveFieldRef()  // mass-weighted mean D per fa face
+        );
+
+        forAll(diameterSp, i)
+        {
+            const scalar mass = rhoSp_[i];
+            if (Foam::mag(mass) > VSMALL)
+            {
+                diameterSp[i] /= mass;
+            }
+            else
+            {
+                diameterSp[i] = 0;
+            }
+        }
+
+        diameterSp.correctBoundaryConditions();
+
+        if (impacts_.empty())
+        {
+            // Spread sources based on mass-weighted mean D per fa face
+            spatialSpreadingPtr_->spread
+            (
+                rhoSp_, USp_, pnSp_, diameterSp
+            );
+        }
+        else
+        {
+            // Spread sources based on individual Ds per fa face
+            spatialSpreadingPtr_->spread
+            (
+                rhoSp_, USp_, pnSp_, diameterSp, impacts_
+            );
+        }
+    }
+
+
+    if (filmToLagMassSourcePtr_)
+    {
+        // Introduce film-to-Lagrangian sources back to the film source fields
+        auto tfilmToLagRhoSp = areaScalarField::New
+        (
+            "filmToLagRhoSp",
+            IOobjectOption::NO_REGISTER,
+            regionMesh(),
+            dimensionedScalar(dimVelocity, zero{})
+        );
+        areaScalarField& filmToLagRhoSp = tfilmToLagRhoSp.ref();
+
+        auto tFilmToLagUSp = areaVectorField::New
+        (
+            "filmToLagUSp",
+            IOobjectOption::NO_REGISTER,
+            regionMesh(),
+            dimensionedVector(sqr(dimVelocity), zero{})
+        );
+        areaVectorField& filmToLagUSp = tFilmToLagUSp.ref();
+
+        auto tFilmToLagPnSp = areaScalarField::New
+        (
+            "filmToLagPnSp",
+            IOobjectOption::NO_REGISTER,
+            regionMesh(),
+            dimensionedScalar(dimPressure, zero{})
+        );
+        areaScalarField& filmToLagPnSp = tFilmToLagPnSp.ref();
+
+        vsm().mapToSurface
+        (
+            filmToLagMassSourcePtr_(),
+            filmToLagRhoSp.primitiveFieldRef()
+        );
+        vsm().mapToSurface
+        (
+            filmToLagMomentumSourcePtr_(),
+            filmToLagUSp.primitiveFieldRef()
+        );
+        vsm().mapToSurface
+        (
+            filmToLagPnSourcePtr_(),
+            filmToLagPnSp.primitiveFieldRef()
+        );
+
+        rhoSp_ += filmToLagRhoSp;
+        USp_ += filmToLagUSp;
+        pnSp_ += filmToLagPnSp;
+    }
+
+
+    // Reset the mass-weighted diameter accumulator for the next time step
+    if (massDiameterSourcePtr_)
+    {
+        massDiameterSourcePtr_() == zero{};
+    }
+
 
     // Calculate rate per area
     rhoSp_.primitiveFieldRef() *= rAreaDeltaT/rho_;
@@ -298,6 +493,7 @@ void liquidFilmModel::postEvolveRegion()
     availableMass_ = (h() - h0_)*rho()*regionMesh().S();
     injection_.correct(availableMass_, cloudMassTrans_, cloudDiameterTrans_);
     liquidFilmBase::postEvolveRegion();
+    impacts_.clear();
 }
 
 

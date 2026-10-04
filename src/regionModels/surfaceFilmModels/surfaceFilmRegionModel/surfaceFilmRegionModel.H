@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -120,6 +121,41 @@ public:
                 const scalar pressureSource,
                 const scalar energySource
             ) = 0;
+
+            //- Hook to accumulate mass*diameter of deposited parcels
+            //  No-op for finite-volume region models
+            virtual void addMassDiameterSource
+            (
+                const label,
+                const label,
+                const scalar,
+                const scalar
+            ) {}
+
+            //- Hook to add sources to the film with optional spatial spreading
+            //  Equivalent to addSources() for finite-volume region models
+            virtual void addParcelImpact
+            (
+                const label patchi,
+                const label facei,
+                const scalar massSource,
+                const vector& momentumSource,
+                const scalar pressureSource,
+                const scalar energySource,
+                const scalar diameter
+            )
+            {
+                addSources
+                (
+                    patchi,
+                    facei,
+                    massSource,
+                    momentumSource,
+                    pressureSource,
+                    energySource
+                );
+                addMassDiameterSource(patchi, facei, massSource, diameter);
+            }
 
 
         // Fields

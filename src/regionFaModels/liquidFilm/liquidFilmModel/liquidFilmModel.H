@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2020 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -39,6 +40,7 @@ Usage
 
         // Optional entries
         T0                      <scalar>;
+        spatialSpreading        <dict>;
 
         // Inherited entries
         ...
@@ -50,6 +52,8 @@ Usage
       Property   | Description                      | Type  | Reqd   | Deflt
       thermo     | Liquid thermodynamics properties | dict  | yes    | -
       T0         | Reference temperature [K]       | scalar | choice | -
+      spatialSpreading | Lagrangian-to-film spatial spreading model <!--
+                 -->                               | dict   | no     | -
     \endtable
 
     The inherited entries are elaborated in:
@@ -73,6 +77,7 @@ SourceFiles
 #include "injectionModelList.H"
 #include "faCFD.H"
 #include "forceList.H"
+#include "spatialSpreading.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -148,6 +153,12 @@ protected:
 
         //- Turbulence model
         autoPtr<filmTurbulenceModel> turbulence_;
+
+        //- Lagrangian-to-film spatial spreading model
+        autoPtr<spatialSpreading> spatialSpreadingPtr_;
+
+        //- Individually retained parcel impacts on local finite-area faces
+        DynamicList<spatialSpreading::sourceInput> impacts_;
 
 
         // Sub-models
@@ -234,6 +245,18 @@ public:
 
 
         // Evolution
+
+            //- Hook to add sources to the film with optional spatial spreading
+            virtual void addParcelImpact
+            (
+                const label patchi,
+                const label facei,
+                const scalar mass,
+                const vector& momentum,
+                const scalar normalImpulse,
+                const scalar energy,
+                const scalar diameter
+            );
 
             //- Pre-evolve film
             virtual void preEvolveRegion();
