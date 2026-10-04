@@ -84,6 +84,39 @@ Foam::mappedPatchBase::offsetModeNames_
 });
 
 
+// * * * * * * * * * * * * * * * Local Functions * * * * * * * * * * * * * * //
+
+namespace
+{
+
+void checkLowWeightCorrection
+(
+    const Foam::polyPatch& pp,
+    const Foam::AMIPatchToPatchInterpolation& ami,
+    const Foam::dictionary& dict
+)
+{
+    using namespace Foam;
+
+    if (ami.applyLowWeightCorrection())
+    {
+        FatalIOErrorInFunction(dict)
+            << "Patch " << pp.name()
+            << " (region " << pp.boundaryMesh().mesh().name() << ")" << nl
+            << "    lowWeightCorrection " << ami.lowWeightCorrection()
+            << " is not supported with sampleMode "
+            << mappedPatchBase::sampleModeNames_
+               [mappedPatchBase::NEARESTPATCHFACEAMI] << nl
+            << "    since mapped interpolation does not provide default values"
+            << " for uncoupled faces." << nl
+            << "    Remove the lowWeightCorrection entry." << nl
+            << exit(FatalIOError);
+    }
+}
+
+} // End anonymous namespace
+
+
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
 void Foam::mappedPatchBase::updateMesh(PstreamBuffers& pBufs)
@@ -1453,6 +1486,11 @@ Foam::mappedPatchBase::mappedPatchBase
 {
     addWorldConnection();
 
+    if (mode_ == NEARESTPATCHFACEAMI)
+    {
+        checkLowWeightCorrection(patch_, *AMIPtr_, dict);
+    }
+
     if (!coupleGroup_.good())
     {
         if (sampleWorld_.empty() && sampleRegion_.empty())
@@ -1555,6 +1593,11 @@ Foam::mappedPatchBase::mappedPatchBase
     surfDict_(dict.subOrEmptyDict("surface"))
 {
     addWorldConnection();
+
+    if (mode_ == NEARESTPATCHFACEAMI)
+    {
+        checkLowWeightCorrection(patch_, *AMIPtr_, dict);
+    }
 
     if (mode != NEARESTPATCHFACE && mode != NEARESTPATCHFACEAMI)
     {
