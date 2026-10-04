@@ -29,6 +29,7 @@ License
 #include "liquidFilmModel.H"
 #include "volFields.H"
 #include "spatialSpreading.H"
+#include "temporalSpreading.H"
 #include "addToRunTimeSelectionTable.H"
 #include "Map.H"
 
@@ -252,6 +253,7 @@ liquidFilmModel::liquidFilmModel
     correctThermoFields();
 
     spatialSpreadingPtr_ = spatialSpreading::NewIfPresent(regionMesh(), dict);
+    temporalSpreadingPtr_ = temporalSpreading::NewIfPresent(regionMesh(), dict);
 }
 
 // * * * * * * * * * * * * * * * * Destructor  * * * * * * * * * * * * * * * //
@@ -291,7 +293,7 @@ void liquidFilmModel::addParcelSources
             << abort(FatalError);
     }
 
-    if (mass > 0 && spatialSpreadingPtr_)
+    if (mass > 0 && (spatialSpreadingPtr_ || temporalSpreadingPtr_))
     {
         if
         (
@@ -343,7 +345,7 @@ void liquidFilmModel::preEvolveRegion()
     vsm().mapToSurface(pnSource_, pnSp_.primitiveFieldRef());
 
     DynamicList<spatialSpreading::sourceInput> mappedImpacts;
-    if (spatialSpreadingPtr_ && !impacts_.empty())
+    if ((spatialSpreadingPtr_ || temporalSpreadingPtr_) && !impacts_.empty())
     {
         const labelUList& meshFaces = regionMesh().faceLabels();
         Map<label> areaFaceByMeshFace(meshFaces.size());
@@ -387,7 +389,13 @@ void liquidFilmModel::preEvolveRegion()
         }
     }
 
-    if (spatialSpreadingPtr_)
+    const bool needsDiameter =
+    (
+        (spatialSpreadingPtr_ && spatialSpreadingPtr_->needsDiameter())
+     || (temporalSpreadingPtr_ && temporalSpreadingPtr_->needsDiameter())
+    );
+
+    if (spatialSpreadingPtr_ || temporalSpreadingPtr_)
     {
         // Map diameter and compute the mass-weighted mean only when required
         auto tDiameterSp = areaScalarField::New
@@ -399,7 +407,7 @@ void liquidFilmModel::preEvolveRegion()
         );
         areaScalarField& diameterSp = tDiameterSp.ref();
 
-        if (spatialSpreadingPtr_->needsDiameter())
+        if (needsDiameter)
         {
             vsm().mapToSurface
             (
@@ -423,20 +431,134 @@ void liquidFilmModel::preEvolveRegion()
             diameterSp.correctBoundaryConditions();
         }
 
-        // Apply identical spatial weights to every source channel.
-        if (mappedImpacts.empty())
+        if (temporalSpreadingPtr_)
         {
-            spatialSpreadingPtr_->spread
+            auto tDuration = areaScalarField::New
             (
-                rhoSp_, USp_, pnSp_, diameterSp
+                "temporalDuration",
+                IOobjectOption::NO_REGISTER,
+                regionMesh(),
+                dimensionedScalar(dimTime, Zero)
+            );
+            areaScalarField& duration = tDuration.ref();
+
+            temporalSpreadingPtr_->duration
+            (
+                duration,
+                rhoSp_,
+                USp_,
+                pnSp_,
+                diameterSp,
+                rho_,
+                sigma_
+            );
+
+            for (spatialSpreading::sourceInput& impact : mappedImpacts)
+            {
+                impact.duration = temporalSpreadingPtr_->durationAt
+                (
+                    impact.face,
+                    impact.mass,
+                    impact.momentum,
+                    impact.normalImpulse,
+                    impact.diameter,
+                    rho_[impact.face],
+                    sigma_[impact.face]
+                );
+            }
+
+            DynamicList<temporalSpreading::contribution> transfers;
+            if (spatialSpreadingPtr_)
+            {
+                DynamicList<spatialSpreading::targetContribution>
+                    spatialTransfers;
+                spatialSpreadingPtr_->spread
+                (
+                    rhoSp_, USp_, pnSp_, diameterSp, duration,
+                    mappedImpacts, spatialTransfers
+                );
+                for (const auto& transfer : spatialTransfers)
+                {
+                    transfers.append
+                    (
+                        temporalSpreading::contribution
+                        {
+                            transfer.face,
+                            transfer.mass,
+                            transfer.momentum,
+                            transfer.normalImpulse,
+                            transfer.duration
+                        }
+                    );
+                }
+            }
+            else
+            {
+                forAll(rhoSp_, facei)
+                {
+                    if
+                    (
+                        mag(rhoSp_[facei]) > VSMALL
+                     || mag(USp_[facei]) > VSMALL
+                     || mag(pnSp_[facei]) > VSMALL
+                    )
+                    {
+                        transfers.append
+                        (
+                            temporalSpreading::contribution
+                            {
+                                facei,
+                                rhoSp_[facei],
+                                USp_[facei],
+                                pnSp_[facei],
+                                duration[facei]
+                            }
+                        );
+                    }
+                }
+                for (const auto& impact : mappedImpacts)
+                {
+                    transfers.append
+                    (
+                        temporalSpreading::contribution
+                        {
+                            impact.face,
+                            impact.mass,
+                            impact.momentum,
+                            impact.normalImpulse,
+                            impact.duration
+                        }
+                    );
+                }
+            }
+
+            const scalar endTime = primaryMesh().time().value();
+            const scalar beginTime = endTime - deltaT;
+
+            temporalSpreadingPtr_->enqueueSparse(transfers, beginTime);
+            temporalSpreadingPtr_->release
+            (
+                rhoSp_,
+                USp_,
+                pnSp_,
+                beginTime,
+                endTime
             );
         }
         else
         {
-            spatialSpreadingPtr_->spread
-            (
-                rhoSp_, USp_, pnSp_, diameterSp, mappedImpacts
-            );
+            // Apply identical spatial weights to every source channel.
+            if (mappedImpacts.empty())
+            {
+                spatialSpreadingPtr_->spread(rhoSp_, USp_, pnSp_, diameterSp);
+            }
+            else
+            {
+                spatialSpreadingPtr_->spread
+                (
+                    rhoSp_, USp_, pnSp_, diameterSp, mappedImpacts
+                );
+            }
         }
     }
 

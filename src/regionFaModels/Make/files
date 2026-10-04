@@ -56,6 +56,25 @@ $(spatialSpreading)/spatialSpreading/spatialSpreadingData.C
 $(spatialSpreading)/parcelDiameterSpreading/parcelDiameterSpreading.C
 
 
+temporalSpreading=$(kinematic)/temporalSpreading
+temporalKernel=$(temporalSpreading)/temporalKernel
+$(temporalKernel)/temporalKernel.C
+$(temporalKernel)/temporalKernelNew.C
+$(temporalKernel)/topHat/topHat.C
+$(temporalKernel)/custom/custom.C
+
+timeScaleModel=$(temporalSpreading)/timeScaleModel
+$(timeScaleModel)/timeScaleModel.C
+$(timeScaleModel)/timeScaleModelNew.C
+$(timeScaleModel)/advective/advective.C
+$(timeScaleModel)/inertioCapillary/inertioCapillary.C
+
+$(temporalSpreading)/temporalSpreading/temporalSpreading.C
+$(temporalSpreading)/temporalSpreading/temporalSpreadingNew.C
+$(temporalSpreading)/temporalSpreading/fixedDuration/fixedDuration.C
+$(temporalSpreading)/temporalSpreading/characteristicTime/characteristicTime.C
+
+
 $(kinematic)/injectionModel/injectionModelList/injectionModelList.C
 $(kinematic)/injectionModel/injectionModel/injectionModel.C
 $(kinematic)/injectionModel/injectionModel/injectionModelNew.C

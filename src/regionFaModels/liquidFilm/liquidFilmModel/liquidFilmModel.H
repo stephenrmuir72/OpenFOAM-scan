@@ -41,6 +41,7 @@ Usage
         // Optional entries
         T0                      <scalar>;
         spatialSpreading        <dict>;
+        temporalSpreading       <dict>;
 
         // Inherited entries
         ...
@@ -54,10 +55,14 @@ Usage
       T0         | Reference temperature [K]       | scalar | choice | -
       spatialSpreading | Lagrangian-to-film spatial spreading model <!--
                  -->                               | dict   | no     | -
+      temporalSpreading | Lagrangian-to-film temporal spreading model <!--
+                 -->                                | dict  | no     | -
     \endtable
 
-    Individual parcel impacts retain independent footprint diameters.
-    Legacy aggregate sources remain supported.
+    Individual parcel impacts retain independent footprint diameters and
+    physical release durations. Target contributions are queued separately;
+    legacy aggregate sources remain supported. Pending temporal transfers
+    are stored in versioned processor-local restart state.
 
     The inherited entries are elaborated in:
       - \link liquidFilmBase.H \endlink
@@ -93,6 +98,7 @@ namespace areaSurfaceFilmModels
 
 // Forward Declarations
 class spatialSpreading;
+class temporalSpreading;
 
 /*---------------------------------------------------------------------------*\
                         Class liquidFilmModel Declaration
@@ -162,6 +168,9 @@ protected:
 
         //- Lagrangian-to-film spatial spreading model
         autoPtr<spatialSpreading> spatialSpreadingPtr_;
+
+        //- Temporal spreading model
+        autoPtr<temporalSpreading> temporalSpreadingPtr_;
 
         //- Pending impacts, retained individually until spatial weighting
         struct parcelImpact
