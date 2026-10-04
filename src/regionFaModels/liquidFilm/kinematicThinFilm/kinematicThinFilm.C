@@ -77,7 +77,25 @@ Foam::tmp<Foam::faVectorMatrix> kinematicThinFilm::UEqn
 }
 
 
-// * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * //
+void kinematicThinFilm::projectTangentialVelocity(areaVectorField& U) const
+{
+    if (!spatialSpreadingPtr_)
+    {
+        return;
+    }
+
+    const vectorField& normals =
+        regionMesh().faceAreaNormals().primitiveField();
+    vectorField& velocity = U.primitiveFieldRef();
+
+    forAll(velocity, facei)
+    {
+        velocity[facei] -= normals[facei]*(normals[facei] & velocity[facei]);
+    }
+}
+
+
+// * * * * * * * * * * * * * * * * Constructors * * * * * * * * * * * * * * //
 
 kinematicThinFilm::kinematicThinFilm
 (
@@ -141,6 +159,7 @@ void kinematicThinFilm::evolveRegion()
             Uf_ = UsEqn.H()/UsA;
             Uf_.correctBoundaryConditions();
             faOptions().correct(Uf_);
+            projectTangentialVelocity(Uf_);
 
             phif_ =
                 (fac::interpolate(Uf_) & regionMesh().Le())
@@ -182,6 +201,7 @@ void kinematicThinFilm::evolveRegion()
                 - (pf_/(rho_*UsA))*fac::grad(h_);
             Uf_.correctBoundaryConditions();
             faOptions().correct(Uf_);
+            projectTangentialVelocity(Uf_);
         }
     }
 

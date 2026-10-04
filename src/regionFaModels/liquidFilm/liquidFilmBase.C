@@ -199,6 +199,50 @@ liquidFilmBase::liquidFilmBase
         primaryMesh(),
         dimensionedScalar(dimMass*dimVelocity, Zero)
     ),
+    diameterSource_
+    (
+        IOobject
+        (
+            "diameterSource",
+            primaryMesh().time().timeName(),
+            primaryMesh().thisDb()
+        ),
+        primaryMesh(),
+        dimensionedScalar(dimMass*dimLength, Zero)
+    ),
+    filmMassSource_
+    (
+        IOobject
+        (
+            "filmMassSource",
+            primaryMesh().time().timeName(),
+            primaryMesh().thisDb()
+        ),
+        primaryMesh(),
+        dimensionedScalar(dimMass, Zero)
+    ),
+    filmMomentumSource_
+    (
+        IOobject
+        (
+            "filmMomentumSource",
+            primaryMesh().time().timeName(),
+            primaryMesh().thisDb()
+        ),
+        primaryMesh(),
+        dimensionedVector(dimMass*dimVelocity, Zero)
+    ),
+    filmPnSource_
+    (
+        IOobject
+        (
+            "filmPnSource",
+            primaryMesh().time().timeName(),
+            primaryMesh().thisDb()
+        ),
+        primaryMesh(),
+        dimensionedScalar(dimMass*dimVelocity, Zero)
+    ),
     addedMassTotal_(0),
     faOptions_
     (
@@ -429,9 +473,69 @@ void liquidFilmBase::addSources
     const scalar energySource
 )
 {
+    if (massSource < 0)
+    {
+        addFilmSources
+        (
+            patchi,
+            facei,
+            massSource,
+            momentumSource,
+            pressureSource,
+            energySource
+        );
+        return;
+    }
+
     massSource_.boundaryFieldRef()[patchi][facei] += massSource;
     pnSource_.boundaryFieldRef()[patchi][facei] += pressureSource;
     momentumSource_.boundaryFieldRef()[patchi][facei] += momentumSource;
+}
+
+
+void liquidFilmBase::addFilmSources
+(
+    const label patchi,
+    const label facei,
+    const scalar massSource,
+    const vector& momentumSource,
+    const scalar pressureSource,
+    const scalar energySource
+)
+{
+    filmMassSource_.boundaryFieldRef()[patchi][facei] += massSource;
+    filmPnSource_.boundaryFieldRef()[patchi][facei] += pressureSource;
+    filmMomentumSource_.boundaryFieldRef()[patchi][facei] += momentumSource;
+}
+
+
+void liquidFilmBase::addDiameterSource
+(
+    const label patchi,
+    const label facei,
+    const scalar mass,
+    const scalar diameter
+)
+{
+    if (mass > 0)
+    {
+        diameterSource_.boundaryFieldRef()[patchi][facei] += mass*diameter;
+    }
+}
+
+void liquidFilmBase::addParcelSources
+(
+    const label patchi,
+    const label facei,
+    const scalar mass,
+    const vector& momentum,
+    const scalar normalImpulse,
+    const scalar energy,
+    const scalar diameter
+)
+{
+    addSources(patchi, facei, mass, momentum, normalImpulse, energy);
+    addDiameterSource(patchi, facei, mass, diameter);
 }
 
 
@@ -448,11 +552,17 @@ void liquidFilmBase::postEvolveRegion()
         massSource_.write();
         pnSource_.write();
         momentumSource_.write();
+        filmMassSource_.write();
+        filmPnSource_.write();
+        filmMomentumSource_.write();
     }
 
     massSource_.boundaryFieldRef() = Zero;
     pnSource_.boundaryFieldRef() = Zero;
     momentumSource_.boundaryFieldRef() = Zero;
+    filmMassSource_.boundaryFieldRef() = Zero;
+    filmPnSource_.boundaryFieldRef() = Zero;
+    filmMomentumSource_.boundaryFieldRef() = Zero;
 
     regionFaModel::postEvolveRegion();
 }

@@ -28,7 +28,8 @@ Class
     Foam::regionModels::areaSurfaceFilmModels::kinematicThinFilm
 
 Description
-    Thin film model.
+    Thin film model. When spatial spreading is enabled, the solved film
+    velocity is projected onto each face's tangent plane.
 
 Usage
     Example of the boundary condition specification:
@@ -98,6 +99,10 @@ protected:
             areaVectorField& U,
             const bool includeMassSource = false
         );
+
+        //- Project the film velocity onto local face tangents when spatial
+        //  spreading is enabled
+        void projectTangentialVelocity(areaVectorField& U) const;
 
 
 public:

@@ -114,6 +114,7 @@ void kinematicThinFilmIBM::evolveRegion()
             Uf_ = UsEqn.H()/UsA;
             Uf_.correctBoundaryConditions();
             faOptions().correct(Uf_);
+            projectTangentialVelocity(Uf_);
 
             phif_ =
                 (fac::interpolate(Uf_) & regionMesh().Le())
@@ -155,6 +156,7 @@ void kinematicThinFilmIBM::evolveRegion()
                 - (pf_/(rho_*UsA))*fac::grad(h_);
             Uf_.correctBoundaryConditions();
             faOptions().correct(Uf_);
+            projectTangentialVelocity(Uf_);
         }
     }
 

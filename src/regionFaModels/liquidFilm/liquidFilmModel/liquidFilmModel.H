@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2020 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -39,6 +40,7 @@ Usage
 
         // Optional entries
         T0                      <scalar>;
+        spatialSpreading        <dict>;
 
         // Inherited entries
         ...
@@ -50,7 +52,12 @@ Usage
       Property   | Description                      | Type  | Reqd   | Deflt
       thermo     | Liquid thermodynamics properties | dict  | yes    | -
       T0         | Reference temperature [K]       | scalar | choice | -
+      spatialSpreading | Lagrangian-to-film spatial spreading model <!--
+                 -->                               | dict   | no     | -
     \endtable
+
+    Individual parcel impacts retain independent footprint diameters.
+    Legacy aggregate sources remain supported.
 
     The inherited entries are elaborated in:
       - \link liquidFilmBase.H \endlink
@@ -73,6 +80,7 @@ SourceFiles
 #include "injectionModelList.H"
 #include "faCFD.H"
 #include "forceList.H"
+#include "DynamicList.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -82,6 +90,9 @@ namespace regionModels
 {
 namespace areaSurfaceFilmModels
 {
+
+// Forward Declarations
+class spatialSpreading;
 
 /*---------------------------------------------------------------------------*\
                         Class liquidFilmModel Declaration
@@ -149,6 +160,22 @@ protected:
         //- Turbulence model
         autoPtr<filmTurbulenceModel> turbulence_;
 
+        //- Lagrangian-to-film spatial spreading model
+        autoPtr<spatialSpreading> spatialSpreadingPtr_;
+
+        //- Pending impacts, retained individually until spatial weighting
+        struct parcelImpact
+        {
+            label patchi;
+            label facei;
+            scalar mass;
+            vector momentum;
+            scalar normalImpulse;
+            scalar diameter;
+        };
+
+        DynamicList<parcelImpact> impacts_;
+
 
         // Sub-models
 
@@ -186,7 +213,7 @@ public:
 
 
     //- Destructor
-    virtual ~liquidFilmModel() = default;
+    virtual ~liquidFilmModel();
 
 
     // Member Functions
@@ -234,6 +261,18 @@ public:
 
 
         // Evolution
+
+            //- Retain individual deposited impacts for footprint evaluation
+            virtual void addParcelSources
+            (
+                const label patchi,
+                const label facei,
+                const scalar mass,
+                const vector& momentum,
+                const scalar normalImpulse,
+                const scalar energy,
+                const scalar diameter
+            );
 
             //- Pre-evolve film
             virtual void preEvolveRegion();

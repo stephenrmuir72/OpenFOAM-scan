@@ -187,6 +187,19 @@ protected:
             //- Normal pressure by particles
             volScalarField pnSource_;
 
+            //- Mass-weighted parcel diameter [kg m]
+            //  Accumulates mass*diameter per face for source spreading
+            volScalarField diameterSource_;
+
+            //- Mass withdrawn from the film for finite-area cloud injection
+            volScalarField filmMassSource_;
+
+            //- Tangential momentum withdrawn from the film for cloud injection
+            volVectorField filmMomentumSource_;
+
+            //- Normal momentum withdrawn from the film for cloud injection
+            volScalarField filmPnSource_;
+
             //- Total mass added
             scalar addedMassTotal_;
 
@@ -354,7 +367,7 @@ public:
         // External hook to add sources and mass exchange variables
 
 
-            //- Add sources
+            //- Add incoming parcel sources; film entrainment remains local
             virtual void addSources
             (
                 const label patchi,            // patchi on primary region
@@ -363,6 +376,38 @@ public:
                 const vector& momentumSource,  // [kg.m/s] (tang'l momentum)
                 const scalar pressureSource,   // [kg.m/s] (normal momentum)
                 const scalar energySource = 0  // [J]
+            );
+
+            //- Add direct finite-area film withdrawal sources
+            virtual void addFilmSources
+            (
+                const label patchi,
+                const label facei,
+                const scalar massSource,
+                const vector& momentumSource,
+                const scalar pressureSource,
+                const scalar energySource = 0
+            );
+
+            //- Accumulate positive deposited mass-weighted parcel diameter
+            virtual void addDiameterSource
+            (
+                const label patchi,            // patchi on primary region
+                const label facei,             // facei of patchi
+                const scalar mass,             // [kg]
+                const scalar diameter          // [m]
+            );
+
+            //- Add an atomic parcel impact; legacy callers retain their hooks
+            virtual void addParcelSources
+            (
+                const label patchi,
+                const label facei,
+                const scalar mass,
+                const vector& momentum,
+                const scalar normalImpulse,
+                const scalar energy,
+                const scalar diameter
             );
 };
 
