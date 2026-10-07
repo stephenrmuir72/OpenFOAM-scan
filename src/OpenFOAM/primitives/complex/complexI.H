@@ -80,7 +80,12 @@ inline constexpr Foam::complex Foam::complex::conjugate() const
 
 inline Foam::scalar Foam::complex::magnitude() const
 {
+    // std::hypot is currently broken on ROCm (NOV-2026)
+    #if defined(__HIP_PLATFORM_AMD__) && defined(__HIPSTDPAR__)
+    return std::sqrt(re*re + im*im);
+    #else
     return std::hypot(re, im);
+    #endif
 }
 
 

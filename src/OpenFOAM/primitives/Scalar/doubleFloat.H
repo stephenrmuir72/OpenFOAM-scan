@@ -41,6 +41,7 @@ namespace Foam
 {
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
 #if defined(FOAM_OFFLOAD) && defined(__HIP_DEVICE_COMPILE__)
     // Device compilation (ROCm)
     #define FOAM_POW_CALL(base, exp)                                           \
@@ -56,6 +57,16 @@ namespace Foam
 #else
     #define FOAM_HOST_DEVICE
 #endif
+
+// Avoid ROCm's device-only global <float> rounding overloads
+// in host/device lambdas,  <double> seems to be mostly okay (NOV-2026)
+#if defined(__HIP_PLATFORM_AMD__) && defined(__HIPSTDPAR__)
+namespace Foam
+{
+    using std::floor;
+    using std::round;
+}
+#endif  /* [ROCm] */
 
 #undef  MAXMINPOW
 #define MAXMINPOW(RetType, Type1, Type2)                                       \
