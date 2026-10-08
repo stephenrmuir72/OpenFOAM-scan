@@ -412,6 +412,259 @@ cutCellPolyhedron polyhedronFrom
 }
 
 
+//- Reorient faces in a cut piece so adjacent faces use shared edges in
+//- opposite directions. Cell-boundary faces are already oriented outwards and
+//- anchor the orientation of connected interface faces.
+bool orientPieceFromBoundary
+(
+    const cutCellPolyhedron& poly,
+    const label firstBoundaryFace,
+    const scalar tol,
+    cutCellPolyhedron& oriented
+)
+{
+    struct edgeUse
+    {
+        label lo;
+        label hi;
+        label facei;
+        bool forward;
+    };
+
+    const pointField& points = poly.points();
+    faceList faces(poly.faces());
+
+    if
+    (
+        firstBoundaryFace < 0
+     || firstBoundaryFace > faces.size()
+    )
+    {
+        return false;
+    }
+
+    const scalar mergeTol = samePointTol(tol);
+    DynamicList<edgeUse> edgeUses;
+
+    forAll(faces, facei)
+    {
+        const face& f = faces[facei];
+
+        if (f.size() < 3)
+        {
+            return false;
+        }
+
+        forAll(f, edgei)
+        {
+            const label a = f[edgei];
+            const label b = f[f.fcIndex(edgei)];
+            const vector ab = points[b] - points[a];
+            const scalar abMagSqr = ab & ab;
+
+            if (a == b || abMagSqr <= VSMALL)
+            {
+                return false;
+            }
+
+            DynamicList<Tuple2<scalar, label>> splitPoints;
+            splitPoints.append(Tuple2<scalar, label>(0, a));
+
+            forAll(points, pointi)
+            {
+                if (pointi == a || pointi == b)
+                {
+                    continue;
+                }
+
+                const scalar t = ((points[pointi] - points[a]) & ab)/abMagSqr;
+
+                if (t <= 0 || t >= 1)
+                {
+                    continue;
+                }
+
+                if
+                (
+                    mag(points[pointi] - (points[a] + t*ab)) <= mergeTol
+                )
+                {
+                    splitPoints.append
+                    (
+                        Tuple2<scalar, label>(t, pointi)
+                    );
+                }
+            }
+
+            splitPoints.append(Tuple2<scalar, label>(1, b));
+
+            std::sort
+            (
+                splitPoints.begin(),
+                splitPoints.end(),
+                [](const Tuple2<scalar, label>& x,
+                   const Tuple2<scalar, label>& y)
+                {
+                    return x.first() < y.first();
+                }
+            );
+
+            for (label i = 1; i < splitPoints.size(); i++)
+            {
+                const label p0 = splitPoints[i - 1].second();
+                const label p1 = splitPoints[i].second();
+
+                if (p0 == p1)
+                {
+                    continue;
+                }
+
+                edgeUse use;
+                use.lo = min(p0, p1);
+                use.hi = max(p0, p1);
+                use.facei = facei;
+                use.forward = (p0 == use.lo);
+                edgeUses.append(use);
+            }
+        }
+    }
+
+    std::sort
+    (
+        edgeUses.begin(),
+        edgeUses.end(),
+        [](const edgeUse& a, const edgeUse& b)
+        {
+            if (a.lo != b.lo)
+            {
+                return a.lo < b.lo;
+            }
+
+            if (a.hi != b.hi)
+            {
+                return a.hi < b.hi;
+            }
+
+            return a.facei < b.facei;
+        }
+    );
+
+    List<DynamicList<label>> adjacentFaces(faces.size());
+    List<DynamicList<label>> adjacentFlip(faces.size());
+
+    for (label start = 0; start < edgeUses.size();)
+    {
+        label end = start + 1;
+
+        while
+        (
+            end < edgeUses.size()
+         && edgeUses[end].lo == edgeUses[start].lo
+         && edgeUses[end].hi == edgeUses[start].hi
+        )
+        {
+            end++;
+        }
+
+        const label nUses = end - start;
+
+        if (nUses > 2)
+        {
+            return false;
+        }
+
+        if (nUses == 2)
+        {
+            const edgeUse& a = edgeUses[start];
+            const edgeUse& b = edgeUses[start + 1];
+
+            if (a.facei == b.facei)
+            {
+                return false;
+            }
+
+            const label mustFlip = (a.forward == b.forward);
+
+            adjacentFaces[a.facei].append(b.facei);
+            adjacentFlip[a.facei].append(mustFlip);
+            adjacentFaces[b.facei].append(a.facei);
+            adjacentFlip[b.facei].append(mustFlip);
+        }
+
+        start = end;
+    }
+
+    labelList flip(faces.size(), -1);
+    DynamicList<label> queue;
+
+    for (label facei = firstBoundaryFace; facei < faces.size(); facei++)
+    {
+        flip[facei] = 0;
+        queue.append(facei);
+    }
+
+    auto propagate = [&]() -> bool
+    {
+        for (label qi = 0; qi < queue.size(); qi++)
+        {
+            const label facei = queue[qi];
+
+            forAll(adjacentFaces[facei], ai)
+            {
+                const label neighbour = adjacentFaces[facei][ai];
+                const label required =
+                    flip[facei] ^ adjacentFlip[facei][ai];
+
+                if (flip[neighbour] < 0)
+                {
+                    flip[neighbour] = required;
+                    queue.append(neighbour);
+                }
+                else if (flip[neighbour] != required)
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    };
+
+    if (!propagate())
+    {
+        return false;
+    }
+
+    forAll(faces, facei)
+    {
+        if (flip[facei] >= 0)
+        {
+            continue;
+        }
+
+        flip[facei] = 0;
+        queue.clear();
+        queue.append(facei);
+
+        if (!propagate())
+        {
+            return false;
+        }
+    }
+
+    forAll(faces, facei)
+    {
+        if (flip[facei])
+        {
+            reverse(faces[facei]);
+        }
+    }
+
+    oriented = cutCellPolyhedron(points, faces);
+    return oriented.volume() > VSMALL;
+}
+
+
 //- How many of the polyhedron's edges are not shared by exactly two of its
 //- faces. Not used as a guard: a piece's own faces legitimately meet at
 //- T-junctions, because a facet's clipped polygon and a region's walk do not
@@ -3095,10 +3348,10 @@ cutState cutCellByLoop
             << " area " << degenerateArea << endl;
     }
 
-    //- 7. Put each interface face into both of its pieces. The pieces are
-    //- rebuilt with it, and the polyhedron builder orients every face away from
-    //- the point known to be inside the piece, so the two copies of a shared
-    //- face come out opposed as they must.
+    //- 7. Put each interface face into both of its pieces. The cell-boundary
+    //- faces keep their outward orientation; shared-edge consistency then
+    //- orients connected interface faces, including on concave pieces where a
+    //- single reference point cannot orient every face.
     //-
     //- Each piece gets ALL of its interface faces in ONE rebuild. Rebuilding it
     //- once per shared face shifted the faces already added, and every
@@ -3119,33 +3372,12 @@ cutState cutCellByLoop
 
         forAll(result.pieces, piecei)
         {
-            //- The point inside this piece, from the mean of its regions'
-            //- centres, which lies on the piece's surface and is enough to
-            //- orient every face of it
-            point inside = Zero;
-            label nR = 0;
-
-            forAll(pieceRegions[piecei], i)
-            {
-                const pointField& r = allRegions[pieceRegions[piecei][i]];
-
-                point rc = Zero;
-
-                forAll(r, k)
-                {
-                    rc += r[k];
-                }
-
-                inside += rc/scalar(r.size());
-                nR++;
-            }
-
-            inside /= scalar(max(nR, 1));
-
+            const point inside = cell.centre();
             const pointField& pts = result.pieces[piecei].poly.points();
             const faceList& fcs = result.pieces[piecei].poly.faces();
+            const label nInterfaceFaces = ifaceOf[piecei].size();
 
-            List<pointField> add(ifaceOf[piecei].size() + fcs.size());
+            List<pointField> add(nInterfaceFaces + fcs.size());
 
             label n = 0;
 
@@ -3166,7 +3398,29 @@ cutState cutCellByLoop
                 add[n++] = fp;
             }
 
-            result.pieces[piecei].poly = polyhedronFrom(add, inside, tol);
+            const cutCellPolyhedron rebuilt =
+                polyhedronFrom(add, inside, tol);
+
+            cutCellPolyhedron oriented;
+
+            if
+            (
+                !orientPieceFromBoundary
+                (
+                    rebuilt,
+                    nInterfaceFaces,
+                    tol,
+                    oriented
+                )
+            )
+            {
+                result.pieces.clear();
+                result.sharedFaces.clear();
+                result.refusal = cutRefusal::inconsistentPieceFaces;
+                return cutState::refused;
+            }
+
+            result.pieces[piecei].poly = oriented;
         }
 
         //- Where each interface face landed, matched by its own points: the
@@ -3237,6 +3491,23 @@ cutState cutCellByLoop
                     << "the interface face " << si << " of this cell is not a "
                     << "face of the pieces it separates (A " << shared.faceInA
                     << ", B " << shared.faceInB << ")" << exit(FatalError);
+            }
+
+            const cutCellPolyhedron& pieceA =
+                result.pieces[shared.pieceA].poly;
+            const cutCellPolyhedron& pieceB =
+                result.pieces[shared.pieceB].poly;
+            const vector areaA =
+                pieceA.faces()[shared.faceInA].areaNormal(pieceA.points());
+            const vector areaB =
+                pieceB.faces()[shared.faceInB].areaNormal(pieceB.points());
+
+            if ((areaA & areaB) >= 0)
+            {
+                result.pieces.clear();
+                result.sharedFaces.clear();
+                result.refusal = cutRefusal::inconsistentPieceFaces;
+                return cutState::refused;
             }
         }
     }

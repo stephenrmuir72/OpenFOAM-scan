@@ -299,7 +299,12 @@ int main(int argc, char* argv[])
         vertexSnapFraction = min(max(vertexSnapFraction, 0.0), 0.10);
     }
 
-    cutCellMesher mesher(mesh, surfaces);
+    const dictionary* materialRegions =
+        meshDict.found("materialRegions")
+      ? &meshDict.subDict("materialRegions")
+      : nullptr;
+
+    cutCellMesher mesher(mesh, surfaces, materialRegions);
 
     //- The collapse may move a point by at most this fraction of the point's
     //- shortest edge. The trigger alone does not bound it: a point pulled by

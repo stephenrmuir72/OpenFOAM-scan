@@ -81,6 +81,7 @@ namespace Foam
 {
 
 // Forward Declarations
+class dictionary;
 class polyTopoChange;
 class mapPolyMesh;
 
@@ -124,6 +125,7 @@ public:
         label nRefusedMalformed = 0;
         label nRefusedDegenerateFace = 0;
         label nRefusedFaceWithHole = 0;
+        label nRefusedInconsistentFaces = 0;
 
         //- Their indices, in mesh order
         labelList degenerate;
@@ -279,6 +281,23 @@ private:
         //- Interface faceZones created by the surfaces, by surface
         List<labelList> interfaceZoneOf_;
 
+        //- Surface-state rules for an exclusive material cellZone map
+        struct materialRegionRule
+        {
+            word name;
+            labelList insideSurfaces;
+            labelList outsideSurfaces;
+            label zoneID = -1;
+        };
+
+        List<materialRegionRule> materialRegionRules_;
+
+        //- Final material zone of every background cell when rules are active
+        labelList cellMaterialZone_;
+
+        //- Inside/outside state of every background cell, by surface
+        List<boolList> cellSurfaceInside_;
+
 
     // Private Data Types
 
@@ -312,6 +331,9 @@ private:
 
             //- CellZone memberships, one per surface, of each piece
             List<labelList> pieceZones;
+
+            //- Exclusive material zone of each piece when rules are active
+            labelList pieceMaterialZone;
         };
 
 
@@ -363,7 +385,8 @@ public:
         cutCellMesher
         (
             polyMesh& mesh,
-            const PtrList<cutCellSurface>& surfaces
+            const PtrList<cutCellSurface>& surfaces,
+            const dictionary* materialRegions = nullptr
         );
 
 
