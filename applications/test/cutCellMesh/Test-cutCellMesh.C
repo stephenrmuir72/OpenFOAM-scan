@@ -222,6 +222,46 @@ scalar sharedArea(const cutCellResult& result)
 }
 
 
+//- Area vector of one outward-oriented polyhedron face
+vector faceAreaVector(const cutCellPolyhedron& poly, const face& f)
+{
+    const point& ref = poly.points()[f[0]];
+    vector area = Zero;
+
+    forAll(f, i)
+    {
+        area +=
+            (poly.points()[f[i]] - ref)
+          ^ (poly.points()[f[f.fcIndex(i)]] - ref);
+    }
+
+    return 0.5*area;
+}
+
+
+//- Shared faces must have opposing winding in the two pieces
+bool sharedFacesOpposite(const cutCellResult& result)
+{
+    forAll(result.sharedFaces, si)
+    {
+        const cutCellPieceFace& shared = result.sharedFaces[si];
+        const cutCellPolyhedron& a = result.pieces[shared.pieceA].poly;
+        const cutCellPolyhedron& b = result.pieces[shared.pieceB].poly;
+        const vector areaA =
+            faceAreaVector(a, a.faces()[shared.faceInA]);
+        const vector areaB =
+            faceAreaVector(b, b.faces()[shared.faceInB]);
+
+        if ((areaA & areaB) >= 0)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+
 //- Axis-aligned box polyhedron from two opposite corners. Lets the tests below
 //- choose their own size and position, which matters for aspect ratio and for
 //- the distance from the origin.
@@ -645,6 +685,64 @@ int main()
         sharedArea(loopRes),
         2.0,
         "corner: each plane's section is shared over both quadrants"
+    );
+
+    //- A nested box corner produces a concave shell piece. Its two interface
+    //- faces still need opposite winding, and the pieces must tile the cell.
+    const cutCellPolyhedron nestedCorner
+    (
+        boxPolyhedron(P(0.125, 0.125, -0.125), P(0.15625, 0.15625, -0.09375))
+    );
+    List<pointField> nestedCornerTris(2);
+    nestedCornerTris[0] =
+        pointField
+        ({
+            P(0.15, -0.15, -0.15),
+            P(0.15, 0.15, -0.15),
+            P(0.15, 0.15, 0.15)
+        });
+    nestedCornerTris[1] =
+        pointField
+        ({
+            P(-0.15, 0.15, -0.15),
+            P(0.15, 0.15, 0.15),
+            P(0.15, 0.15, -0.15)
+        });
+
+    loopState = cutCellByLoop
+    (
+        nestedCorner,
+        nestedCornerTris,
+        labelList(2, 0),
+        2.449489743e-9,
+        loopRes
+    );
+
+    checkTrue(loopState == cutState::cut, "nested corner: the loop cuts the cell");
+    checkLabel(loopRes.pieces.size(), 2, "nested corner: core and shell pieces");
+    checkLabel(loopRes.sharedFaces.size(), 2, "nested corner: two interface faces");
+    checkClose
+    (
+        loopRes.pieces[0].poly.volume(),
+        1.953125e-5,
+        "nested corner: core volume"
+    );
+    checkClose
+    (
+        loopRes.pieces[1].poly.volume(),
+        1.0986328125e-5,
+        "nested corner: shell volume"
+    );
+    checkClose
+    (
+        loopRes.pieces[0].poly.volume() + loopRes.pieces[1].poly.volume(),
+        nestedCorner.volume(),
+        "nested corner: pieces conserve cell volume"
+    );
+    checkTrue
+    (
+        sharedFacesOpposite(loopRes),
+        "nested corner: shared interface faces have opposite winding"
     );
 
     //- A triangle that misses the cell

@@ -74,9 +74,11 @@ enum class cutRefusal
     none,                  //- not refused
     malformedPiece,        //- a piece has a face with two coincident vertices
     degenerateSharedFace,  //- two pieces would share a face of no area
-    faceWithHole           //- a face is crossed by a closed loop, so the far
+    faceWithHole,          //- a face is crossed by a closed loop, so the far
                            //- side of that face would be an annulus, which a
                            //- polyMesh face cannot be
+    inconsistentPieceFaces //- the faces of a piece cannot be oriented
+                           //- consistently
 };
 
 

@@ -25,6 +25,7 @@ License
 
 #include "cutCellMesher.H"
 #include "cutCellCutter.H"
+#include "dictionary.H"
 #include "polyTopoChange.H"
 #include "mapPolyMesh.H"
 #include "labelIOList.H"
@@ -104,18 +105,122 @@ inline bool planeLess(const plane& a, const plane& b)
 Foam::cutCellMesher::cutCellMesher
 (
     polyMesh& mesh,
-    const PtrList<cutCellSurface>& surfaces
+    const PtrList<cutCellSurface>& surfaces,
+    const dictionary* materialRegions
 )
 :
     mesh_(mesh),
     surfaces_(surfaces),
     tol_(1e-9*mag(mesh.bounds().max() - mesh.bounds().min())),
     info_(),
-    backgroundCell_()
+    backgroundCell_(),
+    materialRegionRules_(),
+    cellMaterialZone_(),
+    cellSurfaceInside_()
 {
     if (tol_ <= 0)
     {
         tol_ = SMALL;
+    }
+
+    if (materialRegions)
+    {
+        if (materialRegions->empty())
+        {
+            FatalIOErrorInFunction(*materialRegions)
+                << "materialRegions must contain at least one named region"
+                << exit(FatalIOError);
+        }
+
+        wordList surfaceNames(surfaces_.size());
+
+        forAll(surfaces_, surfi)
+        {
+            surfaceNames[surfi] = surfaces_[surfi].name();
+        }
+
+        materialRegionRules_.setSize(materialRegions->size());
+
+        label rulei = 0;
+
+        for (const entry& e : *materialRegions)
+        {
+            if (!e.isDict())
+            {
+                FatalIOErrorInFunction(*materialRegions)
+                    << "material region '" << e.keyword()
+                    << "' must be a sub-dictionary" << exit(FatalIOError);
+            }
+
+            const dictionary& regionDict = e.dict();
+            materialRegionRule& rule = materialRegionRules_[rulei++];
+            rule.name = e.keyword();
+
+            const wordList inside
+            (
+                regionDict.getOrDefault<wordList>("inside", wordList())
+            );
+            const wordList outside
+            (
+                regionDict.getOrDefault<wordList>("outside", wordList())
+            );
+
+            if (inside.empty() && outside.empty())
+            {
+                FatalIOErrorInFunction(regionDict)
+                    << "material region '" << rule.name
+                    << "' must constrain at least one surface with inside "
+                    << "and/or outside" << exit(FatalIOError);
+            }
+
+            labelHashSet seen(surfaces_.size());
+            DynamicList<label> insideSurfaces;
+            DynamicList<label> outsideSurfaces;
+
+            auto addSurface =
+            [&](const wordList& names, DynamicList<label>& indices)
+            {
+                for (const word& surfaceName : names)
+                {
+                    const label surfi = surfaceNames.find(surfaceName);
+
+                    if (surfi < 0)
+                    {
+                        FatalIOErrorInFunction(regionDict)
+                            << "material region '" << rule.name
+                            << "' refers to unknown surface '" << surfaceName
+                            << "'" << exit(FatalIOError);
+                    }
+
+                    if (seen.found(surfi))
+                    {
+                        FatalIOErrorInFunction(regionDict)
+                            << "surface '" << surfaceName
+                            << "' is listed more than once in material region '"
+                            << rule.name << "'" << exit(FatalIOError);
+                    }
+
+                    seen.insert(surfi);
+                    indices.append(surfi);
+                }
+            };
+
+            addSurface(inside, insideSurfaces);
+            addSurface(outside, outsideSurfaces);
+
+            rule.insideSurfaces.setSize(insideSurfaces.size());
+            rule.outsideSurfaces.setSize(outsideSurfaces.size());
+
+            forAll(insideSurfaces, i)
+            {
+                rule.insideSurfaces[i] = insideSurfaces[i];
+            }
+
+            forAll(outsideSurfaces, i)
+            {
+                rule.outsideSurfaces[i] = outsideSurfaces[i];
+            }
+        }
     }
 }
 
@@ -532,15 +637,127 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
             << exit(FatalError);
     }
 
+    const bool useMaterialRegions = !materialRegionRules_.empty();
+
+    if (useMaterialRegions)
+    {
+        // The explicit map replaces the previous memberships. Keeping them
+        // would make the output invalid for splitMeshRegions -cellZonesOnly.
+        mesh_.cellZones().clear();
+
+        forAll(materialRegionRules_, rulei)
+        {
+            materialRegionRules_[rulei].zoneID =
+                cellZoneID(materialRegionRules_[rulei].name);
+        }
+    }
+
     labelList insideZone(surfaces_.size());
     labelList outsideZone(surfaces_.size());
 
     forAll(surfaces_, surfi)
     {
         const cutCellSurface& surf = surfaces_[surfi];
-        insideZone[surfi] = cellZoneID(surf.name() + "_inside");
-        outsideZone[surfi] = cellZoneID(surf.name() + "_outside");
+
+        if (useMaterialRegions)
+        {
+            // Temporary labels distinguish surface states without creating
+            // overlapping cellZones in the output mesh.
+            insideZone[surfi] = 2*surfi;
+            outsideZone[surfi] = 2*surfi + 1;
+        }
+        else
+        {
+            insideZone[surfi] = cellZoneID(surf.name() + "_inside");
+            outsideZone[surfi] = cellZoneID(surf.name() + "_outside");
+        }
     }
+
+    auto materialZoneFor =
+    [&](const labelList& surfaceZones, const label celli, const char* item)
+    {
+        label matchingRule = -1;
+        label nMatches = 0;
+
+        forAll(materialRegionRules_, rulei)
+        {
+            const materialRegionRule& rule = materialRegionRules_[rulei];
+            bool matches = true;
+
+            for (const label surfi : rule.insideSurfaces)
+            {
+                if (surfaceZones[surfi] != insideZone[surfi])
+                {
+                    matches = false;
+                    break;
+                }
+            }
+
+            for (const label surfi : rule.outsideSurfaces)
+            {
+                if (surfaceZones[surfi] != outsideZone[surfi])
+                {
+                    matches = false;
+                    break;
+                }
+            }
+
+            if (matches)
+            {
+                matchingRule = rulei;
+                ++nMatches;
+            }
+        }
+
+        if (nMatches != 1)
+        {
+            FatalErrorInFunction
+                << item << " in cell " << celli
+                << " has " << nMatches << " matching materialRegions rules."
+                << nl << "  Surface state:";
+
+            forAll(surfaces_, surfi)
+            {
+                const bool inside =
+                    (surfaceZones[surfi] == insideZone[surfi]);
+
+                FatalError
+                    << " " << surfaces_[surfi].name() << "="
+                    << (inside ? "inside" : "outside");
+            }
+
+            FatalError << nl << "  Matching rules:";
+
+            forAll(materialRegionRules_, rulei)
+            {
+                const materialRegionRule& rule = materialRegionRules_[rulei];
+                bool matches = true;
+
+                for (const label surfi : rule.insideSurfaces)
+                {
+                    matches = matches
+                        && surfaceZones[surfi] == insideZone[surfi];
+                }
+
+                for (const label surfi : rule.outsideSurfaces)
+                {
+                    matches = matches
+                        && surfaceZones[surfi] == outsideZone[surfi];
+                }
+
+                if (matches)
+                {
+                    FatalError << " " << rule.name;
+                }
+            }
+
+            FatalError << nl
+                << "  Add constraints so every cell and cut piece matches "
+                << "exactly one material region." << exit(FatalError);
+        }
+
+        return materialRegionRules_[matchingRule].zoneID;
+    };
 
     //- Inside/outside of the cell centres, for the cells the surface does not
     //- cross. Ray casting against the same triangulation the cutting uses, so
@@ -553,10 +770,13 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
     }
 
     cellRegionZones_.setSize(mesh_.nCells());
+    cellSurfaceInside_.setSize(mesh_.nCells());
+    cellMaterialZone_.setSize(useMaterialRegions ? mesh_.nCells() : 0);
 
     forAll(cellRegionZones_, celli)
     {
         cellRegionZones_[celli].setSize(surfaces_.size());
+        cellSurfaceInside_[celli].setSize(surfaces_.size());
     }
 
     forAll(surfaces_, surfi)
@@ -568,8 +788,18 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
 
         forAll(cellInside, celli)
         {
+            cellSurfaceInside_[celli][surfi] = cellInside[celli];
             cellRegionZones_[celli][surfi] =
                 (cellInside[celli] ? insideZone[surfi] : outsideZone[surfi]);
+        }
+    }
+
+    if (useMaterialRegions)
+    {
+        forAll(cellRegionZones_, celli)
+        {
+            cellMaterialZone_[celli] =
+                materialZoneFor(cellRegionZones_[celli], celli, "cell centre");
         }
     }
 
@@ -750,6 +980,17 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
                 (
                     "a chain closes on itself inside one of its faces, so that"
                     " face's far side is a face with a hole"
+                );
+            }
+            else if
+            (
+                result.refusal == cutRefusal::inconsistentPieceFaces
+            )
+            {
+                info_.nRefusedInconsistentFaces++;
+                info_.degenerateReason.append
+                (
+                    "its pieces' faces could not be oriented consistently"
                 );
             }
 
@@ -986,20 +1227,34 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
             }
         }
 
+        if (useMaterialRegions)
+        {
+            c.pieceMaterialZone.setSize(c.pieces.size());
+
+            forAll(c.pieces, pi)
+            {
+                c.pieceMaterialZone[pi] =
+                    materialZoneFor(c.pieceZones[pi], celli, "cut piece");
+            }
+        }
+
         //- The interface is the shared faces whose pieces are in different
         //- regions, so its total area is known before the mesh exists
         forAll(c.sharedFaces, si)
         {
             const cutCellPieceFace& shared = c.sharedFaces[si];
 
-            if
-            (
-                !samePieceZones
+            const bool separates =
+                useMaterialRegions
+              ? c.pieceMaterialZone[shared.pieceA]
+             != c.pieceMaterialZone[shared.pieceB]
+              : !samePieceZones
                 (
                     c.pieceZones[shared.pieceA],
                     c.pieceZones[shared.pieceB]
-                )
-            )
+                );
+
+            if (separates)
             {
                 const cutCellPolyhedron& piece = c.pieces[shared.pieceA].poly;
                 const face& f = piece.faces()[shared.faceInA];
@@ -1017,8 +1272,24 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
 
         //- The pieces of one region that touch each other are one cell, so a
         //- cell the surface crosses twice is two cells, not four
-        c.pieceGroup =
-            groupPieces(c.pieces.size(), c.sharedFaces, c.pieceZones);
+        if (useMaterialRegions)
+        {
+            List<labelList> pieceMaterialZones(c.pieces.size());
+
+            forAll(pieceMaterialZones, pi)
+            {
+                pieceMaterialZones[pi] =
+                    labelList(1, c.pieceMaterialZone[pi]);
+            }
+
+            c.pieceGroup =
+                groupPieces(c.pieces.size(), c.sharedFaces, pieceMaterialZones);
+        }
+        else
+        {
+            c.pieceGroup =
+                groupPieces(c.pieces.size(), c.sharedFaces, c.pieceZones);
+        }
 
         const label nCellGroups = max(c.pieceGroup) + 1;
 
@@ -1093,12 +1364,21 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
     labelList insideZone(surfaces_.size());
     List<labelList> interfaceZoneOf(surfaces_.size());
     labelList interfaceZone(surfaces_.size(), -1);
+    const bool useMaterialRegions = !materialRegionRules_.empty();
 
     forAll(surfaces_, surfi)
     {
         const cutCellSurface& surf = surfaces_[surfi];
-        insideZone[surfi] = cellZoneID(surf.name() + "_inside");
-        cellZoneID(surf.name() + "_outside");
+
+        if (useMaterialRegions)
+        {
+            insideZone[surfi] = 2*surfi;
+        }
+        else
+        {
+            insideZone[surfi] = cellZoneID(surf.name() + "_inside");
+            cellZoneID(surf.name() + "_outside");
+        }
 
         //- One faceZone per surface region when the surface has more than one.
         //- A single-region surface keeps its original <name>_interface zone.
@@ -1152,8 +1432,18 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
     polyTopoChange topoChange(mesh_);
 
     auto cellZoneMembership =
-    [&](const label celli, const labelList& surfaceZones) -> labelList
+    [&]
+    (
+        const label celli,
+        const labelList& surfaceZones,
+        const label materialZone
+    ) -> labelList
     {
+        if (useMaterialRegions)
+        {
+            return labelList(1, materialZone);
+        }
+
         DynamicList<label> zones;
         mesh_.cellZones().whichZones(celli, zones);
 
@@ -1185,6 +1475,77 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
 
         return result;
     };
+
+    auto materialInterfaceForFace =
+    [&](const label facei, const label own, const label nei, bool& zoneFlip)
+    {
+        if
+        (
+            !useMaterialRegions
+         || nei < 0
+         || cellMaterialZone_[own] == cellMaterialZone_[nei]
+        )
+        {
+            return label(-1);
+        }
+
+        label sourceSurface = -1;
+        label nChangedSurfaces = 0;
+
+        forAll(surfaces_, surfi)
+        {
+            if
+            (
+                cellSurfaceInside_[own][surfi]
+             != cellSurfaceInside_[nei][surfi]
+            )
+            {
+                sourceSurface = surfi;
+                ++nChangedSurfaces;
+            }
+        }
+
+        if (nChangedSurfaces != 1)
+        {
+            FatalErrorInFunction
+                << "Material-zone boundary on face " << facei << " between "
+                << "cells " << own << " and " << nei << " changes "
+                << nChangedSurfaces << " surface classifications; an "
+                << "unambiguous source surface is required."
+                << exit(FatalError);
+        }
+
+        if (interfaceZoneOf_[sourceSurface].size() != 1)
+        {
+            FatalErrorInFunction
+                << "Material-zone boundary on face " << facei << " belongs to "
+                << "multi-region surface '" << surfaces_[sourceSurface].name()
+                << "', but its faceZone region cannot be inferred from an "
+                << "aligned background face. Split the input surface by region "
+                << "or keep this interface inside cut cells."
+                << exit(FatalError);
+        }
+
+        zoneFlip = !cellSurfaceInside_[own][sourceSurface];
+
+        const label existingZone = mesh_.faceZones().whichZone(facei);
+        const label interfaceZone = interfaceZoneOf_[sourceSurface][0];
+
+        if (existingZone >= 0 && existingZone != interfaceZone)
+        {
+            FatalErrorInFunction
+                << "Material-zone boundary on face " << facei
+                << " is already in faceZone "
+                << mesh_.faceZones()[existingZone].name()
+                << " but surface '" << surfaces_[sourceSurface].name()
+                << "' requires faceZone "
+                << mesh_.faceZones()[interfaceZone].name()
+                << exit(FatalError);
+        }
+
+        return interfaceZone;
+    };
+
 
     //- Where a cut cell is, by background cell label
     Map<label> cutOf(2*cuts.size());
@@ -2753,7 +3114,12 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                     topoChange.modifyCell
                     (
                         c.celli,
-                        cellZoneMembership(c.celli, c.pieceZones[pi])
+                        cellZoneMembership
+                        (
+                            c.celli,
+                            c.pieceZones[pi],
+                            (useMaterialRegions ? c.pieceMaterialZone[pi] : -1)
+                        )
                     );
                 }
                 else
@@ -2764,7 +3130,12 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                         -1,
                         -1,
                         c.celli,
-                        cellZoneMembership(c.celli, c.pieceZones[pi])
+                        cellZoneMembership
+                        (
+                            c.celli,
+                            c.pieceZones[pi],
+                            (useMaterialRegions ? c.pieceMaterialZone[pi] : -1)
+                        )
                     );
                 }
             }
@@ -2791,7 +3162,12 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                 topoChange.modifyCell
                 (
                     celli,
-                    cellZoneMembership(celli, cellRegionZones_[celli])
+                    cellZoneMembership
+                    (
+                        celli,
+                        cellRegionZones_[celli],
+                        (useMaterialRegions ? cellMaterialZone_[celli] : -1)
+                    )
                 );
             }
         }
@@ -3349,13 +3725,14 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
             }
 
             const bool separates =
-            (
-                !samePieceZones
+                useMaterialRegions
+              ? c.pieceMaterialZone[shared.pieceA]
+             != c.pieceMaterialZone[shared.pieceB]
+              : !samePieceZones
                 (
                     c.pieceZones[shared.pieceA],
                     c.pieceZones[shared.pieceB]
-                )
-            );
+                );
 
             //- Pieces that share a face and are in one region are one cell, so
             //- a shared face that survives has to be an interface face
@@ -3456,7 +3833,7 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
               : -1;
 
             const label patchi = mesh_.boundaryMesh().whichPatch(facei);
-            const label zonei = mesh_.faceZones().whichZone(facei);
+            label zonei = mesh_.faceZones().whichZone(facei);
 
             bool zoneFlip = false;
 
@@ -3464,6 +3841,24 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
             {
                 const faceZone& fz = mesh_.faceZones()[zonei];
                 zoneFlip = fz.flipMap()[fz.whichFace(facei)];
+            }
+
+            if (useMaterialRegions)
+            {
+                bool materialZoneFlip = false;
+                const label materialZone = materialInterfaceForFace
+                (
+                    facei,
+                    own,
+                    nei,
+                    materialZoneFlip
+                );
+
+                if (materialZone >= 0)
+                {
+                    zonei = materialZone;
+                    zoneFlip = materialZoneFlip;
+                }
             }
 
             const faceSplit& split = splits[iter()];
@@ -3494,6 +3889,42 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
 
         Info<< "  grown faces emitted: " << nGrownEmitted
             << " (internal " << nGrownInternal << ")" << endl;
+    }
+
+    //- A surface aligned with an untouched background face does not create a
+    //- cut cell. It still separates two material zones and must carry the
+    //- source surface's faceZone for splitMeshRegions -useFaceZones.
+    if (useMaterialRegions)
+    {
+        for (label facei = 0; facei < mesh_.nInternalFaces(); ++facei)
+        {
+            if (doneFaces.found(facei) || splitOf.found(facei))
+            {
+                continue;
+            }
+
+            const label own = mesh_.faceOwner()[facei];
+            const label nei = mesh_.faceNeighbour()[facei];
+            bool zoneFlip = false;
+            const label zonei =
+                materialInterfaceForFace(facei, own, nei, zoneFlip);
+
+            if (zonei >= 0)
+            {
+                setFace
+                (
+                    fcs[facei],
+                    facei,
+                    own,
+                    nei,
+                    -1,
+                    zonei,
+                    zoneFlip,
+                    own,
+                    "material-interface"
+                );
+            }
+        }
     }
 
 
@@ -4133,6 +4564,8 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::cut()
         << "  of those, piece malformed   : " << info_.nRefusedMalformed << nl
         << "  of those, face has no area  : " << info_.nRefusedDegenerateFace << nl
         << "  of those, face has a hole  : " << info_.nRefusedFaceWithHole << nl
+        << "  of those, face orientation inconsistent: "
+        << info_.nRefusedInconsistentFaces << nl
         << "Cells reported, left as is   : " << info_.nUnsupported << endl;
 
     forAll(info_.degenerate, i)
@@ -4147,7 +4580,7 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::cut()
             << info_.unsupportedReason[i] << endl;
     }
 
-    if (cuts.empty())
+    if (cuts.empty() && materialRegionRules_.empty())
     {
         Info<< "Nothing to cut" << endl;
         return autoPtr<mapPolyMesh>();
