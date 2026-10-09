@@ -1,4 +1,5 @@
 cellCellStencil/cellCellStencil/cellCellStencil.C
+cellCellStencil/cellCellStencil/patchFaceIntersection.C
 cellCellStencil/cellVolumeWeight/cellVolumeWeightCellCellStencil.C
 cellCellStencil/cellCellStencil/cellCellStencilObject.C
 cellCellStencil/inverseDistance/inverseDistanceCellCellStencil.C

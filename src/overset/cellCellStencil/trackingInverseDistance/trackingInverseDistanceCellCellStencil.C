@@ -37,6 +37,12 @@ License
 #include "voxelMeshSearch.H"
 #include "dynamicOversetFvMesh.H"
 #include "waveMethod.H"
+#include "patchFaceIntersection.H"
+
+namespace
+{
+constexpr Foam::label maxPatchVoxelCount = 16*1024*1024;
+}
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -53,6 +59,7 @@ namespace cellCellStencils
 
 bool Foam::cellCellStencils::trackingInverseDistance::markBoundaries
 (
+    const label zonei,
     const fvMesh& mesh,
     const vector& smallVec,
 
@@ -64,15 +71,16 @@ bool Foam::cellCellStencils::trackingInverseDistance::markBoundaries
     labelList& patchCellTypes
 )
 {
-    // Mark all voxels that overlap the bounding box of any patch
+    // Mark voxels intersected by triangulated patch faces
 
     static bool hasWarned = false;
 
     const fvBoundaryMesh& pbm = mesh.boundary();
 
     patchTypes = patchCellType::OTHER;
+    const labelVector strides(voxelMeshSearch::offset(nDivs));
 
-    // Mark wall boundaries
+    // Mark non-coupled patch boundaries
     forAll(pbm, patchi)
     {
         const fvPatch& fvp = pbm[patchi];
@@ -94,12 +102,15 @@ bool Foam::cellCellStencils::trackingInverseDistance::markBoundaries
 
                 if (bb.overlaps(faceBb))
                 {
-                    voxelMeshSearch::fill
+                    patchFaceIntersection::fillFaceVoxels
                     (
                         patchTypes,
                         bb,
                         nDivs,
-                        faceBb,
+                        strides,
+                        pp[i],
+                        pp.points(),
+                        smallVec,
                         patchCellType::PATCH
                     );
                 }
@@ -146,11 +157,14 @@ bool Foam::cellCellStencils::trackingInverseDistance::markBoundaries
                     // -> voxel mesh is too coarse
                     if
                     (
-                        voxelMeshSearch::overlaps
+                        patchFaceIntersection::overlapsFaceVoxels
                         (
                             bb,
                             nDivs,
-                            faceBb,
+                            strides,
+                            pp[i],
+                            pp.points(),
+                            smallVec,
                             patchTypes,
                             static_cast<unsigned int>(patchCellType::PATCH)
                         )
@@ -159,13 +173,35 @@ bool Foam::cellCellStencils::trackingInverseDistance::markBoundaries
                         // Determine number of voxels from number of cells
                         // in mesh
                         const labelVector& dim = mesh.geometricD();
-                        forAll(dim, i)
+                        labelVector refinedDivs;
+                        label refinedVoxelCount = 0;
+                        if
+                        (
+                            !patchFaceIntersection::refineVoxelDivisions
+                            (
+                                nDivs,
+                                dim,
+                                maxPatchVoxelCount,
+                                refinedDivs,
+                                refinedVoxelCount
+                            )
+                        )
                         {
-                            if (dim[i] != -1)
-                            {
-                                nDivs[i] *= 2;
-                            }
+                            FatalErrorInFunction
+                                << "trackingInverseDistance cannot refine its "
+                                << "voxel grid within the configured budget"
+                                << " for zone " << zonei
+                                << " in search box " << bb
+                                << ". Current divisions: " << nDivs
+                                << ", requested divisions: " << refinedDivs
+                                << ", maximum voxel count: "
+                                << maxPatchVoxelCount
+                                << ". Overset patch: " << pp.name()
+                                << ", face: " << i
+                                << ", face bounding box: " << faceBb
+                                << exit(FatalError);
                         }
+                        nDivs = refinedDivs;
 
                         Pout<< "Voxel mesh too coarse. Bounding box "
                             << faceBb
@@ -175,12 +211,15 @@ bool Foam::cellCellStencils::trackingInverseDistance::markBoundaries
                         return false;
                     }
 
-                    voxelMeshSearch::fill
+                    patchFaceIntersection::fillFaceVoxels
                     (
                         patchTypes,
                         bb,
                         nDivs,
-                        faceBb,
+                        strides,
+                        pp[i],
+                        pp.points(),
+                        smallVec,
                         patchCellType::OVERSET
                     );
                 }
@@ -207,6 +246,17 @@ void Foam::cellCellStencils::trackingInverseDistance::markPatchesAsHoles
     const treeBoundBoxList& srcPatchBbs = patchBb[srcI];
     const treeBoundBoxList& tgtPatchBbs = patchBb[tgtI];
     const labelList& tgtCellMap = meshParts_[tgtI].cellMap();
+    const pointField srcTriangles
+    (
+        patchFaceIntersection::patchTriangles
+        (
+            meshParts_[srcI].subMesh()
+        )
+    );
+    const scalar geometricTolerance
+    (
+        max(max(smallVec_[0], smallVec_[1]), smallVec_[2])
+    );
 
     // 1. do processor-local src-tgt patch overlap
     {
@@ -217,6 +267,15 @@ void Foam::cellCellStencils::trackingInverseDistance::markPatchesAsHoles
         {
             const PackedList<2>& srcPatchTypes = patchParts[srcI];
             const labelVector& srcDivs = patchDivisions[srcI];
+            const pointField localTriangles
+            (
+                patchFaceIntersection::trianglesOverlapping
+                (
+                    srcTriangles,
+                    tgtPatchBb,
+                    smallVec_
+                )
+            );
 
             forAll(tgtCellMap, tgtCelli)
             {
@@ -236,7 +295,19 @@ void Foam::cellCellStencils::trackingInverseDistance::markPatchesAsHoles
                     )
                 )
                 {
-                    allCellTypes[celli] = HOLE;
+                    if
+                    (
+                        patchFaceIntersection::intersectsCell
+                        (
+                            localTriangles,
+                            mesh_,
+                            celli,
+                            geometricTolerance
+                        )
+                    )
+                    {
+                        allCellTypes[celli] = HOLE;
+                    }
                 }
             }
         }
@@ -254,10 +325,23 @@ void Foam::cellCellStencils::trackingInverseDistance::markPatchesAsHoles
 
             if (srcPatchBb.overlaps(tgtPatchBb))
             {
+                const pointField procTriangles
+                (
+                    patchFaceIntersection::trianglesOverlapping
+                    (
+                        srcTriangles,
+                        tgtPatchBb,
+                        smallVec_
+                    )
+                );
+
                 // Send over complete patch voxel map. Tbd: could
                 // subset
                 UOPstream os(procI, pBufs);
-                os << srcPatchBb << patchDivisions[srcI] << patchParts[srcI];
+                os  << srcPatchBb
+                    << patchDivisions[srcI]
+                    << patchParts[srcI]
+                    << procTriangles;
             }
         }
     }
@@ -275,6 +359,7 @@ void Foam::cellCellStencils::trackingInverseDistance::markPatchesAsHoles
                 const treeBoundBox receivedBb(is);
                 const labelVector srcDivs(is);
                 const PackedList<2> srcPatchTypes(is);
+                const pointField remoteTriangles(is);
 
                 // Verify validity
                 if (srcPatchBb != receivedBb)
@@ -304,7 +389,19 @@ void Foam::cellCellStencils::trackingInverseDistance::markPatchesAsHoles
                         )
                     )
                     {
-                        allCellTypes[celli] = HOLE;
+                        if
+                        (
+                            patchFaceIntersection::intersectsCell
+                            (
+                                remoteTriangles,
+                                mesh_,
+                                celli,
+                                geometricTolerance
+                            )
+                        )
+                        {
+                            allCellTypes[celli] = HOLE;
+                        }
                     }
                 }
             }
@@ -670,14 +767,36 @@ bool Foam::cellCellStencils::trackingInverseDistance::update()
     {
         while (true)
         {
+            label nVoxels = 0;
+            if
+            (
+                !patchFaceIntersection::checkedVoxelCount
+                (
+                    patchDivisions[zonei],
+                    maxPatchVoxelCount,
+                    nVoxels
+                )
+            )
+            {
+                FatalErrorInFunction
+                    << "trackingInverseDistance voxel budget exceeded"
+                    << " for zone " << zonei
+                    << " in search box "
+                    << patchBb[zonei][Pstream::myProcNo()]
+                    << ". Divisions: " << patchDivisions[zonei]
+                    << ", maximum voxel count: " << maxPatchVoxelCount
+                    << exit(FatalError);
+            }
+
             patchParts.set
             (
                 zonei,
-                new PackedList<2>(cmptProduct(patchDivisions[zonei]))
+                new PackedList<2>(nVoxels)
             );
 
             bool ok = markBoundaries
             (
+                zonei,
                 meshParts_[zonei].subMesh(),
                 smallVec_,
 

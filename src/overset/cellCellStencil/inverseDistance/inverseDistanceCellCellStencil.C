@@ -44,6 +44,7 @@ License
 
 #include "OBJstream.H"
 #include "uindirectPrimitivePatch.H"
+#include "patchFaceIntersection.H"
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -170,13 +171,19 @@ void Foam::cellCellStencils::inverseDistance::markBoundaries
     labelList& patchCellTypes
 )
 {
-    // Mark all voxels that overlap the bounding box of any patch
+    // Mark voxels intersected by triangulated patch faces
 
     const fvBoundaryMesh& pbm = mesh.boundary();
 
     patchTypes = patchCellType::OTHER;
+    const labelVector strides
+    (
+        nDivs[1]*nDivs[2],
+        nDivs[2],
+        1
+    );
 
-    // Mark wall boundaries
+    // Mark non-coupled patch boundaries
     forAll(pbm, patchI)
     {
         const fvPatch& fvp = pbm[patchI];
@@ -198,7 +205,17 @@ void Foam::cellCellStencils::inverseDistance::markBoundaries
 
                 if (bb.overlaps(faceBb))
                 {
-                    fill(patchTypes, bb, nDivs, faceBb, patchCellType::PATCH);
+                    patchFaceIntersection::fillFaceVoxels
+                    (
+                        patchTypes,
+                        bb,
+                        nDivs,
+                        strides,
+                        pp[i],
+                        pp.points(),
+                        smallVec,
+                        patchCellType::PATCH
+                    );
                 }
             }
         }
@@ -225,7 +242,17 @@ void Foam::cellCellStencils::inverseDistance::markBoundaries
 
                 if (bb.overlaps(faceBb))
                 {
-                    fill(patchTypes, bb, nDivs, faceBb, patchCellType::OVERSET);
+                    patchFaceIntersection::fillFaceVoxels
+                    (
+                        patchTypes,
+                        bb,
+                        nDivs,
+                        strides,
+                        pp[i],
+                        pp.points(),
+                        smallVec,
+                        patchCellType::OVERSET
+                    );
                 }
             }
         }
@@ -295,6 +322,17 @@ void Foam::cellCellStencils::inverseDistance::markPatchesAsHoles
     const treeBoundBoxList& srcPatchBbs = patchBb[srcI];
     const treeBoundBoxList& tgtPatchBbs = patchBb[tgtI];
     const labelList& tgtCellMap = meshParts[tgtI].cellMap();
+    const pointField srcTriangles
+    (
+        patchFaceIntersection::patchTriangles
+        (
+            meshParts[srcI].subMesh()
+        )
+    );
+    const scalar geometricTolerance
+    (
+        max(max(smallVec_[0], smallVec_[1]), smallVec_[2])
+    );
 
     // 1. do processor-local src-tgt patch overlap
     {
@@ -305,6 +343,15 @@ void Foam::cellCellStencils::inverseDistance::markPatchesAsHoles
         {
             const PackedList<2>& srcPatchTypes = patchParts[srcI];
             const labelVector& zoneDivs = patchDivisions[srcI];
+            const pointField localTriangles
+            (
+                patchFaceIntersection::trianglesOverlapping
+                (
+                    srcTriangles,
+                    tgtPatchBb,
+                    smallVec_
+                )
+            );
 
             forAll(tgtCellMap, tgtCelli)
             {
@@ -324,7 +371,19 @@ void Foam::cellCellStencils::inverseDistance::markPatchesAsHoles
                     )
                 )
                 {
-                    allCellTypes[celli] = HOLE;
+                    if
+                    (
+                        patchFaceIntersection::intersectsCell
+                        (
+                            localTriangles,
+                            mesh_,
+                            celli,
+                            geometricTolerance
+                        )
+                    )
+                    {
+                        allCellTypes[celli] = HOLE;
+                    }
                 }
             }
         }
@@ -342,10 +401,23 @@ void Foam::cellCellStencils::inverseDistance::markPatchesAsHoles
 
             if (srcPatchBb.overlaps(tgtPatchBb))
             {
+                const pointField procTriangles
+                (
+                    patchFaceIntersection::trianglesOverlapping
+                    (
+                        srcTriangles,
+                        tgtPatchBb,
+                        smallVec_
+                    )
+                );
+
                 // Send over complete patch voxel map. Tbd: could
                 // subset
                 UOPstream os(procI, pBufs);
-                os << srcPatchBb << patchDivisions[srcI] << patchParts[srcI];
+                os  << srcPatchBb
+                    << patchDivisions[srcI]
+                    << patchParts[srcI]
+                    << procTriangles;
             }
         }
     }
@@ -363,6 +435,7 @@ void Foam::cellCellStencils::inverseDistance::markPatchesAsHoles
                 const treeBoundBox receivedBb(is);
                 const labelVector zoneDivs(is);
                 const PackedList<2> srcPatchTypes(is);
+                const pointField remoteTriangles(is);
 
                 // Verify validity
                 if (srcPatchBb != receivedBb)
@@ -392,7 +465,19 @@ void Foam::cellCellStencils::inverseDistance::markPatchesAsHoles
                         )
                     )
                     {
-                        allCellTypes[celli] = HOLE;
+                        if
+                        (
+                            patchFaceIntersection::intersectsCell
+                            (
+                                remoteTriangles,
+                                mesh_,
+                                celli,
+                                geometricTolerance
+                            )
+                        )
+                        {
+                            allCellTypes[celli] = HOLE;
+                        }
                     }
                 }
             }

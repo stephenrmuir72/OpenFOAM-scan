@@ -78,6 +78,7 @@ protected:
         //- Mark voxels of patchTypes with type of patch face
         static bool markBoundaries
         (
+            const label zonei,
             const fvMesh& mesh,
             const vector& smallVec,
 
