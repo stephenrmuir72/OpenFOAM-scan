@@ -121,6 +121,22 @@ protected:
         //  fields
         void suppressMotionFields();
 
+        //- Rebuild same-zone stencils for cells recovered from HOLE
+        void recoverSameZoneInterpolations
+        (
+            const globalIndex& globalCells,
+            const labelList& zoneID,
+            const boolList& candidates,
+            const boolList& sameZoneFallback,
+            const bool allowInterpolatedDonors,
+            labelList& cellTypes,
+            labelListList& cellStencil,
+            List<scalarList>& cellInterpolationWeights,
+            scalarField& cellInterpolationWeight,
+            labelList& interpolationCells,
+            autoPtr<mapDistribute>& interpolationMap
+        ) const;
+
 
 private:
 
@@ -236,6 +252,20 @@ public:
         (
             const globalIndex& gi,
             const polyMesh& mesh,
+            const boolList& isValidDonor,
+            const labelList& selectedCells,
+            labelListList& cellCells,
+            pointListList& cellCellCentres,
+            const labelList* zoneID = nullptr,
+            labelListList* cellCellZones = nullptr
+        );
+
+        //- Return valid face-neighbours in the same zone as each selected cell
+        static void globalSameZoneCellCells
+        (
+            const globalIndex& gi,
+            const polyMesh& mesh,
+            const labelList& zoneID,
             const boolList& isValidDonor,
             const labelList& selectedCells,
             labelListList& cellCells,

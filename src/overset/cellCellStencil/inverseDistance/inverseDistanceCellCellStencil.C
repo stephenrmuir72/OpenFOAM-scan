@@ -2204,6 +2204,60 @@ bool Foam::cellCellStencils::inverseDistance::update()
         }
     }
 
+    boolList reactivationCandidates(mesh_.nCells(), false);
+    boolList sameZoneFallback(mesh_.nCells(), false);
+    labelListList reactivationStencil(mesh_.nCells());
+    DynamicList<label> reactivationCells;
+
+    forAll(cellTypes_, celli)
+    {
+        if (cellTypes_[celli] == HOLE && allCellTypes[celli] == CALCULATED)
+        {
+            reactivationCandidates[celli] = true;
+            reactivationCells.append(celli);
+        }
+    }
+
+    boolList validSameZoneDonor(mesh_.nCells(), false);
+    forAll(allCellTypes, celli)
+    {
+        validSameZoneDonor[celli] =
+            !reactivationCandidates[celli]
+         &&
+            (
+                allCellTypes[celli] == CALCULATED
+             || (allowInterpolatedDonors_ && allCellTypes[celli] == INTERPOLATED)
+            );
+    }
+
+    labelListList sameZoneCellCells;
+    pointListList sameZoneCellCentres;
+    globalSameZoneCellCells
+    (
+        globalCells,
+        mesh_,
+        zoneID,
+        validSameZoneDonor,
+        reactivationCells,
+        sameZoneCellCells,
+        sameZoneCellCentres
+    );
+
+    forAll(reactivationCells, i)
+    {
+        const label celli = reactivationCells[i];
+        if (allStencil[celli].empty())
+        {
+            sameZoneFallback[celli] = true;
+            if (!sameZoneCellCells[celli].empty())
+            {
+                allStencil[celli].setSize(1);
+                allStencil[celli][0] = sameZoneCellCells[celli][0];
+            }
+        }
+        reactivationStencil[celli] = allStencil[celli];
+    }
+
 //     // Check previous iteration cellTypes_ for any hole->calculated changes
 //     // If so set the cell either to interpolated (if there are donors) or
 //     // holes (if there are no donors). Note that any interpolated cell might
@@ -2290,38 +2344,107 @@ bool Foam::cellCellStencils::inverseDistance::update()
         tfld().write();
     }
 
-    // Check previous iteration cellTypes_ for any hole->calculated changes
-    // If so set the cell either to interpolated (if there are donors) or
-    // holes (if there are no donors). Note that any interpolated cell might
-    // still be overwritten by the flood filling
+    // Restore cells that were holes but are calculated on the new geometry.
+    // A missing or no-longer-valid cross-zone donor is replaced by a valid
+    // same-zone neighbour when possible.
     {
-        label nCalculated = 0;
+        labelList compactCellTypesForRecovery(allCellTypes);
+        map.distribute(compactCellTypesForRecovery);
 
-        forAll(cellTypes_, celli)
+        DynamicList<label> fallbackCells;
+        forAll(reactivationCells, i)
         {
-            if (allCellTypes[celli] == CALCULATED && cellTypes_[celli] == HOLE)
+            const label celli = reactivationCells[i];
+            bool hasValidDonor = false;
+
+            if (!sameZoneFallback[celli])
             {
-                if (allStencil[celli].size() == 0)
+                const labelList& slots = compactStencil[celli];
+                forAll(slots, sloti)
                 {
-                    // Reset to hole
-                    allCellTypes[celli] = HOLE;
-                    allStencil[celli].clear();
+                    const label donorType = compactCellTypesForRecovery[slots[sloti]];
+                    if
+                    (
+                        donorType != HOLE
+                     && donorType != POROUS
+                     && (allowInterpolatedDonors_ || donorType != INTERPOLATED)
+                    )
+                    {
+                        hasValidDonor = true;
+                        break;
+                    }
                 }
-                else
-                {
-                    allCellTypes[celli] = INTERPOLATED;
-                    nCalculated++;
-                }
+            }
+
+            if (hasValidDonor)
+            {
+                allStencil[celli] = reactivationStencil[celli];
+                allCellTypes[celli] = INTERPOLATED;
+                allWeight[celli] = 1.0;
+            }
+            else
+            {
+                sameZoneFallback[celli] = true;
+                fallbackCells.append(celli);
             }
         }
 
-        if (debug)
+        boolList fallbackDonorMask(mesh_.nCells(), false);
+        forAll(allCellTypes, celli)
         {
-            Pout<< "Detected " << nCalculated << " cells changing from hole"
-                << " to calculated. Changed to interpolated"
-                << endl;
+            fallbackDonorMask[celli] =
+                !reactivationCandidates[celli]
+             &&
+                (
+                    allCellTypes[celli] == CALCULATED
+                 || (allowInterpolatedDonors_ && allCellTypes[celli] == INTERPOLATED)
+                );
+        }
+
+        labelListList fallbackCellCells;
+        pointListList fallbackCellCentres;
+        globalSameZoneCellCells
+        (
+            globalCells,
+            mesh_,
+            zoneID,
+            fallbackDonorMask,
+            fallbackCells,
+            fallbackCellCells,
+            fallbackCellCentres
+        );
+
+        forAll(fallbackCells, i)
+        {
+            const label celli = fallbackCells[i];
+            const labelList& donors = fallbackCellCells[celli];
+
+            if (donors.empty())
+            {
+                allCellTypes[celli] = HOLE;
+                allStencil[celli].clear();
+                allWeight[celli] = 0.0;
+            }
+            else
+            {
+                allStencil[celli].setSize(1);
+                allStencil[celli][0] = donors[0];
+                allCellTypes[celli] = INTERPOLATED;
+                allWeight[celli] = 1.0;
+            }
         }
     }
+
+    labelListList finalCompactStencil(allStencil);
+    List<Map<label>> finalCompactStencilMap;
+    mapDistribute finalMap
+    (
+        globalCells,
+        finalCompactStencil,
+        finalCompactStencilMap
+    );
+    labelList compactCellTypes(allCellTypes);
+    finalMap.distribute(compactCellTypes);
 
     // Convert cell-cell addressing to stencil in compact notation
     // Clean any potential INTERPOLATED with HOLE donors.
@@ -2363,15 +2486,12 @@ bool Foam::cellCellStencils::inverseDistance::update()
     //List<Map<label>> compactStencilMap;
     //mapDistribute map(globalCells, compactStencil, compactStencilMap);
 
-    labelList compactCellTypes(cellTypes_);
-    map.distribute(compactCellTypes);
-
     label nInterpolatedDonors = 0;
     forAll(cellTypes_, celli)
     {
         if (cellTypes_[celli] == INTERPOLATED)
         {
-            const labelList& slots = compactStencil[celli];
+            const labelList& slots = finalCompactStencil[celli];
             if (slots.size())
             {
                 if
@@ -2523,6 +2643,27 @@ bool Foam::cellCellStencils::inverseDistance::update()
 
     // Extend stencil to get inverse distance weighted neighbours
     createStencil(globalCells, allowHoleDonors_);
+
+    recoverSameZoneInterpolations
+    (
+        globalCells,
+        zoneID,
+        reactivationCandidates,
+        sameZoneFallback,
+        allowInterpolatedDonors_,
+        cellTypes_,
+        cellStencil_,
+        cellInterpolationWeights_,
+        cellInterpolationWeight_.primitiveFieldRef(),
+        interpolationCells_,
+        cellInterpolationMap_
+    );
+    oversetFvMeshBase::correctBoundaryConditions
+    <
+        volScalarField,
+        oversetFvPatchField<scalar>,
+        false
+    >(cellInterpolationWeight_.boundaryFieldRef());
 
     // Optional: convert hole cells next to non-hole cells into
     // interpolate-from-neighbours (of cell type SPECIAL)

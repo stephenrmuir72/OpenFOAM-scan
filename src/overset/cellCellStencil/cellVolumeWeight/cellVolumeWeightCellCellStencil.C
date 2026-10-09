@@ -875,6 +875,73 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
         tfldStencil().write();
     }
 
+    boolList reactivationCandidates(mesh_.nCells(), false);
+    boolList sameZoneFallback(mesh_.nCells(), false);
+    labelListList reactivationStencil(mesh_.nCells());
+    List<scalarList> reactivationWeights(mesh_.nCells());
+    DynamicList<label> reactivationCells;
+
+    if ((debug & 2) && mesh_.time().writeTime())
+    {
+        tmp<volScalarField> tfld
+        (
+            createField(mesh_, "allCellTypes_old", cellTypes_)
+        );
+        tfld().write();
+    }
+
+    forAll(cellTypes_, celli)
+    {
+        if (cellTypes_[celli] == HOLE && allCellTypes[celli] == CALCULATED)
+        {
+            reactivationCandidates[celli] = true;
+            reactivationCells.append(celli);
+        }
+    }
+
+    boolList validSameZoneDonor(mesh_.nCells(), false);
+    forAll(allCellTypes, celli)
+    {
+        validSameZoneDonor[celli] =
+            !reactivationCandidates[celli]
+         &&
+            (
+                allCellTypes[celli] == CALCULATED
+             || (allowInterpolatedDonors_ && allCellTypes[celli] == INTERPOLATED)
+            );
+    }
+
+    labelListList sameZoneCellCells;
+    pointListList sameZoneCellCentres;
+    globalSameZoneCellCells
+    (
+        globalCells,
+        mesh_,
+        zoneID,
+        validSameZoneDonor,
+        reactivationCells,
+        sameZoneCellCells,
+        sameZoneCellCentres
+    );
+
+    forAll(reactivationCells, i)
+    {
+        const label celli = reactivationCells[i];
+        if (allStencil[celli].empty())
+        {
+            sameZoneFallback[celli] = true;
+            if (!sameZoneCellCells[celli].empty())
+            {
+                allStencil[celli].setSize(1);
+                allStencil[celli][0] = sameZoneCellCells[celli][0];
+                allWeights[celli].setSize(1);
+                allWeights[celli][0] = 1.0;
+            }
+        }
+        reactivationStencil[celli] = allStencil[celli];
+        reactivationWeights[celli] = allWeights[celli];
+    }
+
 
     // Add buffer interpolation layer around holes
     scalarField allWeight(mesh_.nCells(), Zero);
@@ -921,37 +988,14 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
         tfldStencil().write();
     }
 
-    // Check previous iteration cellTypes_ for any hole->calculated changes
-    // If so set the cell either to interpolated (if there are donors) or
-    // holes (if there are no donors). Note that any interpolated cell might
-    // still be overwritten by the flood filling
+    forAll(reactivationCells, i)
     {
-        label nCalculated = 0;
-
-        forAll(cellTypes_, celli)
+        const label celli = reactivationCells[i];
+        if (!reactivationStencil[celli].empty())
         {
-            if (allCellTypes[celli] == CALCULATED && cellTypes_[celli] == HOLE)
-            {
-                if (allStencil[celli].size() == 0)
-                {
-                    // Reset to hole
-                    allCellTypes[celli] = HOLE;
-                    allWeights[celli].clear();
-                    allStencil[celli].clear();
-                }
-                else
-                {
-                    allCellTypes[celli] = INTERPOLATED;
-                    nCalculated++;
-                }
-            }
-        }
-
-        if (debug)
-        {
-            Pout<< "Detected " << nCalculated << " cells changing from hole"
-                << " to calculated. Changed these to interpolated"
-                << endl;
+            allStencil[celli] = reactivationStencil[celli];
+            allWeights[celli] = reactivationWeights[celli];
+            allCellTypes[celli] = INTERPOLATED;
         }
     }
 
@@ -965,16 +1009,25 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
         if (allCellTypes[cellI] == INTERPOLATED)
         {
             const labelList& slots = compactStencil[cellI];
+            if (slots.size() != allWeights[cellI].size())
+            {
+                allCellTypes[cellI] = POROUS;
+                allWeights[cellI].clear();
+                allStencil[cellI].clear();
+                continue;
+            }
+
             forAll (slots, subCellI)
             {
                 if
                 (
-                    compactCellTypes[slots[0]] == HOLE
+                    compactCellTypes[slots[subCellI]] == HOLE
                  ||
                     (
                        !allowInterpolatedDonors_
-                     && compactCellTypes[slots[0]] == INTERPOLATED
+                     && compactCellTypes[slots[subCellI]] == INTERPOLATED
                     )
+                 || compactCellTypes[slots[subCellI]] == POROUS
                 )
                 {
                     allWeights[cellI][subCellI] = 0;
@@ -1012,6 +1065,102 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
                 }
             }
         }
+    }
+
+    DynamicList<label> fallbackCells;
+    label nRecovered = 0;
+    forAll(reactivationCells, i)
+    {
+        const label celli = reactivationCells[i];
+        const bool hasValidStencil =
+            !sameZoneFallback[celli]
+         && allCellTypes[celli] == INTERPOLATED
+         && !allStencil[celli].empty()
+         && allWeights[celli].size() == allStencil[celli].size()
+         && sum(allWeights[celli]) > SMALL;
+
+        if (hasValidStencil)
+        {
+            allWeight[celli] = 1.0;
+            ++nRecovered;
+        }
+        else
+        {
+            fallbackCells.append(celli);
+        }
+    }
+
+    boolList fallbackDonorMask(mesh_.nCells(), false);
+    forAll(allCellTypes, celli)
+    {
+        fallbackDonorMask[celli] =
+            !reactivationCandidates[celli]
+         &&
+            (
+                allCellTypes[celli] == CALCULATED
+             || (allowInterpolatedDonors_ && allCellTypes[celli] == INTERPOLATED)
+            );
+    }
+
+    labelListList fallbackCellCells;
+    pointListList fallbackCellCentres;
+    globalSameZoneCellCells
+    (
+        globalCells,
+        mesh_,
+        zoneID,
+        fallbackDonorMask,
+        fallbackCells,
+        fallbackCellCells,
+        fallbackCellCentres
+    );
+
+    label nSameZoneFallback = 0;
+    label nUnrecoverable = 0;
+    forAll(fallbackCells, i)
+    {
+        const label celli = fallbackCells[i];
+        const labelList& donors = fallbackCellCells[celli];
+
+        if (donors.empty())
+        {
+            allCellTypes[celli] = HOLE;
+            allStencil[celli].clear();
+            allWeights[celli].clear();
+            allWeight[celli] = 0.0;
+            ++nUnrecoverable;
+        }
+        else
+        {
+            allStencil[celli] = donors;
+            stencilWeights
+            (
+                mesh_.cellCentres()[celli],
+                fallbackCellCentres[celli],
+                allWeights[celli]
+            );
+            allCellTypes[celli] = INTERPOLATED;
+            allWeight[celli] = 1.0;
+            ++nRecovered;
+            ++nSameZoneFallback;
+        }
+    }
+    reduce(nRecovered, sumOp<label>());
+    reduce(nSameZoneFallback, sumOp<label>());
+    reduce(nUnrecoverable, sumOp<label>());
+    if (debug && nRecovered)
+    {
+        DebugInfo<< "Previously blanked-cell recovery: "
+            << nRecovered << " reactivated, "
+            << nSameZoneFallback << " using same-zone fallback."
+            << endl;
+    }
+    if (nUnrecoverable)
+    {
+        WarningInFunction
+            << "Unable to reconstruct " << nUnrecoverable
+            << " previously blanked cells from valid same-zone neighbours; "
+            << "retaining them as holes." << nl << endl;
     }
 
     // Write to volField for debugging
@@ -1082,7 +1231,7 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
 
             forAll(slots, i)
             {
-                if (cellInterpolationWeights_[cellI][slots[i]] > 0)
+                if (cellInterpolationWeights_[cellI][i] > 0)
                 {
                     const point& donorCc = cc[slots[i]];
                     const point& accCc = mesh_.cellCentres()[cellI];

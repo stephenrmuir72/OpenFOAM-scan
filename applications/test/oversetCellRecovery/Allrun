@@ -1,0 +1,201 @@
+#!/bin/sh
+cd "${0%/*}" || exit
+. "${WM_PROJECT_DIR:?}/bin/tools/RunFunctions" || exit 1
+set -e
+
+sourceCase="${WM_PROJECT_DIR}/tutorials/incompressible/overPimpleDyMFoam/simpleRotor"
+
+if [ ! -d "$sourceCase" ]; then
+    echo "Missing moving-overset source case: $sourceCase" >&2
+    exit 1
+fi
+
+if [ -e work ]; then
+    echo "Refusing to overwrite existing test work directory: work" >&2
+    exit 1
+fi
+
+mkdir work
+trap 'rm -r work' EXIT
+
+prepareCase()
+{
+    caseDir="$1"
+    cp -a "$sourceCase" "$caseDir"
+    cp topoSetDict "$caseDir/system/topoSetDict"
+    cp setFieldsDict "$caseDir/system/setFieldsDict"
+    cp "$caseDir/0.orig/zoneID" "$caseDir/0.orig/cellTypes"
+    sed -i 's/object      zoneID;/object      cellTypes;/' \
+        "$caseDir/0.orig/cellTypes"
+}
+
+fieldValue()
+{
+    awk -v celli="$2" '
+        $1 == "internalField" && $2 == "nonuniform" {
+            while (getline > 0 && $0 !~ /^[[:space:]]*\(/) {}
+            for (i = 0; i <= celli; ++i)
+            {
+                if (getline <= 0)
+                {
+                    exit 1
+                }
+            }
+            gsub(/[[:space:]();]/, "", $0)
+            print $0
+            found = 1
+            exit
+        }
+        END {
+            if (!found)
+            {
+                exit 1
+            }
+        }
+    ' "$1"
+}
+
+verifyRecoveryTransition()
+{
+    caseDir="$1"
+    celli=$(
+        sed -n \
+            's/^[[:space:]]*[0-9][0-9]*[[:space:]]*(\([0-9][0-9]*\).*/\1/p' \
+            "$caseDir/constant/polyMesh/sets/recoveryCell"
+    )
+
+    if [ -z "$celli" ]; then
+        echo "No recoveryCell was selected in $caseDir" >&2
+        return 1
+    fi
+
+    for timeDir in "$caseDir"/[0-9]*
+    do
+        oldField="$timeDir/allCellTypes_old"
+        frontField="$timeDir/allCellTypes_front"
+        if [ ! -f "$oldField" ] || [ ! -f "$frontField" ]; then
+            continue
+        fi
+
+        oldType=$(fieldValue "$oldField" "$celli") || continue
+        frontType=$(fieldValue "$frontField" "$celli") || continue
+        if awk -v oldType="$oldType" -v frontType="$frontType" \
+            'BEGIN { exit !(oldType == 1 && frontType == 0) }'
+        then
+            echo "Verified reactivation followed by CALCULATED state: cell $celli"
+            return 0
+        fi
+    done
+
+    echo "Did not observe recoveryCell $celli return to CALCULATED" >&2
+    return 1
+}
+
+for method in trackingInverseDistance inverseDistance cellVolumeWeight
+do
+    caseDir="work/${method}"
+    prepareCase "$caseDir"
+
+    sed -i -E \
+        "s/^([[:space:]]*method[[:space:]]+)[^;]+;/\\1${method};/" \
+        "$caseDir/system/fvSchemes"
+    sed -i -E \
+        's/^[[:space:]]*endTime[[:space:]]+0\.1;/endTime         0.005;/' \
+        "$caseDir/system/controlDict"
+    sed -i -E \
+        -e 's/^[[:space:]]*writeControl[[:space:]]+adjustable;/writeControl    timeStep;/' \
+        -e 's/^[[:space:]]*writeInterval[[:space:]]+0\.01;/writeInterval   1;/' \
+        "$caseDir/system/controlDict"
+    sed -i '/^[[:space:]]*application[[:space:]]*overPimpleDyMFoam;/a\
+DebugSwitches\
+{\
+    cellCellStencil 3;\
+    inverseDistance 3;\
+    trackingInverseDistance 3;\
+    cellVolumeWeight 3;\
+}' "$caseDir/system/controlDict"
+
+    if [ "$method" = trackingInverseDistance ]; then
+        sed -i -E \
+            's/^[[:space:]]*searchBoxDivisions[[:space:]]+\(130 130 1\);/searchBoxDivisions  2{(64 64 1)};/' \
+            "$caseDir/system/fvSchemes"
+    fi
+
+    if ! (
+        cd "$caseDir"
+        ./Allrun.pre > log.pre 2>&1 &&
+        overPimpleDyMFoam > log.solver 2>&1 &&
+        grep -q '^End$' log.solver &&
+        grep -q 'Previously blanked-cell recovery:' log.solver &&
+        grep -Eq \
+            'Previously blanked-cell recovery:.*[1-9][0-9]* using same-zone fallback' \
+            log.solver &&
+        grep -Eq \
+            'Unable to reconstruct [1-9][0-9]* previously blanked cells' \
+            log.solver
+    ); then
+        echo "Moving-overset recovery test failed for $method" >&2
+        if [ -f "$caseDir/log.solver" ]; then
+            tail -n 80 "$caseDir/log.solver" >&2
+        elif [ -f "$caseDir/log.pre" ]; then
+            tail -n 80 "$caseDir/log.pre" >&2
+        fi
+        exit 1
+    fi
+
+    if ! verifyRecoveryTransition "$caseDir"; then
+        echo "Moving-overset reactivation-transition test failed for $method" >&2
+        exit 1
+    fi
+
+    echo "Passed moving-overset recovery smoke test: $method"
+    echo "Exercised donor initialization, same-zone fallback, and unrecoverable holes: $method"
+done
+
+if command -v mpirun >/dev/null 2>&1; then
+    caseDir="work/trackingInverseDistance-parallel"
+    prepareCase "$caseDir"
+    sed -i -E \
+        's/^([[:space:]]*method[[:space:]]+)[^;]+;/\1trackingInverseDistance;/' \
+        "$caseDir/system/fvSchemes"
+    sed -i -E \
+        's/^[[:space:]]*searchBoxDivisions[[:space:]]+\(130 130 1\);/searchBoxDivisions  2{(64 64 1)};/' \
+        "$caseDir/system/fvSchemes"
+    sed -i -E \
+        's/^[[:space:]]*endTime[[:space:]]+0\.1;/endTime         0.005;/' \
+        "$caseDir/system/controlDict"
+    sed -i '/^[[:space:]]*application[[:space:]]*overPimpleDyMFoam;/a\
+DebugSwitches\
+{\
+    cellCellStencil 1;\
+    trackingInverseDistance 1;\
+}' "$caseDir/system/controlDict"
+
+    if ! (
+        cd "$caseDir"
+        ./Allrun.pre > log.pre 2>&1 &&
+        runApplication decomposePar -force &&
+        runParallel overPimpleDyMFoam &&
+        grep -q '^End$' log.overPimpleDyMFoam &&
+        grep -q 'Previously blanked-cell recovery:' log.overPimpleDyMFoam &&
+        grep -Eq \
+            'Previously blanked-cell recovery:.*[1-9][0-9]* using same-zone fallback' \
+            log.overPimpleDyMFoam &&
+        grep -Eq \
+            'Unable to reconstruct [1-9][0-9]* previously blanked cells' \
+            log.overPimpleDyMFoam
+    ); then
+        echo "Parallel moving-overset recovery test failed" >&2
+        if [ -f "$caseDir/log.overPimpleDyMFoam" ]; then
+            tail -n 80 "$caseDir/log.overPimpleDyMFoam" >&2
+        elif [ -f "$caseDir/log.decomposePar" ]; then
+            tail -n 80 "$caseDir/log.decomposePar" >&2
+        elif [ -f "$caseDir/log.pre" ]; then
+            tail -n 80 "$caseDir/log.pre" >&2
+        fi
+        exit 1
+    fi
+
+    echo "Passed parallel moving-overset recovery smoke test: trackingInverseDistance"
+    echo "Exercised donor initialization, same-zone fallback, and unrecoverable holes in parallel"
+fi

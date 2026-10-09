@@ -1,0 +1,77 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\      /  O peration    | OpenFOAM: The Open Source CFD Toolbox           |
+|   \\    /   A nd           |                                                 |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      topoSetDict;
+}
+
+actions
+(
+    {
+        name    c0;
+        type    cellSet;
+        action  new;
+        source  regionToCell;
+        insidePoints ((0.01 0.01 0.01));
+    }
+
+    {
+        name    c1;
+        type    cellSet;
+        action  new;
+        source  cellToCell;
+        set     c0;
+    }
+
+    {
+        name    c1;
+        type    cellSet;
+        action  invert;
+    }
+
+    {
+        name    box;
+        type    cellSet;
+        action  new;
+        source  cellToCell;
+        set     c1;
+    }
+
+    {
+        name    box;
+        type    cellSet;
+        action  subset;
+        source  boxToCell;
+        box     (0.025 0.045 -100)(0.075 0.055 100);
+    }
+
+    {
+        name    box;
+        type    cellSet;
+        action  invert;
+    }
+
+    {
+        name    recoveryCell;
+        type    cellSet;
+        action  new;
+        source  boxToCell;
+        box     (0.004 0.004 -1)(0.006 0.006 1);
+    }
+
+    {
+        name    unrecoverableCell;
+        type    cellSet;
+        action  new;
+        source  boxToCell;
+        box     (0.020 0.005 -1)(0.0245 0.0095 1);
+    }
+);

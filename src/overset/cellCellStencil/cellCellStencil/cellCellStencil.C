@@ -235,7 +235,9 @@ void Foam::cellCellStencil::globalCellCells
     const boolList& isValidCell,
     const labelList& selectedCells,
     labelListList& cellCells,
-    pointListList& cellCellCentres
+    pointListList& cellCellCentres,
+    const labelList* zoneID,
+    labelListList* cellCellZones
 )
 {
     // For selected cells determine the face neighbours (in global numbering)
@@ -273,11 +275,33 @@ void Foam::cellCellStencil::globalCellCells
         nbrIsValidCell
     );
 
+    labelList nbrZoneIDs;
+    if (cellCellZones)
+    {
+        if (!zoneID)
+        {
+            FatalErrorInFunction
+                << "Zone ids are required when collecting cell-cell zones"
+                << exit(FatalError);
+        }
+
+        syncTools::swapBoundaryCellList
+        (
+            mesh,
+            *zoneID,
+            nbrZoneIDs
+        );
+    }
+
 
     // 2. Collect cell and all its neighbours
 
     cellCells.setSize(mesh.nCells());
     cellCellCentres.setSize(cellCells.size());
+    if (cellCellZones)
+    {
+        cellCellZones->setSize(cellCells.size());
+    }
 
     forAll(selectedCells, i)
     {
@@ -286,15 +310,29 @@ void Foam::cellCellStencil::globalCellCells
         const cell& cFaces = cells[celli];
         labelList& stencil = cellCells[celli];
         pointList& stencilPoints = cellCellCentres[celli];
+        labelList* stencilZones = nullptr;
+        if (cellCellZones)
+        {
+            stencilZones = &(*cellCellZones)[celli];
+        }
         stencil.setSize(cFaces.size()+1);
         stencilPoints.setSize(stencil.size());
+        if (stencilZones)
+        {
+            stencilZones->setSize(stencil.size());
+        }
         label compacti = 0;
 
         // First entry is cell itself
         if (isValidCell[celli])
         {
             stencil[compacti] = globalCellIDs[celli];
-            stencilPoints[compacti++] = cellCentres[celli];
+            stencilPoints[compacti] = cellCentres[celli];
+            if (stencilZones)
+            {
+                (*stencilZones)[compacti] = (*zoneID)[celli];
+            }
+            ++compacti;
         }
 
         // Other entries are cell neighbours
@@ -305,12 +343,17 @@ void Foam::cellCellStencil::globalCellCells
             label own = faceOwner[facei];
             label nbrCelli;
             point nbrCc;
+            label nbrZoneID = -1;
             bool isValid = false;
             if (bFacei >= 0)
             {
                 nbrCelli = nbrGlobalCellIDs[bFacei];
                 nbrCc = nbrCellCentres[bFacei];
                 isValid = nbrIsValidCell[bFacei];
+                if (stencilZones)
+                {
+                    nbrZoneID = nbrZoneIDs[bFacei];
+                }
             }
             else
             {
@@ -319,6 +362,10 @@ void Foam::cellCellStencil::globalCellCells
                     nbrCelli = gi.toGlobal(own);
                     nbrCc = cellCentres[own];
                     isValid = isValidCell[own];
+                    if (stencilZones)
+                    {
+                        nbrZoneID = (*zoneID)[own];
+                    }
                 }
                 else
                 {
@@ -326,6 +373,10 @@ void Foam::cellCellStencil::globalCellCells
                     nbrCelli = gi.toGlobal(nei);
                     nbrCc = cellCentres[nei];
                     isValid = isValidCell[nei];
+                    if (stencilZones)
+                    {
+                        nbrZoneID = (*zoneID)[nei];
+                    }
                 }
             }
 
@@ -335,14 +386,288 @@ void Foam::cellCellStencil::globalCellCells
                 if (!current.found(nbrCelli))
                 {
                     stencil[compacti] = nbrCelli;
-                    stencilPoints[compacti++] = nbrCc;
+                    stencilPoints[compacti] = nbrCc;
+                    if (stencilZones)
+                    {
+                        (*stencilZones)[compacti] = nbrZoneID;
+                    }
+                    ++compacti;
                 }
             }
         }
         stencil.setSize(compacti);
         stencilPoints.setSize(compacti);
+        if (stencilZones)
+        {
+            stencilZones->setSize(compacti);
+        }
     }
 }
+
+
+void Foam::cellCellStencil::globalSameZoneCellCells
+(
+    const globalIndex& gi,
+    const polyMesh& mesh,
+    const labelList& zoneID,
+    const boolList& isValidDonor,
+    const labelList& selectedCells,
+    labelListList& cellCells,
+    pointListList& cellCellCentres
+)
+{
+    labelListList allCellCells;
+    pointListList allCellCellCentres;
+    labelListList allCellCellZones;
+
+    globalCellCells
+    (
+        gi,
+        mesh,
+        isValidDonor,
+        selectedCells,
+        allCellCells,
+        allCellCellCentres,
+        &zoneID,
+        &allCellCellZones
+    );
+
+    cellCells.setSize(mesh.nCells());
+    cellCellCentres.setSize(mesh.nCells());
+
+    forAll(selectedCells, i)
+    {
+        const label celli = selectedCells[i];
+        const label selfGlobal = gi.toGlobal(celli);
+        const labelList& neighbours = allCellCells[celli];
+        const pointList& neighbourCentres = allCellCellCentres[celli];
+        const labelList& neighbourZones = allCellCellZones[celli];
+
+        labelList& sameZoneNeighbours = cellCells[celli];
+        pointList& sameZoneCentres = cellCellCentres[celli];
+        sameZoneNeighbours.setSize(neighbours.size());
+        sameZoneCentres.setSize(neighbours.size());
+
+        label nSameZone = 0;
+        forAll(neighbours, neighbouri)
+        {
+            if
+            (
+                neighbours[neighbouri] != selfGlobal
+             && neighbourZones[neighbouri] == zoneID[celli]
+            )
+            {
+                sameZoneNeighbours[nSameZone] = neighbours[neighbouri];
+                sameZoneCentres[nSameZone] = neighbourCentres[neighbouri];
+                ++nSameZone;
+            }
+        }
+
+        sameZoneNeighbours.setSize(nSameZone);
+        sameZoneCentres.setSize(nSameZone);
+    }
+}
+
+
+void Foam::cellCellStencil::recoverSameZoneInterpolations
+(
+    const globalIndex& globalCells,
+    const labelList& zoneID,
+    const boolList& candidates,
+    const boolList& sameZoneFallback,
+    const bool allowInterpolatedDonors,
+    labelList& cellTypes,
+    labelListList& cellStencil,
+    List<scalarList>& cellInterpolationWeights,
+    scalarField& cellInterpolationWeight,
+    labelList& interpolationCells,
+    autoPtr<mapDistribute>& interpolationMap
+) const
+{
+    if
+    (
+        candidates.size() != mesh_.nCells()
+     || sameZoneFallback.size() != mesh_.nCells()
+     || cellTypes.size() != mesh_.nCells()
+     || cellStencil.size() != mesh_.nCells()
+     || cellInterpolationWeights.size() != mesh_.nCells()
+     || cellInterpolationWeight.size() != mesh_.nCells()
+    )
+    {
+        FatalErrorInFunction
+            << "Recovery data does not match the mesh cell count"
+            << exit(FatalError);
+    }
+
+    DynamicList<label> fallbackCells;
+    label nRecovered = 0;
+
+    forAll(candidates, celli)
+    {
+        if (!candidates[celli])
+        {
+            continue;
+        }
+
+        const bool hasValidStencil =
+            cellTypes[celli] == INTERPOLATED
+         && !cellStencil[celli].empty()
+         && cellInterpolationWeights[celli].size()
+          == cellStencil[celli].size()
+         && sum(cellInterpolationWeights[celli]) > SMALL;
+
+        if (sameZoneFallback[celli] || !hasValidStencil)
+        {
+            fallbackCells.append(celli);
+        }
+        else
+        {
+            cellInterpolationWeight[celli] = 1.0;
+            ++nRecovered;
+        }
+    }
+
+    if (!returnReduceOr(!fallbackCells.empty()))
+    {
+        reduce(nRecovered, sumOp<label>());
+        if (debug && nRecovered)
+        {
+            DebugInfo<< "Previously blanked-cell recovery: "
+                << nRecovered << " reactivated with existing donors."
+                << endl;
+        }
+        return;
+    }
+
+    boolList isValidDonor(mesh_.nCells(), false);
+    forAll(cellTypes, celli)
+    {
+        if (!candidates[celli])
+        {
+            isValidDonor[celli] =
+                cellTypes[celli] == CALCULATED
+             || (allowInterpolatedDonors && cellTypes[celli] == INTERPOLATED);
+        }
+    }
+
+    labelListList sameZoneCellCells;
+    pointListList sameZoneCellCentres;
+    globalSameZoneCellCells
+    (
+        globalCells,
+        mesh_,
+        zoneID,
+        isValidDonor,
+        fallbackCells,
+        sameZoneCellCells,
+        sameZoneCellCentres
+    );
+
+    labelList compactGlobalCells(mesh_.nCells());
+    forAll(compactGlobalCells, celli)
+    {
+        compactGlobalCells[celli] = globalCells.toGlobal(celli);
+    }
+    interpolationMap->distribute(compactGlobalCells);
+
+    labelListList globalStencil(cellStencil);
+    forAll(globalStencil, celli)
+    {
+        forAll(globalStencil[celli], stencilI)
+        {
+            const label compactCell = globalStencil[celli][stencilI];
+            if (compactCell < 0 || compactCell >= compactGlobalCells.size())
+            {
+                FatalErrorInFunction
+                    << "Invalid compact donor slot " << compactCell
+                    << " for cell " << celli
+                    << exit(FatalError);
+            }
+            globalStencil[celli][stencilI] =
+                compactGlobalCells[compactCell];
+        }
+    }
+
+    label nSameZoneFallback = 0;
+    label nUnrecoverable = 0;
+    forAll(fallbackCells, i)
+    {
+        const label celli = fallbackCells[i];
+        const labelList& donors = sameZoneCellCells[celli];
+
+        if (donors.empty())
+        {
+            cellTypes[celli] = HOLE;
+            globalStencil[celli].clear();
+            cellInterpolationWeights[celli].clear();
+            cellInterpolationWeight[celli] = 0.0;
+            ++nUnrecoverable;
+        }
+        else
+        {
+            globalStencil[celli] = donors;
+            stencilWeights
+            (
+                mesh_.cellCentres()[celli],
+                sameZoneCellCentres[celli],
+                cellInterpolationWeights[celli]
+            );
+            cellTypes[celli] = INTERPOLATED;
+            cellInterpolationWeight[celli] = 1.0;
+            ++nRecovered;
+            ++nSameZoneFallback;
+        }
+    }
+
+    DynamicList<label> validInterpolationCells;
+    forAll(cellTypes, celli)
+    {
+        if
+        (
+            cellTypes[celli] == INTERPOLATED
+         && !globalStencil[celli].empty()
+         && cellInterpolationWeights[celli].size() == globalStencil[celli].size()
+        )
+        {
+            validInterpolationCells.append(celli);
+        }
+        else if (cellTypes[celli] == INTERPOLATED)
+        {
+            cellTypes[celli] = HOLE;
+            globalStencil[celli].clear();
+            cellInterpolationWeights[celli].clear();
+            cellInterpolationWeight[celli] = 0.0;
+        }
+    }
+
+    cellStencil.transfer(globalStencil);
+    interpolationCells.transfer(validInterpolationCells);
+
+    List<Map<label>> compactMap;
+    interpolationMap.reset
+    (
+        new mapDistribute(globalCells, cellStencil, compactMap)
+    );
+
+    reduce(nRecovered, sumOp<label>());
+    reduce(nSameZoneFallback, sumOp<label>());
+    reduce(nUnrecoverable, sumOp<label>());
+    if (debug && nRecovered)
+    {
+        DebugInfo<< "Previously blanked-cell recovery: "
+            << nRecovered << " reactivated, "
+            << nSameZoneFallback << " using same-zone fallback."
+            << endl;
+    }
+    if (nUnrecoverable)
+    {
+        WarningInFunction
+            << "Unable to reconstruct " << nUnrecoverable
+            << " previously blanked cells from valid same-zone neighbours; "
+            << "retaining them as holes." << nl << endl;
+    }
+}
+
 
 void Foam::cellCellStencil::seedCell
 (
