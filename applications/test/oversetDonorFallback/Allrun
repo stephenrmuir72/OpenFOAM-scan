@@ -1,0 +1,60 @@
+#!/bin/sh
+cd "${0%/*}" || exit 1
+. "${WM_PROJECT_DIR:?}/bin/tools/RunFunctions" || exit 1
+set -e
+
+if [ -e work ]; then
+    echo "Refusing to overwrite existing test work directory: work" >&2
+    exit 1
+fi
+
+wmake
+mkdir work
+trap 'rm -r work' EXIT
+mkdir -p work/system work/constant work/0
+cp system/blockMeshDict work/system/blockMeshDict
+cp system/controlDict work/system/controlDict
+cp system/decomposeParDict work/system/decomposeParDict
+cp system/fvSchemes work/system/fvSchemes
+cp system/fvSolution work/system/fvSolution
+cp 0/zoneID work/0/zoneID
+
+if ! (
+    cd work
+    blockMesh > log.blockMesh 2>&1 &&
+    oversetDonorFallback > log.serial 2>&1 &&
+    grep -q '^Passed donor fallback checks: inverseDistance$' log.serial &&
+    grep -q '^Passed donor fallback checks: trackingInverseDistance$' log.serial
+); then
+    echo "Serial donor fallback regression failed" >&2
+    if [ -f work/log.serial ]; then
+        tail -n 80 work/log.serial >&2
+    elif [ -f work/log.blockMesh ]; then
+        tail -n 80 work/log.blockMesh >&2
+    fi
+    exit 1
+fi
+
+if command -v mpirun >/dev/null 2>&1; then
+    if ! (
+        cd work
+        decomposePar -force > log.decomposePar 2>&1 &&
+        runParallel oversetDonorFallback > log.parallel 2>&1 &&
+        grep -q '^Passed donor fallback checks: inverseDistance$' \
+            log.oversetDonorFallback &&
+        grep -q '^Passed donor fallback checks: trackingInverseDistance$' \
+            log.oversetDonorFallback
+    ); then
+        echo "Parallel donor fallback regression failed" >&2
+        if [ -f work/log.oversetDonorFallback ]; then
+            tail -n 80 work/log.oversetDonorFallback >&2
+        elif [ -f work/log.parallel ]; then
+            tail -n 80 work/log.parallel >&2
+        elif [ -f work/log.decomposePar ]; then
+            tail -n 80 work/log.decomposePar >&2
+        fi
+        exit 1
+    fi
+fi
+
+echo "Passed serial and processor-remote donor fallback regressions"

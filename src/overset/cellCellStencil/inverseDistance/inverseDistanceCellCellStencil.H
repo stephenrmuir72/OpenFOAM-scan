@@ -50,6 +50,7 @@ SourceFiles
 #include "treeBoundBox.H"
 #include "pointList.H"
 #include "globalIndex.H"
+#include "DynamicList.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -119,8 +120,73 @@ protected:
             labelList cellTypes;
         };
 
+        //- Candidate donor cell and the mesh zone it belongs to
+        struct donorCandidate
+        {
+            label zone;
+            label globalCell;
+
+            donorCandidate()
+            :
+                zone(-1),
+                globalCell(-1)
+            {}
+
+            donorCandidate(const label zonei, const label globalCelli)
+            :
+                zone(zonei),
+                globalCell(globalCelli)
+            {}
+        };
+
 
    // Protected Member Functions
+
+        //- Check whether a source cell is a valid donor for an acceptor
+        bool donorEligible
+        (
+            const label donorType,
+            const label donorPatchType,
+            const label acceptorPatchType
+        ) const;
+
+        //- Retain a donor candidate and update the best donor zone
+        void recordDonorCandidate
+        (
+            const label acceptorCell,
+            const label acceptorZone,
+            const label donorZone,
+            const label globalDonor,
+            List<DynamicList<donorCandidate>>& allCandidates,
+            labelList& allDonor
+        ) const;
+
+        //- Rank donor candidates using the existing zone preference
+        void orderDonorCandidates
+        (
+            const labelList& zoneID,
+            List<DynamicList<donorCandidate>>& allCandidates,
+            labelListList& allStencil,
+            labelList& allDonor
+        ) const;
+
+        //- Re-run hole classification and front walking when a donor fails
+        void classifyAndWalkFront
+        (
+            const globalIndex& globalCells,
+            const labelList& zoneID,
+            const labelList& allPatchTypes,
+            const List<DynamicList<donorCandidate>>& allCandidates,
+            const scalar layerRelax,
+            const label holeLayers,
+            const label useLayer,
+            labelList& allCellTypes,
+            labelListList& allStencil,
+            scalarField& allWeight,
+            boolList& reactivationCandidates,
+            boolList& sameZoneFallback,
+            labelListList& reactivationStencil
+        ) const;
 
         // Voxel representation
 
@@ -218,7 +284,7 @@ protected:
 
             const label srcI,
             const label tgtI,
-            labelListList& allStencil,
+            List<DynamicList<donorCandidate>>& allCandidates,
             labelList& allDonor
         ) const;
 

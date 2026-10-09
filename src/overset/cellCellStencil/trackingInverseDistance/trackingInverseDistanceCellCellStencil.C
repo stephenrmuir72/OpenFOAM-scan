@@ -416,10 +416,11 @@ void Foam::cellCellStencils::trackingInverseDistance::markDonors
     const List<treeBoundBoxList>& meshBb,
     const PtrList<voxelMeshSearch>& meshSearches,
     const labelList& allCellTypes,
+    const labelList& allPatchTypes,
 
     const label srcI,
     const label tgtI,
-    labelListList& allStencil,
+    List<DynamicList<donorCandidate>>& allCandidates,
     labelList& allDonor
 ) const
 {
@@ -445,19 +446,25 @@ void Foam::cellCellStencils::trackingInverseDistance::markDonors
             (
                 srcCelli != -1
              && allCellTypes[tgtCellMap[tgtCelli]] != HOLE
+             && donorEligible
+                (
+                    allCellTypes[srcCellMap[srcCelli]],
+                    allPatchTypes[srcCellMap[srcCelli]],
+                    allPatchTypes[tgtCellMap[tgtCelli]]
+                )
             )
             {
                 label celli = tgtCellMap[tgtCelli];
 
-                // TBD: check for multiple donors. Maybe better one? For
-                //      now check 'nearer' mesh
-                if (betterDonor(tgtI, allDonor[celli], srcI))
-                {
-                    allStencil[celli].setSize(1);
-                    allStencil[celli][0] =
-                        globalCells_.toGlobal(srcCellMap[srcCelli]);
-                    allDonor[celli] = srcI;
-                }
+                recordDonorCandidate
+                (
+                    celli,
+                    tgtI,
+                    srcI,
+                    globalCells_.toGlobal(srcCellMap[srcCelli]),
+                    allCandidates,
+                    allDonor
+                );
             }
         }
     }
@@ -524,8 +531,15 @@ void Foam::cellCellStencils::trackingInverseDistance::markDonors
         label procI = srcOverlapProcs[i];
         const labelList& cellIDs = tgtSendCells[procI];
 
+        labelList tgtPatchTypes(cellIDs.size());
+        forAll(cellIDs, j)
+        {
+            tgtPatchTypes[j] = allPatchTypes[tgtCellMap[cellIDs[j]]];
+        }
+
         UOPstream os(procI, pBufs);
         os << UIndirectList<point>(tgtCc, cellIDs);
+        os << tgtPatchTypes;
     }
     pBufs.finishedSends();
 
@@ -537,13 +551,23 @@ void Foam::cellCellStencils::trackingInverseDistance::markDonors
 
         UIPstream is(procI, pBufs);
         pointList samples(is);
+        labelList samplePatchTypes(is);
 
         labelList donors(samples.size(), -1);
         forAll(samples, sampleI)
         {
             const point& sample = samples[sampleI];
             label srcCelli = srcMesh.findCell(sample, polyMesh::CELL_TETS);
-            if (srcCelli != -1)
+            if
+            (
+                srcCelli != -1
+             && donorEligible
+                (
+                    allCellTypes[srcCellMap[srcCelli]],
+                    allPatchTypes[srcCellMap[srcCelli]],
+                    samplePatchTypes[sampleI]
+                )
+            )
             {
                 donors[sampleI] = globalCells_.toGlobal(srcCellMap[srcCelli]);
             }
@@ -577,12 +601,17 @@ void Foam::cellCellStencils::trackingInverseDistance::markDonors
             {
                 label celli = tgtCellMap[cellIDs[donorI]];
 
-                // TBD: check for multiple donors. Maybe better one?
-                if (betterDonor(tgtI, allDonor[celli], srcI))
+                if (allCellTypes[celli] != HOLE)
                 {
-                    allStencil[celli].setSize(1);
-                    allStencil[celli][0] = globalDonor;
-                    allDonor[celli] = srcI;
+                    recordDonorCandidate
+                    (
+                        celli,
+                        tgtI,
+                        srcI,
+                        globalDonor,
+                        allCandidates,
+                        allDonor
+                    );
                 }
             }
         }
@@ -878,6 +907,7 @@ bool Foam::cellCellStencils::trackingInverseDistance::update()
     // Current best guess for cells
     labelList allCellTypes(mesh_.nCells(), CALCULATED);
     labelListList allStencil(mesh_.nCells());
+    List<DynamicList<donorCandidate>> allCandidates(mesh_.nCells());
     // zoneID of donor
     labelList allDonorID(mesh_.nCells(), -1);
 
@@ -928,10 +958,11 @@ bool Foam::cellCellStencils::trackingInverseDistance::update()
                 meshBb,
                 meshSearches,
                 allCellTypes,   // to exclude hole donors
+                allPatchTypes,
 
                 tgti,
                 srci,
-                allStencil,
+                allCandidates,
                 allDonorID
             );
             markDonors
@@ -940,14 +971,17 @@ bool Foam::cellCellStencils::trackingInverseDistance::update()
                 meshBb,
                 meshSearches,
                 allCellTypes,   // to exclude hole donors
+                allPatchTypes,
 
                 srci,
                 tgti,
-                allStencil,
+                allCandidates,
                 allDonorID
             );
         }
     }
+
+    orderDonorCandidates(zoneID, allCandidates, allStencil, allDonorID);
 
     DebugInfo<< FUNCTION_NAME << " : Determined holes and donor-acceptors"
         << endl;
@@ -1008,116 +1042,30 @@ bool Foam::cellCellStencils::trackingInverseDistance::update()
         tfldOld().write();
     }
 
-    // Mark unreachable bits
-    findHoles(globalCells_, mesh_, zoneID, allStencil, allCellTypes);
-    DebugInfo<< FUNCTION_NAME << " : Flood-filled holes" << endl;
-
-    if ((debug & 2) && mesh_.time().writeTime())
-    {
-        tmp<volScalarField> tfld
-        (
-            createField(mesh_, "allCellTypes_hole", allCellTypes)
-        );
-        tfld().write();
-
-        labelList stencilSize(mesh_.nCells());
-        forAll(allStencil, celli)
-        {
-            stencilSize[celli] = allStencil[celli].size();
-        }
-        tmp<volScalarField> tfldsten
-        (
-            createField(mesh_, "allStencil_hole", stencilSize)
-        );
-        tfldsten().write();
-    }
-
-    // Update allStencil with new fill HOLES
-    forAll(allCellTypes, celli)
-    {
-        if (allCellTypes[celli] == HOLE && allStencil[celli].size())
-        {
-            allStencil[celli].clear();
-        }
-    }
-
     boolList reactivationCandidates(mesh_.nCells(), false);
     boolList sameZoneFallback(mesh_.nCells(), false);
     labelListList reactivationStencil(mesh_.nCells());
-    DynamicList<label> reactivationCells;
-
-    forAll(cellTypes_, celli)
-    {
-        if (cellTypes_[celli] == HOLE && allCellTypes[celli] == CALCULATED)
-        {
-            reactivationCandidates[celli] = true;
-            reactivationCells.append(celli);
-        }
-    }
-
-    boolList validSameZoneDonor(mesh_.nCells(), false);
-    forAll(allCellTypes, celli)
-    {
-        validSameZoneDonor[celli] =
-            !reactivationCandidates[celli]
-         &&
-            (
-                allCellTypes[celli] == CALCULATED
-             || (allowInterpolatedDonors_ && allCellTypes[celli] == INTERPOLATED)
-            );
-    }
-
-    labelListList sameZoneCellCells;
-    pointListList sameZoneCellCentres;
-    globalSameZoneCellCells
-    (
-        globalCells,
-        mesh_,
-        zoneID,
-        validSameZoneDonor,
-        reactivationCells,
-        sameZoneCellCells,
-        sameZoneCellCentres
-    );
-
-    forAll(reactivationCells, i)
-    {
-        const label celli = reactivationCells[i];
-        if (allStencil[celli].empty())
-        {
-            sameZoneFallback[celli] = true;
-            if (!sameZoneCellCells[celli].empty())
-            {
-                allStencil[celli].setSize(1);
-                allStencil[celli][0] = sameZoneCellCells[celli][0];
-            }
-        }
-        reactivationStencil[celli] = allStencil[celli];
-    }
-
-    // Add buffer interpolation layer(s) around holes
     scalarField allWeight(mesh_.nCells(), Zero);
 
-    labelListList compactStencil(allStencil);
-    List<Map<label>> compactStencilMap;
-    mapDistribute map(globalCells, compactStencil, compactStencilMap);
-
-    scalarList compactCellVol(mesh_.V());
-    map.distribute(compactCellVol);
-
-    walkFront
+    classifyAndWalkFront
     (
         globalCells,
-        layerRelax,
-        allStencil,
-        allCellTypes,
-        allWeight,
-        compactCellVol,
-        compactStencil,
         zoneID,
+        allPatchTypes,
+        allCandidates,
+        layerRelax,
         dict_.getOrDefault("holeLayers", 1),
-        dict_.getOrDefault("useLayer", -1)
+        dict_.getOrDefault("useLayer", -1),
+        allCellTypes,
+        allStencil,
+        allWeight,
+        reactivationCandidates,
+        sameZoneFallback,
+        reactivationStencil
     );
+
+    DebugInfo<< FUNCTION_NAME << " : Flood-filled holes and walked front"
+        << endl;
 
     if ((debug & 2) && mesh_.time().writeTime())
     {
@@ -1128,6 +1076,10 @@ bool Foam::cellCellStencils::trackingInverseDistance::update()
         tfld().write();
     }
 
+    labelListList compactStencil(allStencil);
+    List<Map<label>> compactStencilMap;
+    mapDistribute map(globalCells, compactStencil, compactStencilMap);
+
     // Restore cells that were holes but are calculated on the new geometry.
     // A missing or no-longer-valid cross-zone donor is replaced by a valid
     // same-zone neighbour when possible.
@@ -1136,9 +1088,13 @@ bool Foam::cellCellStencils::trackingInverseDistance::update()
         map.distribute(compactCellTypesForRecovery);
 
         DynamicList<label> fallbackCells;
-        forAll(reactivationCells, i)
+        forAll(reactivationCandidates, celli)
         {
-            const label celli = reactivationCells[i];
+            if (!reactivationCandidates[celli])
+            {
+                continue;
+            }
+
             bool hasValidDonor = false;
 
             if (!sameZoneFallback[celli])
@@ -1229,6 +1185,8 @@ bool Foam::cellCellStencils::trackingInverseDistance::update()
     );
     labelList compactCellTypes(allCellTypes);
     finalMap.distribute(compactCellTypes);
+    labelList compactCellPatchTypes(allPatchTypes);
+    finalMap.distribute(compactCellPatchTypes);
 
     // Convert cell-cell addressing to stencil in compact notation
 
@@ -1247,11 +1205,11 @@ bool Foam::cellCellStencils::trackingInverseDistance::update()
             {
                 if
                 (
-                    compactCellTypes[slots[0]] == HOLE
-                 ||
+                    !donorEligible
                     (
-                       !allowInterpolatedDonors_
-                     && compactCellTypes[slots[0]] == INTERPOLATED
+                        compactCellTypes[slots[0]],
+                        compactCellPatchTypes[slots[0]],
+                        allPatchTypes[celli]
                     )
                 )
                 {
@@ -1267,6 +1225,13 @@ bool Foam::cellCellStencils::trackingInverseDistance::update()
                     cellInterpolationWeights_[celli][0] = 1.0;
                     interpolationCells.append(celli);
                 }
+            }
+            else
+            {
+                cellTypes_[celli] = HOLE;
+                cellStencil_[celli].clear();
+                cellInterpolationWeights_[celli].clear();
+                allWeight[celli] = 0.0;
             }
         }
         else

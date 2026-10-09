@@ -112,10 +112,11 @@ protected:
             const List<treeBoundBoxList>& meshBb,
             const PtrList<voxelMeshSearch>& meshSearches,
             const labelList& allCellTypes,
+            const labelList& allPatchTypes,
 
             const label srcI,
             const label tgtI,
-            labelListList& allStencil,
+            List<DynamicList<donorCandidate>>& allCandidates,
             labelList& allDonor
         ) const;
 
