@@ -2091,15 +2091,22 @@ void Foam::cellCellStencils::inverseDistance::createStencil
     // Special value for unused points
     const vector greatPoint(GREAT, GREAT, GREAT);
 
+    // Apply donor policy to the entire expanded stencil. globalCellCells()
+    // also exchanges this mask for processor-boundary neighbours.
     boolList isValidDonor(mesh_.nCells(), true);
-    if (!allowHoleDonors)
+    forAll(cellTypes_, celli)
     {
-        forAll(cellTypes_, celli)
+        if
+        (
+            (!allowHoleDonors && cellTypes_[celli] == HOLE)
+         ||
+            (
+                !allowInterpolatedDonors_
+             && cellTypes_[celli] == INTERPOLATED
+            )
+        )
         {
-            if (cellTypes_[celli] == HOLE)
-            {
-                isValidDonor[celli] = false;
-            }
+            isValidDonor[celli] = false;
         }
     }
 
@@ -2239,11 +2246,9 @@ void Foam::cellCellStencils::inverseDistance::createStencil
 
                         if (cellStencil_[cellI].empty())
                         {
-                            // Donor had no valid (non-HOLE) neighbours in
-                            // globalCellCells -- the donor itself became a HOLE
-                            // after markDonors. Demote acceptor to HOLE so it
-                            // is not left as INTERPOLATED with an empty stencil
-                            // (which would crash the interpolation template).
+                            // No cells survived the configured donor filters.
+                            // Demote the acceptor to avoid an empty interpolated
+                            // stencil.
                             cellTypes_[cellI] = HOLE;
                             isValidDonor[cellI] = false;
                             cellInterpolationWeight_[cellI] = 0.0;

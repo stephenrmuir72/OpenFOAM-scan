@@ -24,7 +24,11 @@ if ! (
     blockMesh > log.blockMesh 2>&1 &&
     oversetDonorFallback > log.serial 2>&1 &&
     grep -q '^Passed donor fallback checks: inverseDistance$' log.serial &&
-    grep -q '^Passed donor fallback checks: trackingInverseDistance$' log.serial
+    grep -q '^Passed donor fallback checks: trackingInverseDistance$' log.serial &&
+    grep -q '^Passed expanded stencil eligibility checks: inverseDistance$' \
+        log.serial &&
+    grep -q '^Passed expanded stencil eligibility checks: trackingInverseDistance$' \
+        log.serial
 ); then
     echo "Serial donor fallback regression failed" >&2
     if [ -f work/log.serial ]; then
@@ -43,6 +47,10 @@ if command -v mpirun >/dev/null 2>&1; then
         grep -q '^Passed donor fallback checks: inverseDistance$' \
             log.oversetDonorFallback &&
         grep -q '^Passed donor fallback checks: trackingInverseDistance$' \
+            log.oversetDonorFallback &&
+        grep -q '^Passed expanded stencil eligibility checks: inverseDistance$' \
+            log.oversetDonorFallback &&
+        grep -q '^Passed expanded stencil eligibility checks: trackingInverseDistance$' \
             log.oversetDonorFallback
     ); then
         echo "Parallel donor fallback regression failed" >&2
@@ -57,4 +65,4 @@ if command -v mpirun >/dev/null 2>&1; then
     fi
 fi
 
-echo "Passed serial and processor-remote donor fallback regressions"
+echo "Passed serial and processor-remote donor fallback and stencil regressions"
