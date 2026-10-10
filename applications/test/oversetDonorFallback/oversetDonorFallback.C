@@ -32,8 +32,10 @@ License
 #include "globalIndex.H"
 #include "Pstream.H"
 #include "inverseDistanceCellCellStencil.H"
+#include "leastSquaresCellCellStencil.H"
 #include "trackingInverseDistanceCellCellStencil.H"
 
+#include <cmath>
 #include <iostream>
 
 using namespace Foam;
@@ -1100,6 +1102,233 @@ private:
 
 
 template<class StencilType>
+bool runWeightingChecks(const fvMesh& mesh, const word& method)
+{
+    label failure = 0;
+
+    dictionary defaultDict;
+    donorFallbackHarness<StencilType> defaultWeights(mesh, defaultDict);
+
+    pointList idwDonors(3);
+    idwDonors[0] = point(-1, 0, 0);
+    idwDonors[1] = point(0, 0, 0);
+    idwDonors[2] = point(1, 0, 0);
+    scalarList weights;
+    defaultWeights.stencilWeights(point(0.25, 0, 0), idwDonors, weights);
+
+    scalar idwValue = 0;
+    forAll(weights, i)
+    {
+        idwValue += weights[i]*idwDonors[i].x();
+    }
+    const scalar idwExpected = 0.0869565;
+    const scalar idwTolerance = 1e-6*max(scalar(1), mag(idwExpected));
+    if
+    (
+        weights.size() != idwDonors.size()
+     || mag(sum(weights) - 1) > idwTolerance
+     || mag(idwValue - idwExpected) > idwTolerance
+    )
+    {
+        failure = 1;
+    }
+
+    pointList donors(4);
+    donors[0] = point(0, 0, 0);
+    donors[1] = point(2, 0, 0);
+    donors[2] = point(0, 3, 0);
+    donors[3] = point(0, 0, 4);
+    const point sample(0.4, 0.6, 0.8);
+    const scalar scalarConstant = 2.75;
+    scalarList scalarField(4, scalarConstant);
+    scalarList affineScalar(4);
+    List<vector> affineVector(4);
+    forAll(donors, i)
+    {
+        affineScalar[i] =
+            1.5 + 2.0*donors[i].x() - 0.75*donors[i].y()
+          + 0.5*donors[i].z();
+        affineVector[i] = vector
+        (
+            donors[i].x() + 2.0*donors[i].y() - donors[i].z(),
+            2.0*donors[i].x() - donors[i].y() + 3.0*donors[i].z(),
+            -donors[i].x() + 0.5*donors[i].y() + 2.0*donors[i].z()
+        );
+    }
+
+    const scalar expectedScalar =
+        1.5 + 2.0*sample.x() - 0.75*sample.y() + 0.5*sample.z();
+    const vector expectedVector
+    (
+        sample.x() + 2.0*sample.y() - sample.z(),
+        2.0*sample.x() - sample.y() + 3.0*sample.z(),
+        -sample.x() + 0.5*sample.y() + 2.0*sample.z()
+    );
+
+    const word schemes[] = {"leastSquares", "linearExact"};
+    for (const word& scheme : schemes)
+    {
+        dictionary linearDict;
+        linearDict.add("weightingScheme", scheme);
+        donorFallbackHarness<StencilType> linearWeights(mesh, linearDict);
+        linearWeights.stencilWeights(sample, donors, weights);
+
+        scalar actualConstant = 0;
+        scalar actualScalar = 0;
+        vector actualVector(Zero);
+        forAll(weights, i)
+        {
+            actualConstant += weights[i]*scalarField[i];
+            actualScalar += weights[i]*affineScalar[i];
+            actualVector += weights[i]*affineVector[i];
+        }
+
+        const scalar tolerance =
+            1e-6*max(scalar(1), mag(expectedScalar));
+        const scalar vectorTolerance =
+            1e-6*max(scalar(1), mag(expectedVector));
+        if
+        (
+            weights.size() != donors.size()
+         || mag(sum(weights) - 1) > tolerance
+         || mag(actualConstant - scalarConstant) > tolerance
+         || mag(actualScalar - expectedScalar) > tolerance
+         || mag(actualVector - expectedVector) > vectorTolerance
+        )
+        {
+            failure = 1;
+        }
+    }
+
+    pointList exactDonors(4);
+    exactDonors[0] = point(-2, 1, 0);
+    exactDonors[1] = point(3, -1, 2);
+    exactDonors[2] = point(0.5, -0.25, 1.25);
+    exactDonors[3] = point(0, 2, -1);
+    dictionary exactDict;
+    exactDict.add("weightingScheme", "linearExact");
+    donorFallbackHarness<StencilType> exactWeights(mesh, exactDict);
+    exactWeights.stencilWeights(exactDonors[2], exactDonors, weights);
+    forAll(weights, i)
+    {
+        if (mag(weights[i] - (i == 2 ? scalar(1) : scalar(0))) > 1e-12)
+        {
+            failure = 1;
+        }
+    }
+
+    pointList degenerateDonors(4);
+    degenerateDonors[0] = point(-1, 0, 0);
+    degenerateDonors[1] = point(0, 0, 0);
+    degenerateDonors[2] = point(1, 0, 0);
+    degenerateDonors[3] = point(2, 0, 0);
+    exactWeights.stencilWeights(point(0.25, 1, 0), degenerateDonors, weights);
+    scalar weightSum = 0;
+    forAll(weights, i)
+    {
+        if (!std::isfinite(weights[i]))
+        {
+            failure = 1;
+        }
+        weightSum += weights[i];
+    }
+    if
+    (
+        weights.size() != degenerateDonors.size()
+     || !std::isfinite(weightSum)
+     || mag(weightSum - 1) > 1e-6
+    )
+    {
+        failure = 1;
+    }
+
+    reduce(failure, maxOp<label>());
+    if (failure)
+    {
+        if (Pstream::master())
+        {
+            std::cerr << "Weighting regression failed for " << method << '\n';
+        }
+        return false;
+    }
+
+    if (Pstream::master())
+    {
+        Info<< "Passed weighting scheme checks: " << method << endl;
+    }
+    return true;
+}
+
+
+bool runLeastSquaresMethodChecks(const fvMesh& mesh)
+{
+    dictionary dict;
+    donorFallbackHarness<cellCellStencils::leastSquares> weightsMethod
+    (
+        mesh,
+        dict
+    );
+
+    const pointList donors
+    ({
+        point(0, 0, 0),
+        point(2, 0, 0),
+        point(0, 3, 0),
+        point(0, 0, 4)
+    });
+    const point sample(0.4, 0.6, 0.8);
+    scalarList weights;
+    weightsMethod.stencilWeights(sample, donors, weights);
+
+    scalar actual = 0;
+    forAll(weights, i)
+    {
+        actual += weights[i]
+            *(1.5 + 2.0*donors[i].x() - 0.75*donors[i].y()
+              + 0.5*donors[i].z());
+    }
+    const scalar expected =
+        1.5 + 2.0*sample.x() - 0.75*sample.y() + 0.5*sample.z();
+    label failure =
+        weights.size() != donors.size()
+     || mag(sum(weights) - 1) > 1e-6
+     || mag(actual - expected) > 1e-6*max(scalar(1), mag(expected));
+
+    const pointList exactDonors
+    ({
+        point(-2, 1, 0),
+        point(3, -1, 2),
+        point(0.5, -0.25, 1.25),
+        point(0, 2, -1)
+    });
+    weightsMethod.stencilWeights(exactDonors[2], exactDonors, weights);
+    forAll(weights, i)
+    {
+        if (mag(weights[i] - (i == 2 ? scalar(1) : scalar(0))) > 1e-12)
+        {
+            failure = 1;
+        }
+    }
+
+    reduce(failure, maxOp<label>());
+    if (failure)
+    {
+        if (Pstream::master())
+        {
+            std::cerr << "Weighting regression failed for leastSquares\n";
+        }
+        return false;
+    }
+
+    if (Pstream::master())
+    {
+        Info<< "Passed weighting scheme checks: leastSquares" << endl;
+    }
+    return true;
+}
+
+
+template<class StencilType>
 bool runMethodChecks(const fvMesh& mesh, const word& method)
 {
     dictionary disallowInterpolated;
@@ -1191,6 +1420,25 @@ int main(int argc, char *argv[])
             "trackingInverseDistance"
         )
     )
+    {
+        return 1;
+    }
+
+    bool weightingChecksPassed =
+        runWeightingChecks<cellCellStencils::inverseDistance>
+        (
+            mesh,
+            "inverseDistance"
+        );
+    weightingChecksPassed =
+        runWeightingChecks<cellCellStencils::trackingInverseDistance>
+        (
+            mesh,
+            "trackingInverseDistance"
+        ) && weightingChecksPassed;
+    weightingChecksPassed =
+        runLeastSquaresMethodChecks(mesh) && weightingChecksPassed;
+    if (!weightingChecksPassed)
     {
         return 1;
     }

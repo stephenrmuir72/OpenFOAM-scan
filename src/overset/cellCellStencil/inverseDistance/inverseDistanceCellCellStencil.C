@@ -41,6 +41,7 @@ License
 #include "oversetFvPatchFields.H"
 #include "topoDistanceData.H"
 #include "FaceCellWave.H"
+#include "SVD.H"
 
 #include "OBJstream.H"
 #include "uindirectPrimitivePatch.H"
@@ -1748,6 +1749,16 @@ void Foam::cellCellStencils::inverseDistance::stencilWeights
     scalarList& weights
 ) const
 {
+    if
+    (
+        weightingScheme_ == "leastSquares"
+     || weightingScheme_ == "linearExact"
+    )
+    {
+        linearExactWeights(sample, donorCcs, weights);
+        return;
+    }
+
     // Inverse-distance weighting
 
     weights.setSize(donorCcs.size());
@@ -1772,6 +1783,103 @@ void Foam::cellCellStencils::inverseDistance::stencilWeights
     forAll(weights, i)
     {
         weights[i] /= sum;
+    }
+}
+
+
+void Foam::cellCellStencils::inverseDistance::linearExactWeights
+(
+    const point& sample,
+    const pointList& donorCcs,
+    scalarList& weights
+) const
+{
+    const label nD = donorCcs.size();
+    weights.setSize(nD, Zero);
+    weights = Zero;
+
+    if (!nD)
+    {
+        return;
+    }
+
+    List<vector> d(nD);
+    scalarList LSQw(nD, Zero);
+    scalar W = 0;
+    vector dw(Zero);
+    RectangularMatrix<scalar> A(nD, 3);
+    label exactHit = -1;
+
+    forAll(donorCcs, j)
+    {
+        d[j] = donorCcs[j] - sample;
+
+        if (mag(d[j]) < ROOTVSMALL)
+        {
+            exactHit = j;
+            break;
+        }
+
+        LSQw[j] = 1.0/magSqr(d[j]);
+        const vector wd = LSQw[j]*d[j];
+        A[j][0] = wd.x();
+        A[j][1] = wd.y();
+        A[j][2] = wd.z();
+        dw += wd;
+        W += LSQw[j];
+    }
+
+    if (exactHit >= 0)
+    {
+        weights[exactHit] = 1;
+        return;
+    }
+
+    if (!std::isfinite(W) || W <= VSMALL)
+    {
+        weights[0] = 1;
+        return;
+    }
+
+    SVD svd(A.T()*A, SMALL);
+    RectangularMatrix<scalar> ATAinvAT(svd.VSinvUt()*A.T());
+    const scalar saveDiag = W;
+
+    for (label i = 0; i < 3; ++i)
+    {
+        const scalarList row(UList<scalar>(ATAinvAT[i], nD));
+
+        forAll(donorCcs, j)
+        {
+            W -= row[j]*LSQw[j]*dw[i];
+        }
+    }
+
+    if (!std::isfinite(W) || mag(W) < SMALL*mag(saveDiag))
+    {
+        weights = Zero;
+        weights[0] = 1;
+        return;
+    }
+
+    bool valid = true;
+    forAll(donorCcs, j)
+    {
+        weights[j] =
+        (
+            LSQw[j]
+          - ATAinvAT[0][j]*LSQw[j]*dw[0]
+          - ATAinvAT[1][j]*LSQw[j]*dw[1]
+          - ATAinvAT[2][j]*LSQw[j]*dw[2]
+        )/W;
+
+        valid = valid && std::isfinite(weights[j]);
+    }
+
+    if (!valid)
+    {
+        weights = Zero;
+        weights[0] = 1;
     }
 }
 
@@ -2317,6 +2425,10 @@ Foam::cellCellStencils::inverseDistance::inverseDistance
 :
     cellCellStencil(mesh),
     dict_(dict),
+    weightingScheme_
+    (
+        dict.getOrDefault<word>("weightingScheme", "inverseDistance")
+    ),
     allowHoleDonors_(dict.getOrDefault("allowHoleDonors", false)),
     allowInterpolatedDonors_
     (
@@ -2344,6 +2456,20 @@ Foam::cellCellStencils::inverseDistance::inverseDistance
         fvPatchFieldBase::zeroGradientType()
     )
 {
+    if
+    (
+        weightingScheme_ != "inverseDistance"
+     && weightingScheme_ != "leastSquares"
+     && weightingScheme_ != "linearExact"
+    )
+    {
+        FatalIOErrorInFunction(dict_)
+            << "Unsupported weightingScheme '" << weightingScheme_ << "'. "
+            << "Valid values are 'inverseDistance', 'leastSquares' "
+            << "or 'linearExact'."
+            << exit(FatalIOError);
+    }
+
     // Add motion-solver fields to non-interpolated fields
     suppressMotionFields();
 

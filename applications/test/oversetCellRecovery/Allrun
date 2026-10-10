@@ -143,6 +143,15 @@ DebugSwitches\
         exit 1
     fi
 
+    if [ "$method" = trackingInverseDistance ]; then
+        if ! grep -q 'Constructed cell voxel meshes' "$caseDir/log.solver" \
+            || ! grep -q 'Constructing voxel mesh' "$caseDir/log.solver"; then
+            echo "Tracking voxel-mesh debug output was not generated" >&2
+            tail -n 80 "$caseDir/log.solver" >&2
+            exit 1
+        fi
+    fi
+
     if ! verifyRecoveryTransition "$caseDir"; then
         echo "Moving-overset reactivation-transition test failed for $method" >&2
         exit 1

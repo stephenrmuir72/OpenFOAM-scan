@@ -44,9 +44,6 @@ SourceFiles
 
 namespace Foam
 {
-
-class voxelMeshSearch;
-
 namespace cellCellStencils
 {
 
@@ -64,9 +61,6 @@ protected:
 
         //- Global indexing for cells
         globalIndex globalCells_;
-
-        //- Current (global) donor cell
-        labelList globalDonor_;
 
         //- Subset according to zone
         PtrList<fvMeshSubset> meshParts_;
@@ -110,7 +104,6 @@ protected:
         (
             PstreamBuffers& pBufs,
             const List<treeBoundBoxList>& meshBb,
-            const PtrList<voxelMeshSearch>& meshSearches,
             const labelList& allCellTypes,
             const labelList& allPatchTypes,
 

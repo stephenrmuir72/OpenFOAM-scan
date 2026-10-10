@@ -33,6 +33,10 @@ checkRegressionLog()
         "$logFile" &&
     grep -q '^Passed expanded stencil eligibility checks: trackingInverseDistance$' \
         "$logFile" &&
+    grep -q '^Passed weighting scheme checks: inverseDistance$' "$logFile" &&
+    grep -q '^Passed weighting scheme checks: trackingInverseDistance$' \
+        "$logFile" &&
+    grep -q '^Passed weighting scheme checks: leastSquares$' "$logFile" &&
     grep -q '^Passed walk-front checks: inverseDistance$' "$logFile" &&
     grep -q '^Passed walk-front checks: trackingInverseDistance$' "$logFile" &&
     holeCounts=$(grep -Ec \

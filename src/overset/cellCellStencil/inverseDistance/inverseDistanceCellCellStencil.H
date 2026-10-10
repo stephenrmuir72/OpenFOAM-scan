@@ -29,6 +29,12 @@ Class
 Description
     Inverse-distance-weighted interpolation stencil.
 
+    The optional weightingScheme selects the weight calculation. The default
+    is inverse-distance weighting; least-squares weighting can reproduce
+    affine fields when the donor geometry is sufficiently well-conditioned.
+    Degenerate stencils use a finite injection fallback and are not generally
+    affine-exact.
+
     hole finding:
     - mark boundary faces on helper (voxel) mesh
     - mark any cell overlaying these voxels
@@ -85,6 +91,9 @@ protected:
 
         //- Dictionary of motion control parameters
         const dictionary dict_;
+
+        //- Weighting scheme (inverseDistance or leastSquares/linearExact)
+        const word weightingScheme_;
 
         //- Allow holes as donors
         const bool allowHoleDonors_;
@@ -339,6 +348,14 @@ protected:
         //- Make holes next to live ones type SPECIAL and include in
         //- interpolation stencil
         void holeExtrapolationStencil(const globalIndex& globalCells);
+
+        //- Calculate least-squares weights for a single acceptor
+        void linearExactWeights
+        (
+            const point& sample,
+            const pointList& donorCcs,
+            scalarList& weights
+        ) const;
 
 
 public:

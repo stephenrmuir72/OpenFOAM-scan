@@ -414,7 +414,6 @@ void Foam::cellCellStencils::trackingInverseDistance::markDonors
 (
     PstreamBuffers& pBufs,
     const List<treeBoundBoxList>& meshBb,
-    const PtrList<voxelMeshSearch>& meshSearches,
     const labelList& allCellTypes,
     const labelList& allPatchTypes,
 
@@ -631,10 +630,6 @@ Foam::cellCellStencils::trackingInverseDistance::trackingInverseDistance
     inverseDistance(mesh, dict, false),
     globalCells_(mesh_.nCells())
 {
-    // Initialise donor cell
-    globalDonor_.setSize(mesh_.nCells());
-    globalDonor_ = -1;
-
     // Initialise mesh partitions
     const labelIOList& zoneID = this->zoneID();
     label nZones = gMax(zoneID)+1;
@@ -847,27 +842,28 @@ bool Foam::cellCellStencils::trackingInverseDistance::update()
     DebugInfo<< FUNCTION_NAME << " : Calculated boundary voxel meshes" << endl;
 
 
-    PtrList<voxelMeshSearch> meshSearches(meshParts_.size());
-    forAll(meshParts_, zonei)
-    {
-        meshSearches.set
-        (
-            zonei,
-            new voxelMeshSearch
-            (
-                meshParts_[zonei].subMesh(),
-                patchBb[zonei][Pstream::myProcNo()],
-                patchDivisions[zonei],
-                true
-            )
-        );
-    }
-
-    DebugInfo<< FUNCTION_NAME << " : Constructed cell voxel meshes" << endl;
-
     PtrList<fvMesh> voxelMeshes;
     if (debug)
     {
+        PtrList<voxelMeshSearch> meshSearches(meshParts_.size());
+        forAll(meshParts_, zonei)
+        {
+            meshSearches.set
+            (
+                zonei,
+                new voxelMeshSearch
+                (
+                    meshParts_[zonei].subMesh(),
+                    patchBb[zonei][Pstream::myProcNo()],
+                    patchDivisions[zonei],
+                    true
+                )
+            );
+        }
+
+        DebugInfo<< FUNCTION_NAME
+            << " : Constructed cell voxel meshes" << endl;
+
         voxelMeshes.setSize(meshSearches.size());
         forAll(meshSearches, zonei)
         {
@@ -956,7 +952,6 @@ bool Foam::cellCellStencils::trackingInverseDistance::update()
             (
                 pBufs,
                 meshBb,
-                meshSearches,
                 allCellTypes,   // to exclude hole donors
                 allPatchTypes,
 
@@ -969,7 +964,6 @@ bool Foam::cellCellStencils::trackingInverseDistance::update()
             (
                 pBufs,
                 meshBb,
-                meshSearches,
                 allCellTypes,   // to exclude hole donors
                 allPatchTypes,
 
