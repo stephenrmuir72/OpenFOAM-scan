@@ -707,6 +707,21 @@ public:
 
         label failure = 0;
 
+        if
+        (
+            !this->validWalkFrontLayerSettings(2, -1)
+         || !this->validWalkFrontLayerSettings(2, 1)
+         || !this->validWalkFrontLayerSettings(2, 2)
+         || this->validWalkFrontLayerSettings(2, -2)
+         || this->validWalkFrontLayerSettings(2, 0)
+         || this->validWalkFrontLayerSettings(2, 3)
+         || this->validWalkFrontLayerSettings(0, -1)
+         || this->validWalkFrontLayerSettings(-1, -1)
+        )
+        {
+            failure = 1;
+        }
+
         // These counts include the current layer, as in walkFront().
         labelList holeCounts(2);
         holeCounts[0] = 1;
@@ -741,7 +756,7 @@ public:
         reduce(failure, maxOp<label>());
         if (failure)
         {
-            return fail(method, "walk-front safeguard helper checks failed");
+            return fail(method, "walk-front layer validation or safeguard checks failed");
         }
 
         labelList zoneID(nCells, 0);

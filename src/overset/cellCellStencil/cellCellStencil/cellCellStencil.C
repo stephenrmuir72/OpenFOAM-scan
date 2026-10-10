@@ -767,6 +767,18 @@ void Foam::cellCellStencil::setUpFrontOnOversetPatch
 }
 
 
+bool Foam::cellCellStencil::validWalkFrontLayerSettings
+(
+    const label holeLayers,
+    const label useLayer
+)
+{
+    return
+        holeLayers >= 1
+     && (useLayer == -1 || (useLayer >= 1 && useLayer <= holeLayers));
+}
+
+
 bool Foam::cellCellStencil::exceedsHoleGrowthLimit
 (
     const label currLayer,
@@ -804,17 +816,20 @@ void Foam::cellCellStencil::walkFront
     const label useLayer
 ) const
 {
-    if (useLayer > holeLayers)
+    if (!validWalkFrontLayerSettings(holeLayers, useLayer))
     {
-        FatalErrorInFunction<< "useLayer: " << useLayer
-            << " is larger than : " <<  holeLayers
-            << abort(FatalError);
-    }
+        if (holeLayers < 1)
+        {
+            FatalErrorInFunction
+                << "holeLayers: " << holeLayers
+                << " must be greater than zero."
+                << abort(FatalError);
+        }
 
-    if (useLayer == 0)
-    {
-        FatalErrorInFunction<< "useLayer: " << useLayer
-            << " can not be zero."
+        FatalErrorInFunction
+            << "useLayer: " << useLayer
+            << " must be -1 (automatic) or in the range [1, "
+            << holeLayers << "]."
             << abort(FatalError);
     }
 

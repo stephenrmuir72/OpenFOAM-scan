@@ -320,6 +320,13 @@ public:
             const label useLayer
         ) const;
 
+        //- Check that the layer count and requested layer are valid
+        static bool validWalkFrontLayerSettings
+        (
+            const label holeLayers,
+            const label useLayer
+        );
+
         //- Check whether the current hole count exceeds twice the previous
         //  layer's count
         static bool exceedsHoleGrowthLimit
