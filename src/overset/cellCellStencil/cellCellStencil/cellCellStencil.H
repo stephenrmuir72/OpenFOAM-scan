@@ -320,6 +320,23 @@ public:
             const label useLayer
         ) const;
 
+        //- Check whether the current hole count exceeds twice the previous
+        //  layer's count
+        static bool exceedsHoleGrowthLimit
+        (
+            const label currLayer,
+            const label nTotalHoles,
+            const labelUList& holesPerLayer
+        );
+
+        //- Select the best automatic layer, defaulting to the first when
+        //  there are no valid volume-ratio samples
+        static label selectLayerByVolumeRatio
+        (
+            const scalarList& averageVolRatio,
+            const bool haveVolRatioSamples
+        );
+
         //- Set up front using allCellTypes
         void setUpFront
         (

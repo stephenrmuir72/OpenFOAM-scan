@@ -682,6 +682,320 @@ public:
     }
 
 
+    bool runWalkFrontChecks(const word& method)
+    {
+        const label nCells = this->mesh_.nCells();
+        const globalIndex globalCells(nCells);
+
+        labelList localCell;
+        labelList globalCell;
+        labelList cellOwner;
+        if
+        (
+            !fixtureCellAddressing
+            (
+                method,
+                globalCells,
+                localCell,
+                globalCell,
+                cellOwner
+            )
+        )
+        {
+            return false;
+        }
+
+        label failure = 0;
+
+        // These counts include the current layer, as in walkFront().
+        labelList holeCounts(2);
+        holeCounts[0] = 1;
+        holeCounts[1] = 3;
+        if
+        (
+            !this->exceedsHoleGrowthLimit(2, 3, holeCounts)
+         || this->exceedsHoleGrowthLimit(2, 2, holeCounts)
+         || this->exceedsHoleGrowthLimit(1, 3, holeCounts)
+        )
+        {
+            failure = 1;
+        }
+
+        scalarList emptyScores(2, GREAT);
+        scalarList populatedScores(2);
+        populatedScores[0] = 0.8;
+        populatedScores[1] = 1.0;
+        scalarList scoresWithEmptyLayer(2);
+        scoresWithEmptyLayer[0] = GREAT;
+        scoresWithEmptyLayer[1] = 0.8;
+        if
+        (
+            this->selectLayerByVolumeRatio(emptyScores, false) != 0
+         || this->selectLayerByVolumeRatio(populatedScores, true) != 0
+         || this->selectLayerByVolumeRatio(scoresWithEmptyLayer, true) != 1
+        )
+        {
+            failure = 1;
+        }
+
+        reduce(failure, maxOp<label>());
+        if (failure)
+        {
+            return fail(method, "walk-front safeguard helper checks failed");
+        }
+
+        labelList zoneID(nCells, 0);
+        labelList allCellTypes(nCells, this->CALCULATED);
+        labelListList allStencil(nCells);
+        labelListList compactStencil(nCells);
+        scalarField allWeight(nCells, Zero);
+        scalarList compactCellVol(4, Zero);
+
+        const scalar referenceVolume = this->mesh_.V()[0];
+        compactCellVol[0] = referenceVolume/0.8;
+        compactCellVol[1] = referenceVolume;
+        compactCellVol[2] = referenceVolume;
+        compactCellVol[3] = referenceVolume;
+
+        forAll(localCell, physicalCell)
+        {
+            const label celli = localCell[physicalCell];
+            if (celli >= 0)
+            {
+                if (physicalCell == 1)
+                {
+                    allCellTypes[celli] = this->HOLE;
+                }
+                else
+                {
+                    allStencil[celli].setSize(1);
+                    allStencil[celli][0] = 0;
+                    compactStencil[celli].setSize(1);
+                    compactStencil[celli][0] =
+                        physicalCell == 3 ? 1 : 0;
+                }
+            }
+        }
+
+        this->walkFront
+        (
+            globalCells,
+            1.0,
+            allStencil,
+            allCellTypes,
+            allWeight,
+            compactCellVol,
+            compactStencil,
+            zoneID,
+            2,
+            -1
+        );
+
+        failure = 0;
+        forAll(localCell, physicalCell)
+        {
+            const label celli = localCell[physicalCell];
+            if (celli >= 0)
+            {
+                const label expectedType =
+                    physicalCell == 1
+                  ? this->HOLE
+                  : physicalCell == 3
+                  ? this->CALCULATED
+                  : this->INTERPOLATED;
+
+                if (allCellTypes[celli] != expectedType)
+                {
+                    failure = 1;
+                }
+            }
+        }
+        reduce(failure, maxOp<label>());
+        if (failure)
+        {
+            return fail
+            (
+                method,
+                "automatic layer selection did not choose the lower-ratio layer"
+            );
+        }
+
+        // Empty stencils on both sides of the initial hole exercise owner and
+        // neighbour hole accounting. The run log should report two new holes.
+        allCellTypes = this->CALCULATED;
+        allWeight = Zero;
+        forAll(allStencil, celli)
+        {
+            allStencil[celli].clear();
+            compactStencil[celli].clear();
+        }
+        forAll(localCell, physicalCell)
+        {
+            const label celli = localCell[physicalCell];
+            if (celli >= 0)
+            {
+                if (physicalCell == 1)
+                {
+                    allCellTypes[celli] = this->HOLE;
+                }
+                else if (physicalCell == 3)
+                {
+                    allStencil[celli].setSize(1);
+                    allStencil[celli][0] = 0;
+                    compactStencil[celli].setSize(1);
+                    compactStencil[celli][0] = 1;
+                }
+            }
+        }
+
+        this->walkFront
+        (
+            globalCells,
+            1.0,
+            allStencil,
+            allCellTypes,
+            allWeight,
+            compactCellVol,
+            compactStencil,
+            zoneID,
+            2,
+            1
+        );
+
+        failure = 0;
+        forAll(localCell, physicalCell)
+        {
+            const label celli = localCell[physicalCell];
+            if (celli >= 0)
+            {
+                const label expectedType =
+                    physicalCell == 3 ? this->INTERPOLATED : this->HOLE;
+                if (allCellTypes[celli] != expectedType)
+                {
+                    failure = 1;
+                }
+            }
+        }
+        reduce(failure, maxOp<label>());
+        if (failure)
+        {
+            return fail
+            (
+                method,
+                "empty-stencil front cells were not retained as holes"
+            );
+        }
+
+        // A missing stencil on the second layer grows the hole count from
+        // zero. Explicit layer selection must still be able to use layer 3.
+        allCellTypes = this->CALCULATED;
+        allWeight = Zero;
+        forAll(allStencil, celli)
+        {
+            allStencil[celli].clear();
+            compactStencil[celli].clear();
+        }
+        forAll(localCell, physicalCell)
+        {
+            const label celli = localCell[physicalCell];
+            if (celli >= 0)
+            {
+                if (physicalCell == 1)
+                {
+                    allCellTypes[celli] = this->HOLE;
+                }
+                else if (physicalCell == 0 || physicalCell == 2)
+                {
+                    allStencil[celli].setSize(1);
+                    allStencil[celli][0] = 0;
+                    compactStencil[celli].setSize(1);
+                    compactStencil[celli][0] = 0;
+                }
+            }
+        }
+
+        this->walkFront
+        (
+            globalCells,
+            1.0,
+            allStencil,
+            allCellTypes,
+            allWeight,
+            compactCellVol,
+            compactStencil,
+            zoneID,
+            3,
+            3
+        );
+
+        failure = 0;
+        forAll(allCellTypes, celli)
+        {
+            if (allCellTypes[celli] != this->HOLE)
+            {
+                failure = 1;
+            }
+        }
+        reduce(failure, maxOp<label>());
+        if (failure)
+        {
+            return fail
+            (
+                method,
+                "explicit layer selection was truncated by the leak guard"
+            );
+        }
+
+        // No fronts means no score samples; automatic selection must safely
+        // retain the first, all-hole layer.
+        allCellTypes = this->HOLE;
+        allWeight = Zero;
+        forAll(allStencil, celli)
+        {
+            allStencil[celli].clear();
+            compactStencil[celli].clear();
+        }
+
+        this->walkFront
+        (
+            globalCells,
+            1.0,
+            allStencil,
+            allCellTypes,
+            allWeight,
+            compactCellVol,
+            compactStencil,
+            zoneID,
+            2,
+            -1
+        );
+
+        failure = 0;
+        forAll(allCellTypes, celli)
+        {
+            if
+            (
+                allCellTypes[celli] != this->HOLE
+             || mag(allWeight[celli]) > SMALL
+            )
+            {
+                failure = 1;
+            }
+        }
+        reduce(failure, maxOp<label>());
+        if (failure)
+        {
+            return fail(method, "empty-layer automatic fallback failed");
+        }
+
+        if (Pstream::master())
+        {
+            Info<< "Passed walk-front checks: " << method << endl;
+        }
+        return true;
+    }
+
+
 private:
 
     bool fixtureCellAddressing
@@ -781,6 +1095,7 @@ bool runMethodChecks(const fvMesh& mesh, const word& method)
     (
         !noInterpolated.run(method)
      || !noInterpolated.runCoincidentAcceptorStencil(method)
+     || !noInterpolated.runWalkFrontChecks(method)
      || !noInterpolated.runExpandedStencilEligibility
         (
             method,

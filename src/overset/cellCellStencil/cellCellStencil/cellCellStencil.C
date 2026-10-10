@@ -767,6 +767,29 @@ void Foam::cellCellStencil::setUpFrontOnOversetPatch
 }
 
 
+bool Foam::cellCellStencil::exceedsHoleGrowthLimit
+(
+    const label currLayer,
+    const label nTotalHoles,
+    const labelUList& holesPerLayer
+)
+{
+    return
+        currLayer > 1
+     && nTotalHoles > 2.0*holesPerLayer[currLayer - 2];
+}
+
+
+Foam::label Foam::cellCellStencil::selectLayerByVolumeRatio
+(
+    const scalarList& averageVolRatio,
+    const bool haveVolRatioSamples
+)
+{
+    return haveVolRatioSamples ? findMin(averageVolRatio) : 0;
+}
+
+
 void Foam::cellCellStencil::walkFront
 (
     const globalIndex& globalCells,
@@ -804,6 +827,7 @@ void Foam::cellCellStencil::walkFront
     DynamicList<scalarField> dAlllWeight;
     // List of average volumen ration interpolated/donor
     DynamicList<scalar> daverageVolRatio;
+    bool haveVolRatioSamples = false;
 
     // Counting holes of different layers
     DynamicList<label> dHoles;
@@ -938,13 +962,12 @@ void Foam::cellCellStencil::walkFront
                                     newIsFront,
                                     newFraction
                                 );
-
-                                nHoles[own] = true;
                             }
                             else
                             {
                                 allWeightWork[own] = 0.0;
                                 allCellTypesWork[own] = HOLE;
+                                nHoles[own] = true;
                                 // Add faces of cell as new front
                                 seedCell
                                 (
@@ -1028,7 +1051,7 @@ void Foam::cellCellStencil::walkFront
         dataSet.append(allCellTypesWork);
 
         // Counting interpolated cells
-        label count = 1;
+        label count = 0;
         forAll (volRatio, i)
         {
             if (volRatio[i] > 0)
@@ -1041,7 +1064,15 @@ void Foam::cellCellStencil::walkFront
 
         const scalar aveVol = mag(gSum(volRatio));
 
-        daverageVolRatio.append(aveVol/nCount);
+        if (nCount)
+        {
+            daverageVolRatio.append(aveVol/nCount);
+            haveVolRatioSamples = true;
+        }
+        else
+        {
+            daverageVolRatio.append(GREAT);
+        }
 
         // Check holes number. A sudden increase occurs when the walk leaks
         // out from the obstacle
@@ -1049,12 +1080,12 @@ void Foam::cellCellStencil::walkFront
         reduce(nTotalHoles, sumOp<label>());
         dHoles.append(nTotalHoles);
 
-        // Check the increase between this layer and the last one
-        // if over 50% breaks the layer loop.
+        // Stop automatic layer selection if the hole count more than doubles
+        // relative to the previous layer.
         if
         (
-            (currLayer > 1)
-          & (nTotalHoles > 2.0*dHoles[currLayer - 1])
+            useLayer == -1
+         && exceedsHoleGrowthLimit(currLayer, nTotalHoles, dHoles)
         )
         {
             break;
@@ -1075,7 +1106,8 @@ void Foam::cellCellStencil::walkFront
     // As this one is next to HOLES
     scalarList averageVolRatio;
     averageVolRatio.transfer(daverageVolRatio);
-    label minVolId = findMin(averageVolRatio);
+    label minVolId =
+        selectLayerByVolumeRatio(averageVolRatio, haveVolRatioSamples);
 
     if (useLayer > -1)
     {
