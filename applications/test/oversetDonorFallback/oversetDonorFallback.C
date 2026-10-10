@@ -492,6 +492,196 @@ public:
     }
 
 
+    bool runCoincidentAcceptorStencil(const word& method)
+    {
+        const label nCells = this->mesh_.nCells();
+        const globalIndex globalCells(nCells);
+
+        labelList localCell;
+        labelList globalCell;
+        labelList cellOwner;
+        if
+        (
+            !fixtureCellAddressing
+            (
+                method,
+                globalCells,
+                localCell,
+                globalCell,
+                cellOwner
+            )
+        )
+        {
+            return false;
+        }
+
+        label failure = 0;
+        if
+        (
+            Pstream::nProcs() > 1
+         &&
+            (
+                cellOwner[0] != cellOwner[1]
+             || cellOwner[0] == cellOwner[2]
+            )
+        )
+        {
+            failure = 1;
+        }
+
+        if ((localCell[0] >= 0) != (localCell[1] >= 0))
+        {
+            failure = 1;
+        }
+
+        this->cellTypes_.setSize(nCells);
+        this->cellTypes_ = this->HOLE;
+        for (label physicalCell = 0; physicalCell < 2; ++physicalCell)
+        {
+            if (localCell[physicalCell] >= 0)
+            {
+                this->cellTypes_[localCell[physicalCell]] =
+                    this->INTERPOLATED;
+            }
+        }
+        if (localCell[2] >= 0)
+        {
+            this->cellTypes_[localCell[2]] = this->CALCULATED;
+        }
+
+        this->interpolationCells_.setSize
+        (
+            (localCell[0] >= 0) + (localCell[1] >= 0)
+        );
+        label interpolationCellI = 0;
+        for (label physicalCell = 0; physicalCell < 2; ++physicalCell)
+        {
+            if (localCell[physicalCell] >= 0)
+            {
+                this->interpolationCells_[interpolationCellI++] =
+                    localCell[physicalCell];
+            }
+        }
+
+        this->cellStencil_.setSize(nCells);
+        forAll(this->cellStencil_, celli)
+        {
+            this->cellStencil_[celli].clear();
+        }
+
+        this->cellInterpolationWeights_.setSize(nCells);
+        forAll(this->cellInterpolationWeights_, celli)
+        {
+            this->cellInterpolationWeights_[celli].clear();
+        }
+
+        for (label acceptorI = 0; acceptorI < 2; ++acceptorI)
+        {
+            const label celli = localCell[acceptorI];
+            if (celli >= 0)
+            {
+                this->cellStencil_[celli].setSize(1);
+                this->cellStencil_[celli][0] = globalCell[2];
+            }
+        }
+
+        List<Map<label>> compactMap;
+        this->cellInterpolationMap_.reset
+        (
+            new mapDistribute(globalCells, this->cellStencil_, compactMap)
+        );
+
+        // Emulate coincident centres in overlapping overset regions.
+        vectorField& cellCentres =
+            const_cast<vectorField&>(this->mesh_.cellCentres());
+        point originalSecondAcceptorCentre(Zero);
+        if (localCell[0] >= 0 && localCell[1] >= 0)
+        {
+            originalSecondAcceptorCentre = cellCentres[localCell[1]];
+            cellCentres[localCell[1]] = cellCentres[localCell[0]];
+        }
+
+        this->createStencil(globalCells, this->allowHoleDonors_);
+
+        if (localCell[0] >= 0 && localCell[1] >= 0)
+        {
+            cellCentres[localCell[1]] = originalSecondAcceptorCentre;
+        }
+
+        labelList compactGlobalCell(nCells);
+        forAll(compactGlobalCell, celli)
+        {
+            compactGlobalCell[celli] = globalCells.toGlobal(celli);
+        }
+        this->cellInterpolationMap().distribute(compactGlobalCell);
+
+        if (localCell[0] >= 0 && localCell[1] >= 0)
+        {
+            const label firstAcceptor = localCell[0];
+            const label secondAcceptor = localCell[1];
+            const labelList& firstStencil =
+                this->cellStencil_[firstAcceptor];
+            const labelList& secondStencil =
+                this->cellStencil_[secondAcceptor];
+            const scalarList& firstWeights =
+                this->cellInterpolationWeights_[firstAcceptor];
+            const scalarList& secondWeights =
+                this->cellInterpolationWeights_[secondAcceptor];
+
+            if
+            (
+                this->cellTypes_[firstAcceptor] != this->INTERPOLATED
+             || this->cellTypes_[secondAcceptor] != this->INTERPOLATED
+             || firstStencil.empty()
+             || firstStencil.size() != secondStencil.size()
+             || firstWeights.size() != firstStencil.size()
+             || secondWeights.size() != secondStencil.size()
+             || mag(sum(firstWeights) - 1.0) > 100*SMALL
+             || mag(sum(secondWeights) - 1.0) > 100*SMALL
+            )
+            {
+                failure = 1;
+            }
+            else
+            {
+                forAll(firstStencil, sloti)
+                {
+                    if
+                    (
+                        firstStencil[sloti] != secondStencil[sloti]
+                     || mag(firstWeights[sloti] - secondWeights[sloti])
+                        > 100*SMALL
+                     || firstStencil[sloti] < 0
+                     || firstStencil[sloti] >= compactGlobalCell.size()
+                     || compactGlobalCell[firstStencil[sloti]]
+                        != globalCell[2]
+                    )
+                    {
+                        failure = 1;
+                    }
+                }
+            }
+        }
+
+        reduce(failure, maxOp<label>());
+        if (failure)
+        {
+            return fail
+            (
+                method,
+                "coincident acceptors did not both receive the shared stencil"
+            );
+        }
+
+        if (Pstream::master())
+        {
+            Info<< "Passed coincident acceptor stencil checks: "
+                << method << endl;
+        }
+        return true;
+    }
+
+
 private:
 
     bool fixtureCellAddressing
@@ -590,6 +780,7 @@ bool runMethodChecks(const fvMesh& mesh, const word& method)
     if
     (
         !noInterpolated.run(method)
+     || !noInterpolated.runCoincidentAcceptorStencil(method)
      || !noInterpolated.runExpandedStencilEligibility
         (
             method,

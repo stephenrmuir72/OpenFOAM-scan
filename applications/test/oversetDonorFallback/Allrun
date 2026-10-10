@@ -25,6 +25,10 @@ if ! (
     oversetDonorFallback > log.serial 2>&1 &&
     grep -q '^Passed donor fallback checks: inverseDistance$' log.serial &&
     grep -q '^Passed donor fallback checks: trackingInverseDistance$' log.serial &&
+    grep -q '^Passed coincident acceptor stencil checks: inverseDistance$' \
+        log.serial &&
+    grep -q '^Passed coincident acceptor stencil checks: trackingInverseDistance$' \
+        log.serial &&
     grep -q '^Passed expanded stencil eligibility checks: inverseDistance$' \
         log.serial &&
     grep -q '^Passed expanded stencil eligibility checks: trackingInverseDistance$' \
@@ -47,6 +51,10 @@ if command -v mpirun >/dev/null 2>&1; then
         grep -q '^Passed donor fallback checks: inverseDistance$' \
             log.oversetDonorFallback &&
         grep -q '^Passed donor fallback checks: trackingInverseDistance$' \
+            log.oversetDonorFallback &&
+        grep -q '^Passed coincident acceptor stencil checks: inverseDistance$' \
+            log.oversetDonorFallback &&
+        grep -q '^Passed coincident acceptor stencil checks: trackingInverseDistance$' \
             log.oversetDonorFallback &&
         grep -q '^Passed expanded stencil eligibility checks: inverseDistance$' \
             log.oversetDonorFallback &&

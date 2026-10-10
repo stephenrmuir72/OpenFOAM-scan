@@ -2222,7 +2222,7 @@ void Foam::cellCellStencils::inverseDistance::createStencil
         cellInterpolationMap().distribute(donorWeights);
         cellInterpolationMap().distribute(samples);
 
-        // Check which acceptor has won and transfer
+        // Check which acceptors have won
         forAll(interpolationCells_, i)
         {
             if (!doneAcceptor[i])
@@ -2242,7 +2242,9 @@ void Foam::cellCellStencils::inverseDistance::createStencil
                     // Important: check if the stencil is actually for this cell
                     if (samples[sloti] == mesh_.cellCentres()[cellI])
                     {
-                        cellStencil_[cellI].transfer(donorCellCells[sloti]);
+                        // Coincident acceptors can share this donor slot.
+                        // Copy the result so each matching acceptor gets it.
+                        cellStencil_[cellI] = donorCellCells[sloti];
 
                         if (cellStencil_[cellI].empty())
                         {
@@ -2255,10 +2257,8 @@ void Foam::cellCellStencils::inverseDistance::createStencil
                         }
                         else
                         {
-                            cellInterpolationWeights_[cellI].transfer
-                            (
-                                donorWeights[sloti]
-                            );
+                            cellInterpolationWeights_[cellI] =
+                                donorWeights[sloti];
                         }
                         // Mark cell as being done (even if demoted) so it does
                         // not get sent over again.
