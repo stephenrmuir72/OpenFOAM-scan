@@ -1442,3 +1442,38 @@ Usage
 
     Original code supplied by Henning Scheufler, DLR (2019)
 
+## Overset regressions
+
+Run with the matching OpenFOAM environment loaded:
+
+    wmake libso src/overset
+    applications/test/oversetPatchIntersection/Allrun
+    applications/test/oversetDonorFallback/Allrun
+    applications/test/oversetCellRecovery/Allrun
+
+`oversetPatchIntersection` checks exact geometry, voxel bounds/refinement,
+warped-cell representation, spatial-index queries, and core negative tet-base
+fallback on a real mesh. This runner is serial.
+
+`oversetDonorFallback` checks donor retries, coincident acceptors, readiness,
+fringe policy (including volume-weight fallback), signed-weight validation,
+nearest injection, and voxel-budget/weighting-scheme dictionary diagnostics.
+It also checks translated/rotated planar geometry, a fixed anisotropic
+normalization counterexample, near-donor Schur cancellation, affine scalar/
+vector reproduction, and off-plane rejection for both affine scheme aliases
+and standalone `leastSquares`. Repeated-report tests verify per-instance
+first warnings, subsequent summaries, event-free resets, and global counts
+with events on one MPI rank. Applicable checks repeat under MPI and random
+cell renumbering.
+
+`oversetCellRecovery` exercises moving ID, TID, and volume-weight recovery,
+same-zone fallback, unrecoverable cells, and return to CALCULATED, with an
+additional MPI TID run. It rebuilds `overPimpleDyMFoam` to match the stencil
+headers and also runs 20 fixed moving `twoSimpleRotors` updates for ID/TID
+with `linearExact` and standalone `leastSquares`, plus MPI TID. These check
+zero fallback calls, finite pressure/velocity probe output, and matching
+global partitions. MPI tests require `mpirun`; verify their execution
+messages before claiming parallel coverage.
+
+Runners refuse an existing `work` directory and remove their temporary cases.
+These are correctness regressions, not large 3-D performance benchmarks.

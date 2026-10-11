@@ -21,13 +21,18 @@ if ! (
     cd work
     blockMesh > log.blockMesh 2>&1 &&
     oversetPatchIntersection > log.test 2>&1 &&
-    grep -q '^Passed exact overset patch intersection checks$' log.test
+    grep -q '^Passed exact overset patch intersection checks$' log.test &&
+    oversetPatchIntersection -negativeBase > log.negativeBase 2>&1 &&
+    grep -q '^Passed negative tet-base fallback checks$' log.negativeBase
 ); then
     echo "Overset patch intersection regression failed" >&2
     if [ -f work/log.test ]; then
         tail -n 80 work/log.test >&2
     elif [ -f work/log.blockMesh ]; then
         tail -n 80 work/log.blockMesh >&2
+    fi
+    if [ -f work/log.negativeBase ]; then
+        tail -n 40 work/log.negativeBase >&2
     fi
     exit 1
 fi

@@ -32,7 +32,7 @@ Description
     The optional weightingScheme selects the weight calculation. The default
     is inverse-distance weighting; least-squares weighting can reproduce
     affine fields when the donor geometry is sufficiently well-conditioned.
-    Degenerate stencils use a finite injection fallback and are not generally
+    Degenerate stencils use nearest-donor injection and are not generally
     affine-exact.
 
     hole finding:
@@ -97,8 +97,15 @@ protected:
         //- Dictionary of motion control parameters
         const dictionary dict_;
 
-        //- Weighting scheme (inverseDistance or leastSquares/linearExact)
-        const word weightingScheme_;
+        enum class weightingScheme
+        {
+            INVERSE_DISTANCE,
+            LINEAR_EXACT
+        };
+        static const Enum<weightingScheme> weightingSchemeNames_;
+        const weightingScheme weightingScheme_;
+        mutable labelList weightFallbackCounts_;
+        mutable bool weightFallbackReported_;
 
         //- Allow holes as donors
         const bool allowHoleDonors_;
@@ -157,6 +164,31 @@ protected:
 
 
    // Protected Member Functions
+
+        void nearestWeights
+        (
+            const point& sample,
+            const pointList& donorCcs,
+            scalarList& weights,
+            const label reason
+        ) const;
+
+        void reportWeightFallbacks() const;
+
+        void restoreReactivationCandidates
+        (
+            const globalIndex& globalCells,
+            const labelList& zoneID,
+            const labelList& patchTypes,
+            const boolList& previouslyBlanked,
+            const boolList& candidates,
+            boolList& sameZoneFallback,
+            const labelListList& reactivationStencil,
+            const boolList& protectedHoles,
+            labelList& cellTypes,
+            labelListList& stencil,
+            scalarField& interpolationWeight
+        ) const;
 
         //- Refresh the geometry tolerance derived from the current mesh span
         void updateGeometryTolerance();

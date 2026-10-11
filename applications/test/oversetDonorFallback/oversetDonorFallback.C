@@ -34,9 +34,13 @@ License
 #include "inverseDistanceCellCellStencil.H"
 #include "leastSquaresCellCellStencil.H"
 #include "trackingInverseDistanceCellCellStencil.H"
+#include "cellVolumeWeightCellCellStencil.H"
+#include "patchFaceIntersection.H"
+#include "Random.H"
 
 #include <cmath>
 #include <iostream>
+#include <limits>
 
 using namespace Foam;
 
@@ -50,6 +54,8 @@ class donorFallbackHarness
 
 public:
 
+    using StencilType::reportWeightFallbacks;
+
     donorFallbackHarness
     (
         const fvMesh& mesh,
@@ -58,6 +64,175 @@ public:
     :
         StencilType(mesh, dict, false)
     {}
+
+    bool checkAffineFixture
+    (
+        const word& method,
+        const label fixture,
+        const point& sample,
+        const pointList& donors,
+        const bool requireNegative = false
+    ) const
+    {
+        const label before = sum(this->weightFallbackCounts_);
+        scalarList weights;
+        this->stencilWeights(sample, donors, weights);
+        bool valid =
+            weights.size() == donors.size()
+         && this->checkWeights(weights) == this->VALID_WEIGHTS
+         && sum(this->weightFallbackCounts_) == before;
+        long double actualScalar = 0;
+        FixedList<long double, 3> actualVector(Zero);
+        long double errorScale = 1;
+        bool negative = false;
+        for (label i = 0; i < min(weights.size(), donors.size()); ++i)
+        {
+            const vector d = donors[i] - sample;
+            actualScalar += weights[i]*(2.75 + 2*d.x() - 0.75*d.y() + d.z());
+            const vector value
+            (
+                1 + d.x() + 2*d.y() - d.z(),
+                2 + 2*d.x() - d.y() + 3*d.z(),
+                3 - d.x() + 0.5*d.y() + 2*d.z()
+            );
+            for (direction cmpt = 0; cmpt < 3; ++cmpt)
+            {
+                actualVector[cmpt] += weights[i]*value[cmpt];
+                errorScale += static_cast<long double>(mag(weights[i]))
+                    *(mag(donors[i][cmpt]) + mag(sample[cmpt]) + mag(d[cmpt]));
+            }
+            negative |= weights[i] < 0;
+        }
+        const long double tolerance =
+            128*std::numeric_limits<scalar>::epsilon()*errorScale;
+        valid = valid && std::abs(actualScalar - 2.75L) <= tolerance;
+        for (direction cmpt = 0; cmpt < 3; ++cmpt)
+        {
+            valid = valid && std::abs(actualVector[cmpt] - (cmpt + 1)) <= tolerance;
+        }
+        valid = valid && (!requireNegative || negative);
+        if (!valid && Pstream::master())
+        {
+            const auto precision = Info().precision();
+            Info().precision(std::numeric_limits<scalar>::max_digits10);
+            Info<< "Affine fixture failed: " << method << " " << fixture
+                << " fallback calls=" << sum(this->weightFallbackCounts_) - before
+                << " sample=" << sample << " donors=" << donors << endl;
+            Info().precision(precision);
+        }
+        return valid;
+    }
+
+    bool checkOffPlaneFixture
+    (
+        const point& sample,
+        const pointList& donors
+    ) const
+    {
+        const label before = sum(this->weightFallbackCounts_);
+        scalarList weights;
+        this->stencilWeights(sample, donors, weights);
+        label nearest = 0;
+        forAll(donors, i)
+        {
+            if (magSqr(donors[i] - sample) < magSqr(donors[nearest] - sample))
+            {
+                nearest = i;
+            }
+        }
+        bool valid =
+            sum(this->weightFallbackCounts_) == before + 1
+         && weights.size() == donors.size();
+        forAll(weights, i)
+        {
+            valid = valid && weights[i] == (i == nearest ? scalar(1) : scalar(0));
+        }
+        if (!valid && Pstream::master())
+        {
+            Info<< "Off-plane fixture failed: sample=" << sample
+                << " fallback calls=" << sum(this->weightFallbackCounts_) - before
+                << " weights=" << weights << endl;
+        }
+        return valid;
+    }
+
+    bool runDiagnosticReportingChecks(const word& method, const label instance)
+    {
+        const label nCells = this->mesh_.nCells();
+        const globalIndex globalCells(nCells);
+        labelList localCell, globalCell, cellOwner;
+        if (!fixtureCellAddressing
+            (method, globalCells, localCell, globalCell, cellOwner))
+        {
+            return false;
+        }
+        label failure = this->invalidStencilReported_ || this->weightFallbackReported_;
+        for (label update = 0; update < 3; ++update)
+        {
+            if (Pstream::master())
+            {
+                Info<< "Diagnostic fixture begin: " << method
+                    << " instance=" << instance << " update=" << update << endl;
+            }
+            this->cellTypes_ = this->CALCULATED;
+            this->cellStencil_.setSize(nCells);
+            this->cellInterpolationWeights_.setSize(nCells);
+            forAll(this->cellStencil_, celli)
+            {
+                this->cellStencil_[celli].clear();
+                this->cellInterpolationWeights_[celli].clear();
+            }
+            this->cellInterpolationWeight_.primitiveFieldRef() = Zero;
+            if (update < 2 && localCell[0] >= 0)
+            {
+                const label celli = localCell[0];
+                this->cellTypes_[celli] = this->INTERPOLATED;
+                this->cellStencil_[celli] = labelList({globalCell[2]});
+                this->cellInterpolationWeights_[celli] = scalarList({0.5});
+                this->cellInterpolationWeight_[celli] = 1;
+            }
+            List<Map<label>> compactMap;
+            this->cellInterpolationMap_.reset
+            (
+                new mapDistribute(globalCells, this->cellStencil_, compactMap)
+            );
+            const boolList mask(nCells, false);
+            const labelList patches(nCells, this->OTHER);
+            this->recoverSameZoneInterpolations
+            (
+                globalCells, this->zoneID(), mask, mask, mask, mask, patches,
+                false, false, this->cellTypes_, this->cellStencil_,
+                this->cellInterpolationWeights_,
+                this->cellInterpolationWeight_.primitiveFieldRef(),
+                this->interpolationCells_, this->cellInterpolationMap_
+            );
+            if (localCell[0] >= 0)
+            {
+                failure |= this->cellTypes_[localCell[0]]
+                    != (update < 2 ? this->HOLE : this->CALCULATED);
+            }
+            if (update < 2 && Pstream::master())
+            {
+                scalarList weights;
+                this->nearestWeights
+                (
+                    point(0.25, 1, 0),
+                    pointList({point(-1, 0, 0), point(0, 0, 0)}),
+                    weights, 1
+                );
+            }
+            this->reportWeightFallbacks();
+            failure |= sum(this->weightFallbackCounts_) != 0;
+            failure |= !this->invalidStencilReported_
+                || !this->weightFallbackReported_;
+            if (Pstream::master())
+            {
+                Info<< "Diagnostic fixture end" << endl;
+            }
+        }
+        reduce(failure, maxOp<label>());
+        return !failure;
+    }
 
 
     bool run(const word& method)
@@ -1836,6 +2011,143 @@ public:
         return true;
     }
 
+    bool runReviewValidationChecks(const word& method)
+    {
+        const label nCells = this->mesh_.nCells();
+        const globalIndex globalCells(nCells);
+        labelList localCell, globalCell, cellOwner;
+        if (!fixtureCellAddressing
+            (method, globalCells, localCell, globalCell, cellOwner))
+        {
+            return false;
+        }
+
+        label failure = 0;
+        const scalar epsilon = std::numeric_limits<scalar>::epsilon();
+        failure |= this->checkWeights(scalarList({1 + 4*epsilon}))
+                != this->VALID_WEIGHTS;
+        failure |= this->checkWeights(scalarList({1 + 16*epsilon}))
+                != this->UNNORMALIZED_WEIGHTS;
+        const scalar maxWeight = std::numeric_limits<scalar>::max();
+        failure |= this->checkWeights(scalarList({maxWeight, maxWeight}))
+                != this->UNNORMALIZED_WEIGHTS;
+        for (label scenario = 0; scenario < 7; ++scenario)
+        {
+            this->cellTypes_ = this->CALCULATED;
+            this->cellStencil_.setSize(nCells);
+            this->cellInterpolationWeights_.setSize(nCells);
+            forAll(this->cellStencil_, celli)
+            {
+                this->cellStencil_[celli].clear();
+                this->cellInterpolationWeights_[celli].clear();
+            }
+            this->cellInterpolationWeight_.primitiveFieldRef() = Zero;
+            boolList candidates(nCells, false), oldHoles(nCells, false);
+            boolList fallback(nCells, false), protectedHoles(nCells, false);
+            labelList patches(nCells, this->OTHER);
+            if (localCell[3] >= 0 && (scenario == 0 || scenario == 6))
+            {
+                this->cellTypes_[localCell[3]] =
+                    scenario == 0 ? this->HOLE : this->INTERPOLATED;
+                oldHoles[localCell[3]] = true;
+            }
+            if (localCell[0] >= 0)
+            {
+                const label celli = localCell[0];
+                this->cellTypes_[celli] = this->INTERPOLATED;
+                this->cellInterpolationWeight_[celli] = 1;
+                this->cellStencil_[celli] = labelList
+                    ({globalCell[2], globalCell[3]});
+                const scalar roundOff =
+                    std::sqrt(std::numeric_limits<scalar>::epsilon());
+                const scalar scale = 1/roundOff;
+                this->cellInterpolationWeights_[celli] =
+                    scenario == 0 || scenario == 6 ? scalarList({0.5, 0.5})
+                  : scenario == 1 ? scalarList({scale, -scale + 1 + 2*roundOff})
+                  : scalarList({0.5, 0.6});
+                if (scenario == 3)
+                {
+                    this->cellInterpolationWeights_[celli][0] =
+                        std::numeric_limits<scalar>::quiet_NaN();
+                }
+                if (scenario == 4)
+                {
+                    this->cellInterpolationWeights_[celli][0] =
+                        std::numeric_limits<scalar>::infinity();
+                }
+                if (scenario == 5)
+                {
+                    this->cellInterpolationWeights_[celli].setSize(1);
+                }
+            }
+            for (label update = 0; update < 2; ++update)
+            {
+                List<Map<label>> compactMap;
+                this->cellInterpolationMap_.reset
+                (
+                    new mapDistribute
+                        (globalCells, this->cellStencil_, compactMap)
+                );
+                this->recoverSameZoneInterpolations
+                (
+                    globalCells, this->zoneID(), candidates, fallback,
+                    oldHoles, protectedHoles, patches, this->allowHoleDonors_,
+                    this->allowInterpolatedDonors_, this->cellTypes_,
+                    this->cellStencil_, this->cellInterpolationWeights_,
+                    this->cellInterpolationWeight_.primitiveFieldRef(),
+                    this->interpolationCells_, this->cellInterpolationMap_
+                );
+                if (localCell[0] >= 0)
+                {
+                    const label celli = localCell[0];
+                    if (scenario >= 2 && scenario != 6)
+                    {
+                        failure |= this->cellTypes_[celli] != this->HOLE
+                            || !this->cellStencil_[celli].empty()
+                            || this->cellInterpolationWeight_[celli] != 0;
+                    }
+                    else
+                    {
+                        const bool excludesOldHole =
+                            (scenario == 0 && !this->allowHoleDonors_)
+                         || (scenario == 6
+                            && (!this->allowHoleDonors_
+                             || !this->allowInterpolatedDonors_));
+                        failure |= this->cellTypes_[celli] != this->INTERPOLATED
+                            || this->cellStencil_[celli].size()
+                            != (excludesOldHole ? 1 : 2);
+                    }
+                }
+                if (update == 0)
+                {
+                    labelList ids(nCells);
+                    forAll(ids, celli)
+                    {
+                        ids[celli] = globalCells.toGlobal(celli);
+                    }
+                    this->cellInterpolationMap_->distribute(ids);
+                    for (labelList& stencil : this->cellStencil_)
+                    {
+                        for (label& slot : stencil)
+                        {
+                            slot = ids[slot];
+                        }
+                    }
+                }
+            }
+        }
+        reduce(failure, maxOp<label>());
+        if (failure)
+        {
+            return fail(method, "ordinary old-hole policy or weight validation");
+        }
+        if (Pstream::master())
+        {
+            Info<< "Passed review validation checks: " << method << endl;
+        }
+        return true;
+    }
+
     bool runRecoveryFallbackPolicies(const word& method)
     {
         const label nCells = this->mesh_.nCells();
@@ -2169,6 +2481,67 @@ private:
 };
 
 
+class volumeFallbackHarness : public cellCellStencils::cellVolumeWeight
+{
+public:
+    volumeFallbackHarness(const fvMesh& mesh, const dictionary& dict)
+    :
+        cellVolumeWeight(mesh, dict, false)
+    {}
+
+    bool run()
+    {
+        const globalIndex globalCells(mesh_.nCells());
+        const labelList selected(identity(mesh_.nCells()));
+        const labelList zones(mesh_.nCells(), Zero);
+        label failure = 0;
+        for (label scenario = 0; scenario < 4; ++scenario)
+        {
+            const labelList types
+                (mesh_.nCells(), scenario == 1 ? INTERPOLATED : CALCULATED);
+            const labelList patches
+                (mesh_.nCells(), scenario == 0 ? OVERSET : OTHER);
+            const boolList oldHoles(mesh_.nCells(), scenario == 3);
+            const boolList protectedHoles(mesh_.nCells(), false);
+            const boolList candidates(mesh_.nCells(), false);
+            const boolList mask
+            (
+                recoveryDonorMask
+                (
+                    types, oldHoles, protectedHoles, candidates,
+                    allowInterpolatedDonors_
+                )
+            );
+            labelListList neighbours;
+            pointListList centres;
+            globalSameZoneCellCells
+            (
+                globalCells, mesh_, zones, mask, selected, neighbours,
+                centres, types, patches
+            );
+            const bool expected =
+                scenario == 2 || (scenario == 1 && allowInterpolatedDonors_);
+            for (const label celli : selected)
+            {
+                failure |= neighbours[celli].empty() == expected
+                    || neighbours[celli].size() != centres[celli].size();
+            }
+        }
+        reduce(failure, maxOp<label>());
+        if (failure)
+        {
+            std::cerr << "Volume-weight fallback donor policy failed\n";
+            return false;
+        }
+        if (Pstream::master())
+        {
+            Info<< "Passed volume-weight fallback policy checks" << endl;
+        }
+        return true;
+    }
+};
+
+
 template<class StencilType>
 bool runWeightingChecks(const fvMesh& mesh, const word& method)
 {
@@ -2309,6 +2682,27 @@ bool runWeightingChecks(const fvMesh& mesh, const word& method)
     {
         failure = 1;
     }
+    if (weights[1] != 1)
+    {
+        failure = 1;
+    }
+    std::swap(degenerateDonors[0], degenerateDonors[1]);
+    exactWeights.stencilWeights(point(0.25, 1, 0), degenerateDonors, weights);
+    if (weights[0] != 1)
+    {
+        failure = 1;
+    }
+    const scalar distant = 2*std::sqrt(std::numeric_limits<scalar>::max());
+    const pointList distantDonors
+    ({
+        point(2*distant, 0, 0), point(distant, 0, 0), point(3*distant, 0, 0)
+    });
+    exactWeights.stencilWeights(Zero, distantDonors, weights);
+    if (weights[1] != 1 || sum(weights) != 1)
+    {
+        failure = 1;
+    }
+    exactWeights.reportWeightFallbacks();
 
     reduce(failure, maxOp<label>());
     if (failure)
@@ -2391,6 +2785,184 @@ bool runLeastSquaresMethodChecks(const fvMesh& mesh)
     if (Pstream::master())
     {
         Info<< "Passed weighting scheme checks: leastSquares" << endl;
+    }
+    return true;
+}
+
+template<class StencilType>
+bool runAffineRoundoffChecks(const fvMesh& mesh, const word& method)
+{
+    label failure = 0;
+    for (const word& scheme : {word("leastSquares"), word("linearExact")})
+    {
+        dictionary dict;
+        dict.add("weightingScheme", scheme);
+        donorFallbackHarness<StencilType> harness(mesh, dict);
+        const pointList planar
+        ({
+            point(-1, -1, 0), point(1, -1, 0), point(1, 1, 0),
+            point(-1, 1, 0), point(0.3, 0.2, 0)
+        });
+        const point sample(0.15, -0.1, 0);
+        const tensor rotation
+        (
+            0.6, -0.64, 0.48,
+            0.8, 0.48, -0.36,
+            0, 0.6, 0.8
+        );
+        for (label fixture = 0; fixture < 5; ++fixture)
+        {
+            const vector offset = fixture == 1 ? vector(0, 0, 0.005)
+                : fixture == 4 ? vector(1e4, -2e4, 3e4)
+                : fixture >= 2 ? vector(12.3, -4.5, 7.8) : vector(Zero);
+            const scalar scale = fixture
+                ? max
+                (
+                    scalar(2e-4),
+                    1024*std::numeric_limits<scalar>::epsilon()*mag(offset)
+                )
+                : 1;
+            pointList donors(planar);
+            const bool rotate = fixture >= 3;
+            for (point& donor : donors)
+            {
+                donor = offset + scale*(rotate ? rotation & donor : donor);
+            }
+            point receiver
+            (
+                offset + scale*(rotate ? rotation & sample : sample)
+            );
+            if (fixture == 1)
+            {
+                // Independent centre calculations differ by a few coordinate ulps.
+                for (label i = 0; i < 3; ++i)
+                {
+                    receiver.z() = std::nextafter
+                    (
+                        receiver.z(), std::numeric_limits<scalar>::infinity()
+                    );
+                }
+            }
+            failure |= !harness.checkAffineFixture(method, fixture, receiver, donors);
+            const vector normal = rotate ? rotation & vector(0, 0, 1) : vector(0, 0, 1);
+            failure |= !harness.checkOffPlaneFixture(receiver + 0.1*scale*normal, donors);
+        }
+        failure |= !harness.checkAffineFixture
+        (
+            method, 5, point(2, 0.1, 0), planar, true
+        );
+        const pointList anisotropic
+        ({
+            point(0.021640926264394362, 0.021511702597657972, 8.6632908161664963e-05),
+            point(0.038426219370354189, 0.0057644683332752364, 0.010146476509941304),
+            point(0.039741760485973845, 0.0023795135054964132, 0.020783161356641953),
+            point(0.043555766077231377, 1.0526642102772572, 0.0002269181873430377),
+            point(0.065767225094314194, 1.0549197846147056, 0.010675898748506121),
+            point(0.0036175745358908683, 1.0488304179368257, 0.020298837374149361),
+            point(0.009708889660957766, 2.0803663283284775, 0.00021658178137174883),
+            point(0.067100049928227462, 2.0469296387200786, 0.010789302297544623),
+            point(0.09640847035564569, 2.038076369835832, 0.020137150161493249),
+            point(1.0542982286033229, 0.057155057489893059, 7.1612606203204677e-05),
+            point(1.0382898844107249, 0.070730138914978521, 0.010237522188081567),
+            point(1.0471058350869924, 0.097170411903055587, 0.02038586596686303),
+            point(1.099946676038553, 1.0340079403101583, 6.462774683505314e-05),
+            point(1.0861523737705443, 1.0836760352129204, 0.010048951485245856),
+            point(1.0652357127235637, 1.0804109878799952, 0.020930352264845072),
+            point(1.0291957726650496, 2.0327279498622395, 0.00030037568349984735),
+            point(1.0302359488172954, 2.0237450867124078, 0.010483688120411134),
+            point(1.0021320389108961, 2.0081275965097065, 0.020795888464374034),
+            point(2.0384307033989413, 0.034385872708802154, 0.00012002078520514389),
+            point(2.0768920950129455, 0.089658658850108153, 0.010201523606199161),
+            point(2.0767672036265936, 0.0046384233198845694, 0.020027509602223981),
+            point(2.03583508888295, 1.0937449475427476, 0.00051050246830427169),
+            point(2.0840295072707802, 1.0018278030583221, 0.010958246633192129),
+            point(2.0816771735033601, 1.0034933350597648, 0.020355447301400136),
+            point(2.0246092495363155, 2.0474331440263276, 0.00061345553573458533),
+            point(2.0568626902547398, 2.0805096986525649, 0.010516363409707272),
+            point(2.0318393630095009, 2.031516356537169, 0.020262465000714353)
+        });
+        failure |= !harness.checkAffineFixture
+        (
+            method, 6,
+            point(1.0762600959182054, 1.0696263659380569, 0.0037560394615102377),
+            anisotropic
+        );
+        const pointList nearHit
+        ({
+            point(0.01035714286, 0.0016428571424999996, 0.0049999999999999992),
+            point(0.010500000000000001, 0.0016428571425000003, 0.0050000000000000001),
+            point(0.01035714286, 0.0017857142855, 0.0049999999999999992),
+            point(0.01035714286, 0.0015000000000000005, 0.0050000000000000001),
+            point(0.010214285715, 0.0016428571425000003, 0.0050000000000000001)
+        });
+        failure |= !harness.checkAffineFixture
+        (
+            method, 7,
+            point(0.010358045023469278, 0.0016417646055956233, 0.0050000000000000001),
+            nearHit
+        );
+        Random random(7);
+        for (label fixture = 0; fixture < 1000; ++fixture)
+        {
+            pointList donors(27);
+            label donorI = 0;
+            for (label i = 0; i < 3; ++i)
+            {
+                for (label j = 0; j < 3; ++j)
+                {
+                    for (label k = 0; k < 3; ++k)
+                    {
+                        donors[donorI++] = point
+                        (
+                            i + 0.1*random.sample01<scalar>(),
+                            j + 0.1*random.sample01<scalar>(),
+                            (k + 0.1*random.sample01<scalar>())/100
+                        );
+                    }
+                }
+            }
+            const point receiver
+            (
+                0.25 + random.sample01<scalar>(),
+                0.25 + random.sample01<scalar>(),
+                (0.25 + random.sample01<scalar>())/100
+            );
+            failure |= !harness.checkAffineFixture
+            (
+                method, fixture + 8, receiver, donors
+            );
+        }
+    }
+    reduce(failure, maxOp<label>());
+    if (!failure && Pstream::master())
+    {
+        Info<< "Passed affine roundoff checks: " << method << endl;
+    }
+    return !failure;
+}
+
+bool runAffineRoundoffChecks(const fvMesh& mesh)
+{
+    bool passed = runAffineRoundoffChecks<cellCellStencils::inverseDistance>
+        (mesh, "inverseDistance");
+    passed = runAffineRoundoffChecks<cellCellStencils::trackingInverseDistance>
+        (mesh, "trackingInverseDistance") && passed;
+    passed = runAffineRoundoffChecks<cellCellStencils::leastSquares>
+        (mesh, "leastSquares") && passed;
+    return passed;
+}
+
+template<class StencilType>
+bool runDiagnosticReportingChecks(const fvMesh& mesh, const word& method)
+{
+    for (label instance = 0; instance < 2; ++instance)
+    {
+        dictionary dict;
+        donorFallbackHarness<StencilType> harness(mesh, dict);
+        if (!harness.runDiagnosticReportingChecks(method, instance))
+        {
+            return false;
+        }
     }
     return true;
 }
@@ -2508,6 +3080,7 @@ bool runMethodChecks(const fvMesh& mesh, const word& method)
     if
     (
         !noInterpolated.run(method)
+     || !noInterpolated.runReviewValidationChecks(method)
      || !noInterpolated.runCoincidentAcceptorStencil(method)
      || !noInterpolated.runRecoveryReadinessChecks(method)
      || !noInterpolated.runRecoveryFallbackPolicies(method)
@@ -2532,7 +3105,8 @@ bool runMethodChecks(const fvMesh& mesh, const word& method)
     donorFallbackHarness<StencilType> withInterpolated(mesh, allowInterpolated);
     if
     (
-        !withInterpolated.runRecoveryReadinessChecks(method)
+        !withInterpolated.runReviewValidationChecks(method)
+     || !withInterpolated.runRecoveryReadinessChecks(method)
      || !withInterpolated.runRecoveryFallbackPolicies(method)
      || !withInterpolated.runOversetExpandedStencilEligibility(method)
      ||
@@ -2552,11 +3126,26 @@ bool runMethodChecks(const fvMesh& mesh, const word& method)
     donorFallbackHarness<StencilType> withHole(mesh, allowHole);
     if
     (
-        !withHole.runExpandedStencilEligibility
+        !withHole.runReviewValidationChecks(method)
+     || !withHole.runRecoveryReadinessChecks(method)
+     || !withHole.runExpandedStencilEligibility
         (
             method,
             cellCellStencil::HOLE
         )
+    )
+    {
+        return false;
+    }
+
+    dictionary holeAndInterpolated;
+    holeAndInterpolated.add("allowInterpolatedDonors", true);
+    holeAndInterpolated.add("allowHoleDonors", true);
+    donorFallbackHarness<StencilType> allDonors(mesh, holeAndInterpolated);
+    if
+    (
+        !allDonors.runReviewValidationChecks(method)
+     || !allDonors.runRecoveryReadinessChecks(method)
     )
     {
         return false;
@@ -2573,10 +3162,59 @@ bool runMethodChecks(const fvMesh& mesh, const word& method)
 int main(int argc, char *argv[])
 {
     argList::addBoolOption("retry", "Test donor-graph reachability retries");
+    argList::addBoolOption("affineValidation", "Test affine rounding and rank controls");
+    argList::addBoolOption("diagnosticValidation", "Test repeated global reporting");
+    argList::addOption("voxelBudget", "count", "Test configured patch voxel budget");
+    argList::addOption("weightingScheme", "name", "Test weighting dictionary validation");
     #include "setRootCase.H"
     #include "createTime.H"
     #include "createMesh.H"
 
+    if (args.found("affineValidation"))
+    {
+        return runAffineRoundoffChecks(mesh) ? 0 : 1;
+    }
+    if (args.found("diagnosticValidation"))
+    {
+        return
+            runDiagnosticReportingChecks<cellCellStencils::inverseDistance>
+                (mesh, "inverseDistance")
+         && runDiagnosticReportingChecks<cellCellStencils::trackingInverseDistance>
+                (mesh, "trackingInverseDistance")
+         && runDiagnosticReportingChecks<cellCellStencils::leastSquares>
+                (mesh, "leastSquares") ? 0 : 1;
+    }
+    if (args.found("weightingScheme"))
+    {
+        dictionary dict;
+        dict.add("weightingScheme", args.get<word>("weightingScheme"));
+        donorFallbackHarness<cellCellStencils::inverseDistance> stencil(mesh, dict);
+        return 0;
+    }
+    if (args.found("voxelBudget"))
+    {
+        const label budget = args.get<label>("voxelBudget");
+        dictionary dict;
+        dict.add("maxPatchVoxelCount", budget);
+        dict.add
+        (
+            "searchBoxDivisions",
+            List<labelVector>(gMax(cellCellStencil::zoneID(mesh)) + 1,
+                labelVector(2, 2, 1))
+        );
+        donorFallbackHarness<cellCellStencils::trackingInverseDistance> stencil(mesh, dict);
+        stencil.update();
+        label count = 0;
+        if (budget >= 27000000
+         && (!patchFaceIntersection::checkedVoxelCount
+                (labelVector(300, 300, 300), budget, count)
+          || count != 27000000))
+        {
+            return 1;
+        }
+        Info<< "Passed configured voxel budget checks" << endl;
+        return 0;
+    }
     if (args.found("retry"))
     {
         dictionary dict;
@@ -2631,9 +3269,24 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    if (!runAffineRoundoffChecks(mesh))
+    {
+        return 1;
+    }
+
     if (!runTrackingGeometryToleranceChecks(mesh))
     {
         return 1;
+    }
+    for (const bool allowInterpolated : {false, true})
+    {
+        dictionary dict;
+        dict.add("allowInterpolatedDonors", allowInterpolated);
+        volumeFallbackHarness volume(mesh, dict);
+        if (!volume.run())
+        {
+            return 1;
+        }
     }
 
     return 0;

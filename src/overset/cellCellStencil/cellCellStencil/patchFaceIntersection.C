@@ -1197,11 +1197,11 @@ bool triangleSearch::intersectsCell
     {
         const label facei = c[i];
         const face& f = faces[facei];
-        if (mesh.tetBasePtIs()[facei] < 0 || f.size() < 3)
+        if (f.size() < 3)
         {
             FatalErrorInFunction
                 << "Cell " << celli << " face " << facei
-                << " has no valid polyMesh::CELL_TETS base point"
+                << " has fewer than three vertices"
                 << exit(FatalError);
         }
 

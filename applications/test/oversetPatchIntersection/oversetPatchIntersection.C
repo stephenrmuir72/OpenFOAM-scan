@@ -112,9 +112,54 @@ bool exhaustiveIntersectsCell
 
 int main(int argc, char *argv[])
 {
+    argList::addBoolOption("negativeBase", "Check core negative tet-base fallback");
     #include "setRootCase.H"
     #include "createTime.H"
     #include "createMesh.H"
+
+    if (args.found("negativeBase"))
+    {
+        // Simulate the core's failed base-point search on an actual mesh.
+        const_cast<labelIOList&>(mesh.tetBasePtIs()) = -1;
+        const pointField crossing
+        ({
+            point(0.5, -2, 0.5), point(0.5, 2, 0.5), point(0.5, 2, 3)
+        });
+        const pointField separated
+        ({
+            point(3, -2, 0.5), point(3, 2, 0.5), point(3, 2, 3)
+        });
+        if (min(mesh.tetBasePtIs()) >= 0)
+        {
+            std::cerr << "Negative tet-base fixture was not loaded\n";
+            return 1;
+        }
+        for (const point& p : crossing)
+        {
+            if (mesh.pointInCell(p, 0, polyMesh::CELL_TETS))
+            {
+                std::cerr << "Negative-base crossing has an inside vertex\n";
+                return 1;
+            }
+        }
+        for (const scalar tolerance : {scalar(0), scalar(1e-6)})
+        {
+            if
+            (
+                !exhaustiveIntersectsCell(crossing, mesh, 0, tolerance)
+             || !patchFaceIntersection::intersectsCell
+                    (crossing, mesh, 0, tolerance)
+             || patchFaceIntersection::intersectsCell
+                    (separated, mesh, 0, tolerance)
+            )
+            {
+                std::cerr << "Negative tet-base fallback disagrees with core\n";
+                return 1;
+            }
+        }
+        Info<< "Passed negative tet-base fallback checks" << endl;
+        return 0;
+    }
 
     const vector zeroTolerance(vector::zero);
     const boundBox searchBb(point(0, 0, 0), point(1, 1, 1));
@@ -184,7 +229,7 @@ int main(int argc, char *argv[])
     (
         !trackingVoxelHarness::markBoundaries
         (
-            0, mesh, nearWallTolerance, nearWallBox, nearWallDivs,
+            0, 16*1024*1024, mesh, nearWallTolerance, nearWallBox, nearWallDivs,
             trackingNearWall, cellMap, patchTypes
         )
      || !inverseNearWall[0]

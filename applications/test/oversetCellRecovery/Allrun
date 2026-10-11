@@ -4,9 +4,10 @@ cd "${0%/*}" || exit
 set -e
 
 sourceCase="${WM_PROJECT_DIR}/tutorials/incompressible/overPimpleDyMFoam/simpleRotor"
+affineSourceCase="${WM_PROJECT_DIR}/tutorials/incompressible/overPimpleDyMFoam/twoSimpleRotors"
 
-if [ ! -d "$sourceCase" ]; then
-    echo "Missing moving-overset source case: $sourceCase" >&2
+if [ ! -d "$sourceCase" ] || [ ! -d "$affineSourceCase" ]; then
+    echo "Missing moving-overset source cases: $sourceCase or $affineSourceCase" >&2
     exit 1
 fi
 
@@ -14,6 +15,8 @@ if [ -e work ]; then
     echo "Refusing to overwrite existing test work directory: work" >&2
     exit 1
 fi
+
+wmake "${WM_PROJECT_DIR}/applications/solvers/incompressible/pimpleFoam/overPimpleDyMFoam"
 
 mkdir work
 trap 'rm -r work' EXIT
@@ -207,4 +210,113 @@ DebugSwitches\
 
     echo "Passed parallel moving-overset recovery smoke test: trackingInverseDistance"
     echo "Exercised donor initialization, same-zone fallback, and unrecoverable holes in parallel"
+fi
+
+prepareAffineCase()
+{
+    caseDir="$1"
+    method="$2"
+    cp -a "$affineSourceCase" "$caseDir"
+    foamDictionary "$caseDir/system/fvSchemes" \
+        -entry oversetInterpolation.method -set "$method" >/dev/null
+    foamDictionary "$caseDir/system/fvSchemes" \
+        -entry oversetInterpolation.weightingScheme -add linearExact >/dev/null
+    if [ "$method" != trackingInverseDistance ]; then
+        foamDictionary "$caseDir/system/fvSchemes" \
+            -entry oversetInterpolation.searchBoxDivisions -set '(64 64 1)' >/dev/null
+    fi
+    foamDictionary "$caseDir/system/controlDict" \
+        -entry startFrom -set startTime >/dev/null
+    foamDictionary "$caseDir/system/controlDict" \
+        -entry adjustTimeStep -set false >/dev/null
+    foamDictionary "$caseDir/system/controlDict" \
+        -entry deltaT -set 0.00008 >/dev/null
+    foamDictionary "$caseDir/system/controlDict" \
+        -entry endTime -set 0.0016 >/dev/null
+    foamDictionary "$caseDir/system/controlDict" \
+        -entry writeInterval -set 20 >/dev/null
+}
+
+checkMovingAffine()
+{
+    caseDir="$1"
+    logFile="$2"
+    grep -q '^End$' "$logFile" &&
+    [ "$(grep -c '^Time =' "$logFile")" -eq 20 ] || return 1
+    if grep -Eq 'nearest-donor (fallback|injection)|Invalid overset interpolation' "$logFile"; then
+        echo "Moving affine case unexpectedly rejected a stencil: $caseDir" >&2
+        return 1
+    fi
+    awk '
+        $1 == "calculated" && $2 == ":" { calculated = $3 }
+        $1 == "interpolated" && $2 == ":" { interpolated = $3 }
+        $1 == "hole" && $2 == ":" {
+            if (calculated + interpolated + $3 != 12008) { failed = 1 }
+            print calculated, interpolated, $3
+            ++updates
+        }
+        END { exit (failed || updates != 20) }
+    ' "$logFile" > "$caseDir/partitionSignature" || return 1
+    for field in p U
+    do
+        columns=4
+        if [ "$field" = p ]; then
+            columns=2
+        fi
+        probeFile="$caseDir/postProcessing/probes/0/$field"
+        if [ ! -f "$probeFile" ]; then
+            echo "Missing affine probe output: $probeFile" >&2
+            return 1
+        fi
+        awk -v columns="$columns" '
+            /^[[:space:]]*#/ { next }
+            {
+                gsub(/[()]/, "")
+                if (NF != columns) { failed = 1 }
+                for (i = 1; i <= NF; ++i) {
+                    if ($i !~ /^[-+]?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][-+]?[0-9]+)?$/) {
+                        failed = 1
+                    }
+                }
+                ++samples
+            }
+            END { exit (failed || samples != 20) }
+        ' "$probeFile" || return 1
+    done
+}
+
+for method in trackingInverseDistance inverseDistance leastSquares
+do
+    caseDir="work/affine-${method}"
+    prepareAffineCase "$caseDir" "$method"
+    if ! (
+        cd "$caseDir"
+        ./Allrun.pre > log.pre 2>&1 &&
+        overPimpleDyMFoam > log.solver 2>&1
+    ) || ! checkMovingAffine "$caseDir" "$caseDir/log.solver"; then
+        echo "Moving affine regression failed for $method" >&2
+        tail -n 80 "$caseDir/log.pre" "$caseDir/log.solver" >&2
+        exit 1
+    fi
+    cmp work/affine-trackingInverseDistance/partitionSignature \
+        "$caseDir/partitionSignature"
+    echo "Passed 20-update moving affine regression without fallback: $method"
+done
+
+if command -v mpirun >/dev/null 2>&1; then
+    caseDir="work/affine-trackingInverseDistance-parallel"
+    prepareAffineCase "$caseDir" trackingInverseDistance
+    if ! (
+        cd "$caseDir"
+        ./Allrun.pre > log.pre 2>&1 &&
+        runApplication decomposePar -force &&
+        runParallel overPimpleDyMFoam
+    ) || ! checkMovingAffine "$caseDir" "$caseDir/log.overPimpleDyMFoam"; then
+        echo "Parallel moving affine regression failed" >&2
+        tail -n 80 "$caseDir/log.pre" "$caseDir/log.overPimpleDyMFoam" >&2
+        exit 1
+    fi
+    cmp work/affine-trackingInverseDistance/partitionSignature \
+        "$caseDir/partitionSignature"
+    echo "Passed parallel 20-update moving affine regression without fallback"
 fi

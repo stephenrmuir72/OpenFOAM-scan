@@ -39,11 +39,6 @@ License
 #include "waveMethod.H"
 #include "patchFaceIntersection.H"
 
-namespace
-{
-constexpr Foam::label maxPatchVoxelCount = 16*1024*1024;
-}
-
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
 namespace Foam
@@ -60,6 +55,7 @@ namespace cellCellStencils
 bool Foam::cellCellStencils::trackingInverseDistance::markBoundaries
 (
     const label zonei,
+    const label maxPatchVoxelCount,
     const fvMesh& mesh,
     const vector& smallVec,
 
@@ -605,8 +601,18 @@ Foam::cellCellStencils::trackingInverseDistance::trackingInverseDistance
 )
 :
     inverseDistance(mesh, dict, false),
+    maxPatchVoxelCount_
+    (
+        dict.getOrDefault<label>("maxPatchVoxelCount", 16*1024*1024)
+    ),
     globalCells_(mesh_.nCells())
 {
+    if (maxPatchVoxelCount_ <= 0)
+    {
+        FatalIOErrorInFunction(dict_)
+            << "maxPatchVoxelCount must be positive, got "
+            << maxPatchVoxelCount_ << exit(FatalIOError);
+    }
     // Initialise mesh partitions
     const labelIOList& zoneID = this->zoneID();
     label nZones = gMax(zoneID)+1;
@@ -781,7 +787,7 @@ bool Foam::cellCellStencils::trackingInverseDistance::update()
                 !patchFaceIntersection::checkedVoxelCount
                 (
                     patchDivisions[zonei],
-                    maxPatchVoxelCount,
+                    maxPatchVoxelCount_,
                     nVoxels
                 )
             )
@@ -792,7 +798,7 @@ bool Foam::cellCellStencils::trackingInverseDistance::update()
                     << " in search box "
                     << patchBb[zonei][Pstream::myProcNo()]
                     << ". Divisions: " << patchDivisions[zonei]
-                    << ", maximum voxel count: " << maxPatchVoxelCount
+                    << ", maxPatchVoxelCount: " << maxPatchVoxelCount_
                     << exit(FatalError);
             }
 
@@ -805,6 +811,7 @@ bool Foam::cellCellStencils::trackingInverseDistance::update()
             bool ok = markBoundaries
             (
                 zonei,
+                maxPatchVoxelCount_,
                 meshParts_[zonei].subMesh(),
                 smallVec_,
 
@@ -1077,123 +1084,12 @@ bool Foam::cellCellStencils::trackingInverseDistance::update()
         tfld().write();
     }
 
-    labelListList compactStencil(allStencil);
-    List<Map<label>> compactStencilMap;
-    mapDistribute map(globalCells, compactStencil, compactStencilMap);
-
-    // Restore cells that were holes but are calculated on the new geometry.
-    // A missing or no-longer-valid cross-zone donor is replaced by a valid
-    // same-zone neighbour when possible.
-    {
-        labelList compactCellTypesForRecovery(allCellTypes);
-        map.distribute(compactCellTypesForRecovery);
-        labelList compactPreviouslyBlankedForRecovery(mesh_.nCells(), Zero);
-        forAll(previouslyBlanked, celli)
-        {
-            compactPreviouslyBlankedForRecovery[celli] = previouslyBlanked[celli];
-        }
-        map.distribute(compactPreviouslyBlankedForRecovery);
-
-        DynamicList<label> fallbackCells;
-        forAll(reactivationCandidates, celli)
-        {
-            if (!reactivationCandidates[celli])
-            {
-                continue;
-            }
-
-            if (protectedHoles[celli])
-            {
-                allCellTypes[celli] = HOLE;
-                allStencil[celli].clear();
-                allWeight[celli] = 0.0;
-                continue;
-            }
-
-            bool hasValidDonor = false;
-
-            if (!sameZoneFallback[celli])
-            {
-                const labelList& slots = compactStencil[celli];
-                forAll(slots, sloti)
-                {
-                    const label donorType = compactCellTypesForRecovery[slots[sloti]];
-                    if
-                    (
-                        !compactPreviouslyBlankedForRecovery[slots[sloti]]
-                     && donorType != HOLE
-                     && donorType != POROUS
-                     && (allowInterpolatedDonors_ || donorType != INTERPOLATED)
-                    )
-                    {
-                        hasValidDonor = true;
-                        break;
-                    }
-                }
-            }
-
-            if (hasValidDonor)
-            {
-                allStencil[celli] = reactivationStencil[celli];
-                allCellTypes[celli] = INTERPOLATED;
-                allWeight[celli] = 1.0;
-            }
-            else
-            {
-                sameZoneFallback[celli] = true;
-                fallbackCells.append(celli);
-            }
-        }
-
-        boolList fallbackDonorMask(mesh_.nCells(), false);
-        forAll(allCellTypes, celli)
-        {
-            fallbackDonorMask[celli] =
-                !previouslyBlanked[celli]
-             && !protectedHoles[celli]
-             && !reactivationCandidates[celli]
-             &&
-                (
-                    allCellTypes[celli] == CALCULATED
-                 || (allowInterpolatedDonors_ && allCellTypes[celli] == INTERPOLATED)
-                );
-        }
-
-        labelListList fallbackCellCells;
-        pointListList fallbackCellCentres;
-        globalSameZoneCellCells
-        (
-            globalCells,
-            mesh_,
-            zoneID,
-            fallbackDonorMask,
-            fallbackCells,
-            fallbackCellCells,
-            fallbackCellCentres,
-            allCellTypes,
-            allPatchTypes
-        );
-
-        forAll(fallbackCells, i)
-        {
-            const label celli = fallbackCells[i];
-            const labelList& donors = fallbackCellCells[celli];
-
-            if (donors.empty())
-            {
-                allCellTypes[celli] = HOLE;
-                allStencil[celli].clear();
-                allWeight[celli] = 0.0;
-            }
-            else
-            {
-                allStencil[celli].setSize(1);
-                allStencil[celli][0] = donors[0];
-                allCellTypes[celli] = INTERPOLATED;
-                allWeight[celli] = 1.0;
-            }
-        }
-    }
+    restoreReactivationCandidates
+    (
+        globalCells, zoneID, allPatchTypes, previouslyBlanked,
+        reactivationCandidates, sameZoneFallback, reactivationStencil,
+        protectedHoles, allCellTypes, allStencil, allWeight
+    );
 
     labelListList finalCompactStencil(allStencil);
     List<Map<label>> finalCompactStencilMap;
@@ -1384,6 +1280,7 @@ bool Foam::cellCellStencils::trackingInverseDistance::update()
 
 
     // Print some stats
+    reportWeightFallbacks();
     Info<< this->info();
 
     DebugInfo<< FUNCTION_NAME << " : Finished analysis" << endl;

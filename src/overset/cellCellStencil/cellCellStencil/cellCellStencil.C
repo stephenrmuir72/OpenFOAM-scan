@@ -33,6 +33,8 @@ License
 #include "oversetFvPatchFields.H"
 
 #include <cmath>
+#include <algorithm>
+#include <limits>
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -61,7 +63,8 @@ Foam::cellCellStencil::cellTypeNames_
 Foam::cellCellStencil::cellCellStencil(const fvMesh& mesh)
 :
     mesh_(mesh),
-    nonInterpolatedFields_({"zoneID"})
+    nonInterpolatedFields_({"zoneID"}),
+    invalidStencilReported_(false)
 {}
 
 
@@ -526,6 +529,96 @@ void Foam::cellCellStencil::globalSameZoneCellCells
 }
 
 
+Foam::scalar Foam::cellCellStencil::weightTolerance
+(
+    const scalarList& weights
+)
+{
+    long double sumAbs = 0;
+    for (const scalar weight : weights)
+    {
+        sumAbs += mag(weight);
+    }
+    const scalar epsilon = std::numeric_limits<scalar>::epsilon();
+    // Allow accumulated round-off, but cap tolerance under cancellation.
+    return std::min
+    (
+        static_cast<long double>(8*std::sqrt(epsilon)),
+        8*epsilon*max(scalar(1), scalar(weights.size()))
+                 *std::max(1.0L, sumAbs)
+    );
+}
+
+
+Foam::cellCellStencil::weightStatus Foam::cellCellStencil::checkWeights
+(
+    const scalarList& weights
+)
+{
+    if (weights.empty())
+    {
+        return EMPTY_WEIGHTS;
+    }
+
+    long double sum = 0;
+    long double correction = 0;
+    for (const scalar weight : weights)
+    {
+        if (!std::isfinite(weight))
+        {
+            return NONFINITE_WEIGHTS;
+        }
+        const long double adjusted = weight - correction;
+        const long double next = sum + adjusted;
+        correction = (next - sum) - adjusted;
+        sum = next;
+    }
+    if (!std::isfinite(sum))
+    {
+        return NONFINITE_WEIGHTS;
+    }
+    return std::abs(sum - 1) <= weightTolerance(weights)
+        ? VALID_WEIGHTS : UNNORMALIZED_WEIGHTS;
+}
+
+
+Foam::boolList Foam::cellCellStencil::recoveryDonorMask
+(
+    const labelList& cellTypes,
+    const boolList& previouslyBlanked,
+    const boolList& protectedHoles,
+    const boolList& recoveryCandidates,
+    const bool allowInterpolatedDonors
+)
+{
+    if
+    (
+        previouslyBlanked.size() != cellTypes.size()
+     || protectedHoles.size() != cellTypes.size()
+     || recoveryCandidates.size() != cellTypes.size()
+    )
+    {
+        FatalErrorInFunction
+            << "Recovery donor masks do not match cell classifications"
+            << exit(FatalError);
+    }
+    boolList mask(cellTypes.size(), false);
+    forAll(cellTypes, celli)
+    {
+        mask[celli] =
+            !previouslyBlanked[celli]
+         && !protectedHoles[celli]
+         && !recoveryCandidates[celli]
+         &&
+            (
+                cellTypes[celli] == CALCULATED
+             || (allowInterpolatedDonors && cellTypes[celli] == INTERPOLATED)
+            );
+    }
+    return mask;
+}
+
+
 void Foam::cellCellStencil::recoverSameZoneInterpolations
 (
     const globalIndex& globalCells,
@@ -589,6 +682,8 @@ void Foam::cellCellStencil::recoverSameZoneInterpolations
     DynamicList<label> fallbackCells;
     label nRecovered = 0;
     boolList fallbackRequired(mesh_.nCells(), false);
+    labelList invalidCounts(4, Zero);
+    boolList demotedCells(mesh_.nCells(), false);
 
     forAll(cellTypes, celli)
     {
@@ -682,7 +777,10 @@ void Foam::cellCellStencil::recoverSameZoneInterpolations
                          || compactPatchTypes[slot] == OVERSET
                         );
                     const bool invalid =
-                        compactPreviouslyBlanked[slot]
+                        (
+                            compactPreviouslyBlanked[slot]
+                         && (recoveryCandidates[celli] || !allowHoleDonors)
+                        )
                      || recoveryDonorInvalid
                      || oversetFringeInvalid
                      || (!allowHoleDonors && donorType == HOLE)
@@ -722,24 +820,14 @@ void Foam::cellCellStencil::recoverSameZoneInterpolations
              && cellInterpolationWeights[celli].size()
               == cellStencil[celli].size();
 
-            scalar weightSum = 0;
-            if (valid)
-            {
-                for (const scalar weight : cellInterpolationWeights[celli])
-                {
-                    if (!std::isfinite(weight))
-                    {
-                        valid = false;
-                        break;
-                    }
-                    weightSum += weight;
-                }
-                valid = valid && std::isfinite(weightSum)
-                     && mag(weightSum - 1.0) <= 1e-8;
-            }
+            const weightStatus status = valid
+                ? checkWeights(cellInterpolationWeights[celli])
+                : EMPTY_WEIGHTS;
+            valid = status == VALID_WEIGHTS;
 
             if (!valid)
             {
+                ++invalidCounts[status];
                 cellStencil[celli].clear();
                 cellInterpolationWeights[celli].clear();
                 cellInterpolationWeight[celli] = 0.0;
@@ -750,6 +838,7 @@ void Foam::cellCellStencil::recoverSameZoneInterpolations
                 else
                 {
                     cellTypes[celli] = HOLE;
+                    demotedCells[celli] = true;
                     demotedAny = true;
                 }
             }
@@ -790,19 +879,14 @@ void Foam::cellCellStencil::recoverSameZoneInterpolations
         }
     }
 
-    boolList isValidDonor(mesh_.nCells(), false);
-    forAll(cellTypes, celli)
-    {
-        isValidDonor[celli] =
-            !previouslyBlanked[celli]
-         && !protectedHoles[celli]
-         && !recoveryCandidates[celli]
-         &&
-            (
-                cellTypes[celli] == CALCULATED
-             || (allowInterpolatedDonors && cellTypes[celli] == INTERPOLATED)
-            );
-    }
+    const boolList isValidDonor
+    (
+        recoveryDonorMask
+        (
+            cellTypes, previouslyBlanked, protectedHoles,
+            recoveryCandidates, allowInterpolatedDonors
+        )
+    );
 
     labelListList sameZoneCellCells;
     pointListList sameZoneCellCentres;
@@ -868,10 +952,23 @@ void Foam::cellCellStencil::recoverSameZoneInterpolations
                 sameZoneCellCentres[celli],
                 cellInterpolationWeights[celli]
             );
-            cellTypes[celli] = INTERPOLATED;
-            cellInterpolationWeight[celli] = 1.0;
-            ++nRecovered;
-            ++nSameZoneFallback;
+            const weightStatus status = checkWeights(cellInterpolationWeights[celli]);
+            if (status == VALID_WEIGHTS)
+            {
+                cellTypes[celli] = INTERPOLATED;
+                cellInterpolationWeight[celli] = 1.0;
+                ++nRecovered;
+                ++nSameZoneFallback;
+            }
+            else
+            {
+                ++invalidCounts[status];
+                cellTypes[celli] = HOLE;
+                globalStencil[celli].clear();
+                cellInterpolationWeights[celli].clear();
+                cellInterpolationWeight[celli] = 0;
+                ++nUnrecoverable;
+            }
         }
     }
 
@@ -922,6 +1019,62 @@ void Foam::cellCellStencil::recoverSameZoneInterpolations
     reduce(nRecovered, sumOp<label>());
     reduce(nSameZoneFallback, sumOp<label>());
     reduce(nUnrecoverable, sumOp<label>());
+    for (label& count : invalidCounts)
+    {
+        reduce(count, sumOp<label>());
+    }
+    if (sum(invalidCounts))
+    {
+        label nDemoted = 0;
+        label nAdjacent = 0;
+        labelList neighbourTypes;
+        syncTools::swapBoundaryCellList(mesh_, cellTypes, neighbourTypes);
+        forAll(demotedCells, celli)
+        {
+            if (!demotedCells[celli])
+            {
+                continue;
+            }
+            ++nDemoted;
+            bool adjacentCalculated = false;
+            for (const label facei : mesh_.cells()[celli])
+            {
+                if (facei < mesh_.nInternalFaces())
+                {
+                    const label other = mesh_.faceOwner()[facei] == celli
+                        ? mesh_.faceNeighbour()[facei] : mesh_.faceOwner()[facei];
+                    adjacentCalculated |= cellTypes[other] == CALCULATED;
+                }
+                else
+                {
+                    adjacentCalculated |=
+                        neighbourTypes[facei - mesh_.nInternalFaces()] == CALCULATED;
+                }
+            }
+            nAdjacent += adjacentCalculated;
+            DebugInfo<< "Invalid interpolation demoted cell " << celli << endl;
+        }
+        reduce(nDemoted, sumOp<label>());
+        reduce(nAdjacent, sumOp<label>());
+        if (!invalidStencilReported_)
+        {
+            WarningInFunction
+                << "Invalid overset interpolation detected. "
+                << "Event and remaining-demotion counts are reported below; "
+                << "subsequent occurrences do not repeat this warning."
+                << nl << endl;
+            invalidStencilReported_ = true;
+        }
+        Info
+            << "Invalid overset interpolation stencil events: "
+            << invalidCounts[EMPTY_WEIGHTS] << " empty/misaligned, "
+            << invalidCounts[NONFINITE_WEIGHTS] << " nonfinite, "
+            << invalidCounts[UNNORMALIZED_WEIGHTS] << " unnormalized; "
+            << nDemoted << " cells demoted to HOLE ("
+            << nAdjacent << " adjacent to CALCULATED cells). "
+            << "Recovery candidates use ready-donor fallback where possible."
+            << endl;
+    }
     if (debug && nRecovered)
     {
         DebugInfo<< "Previously blanked-cell recovery: "

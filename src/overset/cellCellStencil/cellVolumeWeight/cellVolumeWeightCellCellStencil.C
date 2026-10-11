@@ -916,18 +916,14 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
         }
     }
 
-    boolList validSameZoneDonor(mesh_.nCells(), false);
-    forAll(allCellTypes, celli)
-    {
-        validSameZoneDonor[celli] =
-            !previouslyBlanked[celli]
-         && !reactivationCandidates[celli]
-         &&
-            (
-                allCellTypes[celli] == CALCULATED
-             || (allowInterpolatedDonors_ && allCellTypes[celli] == INTERPOLATED)
-            );
-    }
+    const boolList validSameZoneDonor
+    (
+        recoveryDonorMask
+        (
+            allCellTypes, previouslyBlanked, protectedHoles,
+            reactivationCandidates, allowInterpolatedDonors_
+        )
+    );
 
     labelListList sameZoneCellCells;
     pointListList sameZoneCellCentres;
@@ -939,7 +935,9 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
         validSameZoneDonor,
         reactivationCells,
         sameZoneCellCells,
-        sameZoneCellCentres
+        sameZoneCellCentres,
+        allCellTypes,
+        allPatchTypes
     );
 
     forAll(reactivationCells, i)
@@ -1182,19 +1180,14 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
         }
     }
 
-    boolList fallbackDonorMask(mesh_.nCells(), false);
-    forAll(allCellTypes, celli)
-    {
-        fallbackDonorMask[celli] =
-            !previouslyBlanked[celli]
-         && !protectedHoles[celli]
-         && !reactivationCandidates[celli]
-         &&
-            (
-                allCellTypes[celli] == CALCULATED
-             || (allowInterpolatedDonors_ && allCellTypes[celli] == INTERPOLATED)
-            );
-    }
+    const boolList fallbackDonorMask
+    (
+        recoveryDonorMask
+        (
+            allCellTypes, previouslyBlanked, protectedHoles,
+            reactivationCandidates, allowInterpolatedDonors_
+        )
+    );
 
     labelListList fallbackCellCells;
     pointListList fallbackCellCentres;
@@ -1206,7 +1199,9 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
         fallbackDonorMask,
         fallbackCells,
         fallbackCellCells,
-        fallbackCellCentres
+        fallbackCellCentres,
+        allCellTypes,
+        allPatchTypes
     );
 
     label nSameZoneFallback = 0;

@@ -48,6 +48,7 @@ License
 #include "patchFaceIntersection.H"
 
 #include <cmath>
+#include <limits>
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -59,6 +60,14 @@ namespace cellCellStencils
     addToRunTimeSelectionTable(cellCellStencil, inverseDistance, mesh);
 }
 }
+
+const Foam::Enum<Foam::cellCellStencils::inverseDistance::weightingScheme>
+Foam::cellCellStencils::inverseDistance::weightingSchemeNames_
+({
+    {weightingScheme::INVERSE_DISTANCE, "inverseDistance"},
+    {weightingScheme::LINEAR_EXACT, "leastSquares"},
+    {weightingScheme::LINEAR_EXACT, "linearExact"}
+});
 
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
@@ -804,18 +813,14 @@ void Foam::cellCellStencils::inverseDistance::classifyAndWalkFront
             }
         }
 
-        boolList validSameZoneDonor(nCells, false);
-        forAll(allCellTypes, celli)
-        {
-            validSameZoneDonor[celli] =
-                !previouslyBlanked[celli]
-             && !reactivationCandidates[celli]
-             &&
-                (
-                    allCellTypes[celli] == CALCULATED
-                 || (allowInterpolatedDonors_ && allCellTypes[celli] == INTERPOLATED)
-                );
-        }
+        const boolList validSameZoneDonor
+        (
+            recoveryDonorMask
+            (
+                allCellTypes, previouslyBlanked, protectedHoles,
+                reactivationCandidates, allowInterpolatedDonors_
+            )
+        );
 
         labelListList sameZoneCellCells;
         pointListList sameZoneCellCentres;
@@ -960,6 +965,113 @@ void Foam::cellCellStencils::inverseDistance::classifyAndWalkFront
         if (!retryAny)
         {
             break;
+        }
+    }
+}
+
+
+void Foam::cellCellStencils::inverseDistance::restoreReactivationCandidates
+(
+    const globalIndex& globalCells,
+    const labelList& zoneID,
+    const labelList& patchTypes,
+    const boolList& previouslyBlanked,
+    const boolList& candidates,
+    boolList& sameZoneFallback,
+    const labelListList& reactivationStencil,
+    const boolList& protectedHoles,
+    labelList& cellTypes,
+    labelListList& stencil,
+    scalarField& interpolationWeight
+) const
+{
+    labelListList compactStencil(stencil);
+    List<Map<label>> compactMap;
+    mapDistribute map(globalCells, compactStencil, compactMap);
+    labelList donorTypes(cellTypes);
+    map.distribute(donorTypes);
+    labelList oldHoles(previouslyBlanked.size(), Zero);
+    forAll(previouslyBlanked, celli)
+    {
+        oldHoles[celli] = previouslyBlanked[celli];
+    }
+    map.distribute(oldHoles);
+
+    DynamicList<label> fallbackCells;
+    forAll(candidates, celli)
+    {
+        if (!candidates[celli])
+        {
+            continue;
+        }
+        if (protectedHoles[celli])
+        {
+            cellTypes[celli] = HOLE;
+            stencil[celli].clear();
+            interpolationWeight[celli] = 0;
+            continue;
+        }
+        bool validDonor = false;
+        if (!sameZoneFallback[celli])
+        {
+            for (const label slot : compactStencil[celli])
+            {
+                const label donorType = donorTypes[slot];
+                if
+                (
+                    !oldHoles[slot]
+                 && donorType != HOLE
+                 && donorType != POROUS
+                 && (allowInterpolatedDonors_ || donorType != INTERPOLATED)
+                )
+                {
+                    validDonor = true;
+                    break;
+                }
+            }
+        }
+        if (validDonor)
+        {
+            stencil[celli] = reactivationStencil[celli];
+            cellTypes[celli] = INTERPOLATED;
+            interpolationWeight[celli] = 1;
+        }
+        else
+        {
+            sameZoneFallback[celli] = true;
+            fallbackCells.append(celli);
+        }
+    }
+
+    const boolList mask
+    (
+        recoveryDonorMask
+        (
+            cellTypes, previouslyBlanked, protectedHoles,
+            candidates, allowInterpolatedDonors_
+        )
+    );
+    labelListList neighbours;
+    pointListList centres;
+    globalSameZoneCellCells
+    (
+        globalCells, mesh_, zoneID, mask, fallbackCells, neighbours,
+        centres, cellTypes, patchTypes
+    );
+    for (const label celli : fallbackCells)
+    {
+        if (neighbours[celli].empty())
+        {
+            cellTypes[celli] = HOLE;
+            stencil[celli].clear();
+            interpolationWeight[celli] = 0;
+        }
+        else
+        {
+            stencil[celli].setSize(1);
+            stencil[celli][0] = neighbours[celli][0];
+            cellTypes[celli] = INTERPOLATED;
+            interpolationWeight[celli] = 1;
         }
     }
 }
@@ -1774,11 +1886,7 @@ void Foam::cellCellStencils::inverseDistance::stencilWeights
     scalarList& weights
 ) const
 {
-    if
-    (
-        weightingScheme_ == "leastSquares"
-     || weightingScheme_ == "linearExact"
-    )
+    if (weightingScheme_ == weightingScheme::LINEAR_EXACT)
     {
         linearExactWeights(sample, donorCcs, weights);
         return;
@@ -1812,6 +1920,70 @@ void Foam::cellCellStencils::inverseDistance::stencilWeights
 }
 
 
+void Foam::cellCellStencils::inverseDistance::nearestWeights
+(
+    const point& sample,
+    const pointList& donorCcs,
+    scalarList& weights,
+    const label reason
+) const
+{
+    label nearest = -1;
+    scalar nearestDistance = std::numeric_limits<scalar>::infinity();
+    forAll(donorCcs, i)
+    {
+        const vector d = donorCcs[i] - sample;
+        const scalar distance = std::hypot(std::hypot(d.x(), d.y()), d.z());
+        if (std::isfinite(distance) && distance < nearestDistance)
+        {
+            nearestDistance = distance;
+            nearest = i;
+        }
+    }
+    if (nearest < 0)
+    {
+        FatalErrorInFunction
+            << "No finite donor distance for sample " << sample
+            << " and donor centres " << donorCcs << exit(FatalError);
+    }
+    weights.setSize(donorCcs.size());
+    weights = Zero;
+    weights[nearest] = 1;
+    ++weightFallbackCounts_[reason];
+}
+
+
+void Foam::cellCellStencils::inverseDistance::reportWeightFallbacks() const
+{
+    labelList counts(weightFallbackCounts_);
+    for (label& count : counts)
+    {
+        reduce(count, sumOp<label>());
+    }
+    weightFallbackCounts_ = Zero;
+    if (sum(counts))
+    {
+        if (!weightFallbackReported_)
+        {
+            WarningInFunction
+                << "Linear-exact weighting required nearest-donor injection. "
+                << "Counts below include intermediate/discarded stencils, "
+                << "not unique final receivers. Subsequent occurrences "
+                << "are reported without repeating this warning."
+                << nl << endl;
+            weightFallbackReported_ = true;
+        }
+        Info
+            << "Linear-exact weighting used nearest-donor fallback for "
+            << sum(counts) << " weight-generation calls: "
+            << counts[0] << " invalid distance weights, "
+            << counts[1] << " singular geometry, "
+            << counts[2] << " invalid weight/moment residuals."
+            << endl;
+    }
+}
+
+
 void Foam::cellCellStencils::inverseDistance::linearExactWeights
 (
     const point& sample,
@@ -1839,13 +2011,21 @@ void Foam::cellCellStencils::inverseDistance::linearExactWeights
     {
         d[j] = donorCcs[j] - sample;
 
-        if (mag(d[j]) < ROOTVSMALL)
+        const scalar distance =
+            std::hypot(std::hypot(d[j].x(), d[j].y()), d[j].z());
+        if (distance < ROOTVSMALL)
         {
             exactHit = j;
             break;
         }
 
-        LSQw[j] = 1.0/magSqr(d[j]);
+        if (!std::isfinite(distance))
+        {
+            nearestWeights(sample, donorCcs, weights, 0);
+            return;
+        }
+        const scalar inverseDistance = 1.0/distance;
+        LSQw[j] = inverseDistance*inverseDistance;
         const vector wd = LSQw[j]*d[j];
         A[j][0] = wd.x();
         A[j][1] = wd.y();
@@ -1862,49 +2042,126 @@ void Foam::cellCellStencils::inverseDistance::linearExactWeights
 
     if (!std::isfinite(W) || W <= VSMALL)
     {
-        weights[0] = 1;
+        nearestWeights(sample, donorCcs, weights, 0);
         return;
     }
 
     SVD svd(A.T()*A, SMALL);
     RectangularMatrix<scalar> ATAinvAT(svd.VSinvUt()*A.T());
     const scalar saveDiag = W;
-
-    for (label i = 0; i < 3; ++i)
+    List<long double> numerators(nD);
+    long double normalizer = 0;
+    long double normalizationCorrection = 0;
+    forAll(donorCcs, j)
     {
-        const scalarList row(UList<scalar>(ATAinvAT[i], nD));
-
-        forAll(donorCcs, j)
+        long double numerator = LSQw[j];
+        for (direction cmpt = 0; cmpt < 3; ++cmpt)
         {
-            W -= row[j]*LSQw[j]*dw[i];
+            numerator -=
+                static_cast<long double>(ATAinvAT[cmpt][j])*LSQw[j]*dw[cmpt];
         }
+        if (!std::isfinite(numerator))
+        {
+            nearestWeights(sample, donorCcs, weights, 2);
+            return;
+        }
+        numerators[j] = numerator;
+        // Use the same numerators for partition of unity and the Schur guard.
+        const long double adjusted = numerator - normalizationCorrection;
+        const long double next = normalizer + adjusted;
+        normalizationCorrection = (next - normalizer) - adjusted;
+        normalizer = next;
     }
 
-    if (!std::isfinite(W) || mag(W) < SMALL*mag(saveDiag))
+    if
+    (
+        !std::isfinite(normalizer)
+     || std::abs(normalizer) < SMALL*mag(saveDiag)
+    )
     {
-        weights = Zero;
-        weights[0] = 1;
+        nearestWeights(sample, donorCcs, weights, 1);
         return;
     }
 
-    bool valid = true;
     forAll(donorCcs, j)
     {
-        weights[j] =
-        (
-            LSQw[j]
-          - ATAinvAT[0][j]*LSQw[j]*dw[0]
-          - ATAinvAT[1][j]*LSQw[j]*dw[1]
-          - ATAinvAT[2][j]*LSQw[j]*dw[2]
-        )/W;
-
-        valid = valid && std::isfinite(weights[j]);
+        weights[j] = static_cast<scalar>(numerators[j]/normalizer);
     }
 
-    if (!valid)
+    if (checkWeights(weights) != VALID_WEIGHTS)
     {
-        weights = Zero;
-        weights[0] = 1;
+        nearestWeights(sample, donorCcs, weights, 2);
+        return;
+    }
+
+    FixedList<long double, 3> moment(Zero);
+    FixedList<long double, 3> momentCorrection(Zero);
+    long double displacementScale = 0;
+    FixedList<long double, 3> coordinateScale(Zero);
+    FixedList<long double, 3> maxCoordinateScale(Zero);
+    forAll(weights, j)
+    {
+        displacementScale = std::max
+        (
+            displacementScale,
+            std::hypot
+            (
+                std::hypot
+                (
+                    static_cast<long double>(d[j].x()),
+                    static_cast<long double>(d[j].y())
+                ),
+                static_cast<long double>(d[j].z())
+            )
+        );
+        for (direction cmpt = 0; cmpt < 3; ++cmpt)
+        {
+            const long double weight = weights[j];
+            const long double displacement = d[j][cmpt];
+            const long double adjusted =
+                weight*displacement - momentCorrection[cmpt];
+            const long double next = moment[cmpt] + adjusted;
+            momentCorrection[cmpt] = (next - moment[cmpt]) - adjusted;
+            moment[cmpt] = next;
+            const long double coordinateMagnitude =
+                std::abs(static_cast<long double>(donorCcs[j][cmpt]))
+              + std::abs(static_cast<long double>(sample[cmpt]));
+            coordinateScale[cmpt] += std::abs(weight)*coordinateMagnitude;
+            maxCoordinateScale[cmpt] = std::max
+            (
+                maxCoordinateScale[cmpt], coordinateMagnitude
+            );
+        }
+    }
+    const scalar tolerance = weightTolerance(weights);
+    const scalar epsilon = std::numeric_limits<scalar>::epsilon();
+    const long double cancellationBound = 8*std::sqrt(epsilon)*displacementScale;
+    // Schur cancellation amplifies solve round-off even for benign final weights.
+    const long double solveBound = std::min
+    (
+        cancellationBound,
+        tolerance*std::max(1.0L, saveDiag/std::abs(normalizer))*displacementScale
+    );
+    for (direction cmpt = 0; cmpt < 3; ++cmpt)
+    {
+        // Reject uncertainty amplified beyond the local cancellation cap;
+        // enlarging the bound instead could conceal an unsupported sample.
+        const long double coordinateBound = 8*epsilon*coordinateScale[cmpt];
+        const long double coordinateLimit =
+            8*epsilon*maxCoordinateScale[cmpt] + cancellationBound;
+        const long double errorBound =
+            solveBound + coordinateBound;
+        if
+        (
+            !std::isfinite(moment[cmpt])
+         || !std::isfinite(errorBound)
+         || coordinateBound > coordinateLimit
+         || std::abs(moment[cmpt]) > errorBound
+        )
+        {
+            nearestWeights(sample, donorCcs, weights, 2);
+            return;
+        }
     }
 }
 
@@ -2452,8 +2709,13 @@ Foam::cellCellStencils::inverseDistance::inverseDistance
     dict_(dict),
     weightingScheme_
     (
-        dict.getOrDefault<word>("weightingScheme", "inverseDistance")
+        weightingSchemeNames_.getOrDefault
+        (
+            "weightingScheme", dict, weightingScheme::INVERSE_DISTANCE
+        )
     ),
+    weightFallbackCounts_(3, Zero),
+    weightFallbackReported_(false),
     allowHoleDonors_(dict.getOrDefault("allowHoleDonors", false)),
     allowInterpolatedDonors_
     (
@@ -2481,20 +2743,6 @@ Foam::cellCellStencils::inverseDistance::inverseDistance
         fvPatchFieldBase::zeroGradientType()
     )
 {
-    if
-    (
-        weightingScheme_ != "inverseDistance"
-     && weightingScheme_ != "leastSquares"
-     && weightingScheme_ != "linearExact"
-    )
-    {
-        FatalIOErrorInFunction(dict_)
-            << "Unsupported weightingScheme '" << weightingScheme_ << "'. "
-            << "Valid values are 'inverseDistance', 'leastSquares' "
-            << "or 'linearExact'."
-            << exit(FatalIOError);
-    }
-
     // Add motion-solver fields to non-interpolated fields
     suppressMotionFields();
 
@@ -2952,123 +3200,12 @@ bool Foam::cellCellStencils::inverseDistance::update()
         tfld().write();
     }
 
-    labelListList compactStencil(allStencil);
-    List<Map<label>> compactStencilMap;
-    mapDistribute map(globalCells, compactStencil, compactStencilMap);
-
-    // Restore cells that were holes but are calculated on the new geometry.
-    // A missing or no-longer-valid cross-zone donor is replaced by a valid
-    // same-zone neighbour when possible.
-    {
-        labelList compactCellTypesForRecovery(allCellTypes);
-        map.distribute(compactCellTypesForRecovery);
-        labelList compactPreviouslyBlankedForRecovery(mesh_.nCells(), Zero);
-        forAll(previouslyBlanked, celli)
-        {
-            compactPreviouslyBlankedForRecovery[celli] = previouslyBlanked[celli];
-        }
-        map.distribute(compactPreviouslyBlankedForRecovery);
-
-        DynamicList<label> fallbackCells;
-        forAll(reactivationCandidates, celli)
-        {
-            if (!reactivationCandidates[celli])
-            {
-                continue;
-            }
-
-            if (protectedHoles[celli])
-            {
-                allCellTypes[celli] = HOLE;
-                allStencil[celli].clear();
-                allWeight[celli] = 0.0;
-                continue;
-            }
-
-            bool hasValidDonor = false;
-
-            if (!sameZoneFallback[celli])
-            {
-                const labelList& slots = compactStencil[celli];
-                forAll(slots, sloti)
-                {
-                    const label donorType = compactCellTypesForRecovery[slots[sloti]];
-                    if
-                    (
-                        !compactPreviouslyBlankedForRecovery[slots[sloti]]
-                     && donorType != HOLE
-                     && donorType != POROUS
-                     && (allowInterpolatedDonors_ || donorType != INTERPOLATED)
-                    )
-                    {
-                        hasValidDonor = true;
-                        break;
-                    }
-                }
-            }
-
-            if (hasValidDonor)
-            {
-                allStencil[celli] = reactivationStencil[celli];
-                allCellTypes[celli] = INTERPOLATED;
-                allWeight[celli] = 1.0;
-            }
-            else
-            {
-                sameZoneFallback[celli] = true;
-                fallbackCells.append(celli);
-            }
-        }
-
-        boolList fallbackDonorMask(mesh_.nCells(), false);
-        forAll(allCellTypes, celli)
-        {
-            fallbackDonorMask[celli] =
-                   !previouslyBlanked[celli]
-                && !protectedHoles[celli]
-                && !reactivationCandidates[celli]
-                &&
-                (
-                    allCellTypes[celli] == CALCULATED
-                 || (allowInterpolatedDonors_ && allCellTypes[celli] == INTERPOLATED)
-                );
-        }
-
-        labelListList fallbackCellCells;
-        pointListList fallbackCellCentres;
-        globalSameZoneCellCells
-        (
-            globalCells,
-            mesh_,
-            zoneID,
-            fallbackDonorMask,
-            fallbackCells,
-            fallbackCellCells,
-            fallbackCellCentres,
-            allCellTypes,
-            allPatchTypes
-        );
-
-        forAll(fallbackCells, i)
-        {
-            const label celli = fallbackCells[i];
-            const labelList& donors = fallbackCellCells[celli];
-
-            if (donors.empty())
-            {
-                allCellTypes[celli] = HOLE;
-                allStencil[celli].clear();
-                allWeight[celli] = 0.0;
-            }
-            else
-            {
-                allStencil[celli].setSize(1);
-                allStencil[celli][0] = donors[0];
-                allCellTypes[celli] = INTERPOLATED;
-                allWeight[celli] = 1.0;
-            }
-        }
-    }
+    restoreReactivationCandidates
+    (
+        globalCells, zoneID, allPatchTypes, previouslyBlanked,
+        reactivationCandidates, sameZoneFallback, reactivationStencil,
+        protectedHoles, allCellTypes, allStencil, allWeight
+    );
 
     labelListList finalCompactStencil(allStencil);
     List<Map<label>> finalCompactStencilMap;
@@ -3461,6 +3598,8 @@ bool Foam::cellCellStencils::inverseDistance::update()
             << indent << "hole         : " << nCells[HOLE] << nl
             << decrIndent << endl;
     }
+
+    reportWeightFallbacks();
 
     // Tbd: detect if anything changed. Most likely it did!
     return true;

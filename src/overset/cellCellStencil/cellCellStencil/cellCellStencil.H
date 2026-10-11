@@ -102,8 +102,29 @@ protected:
         //- Dictionary of motion control parameters
         const dictionary dict_;
 
+        mutable bool invalidStencilReported_;
 
     // Protected Member Functions
+
+        enum weightStatus
+        {
+            VALID_WEIGHTS,
+            EMPTY_WEIGHTS,
+            NONFINITE_WEIGHTS,
+            UNNORMALIZED_WEIGHTS
+        };
+
+        static scalar weightTolerance(const scalarList& weights);
+        static weightStatus checkWeights(const scalarList& weights);
+
+        static boolList recoveryDonorMask
+        (
+            const labelList& cellTypes,
+            const boolList& previouslyBlanked,
+            const boolList& protectedHoles,
+            const boolList& recoveryCandidates,
+            const bool allowInterpolatedDonors
+        );
 
         //- Helper: create volScalarField for postprocessing.
         template<class Type>
@@ -126,6 +147,8 @@ protected:
         //  Recovery is not staged through newly exposed cells: without a
         //  ready donor, a receiver remains HOLE. Prior-hole INTERPOLATED
         //  receivers also get fallback if their current stencil is unready.
+        //  Ordinary stencils keep the readiness filter unless hole donors
+        //  are explicitly allowed.
         void recoverSameZoneInterpolations
         (
             const globalIndex& globalCells,

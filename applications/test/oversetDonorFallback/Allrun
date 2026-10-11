@@ -50,6 +50,14 @@ checkRegressionLog()
     grep -q '^Passed weighting scheme checks: leastSquares$' "$logFile" &&
     grep -q '^Passed walk-front checks: inverseDistance$' "$logFile" &&
     grep -q '^Passed walk-front checks: trackingInverseDistance$' "$logFile" &&
+    grep -q '^Passed review validation checks: inverseDistance$' "$logFile" &&
+    grep -q '^Passed review validation checks: trackingInverseDistance$' "$logFile" &&
+    grep -q 'Invalid overset interpolation stencil events:' "$logFile" &&
+    grep -q 'Linear-exact weighting used nearest-donor fallback' "$logFile" &&
+    grep -q '^Passed affine roundoff checks: inverseDistance$' "$logFile" &&
+    grep -q '^Passed affine roundoff checks: trackingInverseDistance$' "$logFile" &&
+    grep -q '^Passed affine roundoff checks: leastSquares$' "$logFile" &&
+    grep -q '^Passed volume-weight fallback policy checks$' "$logFile" &&
     grep -q '^Passed tracking geometry tolerance checks$' "$logFile" &&
     grep -q 'Unable to reconstruct .* previously blanked cells from ready same-zone neighbours' \
         "$logFile" &&
@@ -59,11 +67,49 @@ checkRegressionLog()
     [ "$holeCounts" -eq 2 ]
 }
 
+checkDiagnosticLog()
+{
+    awk '
+        /^Diagnostic fixture begin:/ {
+            if (active) { failed = 1 }
+            active = 1
+            warnings = invalid = fallback = 0
+            update = $NF
+            sub(/^update=/, "", update)
+        }
+        active && /FOAM Warning/ { ++warnings }
+        active && /^Invalid overset interpolation stencil events:/ {
+            ++invalid
+            if ($0 !~ /0 empty\/misaligned, 0 nonfinite, 1 unnormalized; 1 cells demoted to HOLE \(1 adjacent to CALCULATED cells\)/) {
+                failed = 1
+            }
+        }
+        active && /^Linear-exact weighting used nearest-donor fallback/ {
+            ++fallback
+            if ($0 !~ /1 weight-generation calls: 0 invalid distance weights, 1 singular geometry, 0 invalid weight\/moment residuals/) {
+                failed = 1
+            }
+        }
+        /^Diagnostic fixture end$/ {
+            if (!active || warnings != (update == 0 ? 2 : 0) ||
+                invalid != (update < 2 ? 1 : 0) ||
+                fallback != (update < 2 ? 1 : 0)) {
+                failed = 1
+            }
+            active = 0
+            ++blocks
+        }
+        END { exit (failed || active || blocks != 18) }
+    ' "$1"
+}
+
 if ! (
     cd work
     blockMesh > log.blockMesh 2>&1 &&
     oversetDonorFallback > log.serial 2>&1 &&
-    checkRegressionLog log.serial
+    checkRegressionLog log.serial &&
+    oversetDonorFallback -diagnosticValidation > log.diagnostics.serial 2>&1 &&
+    checkDiagnosticLog log.diagnostics.serial
 ); then
     echo "Serial donor fallback regression failed" >&2
     if [ -f work/log.serial ]; then
@@ -71,6 +117,39 @@ if ! (
     elif [ -f work/log.blockMesh ]; then
         tail -n 80 work/log.blockMesh >&2
     fi
+    if [ -f work/log.diagnostics.serial ]; then
+        tail -n 80 work/log.diagnostics.serial >&2
+    fi
+    exit 1
+fi
+
+if ! (
+    cd work
+    for budget in 4 27000000; do
+        oversetDonorFallback -voxelBudget "$budget" > "log.budget.$budget" 2>&1 &&
+        grep -q '^Passed configured voxel budget checks$' "log.budget.$budget" ||
+            exit 1
+    done
+    for budget in 0 -1 1 invalid; do
+        if oversetDonorFallback -voxelBudget "$budget" > "log.budget.$budget" 2>&1; then
+            echo "Invalid voxel budget unexpectedly succeeded: $budget" >&2
+            exit 1
+        fi
+        grep -Eq 'maxPatchVoxelCount|voxelBudget' "log.budget.$budget" || exit 1
+    done
+    for scheme in inverseDistance leastSquares linearExact; do
+        oversetDonorFallback -weightingScheme "$scheme" > "log.scheme.$scheme" 2>&1 ||
+            exit 1
+    done
+    if oversetDonorFallback -weightingScheme invalid > log.scheme.invalid 2>&1; then
+        echo "Invalid weighting scheme unexpectedly succeeded" >&2
+        exit 1
+    fi
+    grep -q 'weightingScheme' log.scheme.invalid &&
+    grep -q 'linearExact' log.scheme.invalid
+); then
+    echo "Overset dictionary validation regression failed" >&2
+    tail -n 30 work/log.budget.* work/log.scheme.* >&2
     exit 1
 fi
 
@@ -79,7 +158,10 @@ if command -v mpirun >/dev/null 2>&1; then
         cd work
         decomposePar -force > log.decomposePar 2>&1 &&
         runParallel oversetDonorFallback > log.parallel 2>&1 &&
-        checkRegressionLog log.oversetDonorFallback
+        checkRegressionLog log.oversetDonorFallback &&
+        runParallel -s diagnostics oversetDonorFallback -diagnosticValidation \
+            > log.diagnostics.parallel 2>&1 &&
+        checkDiagnosticLog log.oversetDonorFallback.diagnostics
     ); then
         echo "Parallel donor fallback regression failed" >&2
         if [ -f work/log.oversetDonorFallback ]; then
@@ -89,6 +171,9 @@ if command -v mpirun >/dev/null 2>&1; then
         elif [ -f work/log.decomposePar ]; then
             tail -n 80 work/log.decomposePar >&2
         fi
+        if [ -f work/log.oversetDonorFallback.diagnostics ]; then
+            tail -n 80 work/log.oversetDonorFallback.diagnostics >&2
+        fi
         exit 1
     fi
 fi
@@ -97,13 +182,18 @@ if ! (
     cd work
     renumberMesh -overwrite -renumber-method random > log.renumberMesh 2>&1 &&
     oversetDonorFallback > log.serial.renumbered 2>&1 &&
-    checkRegressionLog log.serial.renumbered
+    checkRegressionLog log.serial.renumbered &&
+    oversetDonorFallback -diagnosticValidation > log.diagnostics.renumbered 2>&1 &&
+    checkDiagnosticLog log.diagnostics.renumbered
 ); then
     echo "Renumbered serial donor fallback regression failed" >&2
     if [ -f work/log.serial.renumbered ]; then
         tail -n 80 work/log.serial.renumbered >&2
     elif [ -f work/log.renumberMesh ]; then
         tail -n 80 work/log.renumberMesh >&2
+    fi
+    if [ -f work/log.diagnostics.renumbered ]; then
+        tail -n 80 work/log.diagnostics.renumbered >&2
     fi
     exit 1
 fi

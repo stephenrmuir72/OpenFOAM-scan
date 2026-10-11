@@ -29,6 +29,9 @@ Class
 Description
     Inverse-distance-weighted interpolation stencil.
 
+    maxPatchVoxelCount limits each zone's patch grid on each processor,
+    including refinement. Defaults to 16777216; must be positive.
+
 SourceFiles
     trackingInverseDistanceCellCellStencil.C
 
@@ -59,6 +62,8 @@ protected:
 
     // Protected data
 
+        const label maxPatchVoxelCount_;
+
         //- Global indexing for cells
         globalIndex globalCells_;
 
@@ -73,6 +78,7 @@ protected:
         static bool markBoundaries
         (
             const label zonei,
+            const label maxPatchVoxelCount,
             const fvMesh& mesh,
             const vector& smallVec,
 
