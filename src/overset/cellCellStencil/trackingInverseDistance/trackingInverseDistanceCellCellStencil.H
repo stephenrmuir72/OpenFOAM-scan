@@ -94,6 +94,7 @@ protected:
             const List<treeBoundBoxList>& patchBb,
             const List<labelVector>& patchDivisions,
             const PtrList<PackedList<2>>& patchParts,
+            const patchFaceIntersection::triangleSearch& srcSearch,
 
             const label srcI,
             const label tgtI,

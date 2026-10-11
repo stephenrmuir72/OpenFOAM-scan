@@ -65,6 +65,11 @@ namespace Foam
 
 class fvMeshSubset;
 
+namespace patchFaceIntersection
+{
+class triangleSearch;
+}
+
 namespace cellCellStencils
 {
 
@@ -101,7 +106,9 @@ protected:
         //- Allow interpolared as donors
         const bool allowInterpolatedDonors_;
 
-        //- Small perturbation vector for geometric tests
+        //- Geometry tolerance scaled by the current mesh bounds span.
+        //  The 'tolerance' dictionary entry defaults to 1e-10; zero requests
+        //  exact predicates. Refreshed at each geometry update.
         vector smallVec_;
 
         //- Per cell the cell type
@@ -151,6 +158,9 @@ protected:
 
    // Protected Member Functions
 
+        //- Refresh the geometry tolerance derived from the current mesh span
+        void updateGeometryTolerance();
+
         //- Check whether a source cell is a valid donor for an acceptor
         bool donorEligible
         (
@@ -185,6 +195,7 @@ protected:
             const globalIndex& globalCells,
             const labelList& zoneID,
             const labelList& allPatchTypes,
+            const boolList& previouslyBlanked,
             const List<DynamicList<donorCandidate>>& allCandidates,
             const scalar layerRelax,
             const label holeLayers,
@@ -194,7 +205,8 @@ protected:
             scalarField& allWeight,
             boolList& reactivationCandidates,
             boolList& sameZoneFallback,
-            labelListList& reactivationStencil
+            labelListList& reactivationStencil,
+            boolList& protectedHoles
         ) const;
 
         // Voxel representation
@@ -267,6 +279,7 @@ protected:
             const List<treeBoundBoxList>& patchBb,
             const List<labelVector>& patchDivisions,
             const PtrList<PackedList<2>>& patchParts,
+            const patchFaceIntersection::triangleSearch& srcSearch,
 
             const label srcI,
             const label tgtI,

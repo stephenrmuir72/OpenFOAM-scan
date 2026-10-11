@@ -29,6 +29,17 @@ checkRegressionLog()
         "$logFile" &&
     grep -q '^Passed coincident acceptor stencil checks: trackingInverseDistance$' \
         "$logFile" &&
+    grep -q '^Passed recovery readiness checks: inverseDistance$' "$logFile" &&
+    grep -q '^Passed recovery readiness checks: trackingInverseDistance$' \
+        "$logFile" &&
+    grep -q '^Passed recovery fallback policy checks: inverseDistance$' \
+        "$logFile" &&
+    grep -q '^Passed recovery fallback policy checks: trackingInverseDistance$' \
+        "$logFile" &&
+    grep -q '^Passed receiver-specific fringe checks: inverseDistance$' \
+        "$logFile" &&
+    grep -q '^Passed receiver-specific fringe checks: trackingInverseDistance$' \
+        "$logFile" &&
     grep -q '^Passed expanded stencil eligibility checks: inverseDistance$' \
         "$logFile" &&
     grep -q '^Passed expanded stencil eligibility checks: trackingInverseDistance$' \
@@ -39,6 +50,9 @@ checkRegressionLog()
     grep -q '^Passed weighting scheme checks: leastSquares$' "$logFile" &&
     grep -q '^Passed walk-front checks: inverseDistance$' "$logFile" &&
     grep -q '^Passed walk-front checks: trackingInverseDistance$' "$logFile" &&
+    grep -q '^Passed tracking geometry tolerance checks$' "$logFile" &&
+    grep -q 'Unable to reconstruct .* previously blanked cells from ready same-zone neighbours' \
+        "$logFile" &&
     holeCounts=$(grep -Ec \
         'Number of holes cells[[:space:]]*:[[:space:]]*2\(2[[:space:]]+0\)' \
         "$logFile" || true) &&
@@ -91,6 +105,29 @@ if ! (
     elif [ -f work/log.renumberMesh ]; then
         tail -n 80 work/log.renumberMesh >&2
     fi
+    exit 1
+fi
+
+cp system/retryBlockMeshDict work/system/blockMeshDict
+cp 0/zoneID.retry work/0/zoneID
+if ! (
+    cd work
+    blockMesh > log.retry.blockMesh 2>&1 &&
+    oversetDonorFallback -retry > log.retry 2>&1 &&
+    grep -q '^Passed reachability retry checks: trackingInverseDistance$' log.retry &&
+    if command -v mpirun >/dev/null 2>&1; then
+        decomposePar -force > log.retry.decomposePar 2>&1 &&
+        runParallel -s retry oversetDonorFallback -retry > log.retry.parallel 2>&1 &&
+        grep -q '^Passed reachability retry checks: trackingInverseDistance$' \
+            log.oversetDonorFallback.retry
+    fi
+); then
+    echo "Reachability retry regression failed" >&2
+    for logFile in work/log.retry work/log.oversetDonorFallback.retry; do
+        if [ -f "$logFile" ]; then
+            tail -n 80 "$logFile" >&2
+        fi
+    done
     exit 1
 fi
 

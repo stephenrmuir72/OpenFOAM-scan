@@ -79,6 +79,7 @@ bool Foam::cellCellStencils::trackingInverseDistance::markBoundaries
 
     patchTypes = patchCellType::OTHER;
     const labelVector strides(voxelMeshSearch::offset(nDivs));
+    const scalar tolerance = cmptMax(smallVec);
 
     // Mark non-coupled patch boundaries
     forAll(pbm, patchi)
@@ -98,7 +99,7 @@ bool Foam::cellCellStencils::trackingInverseDistance::markBoundaries
 
                 // Mark in voxel mesh
                 boundBox faceBb(pp.points(), pp[i], false);
-                faceBb.grow(smallVec);
+                faceBb.grow(tolerance);
 
                 if (bb.overlaps(faceBb))
                 {
@@ -136,7 +137,7 @@ bool Foam::cellCellStencils::trackingInverseDistance::markBoundaries
 
                 // Mark in voxel mesh
                 boundBox faceBb(pp.points(), pp[i], false);
-                faceBb.grow(smallVec);
+                faceBb.grow(tolerance);
 
                 if (!bb.contains(faceCentres[i]))
                 {
@@ -237,6 +238,7 @@ void Foam::cellCellStencils::trackingInverseDistance::markPatchesAsHoles
     const List<treeBoundBoxList>& patchBb,
     const List<labelVector>& patchDivisions,
     const PtrList<PackedList<2>>& patchParts,
+    const patchFaceIntersection::triangleSearch& srcSearch,
 
     const label srcI,
     const label tgtI,
@@ -246,42 +248,35 @@ void Foam::cellCellStencils::trackingInverseDistance::markPatchesAsHoles
     const treeBoundBoxList& srcPatchBbs = patchBb[srcI];
     const treeBoundBoxList& tgtPatchBbs = patchBb[tgtI];
     const labelList& tgtCellMap = meshParts_[tgtI].cellMap();
-    const pointField srcTriangles
+    const scalar toleranceMax
     (
-        patchFaceIntersection::patchTriangles
-        (
-            meshParts_[srcI].subMesh()
-        )
+        max(smallVec_.x(), max(smallVec_.y(), smallVec_.z()))
     );
-    const scalar geometricTolerance
-    (
-        max(max(smallVec_[0], smallVec_[1]), smallVec_[2])
-    );
+    const auto boxesOverlap =
+    [toleranceMax](const treeBoundBox& a, const treeBoundBox& b)
+    {
+        treeBoundBox expandedA(a);
+        treeBoundBox expandedB(b);
+        expandedA.grow(toleranceMax);
+        expandedB.grow(toleranceMax);
+        return expandedA.overlaps(expandedB);
+    };
 
     // 1. do processor-local src-tgt patch overlap
     {
         const treeBoundBox& srcPatchBb = srcPatchBbs[Pstream::myProcNo()];
         const treeBoundBox& tgtPatchBb = tgtPatchBbs[Pstream::myProcNo()];
 
-        if (srcPatchBb.overlaps(tgtPatchBb))
+        if (boxesOverlap(srcPatchBb, tgtPatchBb))
         {
             const PackedList<2>& srcPatchTypes = patchParts[srcI];
             const labelVector& srcDivs = patchDivisions[srcI];
-            const pointField localTriangles
-            (
-                patchFaceIntersection::trianglesOverlapping
-                (
-                    srcTriangles,
-                    tgtPatchBb,
-                    smallVec_
-                )
-            );
 
             forAll(tgtCellMap, tgtCelli)
             {
                 label celli = tgtCellMap[tgtCelli];
                 boundBox cBb(mesh_.cellBb(celli));
-                cBb.grow(smallVec_);
+                cBb.grow(toleranceMax);
 
                 if
                 (
@@ -295,16 +290,7 @@ void Foam::cellCellStencils::trackingInverseDistance::markPatchesAsHoles
                     )
                 )
                 {
-                    if
-                    (
-                        patchFaceIntersection::intersectsCell
-                        (
-                            localTriangles,
-                            mesh_,
-                            celli,
-                            geometricTolerance
-                        )
-                    )
+                    if (srcSearch.intersectsCell(mesh_, celli))
                     {
                         allCellTypes[celli] = HOLE;
                     }
@@ -323,16 +309,11 @@ void Foam::cellCellStencils::trackingInverseDistance::markPatchesAsHoles
             const treeBoundBox& srcPatchBb = srcPatchBbs[Pstream::myProcNo()];
             const treeBoundBox& tgtPatchBb = tgtPatchBbs[procI];
 
-            if (srcPatchBb.overlaps(tgtPatchBb))
+            if (boxesOverlap(srcPatchBb, tgtPatchBb))
             {
                 const pointField procTriangles
                 (
-                    patchFaceIntersection::trianglesOverlapping
-                    (
-                        srcTriangles,
-                        tgtPatchBb,
-                        smallVec_
-                    )
+                    srcSearch.trianglesOverlapping(tgtPatchBb)
                 );
 
                 // Send over complete patch voxel map. Tbd: could
@@ -353,13 +334,18 @@ void Foam::cellCellStencils::trackingInverseDistance::markPatchesAsHoles
             const treeBoundBox& srcPatchBb = srcPatchBbs[procI];
             const treeBoundBox& tgtPatchBb = tgtPatchBbs[Pstream::myProcNo()];
 
-            if (srcPatchBb.overlaps(tgtPatchBb))
+            if (boxesOverlap(srcPatchBb, tgtPatchBb))
             {
                 UIPstream is(procI, pBufs);
                 const treeBoundBox receivedBb(is);
                 const labelVector srcDivs(is);
                 const PackedList<2> srcPatchTypes(is);
                 const pointField remoteTriangles(is);
+                const patchFaceIntersection::triangleSearch remoteSearch
+                (
+                    remoteTriangles,
+                    smallVec_
+                );
 
                 // Verify validity
                 if (srcPatchBb != receivedBb)
@@ -375,7 +361,7 @@ void Foam::cellCellStencils::trackingInverseDistance::markPatchesAsHoles
                 {
                     label celli = tgtCellMap[tgtCelli];
                     boundBox cBb(mesh_.cellBb(celli));
-                    cBb.grow(smallVec_);
+                    cBb.grow(toleranceMax);
 
                     if
                     (
@@ -389,16 +375,7 @@ void Foam::cellCellStencils::trackingInverseDistance::markPatchesAsHoles
                         )
                     )
                     {
-                        if
-                        (
-                            patchFaceIntersection::intersectsCell
-                            (
-                                remoteTriangles,
-                                mesh_,
-                                celli,
-                                geometricTolerance
-                            )
-                        )
+                        if (remoteSearch.intersectsCell(mesh_, celli))
                         {
                             allCellTypes[celli] = HOLE;
                         }
@@ -691,6 +668,13 @@ bool Foam::cellCellStencils::trackingInverseDistance::update()
 {
     DebugInfo<< FUNCTION_NAME << " : Start of analysis" << endl;
 
+    updateGeometryTolerance();
+    boolList previouslyBlanked(mesh_.nCells(), false);
+    forAll(previouslyBlanked, celli)
+    {
+        previouslyBlanked[celli] = cellTypes_[celli] == HOLE;
+    }
+
     scalar layerRelax(dict_.getOrDefault("layerRelax", 1.0));
     const labelIOList& zoneID = this->zoneID();
     label nZones = meshParts_.size();
@@ -839,6 +823,24 @@ bool Foam::cellCellStencils::trackingInverseDistance::update()
             }
         }
     }
+
+    PtrList<patchFaceIntersection::triangleSearch> patchSearches(nZones);
+    forAll(patchSearches, zonei)
+    {
+        patchSearches.set
+        (
+            zonei,
+            new patchFaceIntersection::triangleSearch
+            (
+                patchFaceIntersection::patchTriangles
+                (
+                    meshParts_[zonei].subMesh()
+                ),
+                smallVec_
+            )
+        );
+    }
+
     DebugInfo<< FUNCTION_NAME << " : Calculated boundary voxel meshes" << endl;
 
 
@@ -924,6 +926,7 @@ bool Foam::cellCellStencils::trackingInverseDistance::update()
                 patchBb,
                 patchDivisions,
                 patchParts,
+                patchSearches[srci],
 
                 srci,
                 tgti,
@@ -936,6 +939,7 @@ bool Foam::cellCellStencils::trackingInverseDistance::update()
                 patchBb,
                 patchDivisions,
                 patchParts,
+                patchSearches[tgti],
 
                 tgti,
                 srci,
@@ -1038,6 +1042,7 @@ bool Foam::cellCellStencils::trackingInverseDistance::update()
 
     boolList reactivationCandidates(mesh_.nCells(), false);
     boolList sameZoneFallback(mesh_.nCells(), false);
+    boolList protectedHoles(mesh_.nCells(), false);
     labelListList reactivationStencil(mesh_.nCells());
     scalarField allWeight(mesh_.nCells(), Zero);
 
@@ -1046,6 +1051,7 @@ bool Foam::cellCellStencils::trackingInverseDistance::update()
         globalCells,
         zoneID,
         allPatchTypes,
+        previouslyBlanked,
         allCandidates,
         layerRelax,
         dict_.getOrDefault("holeLayers", 1),
@@ -1055,7 +1061,8 @@ bool Foam::cellCellStencils::trackingInverseDistance::update()
         allWeight,
         reactivationCandidates,
         sameZoneFallback,
-        reactivationStencil
+        reactivationStencil,
+        protectedHoles
     );
 
     DebugInfo<< FUNCTION_NAME << " : Flood-filled holes and walked front"
@@ -1080,12 +1087,26 @@ bool Foam::cellCellStencils::trackingInverseDistance::update()
     {
         labelList compactCellTypesForRecovery(allCellTypes);
         map.distribute(compactCellTypesForRecovery);
+        labelList compactPreviouslyBlankedForRecovery(mesh_.nCells(), Zero);
+        forAll(previouslyBlanked, celli)
+        {
+            compactPreviouslyBlankedForRecovery[celli] = previouslyBlanked[celli];
+        }
+        map.distribute(compactPreviouslyBlankedForRecovery);
 
         DynamicList<label> fallbackCells;
         forAll(reactivationCandidates, celli)
         {
             if (!reactivationCandidates[celli])
             {
+                continue;
+            }
+
+            if (protectedHoles[celli])
+            {
+                allCellTypes[celli] = HOLE;
+                allStencil[celli].clear();
+                allWeight[celli] = 0.0;
                 continue;
             }
 
@@ -1099,7 +1120,8 @@ bool Foam::cellCellStencils::trackingInverseDistance::update()
                     const label donorType = compactCellTypesForRecovery[slots[sloti]];
                     if
                     (
-                        donorType != HOLE
+                        !compactPreviouslyBlankedForRecovery[slots[sloti]]
+                     && donorType != HOLE
                      && donorType != POROUS
                      && (allowInterpolatedDonors_ || donorType != INTERPOLATED)
                     )
@@ -1127,7 +1149,9 @@ bool Foam::cellCellStencils::trackingInverseDistance::update()
         forAll(allCellTypes, celli)
         {
             fallbackDonorMask[celli] =
-                !reactivationCandidates[celli]
+                !previouslyBlanked[celli]
+             && !protectedHoles[celli]
+             && !reactivationCandidates[celli]
              &&
                 (
                     allCellTypes[celli] == CALCULATED
@@ -1145,7 +1169,9 @@ bool Foam::cellCellStencils::trackingInverseDistance::update()
             fallbackDonorMask,
             fallbackCells,
             fallbackCellCells,
-            fallbackCellCentres
+            fallbackCellCentres,
+            allCellTypes,
+            allPatchTypes
         );
 
         forAll(fallbackCells, i)
@@ -1301,6 +1327,10 @@ bool Foam::cellCellStencils::trackingInverseDistance::update()
         zoneID,
         reactivationCandidates,
         sameZoneFallback,
+        previouslyBlanked,
+        protectedHoles,
+        allPatchTypes,
+        allowHoleDonors_,
         allowInterpolatedDonors_,
         cellTypes_,
         cellStencil_,

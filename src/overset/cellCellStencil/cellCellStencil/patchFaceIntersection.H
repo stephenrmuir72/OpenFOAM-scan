@@ -34,6 +34,12 @@ License
 #include "PackedList.H"
 #include "pointField.H"
 #include "triangle.H"
+#include "indexedOctree.H"
+#include "treeBoundBox.H"
+#include "DynamicList.H"
+#include "HashSet.H"
+
+#include <cstddef>
 
 namespace Foam
 {
@@ -42,6 +48,95 @@ class fvMesh;
 
 namespace patchFaceIntersection
 {
+
+class triangleData;
+
+//- Update-local triangle index. Axis-flat/near-flat sets use a median-split
+//  bounds tree; ordinary 3-D sets use indexedOctree. Queries expand by the
+//  maximum tolerance component and return unique candidates.
+class triangleSearch
+{
+public:
+
+    struct queryStats
+    {
+        label nodes = 0;
+        label triangleTests = 0;
+    };
+
+private:
+
+    struct boundsNode
+    {
+        boundBox bb;
+        label begin;
+        label end;
+        label left = -1;
+        label right = -1;
+    };
+
+    pointField trianglePoints_;
+    autoPtr<indexedOctree<triangleData>> treePtr_;
+    vector tolerance_;
+    List<boundBox> triangleBounds_;
+    labelList triangleOrder_;
+    DynamicList<boundsNode> boundsNodes_;
+
+    label buildBoundsTree(const label begin, const label end);
+
+    void queryBoundsTree
+    (
+        const label nodei,
+        const boundBox& bb,
+        DynamicList<label>& candidates,
+        queryStats& stats
+    ) const;
+
+    void queryOctree
+    (
+        const label nodei,
+        const treeBoundBox& bb,
+        labelHashSet& candidates,
+        queryStats& stats
+    ) const;
+
+public:
+
+    triangleSearch
+    (
+        const pointField& trianglePoints,
+        const vector& tolerance
+    );
+
+    triangleSearch
+    (
+        const pointField& trianglePoints,
+        const scalar tolerance
+    );
+
+    ~triangleSearch();
+
+    labelList query
+    (
+        const boundBox& targetBb,
+        queryStats* stats = nullptr
+    ) const;
+
+    label nodeCount() const;
+    label referenceCount() const;
+
+    //- Estimated owned storage, excluding allocator overhead
+    std::size_t storageBytes() const;
+
+    pointField trianglesOverlapping(const boundBox& targetBb) const;
+
+    bool intersectsCell(const fvMesh& mesh, const label celli) const;
+
+    label size() const noexcept
+    {
+        return trianglePoints_.size()/3;
+    }
+};
 
 //- Exact triangle/box overlap, with an axis-wise geometric tolerance
 bool triangleIntersectsBox
@@ -57,6 +152,16 @@ bool trianglesIntersect
     const triPoints& triA,
     const triPoints& triB,
     const scalar tolerance
+);
+
+//- Conservative voxel index range for a closed query box
+bool closedVoxelRange
+(
+    const boundBox& searchBb,
+    const labelVector& nDivs,
+    const boundBox& queryBb,
+    labelVector& minIds,
+    labelVector& maxIds
 );
 
 //- Fill voxels intersected by a triangulated face

@@ -40,6 +40,8 @@ License
 #include "oversetFvMeshBase.H"
 #include "oversetFvPatchField.H"
 
+#include <cmath>
+
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
 namespace Foam
@@ -592,6 +594,12 @@ Foam::cellCellStencils::cellVolumeWeight::~cellVolumeWeight()
 
 bool Foam::cellCellStencils::cellVolumeWeight::update()
 {
+    boolList previouslyBlanked(mesh_.nCells(), false);
+    forAll(previouslyBlanked, celli)
+    {
+        previouslyBlanked[celli] = cellTypes_[celli] == HOLE;
+    }
+
     scalar layerRelax(dict_.getOrDefault("layerRelax", 1.0));
     const labelIOList& zoneID = this->zoneID();
 
@@ -877,6 +885,7 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
 
     boolList reactivationCandidates(mesh_.nCells(), false);
     boolList sameZoneFallback(mesh_.nCells(), false);
+    boolList protectedHoles(mesh_.nCells(), false);
     labelListList reactivationStencil(mesh_.nCells());
     List<scalarList> reactivationWeights(mesh_.nCells());
     DynamicList<label> reactivationCells;
@@ -892,7 +901,15 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
 
     forAll(cellTypes_, celli)
     {
-        if (cellTypes_[celli] == HOLE && allCellTypes[celli] == CALCULATED)
+        if
+        (
+            previouslyBlanked[celli]
+         &&
+            (
+                allCellTypes[celli] == CALCULATED
+             || allCellTypes[celli] == INTERPOLATED
+            )
+        )
         {
             reactivationCandidates[celli] = true;
             reactivationCells.append(celli);
@@ -903,7 +920,8 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
     forAll(allCellTypes, celli)
     {
         validSameZoneDonor[celli] =
-            !reactivationCandidates[celli]
+            !previouslyBlanked[celli]
+         && !reactivationCandidates[celli]
          &&
             (
                 allCellTypes[celli] == CALCULATED
@@ -964,7 +982,8 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
         compactStencil,
         zoneID,
         dict_.getOrDefault("holeLayers", 1),
-        dict_.getOrDefault("useLayer", -1)
+        dict_.getOrDefault("useLayer", -1),
+        &protectedHoles
     );
 
 
@@ -991,6 +1010,15 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
     forAll(reactivationCells, i)
     {
         const label celli = reactivationCells[i];
+        if (protectedHoles[celli])
+        {
+            allCellTypes[celli] = HOLE;
+            allStencil[celli].clear();
+            allWeights[celli].clear();
+            allWeight[celli] = 0.0;
+            continue;
+        }
+
         if (!reactivationStencil[celli].empty())
         {
             allStencil[celli] = reactivationStencil[celli];
@@ -1001,7 +1029,13 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
 
 
     labelList compactCellTypes(allCellTypes);
+    labelList compactPreviouslyBlanked(mesh_.nCells(), Zero);
+    forAll(previouslyBlanked, celli)
+    {
+        compactPreviouslyBlanked[celli] = previouslyBlanked[celli];
+    }
     map.distribute(compactCellTypes);
+    map.distribute(compactPreviouslyBlanked);
 
     label nHoleDonors = 0;
     forAll(allCellTypes, cellI)
@@ -1017,22 +1051,45 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
                 continue;
             }
 
+            DynamicList<label> retainedDonors(slots.size());
+            DynamicList<scalar> retainedWeights(slots.size());
             forAll (slots, subCellI)
             {
+                const label slot = slots[subCellI];
+                if (slot < 0 || slot >= compactCellTypes.size())
+                {
+                    allCellTypes[cellI] = POROUS;
+                    allWeights[cellI].clear();
+                    allStencil[cellI].clear();
+                    break;
+                }
+
+                const label donorType = compactCellTypes[slot];
                 if
                 (
-                    compactCellTypes[slots[subCellI]] == HOLE
+                    compactPreviouslyBlanked[slot]
+                 || donorType == HOLE
                  ||
                     (
-                       !allowInterpolatedDonors_
-                     && compactCellTypes[slots[subCellI]] == INTERPOLATED
+                        !allowInterpolatedDonors_
+                     && donorType == INTERPOLATED
                     )
-                 || compactCellTypes[slots[subCellI]] == POROUS
+                 || donorType == POROUS
                 )
                 {
-                    allWeights[cellI][subCellI] = 0;
                     nHoleDonors++;
                 }
+                else
+                {
+                    retainedDonors.append(allStencil[cellI][subCellI]);
+                    retainedWeights.append(allWeights[cellI][subCellI]);
+                }
+            }
+
+            if (allCellTypes[cellI] == INTERPOLATED)
+            {
+                allStencil[cellI] = labelList(retainedDonors);
+                allWeights[cellI] = scalarList(retainedWeights);
             }
         }
         else
@@ -1049,9 +1106,23 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
     {
         if (allCellTypes[cellI] == INTERPOLATED)
         {
-            const scalar s = sum(allWeights[cellI]);
+            scalar s = 0;
+            bool validWeights = true;
+            for (const scalar weight : allWeights[cellI])
+            {
+                if (!std::isfinite(weight))
+                {
+                    validWeights = false;
+                    break;
+                }
+                s += weight;
+            }
+            validWeights =
+                validWeights
+             && std::isfinite(s)
+             && s > SMALL;
 
-            if (s < SMALL)
+            if (!validWeights)
             {
                 allCellTypes[cellI] = POROUS;
                 allWeights[cellI].clear();
@@ -1062,6 +1133,18 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
                 forAll(allWeights[cellI], i)
                 {
                     allWeights[cellI][i] /= s;
+                    if (!std::isfinite(allWeights[cellI][i]))
+                    {
+                        validWeights = false;
+                        break;
+                    }
+                }
+
+                if (!validWeights)
+                {
+                    allCellTypes[cellI] = POROUS;
+                    allWeights[cellI].clear();
+                    allStencil[cellI].clear();
                 }
             }
         }
@@ -1072,6 +1155,15 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
     forAll(reactivationCells, i)
     {
         const label celli = reactivationCells[i];
+        if (protectedHoles[celli])
+        {
+            allCellTypes[celli] = HOLE;
+            allStencil[celli].clear();
+            allWeights[celli].clear();
+            allWeight[celli] = 0.0;
+            continue;
+        }
+
         const bool hasValidStencil =
             !sameZoneFallback[celli]
          && allCellTypes[celli] == INTERPOLATED
@@ -1094,7 +1186,9 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
     forAll(allCellTypes, celli)
     {
         fallbackDonorMask[celli] =
-            !reactivationCandidates[celli]
+            !previouslyBlanked[celli]
+         && !protectedHoles[celli]
+         && !reactivationCandidates[celli]
          &&
             (
                 allCellTypes[celli] == CALCULATED
@@ -1159,8 +1253,16 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
     {
         WarningInFunction
             << "Unable to reconstruct " << nUnrecoverable
-            << " previously blanked cells from valid same-zone neighbours; "
+            << " previously blanked cells from ready same-zone neighbours; "
             << "retaining them as holes." << nl << endl;
+    }
+
+    forAll(allCellTypes, celli)
+    {
+        if (allCellTypes[celli] != INTERPOLATED)
+        {
+            allWeight[celli] = 0.0;
+        }
     }
 
     // Write to volField for debugging

@@ -30,15 +30,107 @@ License
 #include "fvPatch.H"
 #include "oversetFvPatch.H"
 #include "polyMesh.H"
+#include "tetIndices.H"
 #include "triangle.H"
+
+#include <cmath>
+#include <algorithm>
 
 namespace Foam
 {
 namespace patchFaceIntersection
 {
 
+class triangleData
+{
+    const pointField& points_;
+
+public:
+
+    static constexpr int nDim() noexcept { return 3; }
+
+    explicit triangleData(const pointField& points)
+    :
+        points_(points)
+    {}
+
+    bool empty() const { return points_.empty(); }
+    label size() const { return points_.size()/3; }
+    label objectIndex(const label index) const noexcept { return index; }
+
+    const point& centre(const label index) const
+    {
+        return points_[3*index];
+    }
+
+    treeBoundBox bounds(const labelUList& indices) const
+    {
+        treeBoundBox result;
+        for (const label index : indices)
+        {
+            result.min() = min(result.min(), bounds(index).min());
+            result.max() = max(result.max(), bounds(index).max());
+        }
+        return result;
+    }
+
+    bool overlaps(const label index, const treeBoundBox& box) const
+    {
+        return bounds(index).overlaps(box);
+    }
+
+    bool overlaps
+    (
+        const label index,
+        const point& centrePoint,
+        const scalar radiusSqr
+    ) const
+    {
+        return bounds(index).overlaps(centrePoint, radiusSqr);
+    }
+
+private:
+
+    treeBoundBox bounds(const label index) const
+    {
+        treeBoundBox bb
+        (
+            points_[3*index],
+            points_[3*index]
+        );
+        bb.min() = min(bb.min(), points_[3*index + 1]);
+        bb.max() = max(bb.max(), points_[3*index + 1]);
+        bb.min() = min(bb.min(), points_[3*index + 2]);
+        bb.max() = max(bb.max(), points_[3*index + 2]);
+        return bb;
+    }
+};
+
 namespace
 {
+
+inline void validateTolerance(const scalar tolerance)
+{
+    if (!std::isfinite(tolerance) || tolerance < 0)
+    {
+        FatalErrorInFunction
+            << "Geometry tolerance must be finite and non-negative, got "
+            << tolerance << exit(FatalError);
+    }
+}
+
+inline void validateTolerance(const vector& tolerance)
+{
+    for (direction cmpt = 0; cmpt < 3; ++cmpt)
+    {
+        if (!std::isfinite(tolerance[cmpt]) || tolerance[cmpt] < 0)
+        {
+            FatalErrorInFunction
+                << "Geometry tolerance must be finite and non-negative, got "
+                << tolerance << exit(FatalError);
+        }
+    }
+}
 
 inline boundBox triangleBounds(const triPoints& tri)
 {
@@ -53,6 +145,7 @@ inline bool pointNearTriangle
     const scalar tolerance
 )
 {
+    validateTolerance(tolerance);
     const triPointRef triRef(tri.a(), tri.b(), tri.c());
     const pointHit nearest(triRef.nearestPoint(p));
     return magSqr(nearest.point() - p) <= sqr(tolerance);
@@ -67,6 +160,7 @@ inline bool segmentIntersectsTriangle
     const scalar tolerance
 )
 {
+    validateTolerance(tolerance);
     if
     (
         pointNearTriangle(p0, tri, tolerance)
@@ -85,7 +179,6 @@ inline bool segmentIntersectsTriangle
     }
 
     const triPointRef triRef(tri.a(), tri.b(), tri.c());
-    const scalar relativeTolerance(tolerance/edgeLength);
     const pointHit hit
     (
         triRef.intersection
@@ -93,14 +186,14 @@ inline bool segmentIntersectsTriangle
             p0,
             edge,
             intersection::FULL_RAY,
-            relativeTolerance
+            0
         )
     );
 
     return
         hit.hit()
-     && hit.distance() >= -relativeTolerance
-     && hit.distance() <= 1 + relativeTolerance;
+     && hit.distance() >= 0
+     && hit.distance() <= 1;
 }
 
 
@@ -172,7 +265,10 @@ scalar segmentSegmentDistanceSqr
 }
 
 
-bool voxelRange
+} // End anonymous namespace
+
+
+bool closedVoxelRange
 (
     const boundBox& searchBb,
     const labelVector& nDivs,
@@ -181,7 +277,14 @@ bool voxelRange
     labelVector& maxIds
 )
 {
-    if (!searchBb.overlaps(queryBb))
+    boundBox closedQueryBb(queryBb);
+    const scalar closureTol
+    (
+        10*SMALL*max(searchBb.mag(), scalar(1))
+    );
+    closedQueryBb.grow(vector(closureTol, closureTol, closureTol));
+
+    if (!searchBb.overlaps(closedQueryBb))
     {
         return false;
     }
@@ -204,25 +307,40 @@ bool voxelRange
         }
         else
         {
-            minIds[cmpt] = label
+            const scalar lower
             (
-                floor
-                (
-                    (queryBb.min()[cmpt] - searchBb.min()[cmpt])
-                   /span[cmpt]*nDivs[cmpt]
-                )
+                (closedQueryBb.min()[cmpt] - searchBb.min()[cmpt])
+               /span[cmpt]*nDivs[cmpt]
             );
-            maxIds[cmpt] = label
+            const scalar upper
             (
-                floor
-                (
-                    (queryBb.max()[cmpt] - searchBb.min()[cmpt])
-                   /span[cmpt]*nDivs[cmpt]
-                )
+                (closedQueryBb.max()[cmpt] - searchBb.min()[cmpt])
+               /span[cmpt]*nDivs[cmpt]
             );
+            const scalar clippedLower
+            (
+                max(scalar(0), min(lower, scalar(nDivs[cmpt])))
+            );
+            const scalar clippedUpper
+            (
+                max(scalar(0), min(upper, scalar(nDivs[cmpt])))
+            );
+            minIds[cmpt] = label(floor(clippedLower));
+            maxIds[cmpt] = label(floor(clippedUpper));
 
-            minIds[cmpt] = max(label(0), minIds[cmpt]);
-            maxIds[cmpt] = min(nDivs[cmpt] - 1, maxIds[cmpt]);
+            const scalar lowerNearest(round(clippedLower));
+            if
+            (
+                clippedLower > 0
+             && clippedLower < nDivs[cmpt]
+             && mag(clippedLower - lowerNearest) <= 10*SMALL
+            )
+            {
+                --minIds[cmpt];
+            }
+
+            minIds[cmpt] = max(label(0), min(nDivs[cmpt] - 1, minIds[cmpt]));
+            maxIds[cmpt] = max(label(0), min(nDivs[cmpt] - 1, maxIds[cmpt]));
         }
 
         if (minIds[cmpt] > maxIds[cmpt])
@@ -234,6 +352,8 @@ bool voxelRange
     return true;
 }
 
+namespace
+{
 
 triPoints faceTriangle
 (
@@ -259,6 +379,8 @@ void forFaceTriangles
     bool& found
 )
 {
+    validateTolerance(tolerance);
+
     for (direction cmpt = 0; cmpt < 3; ++cmpt)
     {
         if (nDivs[cmpt] <= 0)
@@ -268,6 +390,17 @@ void forFaceTriangles
                 << exit(FatalError);
         }
     }
+
+    const scalar toleranceMax
+    (
+        max(tolerance.x(), max(tolerance.y(), tolerance.z()))
+    );
+    const vector rasterTolerance
+    (
+        toleranceMax,
+        toleranceMax,
+        toleranceMax
+    );
 
     faceList triangleFaces(f.nTriangles());
     label triI = 0;
@@ -284,11 +417,11 @@ void forFaceTriangles
     {
         const triPoints tri(faceTriangle(triangleFaces[triFacei], points));
         boundBox triBb(triangleBounds(tri));
-        triBb.grow(tolerance);
+        triBb.grow(rasterTolerance);
 
         labelVector minIds;
         labelVector maxIds;
-        if (!voxelRange(searchBb, nDivs, triBb, minIds, maxIds))
+        if (!closedVoxelRange(searchBb, nDivs, triBb, minIds, maxIds))
         {
             continue;
         }
@@ -307,7 +440,15 @@ void forFaceTriangles
                     );
                     const boundBox voxelBb(voxelMin, voxelMin + width);
 
-                    if (!triangleIntersectsBox(tri, voxelBb, tolerance))
+                    if
+                    (
+                        !triangleIntersectsBox
+                        (
+                            tri,
+                            voxelBb,
+                            rasterTolerance
+                        )
+                    )
                     {
                         continue;
                     }
@@ -342,6 +483,7 @@ bool triangleIntersectsBox
     const vector& tolerance
 )
 {
+    validateTolerance(tolerance);
     boundBox expandedBox(box);
     expandedBox.grow(tolerance);
 
@@ -431,6 +573,7 @@ bool trianglesIntersect
     const scalar tolerance
 )
 {
+    validateTolerance(tolerance);
     boundBox bbA(triangleBounds(triA));
     boundBox bbB(triangleBounds(triB));
     const vector toleranceVec(tolerance, tolerance, tolerance);
@@ -521,6 +664,7 @@ void fillFaceVoxels
     const unsigned int value
 )
 {
+    validateTolerance(tolerance);
     bool found = false;
     forFaceTriangles
     (
@@ -550,6 +694,7 @@ bool overlapsFaceVoxels
     const unsigned int value
 )
 {
+    validateTolerance(tolerance);
     bool found = false;
     forFaceTriangles
     (
@@ -632,57 +777,341 @@ pointField patchTriangles(const fvMesh& mesh)
 }
 
 
-pointField trianglesOverlapping
+triangleSearch::triangleSearch
 (
     const pointField& trianglePoints,
-    const boundBox& targetBb,
     const vector& tolerance
 )
+:
+    trianglePoints_(trianglePoints),
+    treePtr_(nullptr),
+    tolerance_(tolerance)
 {
-    if (trianglePoints.size() % 3)
+    validateTolerance(tolerance);
+
+    if (trianglePoints_.size() % 3)
     {
         FatalErrorInFunction
-            << "Triangle point count " << trianglePoints.size()
+            << "Triangle point count " << trianglePoints_.size()
             << " is not divisible by three"
             << exit(FatalError);
     }
 
-    label nPoints = 0;
-    for (label pointi = 0; pointi < trianglePoints.size(); pointi += 3)
+    if (trianglePoints_.empty())
     {
-        const triPoints tri
-        (
-            trianglePoints[pointi],
-            trianglePoints[pointi + 1],
-            trianglePoints[pointi + 2]
-        );
-        boundBox triBb(triangleBounds(tri));
-        triBb.grow(tolerance);
-        if (triBb.overlaps(targetBb))
+        return;
+    }
+
+    treeBoundBox bb
+    (
+        trianglePoints_[0],
+        trianglePoints_[0]
+    );
+    for (const point& p : trianglePoints_)
+    {
+        bb.min() = min(bb.min(), p);
+        bb.max() = max(bb.max(), p);
+    }
+    const vector span(bb.span());
+    if (cmptMin(span) <= 1e-8*max(cmptMax(span), VSMALL))
+    {
+        // Flat geometry on an octree split plane is duplicated into both
+        // sides and can stop subdivision. Median splits in the varying axes
+        // store each triangle once, with full 3-D bounds for conservative queries.
+        const label nTriangles = size();
+        triangleBounds_.setSize(nTriangles);
+        triangleOrder_.setSize(nTriangles);
+        for (label trianglei = 0; trianglei < nTriangles; ++trianglei)
         {
-            nPoints += 3;
+            const triPoints tri
+            (
+                trianglePoints_[3*trianglei],
+                trianglePoints_[3*trianglei + 1],
+                trianglePoints_[3*trianglei + 2]
+            );
+            triangleBounds_[trianglei] = triangleBounds(tri);
+            triangleOrder_[trianglei] = trianglei;
+        }
+        boundsNodes_.reserve(nTriangles/2 + 1);
+        buildBoundsTree(0, nTriangles);
+        return;
+    }
+    const scalar toleranceMax
+    (
+        max(tolerance_.x(), max(tolerance_.y(), tolerance_.z()))
+    );
+    bb.grow(toleranceMax);
+    const scalar extent
+    (
+        max(toleranceMax, 10*SMALL*max(bb.mag(), scalar(1)))
+    );
+    for (direction cmpt = 0; cmpt < 3; ++cmpt)
+    {
+        if (bb.span(cmpt) <= VSMALL)
+        {
+            bb.min()[cmpt] -= extent;
+            bb.max()[cmpt] += extent;
         }
     }
 
-    pointField result(nPoints);
-    label outPointi = 0;
-
-    for (label pointi = 0; pointi < trianglePoints.size(); pointi += 3)
-    {
-        const triPoints tri
+    treePtr_.reset
+    (
+        new indexedOctree<triangleData>
         (
-            trianglePoints[pointi],
-            trianglePoints[pointi + 1],
-            trianglePoints[pointi + 2]
-        );
-        boundBox triBb(triangleBounds(tri));
-        triBb.grow(tolerance);
-        if (triBb.overlaps(targetBb))
+            triangleData(trianglePoints_),
+            bb,
+            10,
+            10,
+            2.0
+        )
+    );
+}
+
+
+triangleSearch::triangleSearch
+(
+    const pointField& trianglePoints,
+    const scalar tolerance
+)
+:
+    triangleSearch
+    (
+        trianglePoints,
+        vector(tolerance, tolerance, tolerance)
+    )
+{}
+
+
+triangleSearch::~triangleSearch() = default;
+
+
+label triangleSearch::buildBoundsTree(const label begin, const label end)
+{
+    boundsNode node;
+    node.begin = begin;
+    node.end = end;
+    node.bb = triangleBounds_[triangleOrder_[begin]];
+    boundBox centres
+    (
+        node.bb.centre(),
+        node.bb.centre()
+    );
+    for (label i = begin + 1; i < end; ++i)
+    {
+        const boundBox& bb = triangleBounds_[triangleOrder_[i]];
+        node.bb.min() = min(node.bb.min(), bb.min());
+        node.bb.max() = max(node.bb.max(), bb.max());
+        centres.min() = min(centres.min(), bb.centre());
+        centres.max() = max(centres.max(), bb.centre());
+    }
+    const label nodei = boundsNodes_.size();
+    boundsNodes_.append(node);
+    if (end - begin > 10)
+    {
+        const vector span(centres.span());
+        direction axis = 0;
+        for (direction cmpt = 1; cmpt < 3; ++cmpt)
         {
-            for (direction pointi2 = 0; pointi2 < 3; ++pointi2)
+            if (span[cmpt] > span[axis])
             {
-                result[outPointi++] = trianglePoints[pointi + pointi2];
+                axis = cmpt;
             }
+        }
+        const label middle = begin + (end - begin)/2;
+        std::nth_element
+        (
+            triangleOrder_.begin() + begin,
+            triangleOrder_.begin() + middle,
+            triangleOrder_.begin() + end,
+            [&](const label a, const label b)
+            {
+                const scalar ca = triangleBounds_[a].centre()[axis];
+                const scalar cb = triangleBounds_[b].centre()[axis];
+                return ca < cb || (ca == cb && a < b);
+            }
+        );
+        const label left = buildBoundsTree(begin, middle);
+        const label right = buildBoundsTree(middle, end);
+        boundsNodes_[nodei].left = left;
+        boundsNodes_[nodei].right = right;
+    }
+    return nodei;
+}
+
+
+void triangleSearch::queryBoundsTree
+(
+    const label nodei,
+    const boundBox& bb,
+    DynamicList<label>& candidates,
+    queryStats& stats
+) const
+{
+    ++stats.nodes;
+    const boundsNode& node = boundsNodes_[nodei];
+    if (!node.bb.overlaps(bb))
+    {
+        return;
+    }
+    if (node.left >= 0)
+    {
+        queryBoundsTree(node.left, bb, candidates, stats);
+        queryBoundsTree(node.right, bb, candidates, stats);
+    }
+    else
+    {
+        for (label i = node.begin; i < node.end; ++i)
+        {
+            ++stats.triangleTests;
+            const label trianglei = triangleOrder_[i];
+            if (triangleBounds_[trianglei].overlaps(bb))
+            {
+                candidates.append(trianglei);
+            }
+        }
+    }
+}
+
+
+void triangleSearch::queryOctree
+(
+    const label nodei,
+    const treeBoundBox& bb,
+    labelHashSet& candidates,
+    queryStats& stats
+) const
+{
+    using treeType = indexedOctree<triangleData>;
+    ++stats.nodes;
+    const auto& tree = treePtr_();
+    const auto& node = tree.nodes()[nodei];
+    for (direction octant = 0; octant < 8; ++octant)
+    {
+        const labelBits index = node.subNodes_[octant];
+        if (treeType::isNode(index))
+        {
+            const label child = treeType::getNode(index);
+            if (tree.nodes()[child].bb_.overlaps(bb))
+            {
+                queryOctree(child, bb, candidates, stats);
+            }
+        }
+        else if
+        (
+            treeType::isContent(index)
+         && node.bb_.subOverlaps(octant, bb)
+        )
+        {
+            for (const label trianglei : tree.getIndices(index))
+            {
+                ++stats.triangleTests;
+                if (tree.shapes().overlaps(trianglei, bb))
+                {
+                    candidates.insert(trianglei);
+                }
+            }
+        }
+    }
+}
+
+
+labelList triangleSearch::query
+(
+    const boundBox& targetBb,
+    queryStats* stats
+) const
+{
+    queryStats work;
+    boundBox queryBb(targetBb);
+    queryBb.grow(cmptMax(tolerance_));
+    labelList result;
+    if (!boundsNodes_.empty())
+    {
+        DynamicList<label> candidates;
+        queryBoundsTree(0, queryBb, candidates, work);
+        result.transfer(candidates);
+    }
+    else if (treePtr_.valid() && treePtr_().bb().overlaps(queryBb))
+    {
+        // Unlike indexedOctree::findBox(), reserve storage only for results,
+        // not in proportion to the entire source geometry.
+        labelHashSet candidates;
+        queryOctree(0, treeBoundBox(queryBb), candidates, work);
+        result = candidates.toc();
+    }
+    if (stats)
+    {
+        *stats = work;
+    }
+    return result;
+}
+
+
+label triangleSearch::nodeCount() const
+{
+    return treePtr_.valid() ? treePtr_().nodes().size() : boundsNodes_.size();
+}
+
+
+label triangleSearch::referenceCount() const
+{
+    label count = triangleOrder_.size();
+    if (treePtr_.valid())
+    {
+        for (const auto& node : treePtr_().nodes())
+        {
+            for (const labelBits index : node.subNodes_)
+            {
+                count += treePtr_().getIndices(index).size();
+            }
+        }
+    }
+    return count;
+}
+
+
+std::size_t triangleSearch::storageBytes() const
+{
+    std::size_t bytes =
+        trianglePoints_.size()*sizeof(point)
+      + triangleBounds_.size()*sizeof(boundBox)
+      + triangleOrder_.size()*sizeof(label)
+      + boundsNodes_.capacity()*sizeof(boundsNode);
+    if (treePtr_.valid())
+    {
+        bytes += treePtr_().nodes().size()
+                *sizeof(indexedOctree<triangleData>::node);
+        for (const auto& node : treePtr_().nodes())
+        {
+            for (const labelBits index : node.subNodes_)
+            {
+                if (indexedOctree<triangleData>::isContent(index))
+                {
+                    bytes += sizeof(labelList);
+                }
+            }
+        }
+        bytes += referenceCount()*sizeof(label);
+    }
+    return bytes;
+}
+
+
+pointField triangleSearch::trianglesOverlapping
+(
+    const boundBox& targetBb
+) const
+{
+    const labelList candidates(query(targetBb));
+    pointField result(3*candidates.size());
+
+    forAll(candidates, candidatei)
+    {
+        const label pointi = 3*candidates[candidatei];
+        for (direction pointi2 = 0; pointi2 < 3; ++pointi2)
+        {
+            result[3*candidatei + pointi2] =
+                trianglePoints_[pointi + pointi2];
         }
     }
 
@@ -690,23 +1119,38 @@ pointField trianglesOverlapping
 }
 
 
-bool intersectsCell
+pointField trianglesOverlapping
 (
     const pointField& trianglePoints,
-    const fvMesh& mesh,
-    const label celli,
-    const scalar tolerance
+    const boundBox& targetBb,
+    const vector& tolerance
 )
 {
-    if (trianglePoints.size() % 3)
+    validateTolerance(tolerance);
+    const triangleSearch search(trianglePoints, tolerance);
+    return search.trianglesOverlapping(targetBb);
+}
+
+
+bool triangleSearch::intersectsCell
+(
+    const fvMesh& mesh,
+    const label celli
+) const
+{
+    const scalar tolerance
+    (
+        max(tolerance_.x(), max(tolerance_.y(), tolerance_.z()))
+    );
+    if (trianglePoints_.size() % 3)
     {
         FatalErrorInFunction
-            << "Triangle point count " << trianglePoints.size()
+            << "Triangle point count " << trianglePoints_.size()
             << " is not divisible by three"
             << exit(FatalError);
     }
 
-    if (trianglePoints.empty())
+    if (trianglePoints_.empty())
     {
         return false;
     }
@@ -714,14 +1158,20 @@ bool intersectsCell
     const vector toleranceVec(tolerance, tolerance, tolerance);
     boundBox cellBb(mesh.cellBb(celli));
     cellBb.grow(toleranceVec);
-
-    for (label pointi = 0; pointi < trianglePoints.size(); pointi += 3)
+    const labelList candidates(query(mesh.cellBb(celli)));
+    if (candidates.empty())
     {
+        return false;
+    }
+
+    forAll(candidates, candidatei)
+    {
+        const label pointi = 3*candidates[candidatei];
         const triPoints tri
         (
-            trianglePoints[pointi],
-            trianglePoints[pointi + 1],
-            trianglePoints[pointi + 2]
+            trianglePoints_[pointi],
+            trianglePoints_[pointi + 1],
+            trianglePoints_[pointi + 2]
         );
         boundBox triBb(triangleBounds(tri));
         triBb.grow(toleranceVec);
@@ -740,47 +1190,42 @@ bool intersectsCell
         }
     }
 
-    label nCellTriangles = 0;
     const cell& c = mesh.cells()[celli];
     const faceList& faces = mesh.faces();
-
+    DynamicList<triPoints> cellTriangles;
     forAll(c, i)
     {
-        nCellTriangles += faces[c[i]].nTriangles();
-    }
-
-    List<triPoints> cellTriangles(nCellTriangles);
-    label cellTrianglei = 0;
-    const pointField& meshPoints = mesh.points();
-
-    forAll(c, i)
-    {
-        const face& f = faces[c[i]];
-        faceList triangleFaces(f.nTriangles());
-        label triI = 0;
-        f.triangles(meshPoints, triI, triangleFaces);
-
-        forAll(triangleFaces, triFacei)
+        const label facei = c[i];
+        const face& f = faces[facei];
+        if (mesh.tetBasePtIs()[facei] < 0 || f.size() < 3)
         {
-            const face& triFace = triangleFaces[triFacei];
-            cellTriangles[cellTrianglei++] =
-                triPoints
-                (
-                    meshPoints,
-                    triFace[0],
-                    triFace[1],
-                    triFace[2]
-                );
+            FatalErrorInFunction
+                << "Cell " << celli << " face " << facei
+                << " has no valid polyMesh::CELL_TETS base point"
+                << exit(FatalError);
+        }
+
+        for (label tetPointi = 1; tetPointi < f.size() - 1; ++tetPointi)
+        {
+            const triPointRef faceTri
+            (
+                tetIndices(celli, facei, tetPointi).faceTri(mesh)
+            );
+            cellTriangles.append
+            (
+                triPoints(faceTri.a(), faceTri.b(), faceTri.c())
+            );
         }
     }
 
-    for (label pointi = 0; pointi < trianglePoints.size(); pointi += 3)
+    forAll(candidates, candidatei)
     {
+        const label pointi = 3*candidates[candidatei];
         const triPoints tri
         (
-            trianglePoints[pointi],
-            trianglePoints[pointi + 1],
-            trianglePoints[pointi + 2]
+            trianglePoints_[pointi],
+            trianglePoints_[pointi + 1],
+            trianglePoints_[pointi + 2]
         );
         boundBox triBb(triangleBounds(tri));
         triBb.grow(toleranceVec);
@@ -800,6 +1245,19 @@ bool intersectsCell
     }
 
     return false;
+}
+
+
+bool intersectsCell
+(
+    const pointField& trianglePoints,
+    const fvMesh& mesh,
+    const label celli,
+    const scalar tolerance
+)
+{
+    const triangleSearch search(trianglePoints, tolerance);
+    return search.intersectsCell(mesh, celli);
 }
 
 

@@ -121,13 +121,21 @@ protected:
         //  fields
         void suppressMotionFields();
 
-        //- Rebuild same-zone stencils for cells recovered from HOLE
+        //- Recover unprotected cells with donors whose values were ready
+        //  before this update; preserve the selected layer's protected holes.
+        //  Recovery is not staged through newly exposed cells: without a
+        //  ready donor, a receiver remains HOLE. Prior-hole INTERPOLATED
+        //  receivers also get fallback if their current stencil is unready.
         void recoverSameZoneInterpolations
         (
             const globalIndex& globalCells,
             const labelList& zoneID,
             const boolList& candidates,
             const boolList& sameZoneFallback,
+            const boolList& previouslyBlanked,
+            const boolList& protectedHoles,
+            const labelList& patchTypes,
+            const bool allowHoleDonors,
             const bool allowInterpolatedDonors,
             labelList& cellTypes,
             labelListList& cellStencil,
@@ -272,6 +280,20 @@ public:
             pointListList& cellCellCentres
         );
 
+        //- Same-zone neighbours filtered by the receiving cell's fringe policy
+        static void globalSameZoneCellCells
+        (
+            const globalIndex& gi,
+            const polyMesh& mesh,
+            const labelList& zoneID,
+            const boolList& isValidDonor,
+            const labelList& selectedCells,
+            labelListList& cellCells,
+            pointListList& cellCellCentres,
+            const labelList& cellTypes,
+            const labelList& patchTypes
+        );
+
         //- Interpolation of acceptor cells from donor cells
         template<class T>
         static void interpolate
@@ -317,7 +339,8 @@ public:
             const labelListList& compactStencil,
             const labelList& zoneID,
             const label holeLayers,
-            const label useLayer
+            const label useLayer,
+            boolList* protectedHoles = nullptr
         ) const;
 
         //- Check that the layer count and requested layer are valid

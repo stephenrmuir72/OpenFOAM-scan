@@ -27,6 +27,7 @@ License
 
 #include "voxelMeshSearch.H"
 #include "OBJstream.H"
+#include "patchFaceIntersection.H"
 
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
@@ -132,18 +133,16 @@ bool Foam::voxelMeshSearch::overlaps
 {
     // Checks if subBb overlaps any voxel set to val
 
-    labelVector minIds(index3(bb, nDivs, subBb.min()));
-    labelVector maxIds(index3(bb, nDivs, subBb.max()));
-
-    for (direction cmpt = 0; cmpt < 3; cmpt++)
+    labelVector minIds, maxIds;
+    if
+    (
+        !patchFaceIntersection::closedVoxelRange
+        (
+            bb, nDivs, subBb, minIds, maxIds
+        )
+    )
     {
-        if (maxIds[cmpt] < 0 || minIds[cmpt] >= nDivs[cmpt])
-        {
-            return false;
-        }
-        // Clip
-        maxIds[cmpt] = min(maxIds[cmpt], nDivs[cmpt]-1);
-        minIds[cmpt] = max(minIds[cmpt], 0);
+        return false;
     }
 
     if (elems.size() != cmptProduct(nDivs))

@@ -32,4 +32,5 @@ if ! (
     exit 1
 fi
 
+grep '^Planar triangle index:' work/log.test
 echo "Passed exact overset patch intersection checks"
