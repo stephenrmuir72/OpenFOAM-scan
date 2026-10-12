@@ -1,0 +1,216 @@
+#!/bin/sh
+cd "${0%/*}" || exit 1
+. "${WM_PROJECT_DIR:?}/bin/tools/RunFunctions" || exit 1
+set -e
+compareSignatures()
+{
+    awk '
+        function abs(x) { return x < 0 ? -x : x }
+        NR == FNR {
+            columns[FNR] = NF
+            for (i = 3; i <= NF; ++i) reference[FNR,i] = $i
+            ++lines
+            next
+        }
+        {
+            if (NF != columns[FNR]) failed = 1
+            for (i = 3; i <= NF; ++i) {
+                difference = abs($i-reference[FNR,i])
+                if ((i-3)%5 == 0 ? difference != 0 :
+                    difference > 1e-10*(1+abs(reference[FNR,i]))) failed = 1
+            }
+        }
+        END { exit (failed || FNR != lines) }
+    ' "$1" "$2"
+}
+if [ -e work ]; then
+    echo "Refusing to overwrite existing test work directory: work" >&2
+    exit 1
+fi
+wmake
+mkdir -p work/system work/constant work/0
+trap 'status=$?; if [ "$status" -ne 0 ]; then tail -n 50 work/log.* >&2 || :; fi; rm -r work; exit "$status"' EXIT
+cp system/blockMeshDict work/system/
+cp 0/zoneID work/0/
+for file in controlDict fvSchemes fvSolution decomposeParDict; do
+    cp "../oversetDonorFallback/system/$file" work/system/
+done
+(
+    cd work
+    blockMesh > log.blockMesh 2>&1
+    for option in warpedMapper warpedUpdate; do
+        oversetCellVolumeWeight "-$option" > "log.$option" 2>&1
+        grep -q '^Passed CVW warped' "log.$option"
+    done
+    for option in invalidGeometry nonFiniteRestart; do
+        if oversetCellVolumeWeight "-$option" > "log.$option" 2>&1; then
+            echo "Invalid input accepted: $option" >&2
+            exit 1
+        fi
+    done
+    grep -q 'Invalid CVW tessellation' log.invalidGeometry
+    grep -q 'Invalid restart cellTypes value' log.nonFiniteRestart
+    for option in default linearExact coverage fixedLayer; do
+        if [ "$option" = default ]; then
+            oversetCellVolumeWeight > "log.$option" 2>&1
+        else
+            oversetCellVolumeWeight "-$option" > "log.$option" 2>&1
+        fi
+        grep -q '^Passed cellVolumeWeight regressions$' "log.$option"
+    done
+    awk '/^CVW (work scaling|refinement|thin-cell relative volume error):/ && !seen[$0]++' log.default
+    for setting in overlapTolerance minCoverage minRetainedFraction \
+        donorSelection donorFallback weightingScheme layerDonorMetric processorMapMethod \
+        stencilExpansionRings; do
+        if oversetCellVolumeWeight -invalidSetting "$setting" > "log.invalid.$setting" 2>&1; then
+            echo "Invalid setting accepted: $setting" >&2
+            exit 1
+        fi
+        grep -q 'Invalid cellVolumeWeight configuration' "log.invalid.$setting"
+    done
+    cp 0/zoneID 0/cellTypes
+    foamDictionary 0/cellTypes -entry FoamFile.object -set cellTypes >/dev/null
+    foamDictionary 0/cellTypes -entry internalField -set 'uniform 0' >/dev/null
+    for value in 0 1 2 3 4 -1e-14 4.00000000000001; do
+        sed -i -E "s/^(internalField[[:space:]]+).*/\\1uniform $value;/" 0/cellTypes
+        oversetCellVolumeWeight -restartValue "$value" > "log.restart.$value" 2>&1
+        grep -q '^Passed CVW restart decoding$' "log.restart.$value"
+        if grep -q 'restart repair:' "log.restart.$value"; then
+            echo "Unnecessary restart repair warning: $value" >&2
+            exit 1
+        fi
+    done
+    for value in -1 5 .5 -0.5 -.1 3.5 4.1 1e300 -1e300; do
+        sed -i -E "s/^(internalField[[:space:]]+).*/\\1uniform $value;/" 0/cellTypes
+        oversetCellVolumeWeight -restartValue "$value" > "log.restart.repair.$value" 2>&1
+        grep -q '^Passed CVW restart decoding$' "log.restart.repair.$value"
+        grep -q 'restart repair: 12 affected cells' "log.restart.repair.$value"
+        if [ "$value" = -.1 ] || [ "$value" = 4.1 ]; then
+            grep -q '12 affected cells, 12 rounded, 0 clamped' "log.restart.repair.$value"
+        fi
+    done
+    rm 0/cellTypes
+    if command -v mpirun >/dev/null 2>&1; then
+        for layout in 2x1 4x1 2x2; do
+            xRanks=${layout%x*}
+            yRanks=${layout#*x}
+            ranks=$((xRanks*yRanks))
+            foamDictionary system/decomposeParDict -entry numberOfSubdomains -set "$ranks" >/dev/null
+            foamDictionary system/decomposeParDict -entry simpleCoeffs.n -set "($xRanks $yRanks 1)" >/dev/null
+            decomposePar -force > "log.decompose.$layout" 2>&1
+            runParallel -s "warped.$layout" oversetCellVolumeWeight -warpedMapper
+            grep -q '^Passed CVW warped geometry$' "log.oversetCellVolumeWeight.warped.$layout"
+            for option in default linearExact coverage fixedLayer; do
+                if [ "$option" = default ]; then
+                    runParallel -s "$layout.$option" oversetCellVolumeWeight
+                else
+                    runParallel -s "$layout.$option" oversetCellVolumeWeight "-$option"
+                fi
+                grep -q '^Passed cellVolumeWeight regressions$' \
+                    "log.oversetCellVolumeWeight.$layout.$option"
+                grep '^CVW signature:' "log.$option" > referenceSignature
+                grep '^CVW signature:' "log.oversetCellVolumeWeight.$layout.$option" > parallelSignature
+                compareSignatures referenceSignature parallelSignature
+            done
+            if [ "$layout" = 2x1 ]; then
+                cp 0/zoneID 0/cellTypes
+                foamDictionary 0/cellTypes -entry FoamFile.object -set cellTypes >/dev/null
+                foamDictionary 0/cellTypes -entry internalField -set 'uniform 1.5' >/dev/null
+                decomposePar -fields > log.restart.decompose 2>&1
+                runParallel -s restart oversetCellVolumeWeight -restartValue 1.5
+                grep -q 'restart repair: 12 affected cells, 12 rounded, 0 clamped' \
+                    log.oversetCellVolumeWeight.restart
+                reconstructPar -withZero -time 0 -fields '(cellTypes)' > log.restart.reconstruct 2>&1
+                oversetCellVolumeWeight -restartValue 1.5 > log.restart.reconstructed 2>&1
+                grep -q '^Passed CVW restart decoding$' log.restart.reconstructed
+                mv processor0/0/cellTypes processor0/0/cellTypes.saved
+                if mpirun -np "$ranks" oversetCellVolumeWeight -parallel \
+                    -restartValue 1.5 > log.restart.missing 2>&1; then
+                    echo "Incomplete MPI restart was accepted" >&2
+                    exit 1
+                fi
+                grep -q 'Incomplete restart cellTypes' log.restart.missing
+                mv processor0/0/cellTypes.saved processor0/0/cellTypes
+                rm 0/cellTypes processor0/0/cellTypes processor1/0/cellTypes
+            fi
+            if [ "$layout" = 2x2 ]; then
+                cp 0/zoneID 0/cellTypes
+                foamDictionary 0/cellTypes -entry FoamFile.object -set cellTypes >/dev/null
+                foamDictionary 0/cellTypes -entry internalField -set 'uniform 1.5' >/dev/null
+                cp ../system/emptyRankDistribution constant/
+                foamDictionary system/decomposeParDict -entry method -set manual >/dev/null
+                foamDictionary system/decomposeParDict -entry manualCoeffs \
+                    -set '{ dataFile emptyRankDistribution; }' >/dev/null
+                decomposePar -force > log.restart.empty.decompose 2>&1
+                for rank in 1 2 3; do
+                    grep -Eq 'nCells:[[:space:]]*0([[:space:]"]|$)' \
+                        "processor$rank/constant/polyMesh/owner"
+                    rm -f "processor$rank/0/cellTypes"
+                done
+                runParallel -s restart.empty oversetCellVolumeWeight -restartValue 1.5
+                grep -q 'restart repair: 12 affected cells' log.oversetCellVolumeWeight.restart.empty
+                rm 0/cellTypes
+                for rank in 0 1 2 3; do rm -f "processor$rank/0/cellTypes"; done
+                foamDictionary system/decomposeParDict -entry method -set simple >/dev/null
+            fi
+        done
+    fi
+    renumberMesh -overwrite -renumber-method random > log.renumber 2>&1
+    oversetCellVolumeWeight -coverage > log.renumbered 2>&1
+    grep -q '^Passed cellVolumeWeight regressions$' log.renumbered
+    grep '^CVW signature:' log.coverage > referenceSignature
+    grep '^CVW signature:' log.renumbered > renumberedSignature
+    compareSignatures referenceSignature renumberedSignature
+    for exercise in fallback alternate; do
+    if [ "$exercise" = fallback ]; then check=ordinary; else check=alternate; fi
+    mkdir -p "$exercise/0" "$exercise/system" "$exercise/constant"
+    cp "../system/${exercise}BlockMeshDict" "$exercise/system/blockMeshDict"
+    cp "../system/${exercise}SetFieldsDict" "$exercise/system/setFieldsDict"
+    cp ../0/fallbackZoneID "$exercise/0/zoneID"
+    cp system/controlDict system/fvSchemes system/fvSolution \
+        system/decomposeParDict "$exercise/system/"
+    (
+        cd "$exercise"
+        blockMesh > log.blockMesh 2>&1
+        setFields > log.setFields 2>&1
+        for mode in legacy alternateZones sameZone; do
+            for scheme in volume bounded signed; do
+                case "$scheme" in
+                    volume) affine= ;;
+                    bounded) affine=-boundedAffine ;;
+                    signed) affine=-linearExact ;;
+                esac
+                oversetCellVolumeWeight "-${exercise}Exercise" -donorFallback "$mode" \
+                    $affine > "log.$mode.$scheme" 2>&1
+                grep -q "^Passed CVW $check fallback$" "log.$mode.$scheme"
+                oversetCellVolumeWeight "-${exercise}Exercise" -donorFallback "$mode" \
+                    $affine -coverage > "log.$mode.$scheme.coverage" 2>&1
+                grep -q "^Passed CVW $check fallback$" "log.$mode.$scheme.coverage"
+            done
+        done
+        if command -v mpirun >/dev/null 2>&1; then
+            foamDictionary system/decomposeParDict -entry numberOfSubdomains -set 4 >/dev/null
+            foamDictionary system/decomposeParDict -entry simpleCoeffs.n -set '(2 2 1)' >/dev/null
+            decomposePar -force > log.decompose 2>&1
+            for mode in legacy alternateZones sameZone; do
+                for scheme in volume bounded signed; do
+                    case "$scheme" in
+                        volume) affine= ;;
+                        bounded) affine=-boundedAffine ;;
+                        signed) affine=-linearExact ;;
+                    esac
+                    runParallel -s "$mode.$scheme" oversetCellVolumeWeight \
+                        "-${exercise}Exercise" -donorFallback "$mode" $affine
+                    grep -q "^Passed CVW $check fallback$" \
+                        "log.oversetCellVolumeWeight.$mode.$scheme"
+                    grep "^CVW $check fallback:" "log.$mode.$scheme" > referenceSignature
+                    grep "^CVW $check fallback:" "log.oversetCellVolumeWeight.$mode.$scheme" \
+                        > parallelSignature
+                    cmp referenceSignature parallelSignature
+                done
+            done
+        fi
+    )
+    done
+)
+echo "Passed cellVolumeWeight serial, MPI and renumbered checks"

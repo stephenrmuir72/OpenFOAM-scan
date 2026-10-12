@@ -363,7 +363,8 @@ public:
             const labelList& zoneID,
             const label holeLayers,
             const label useLayer,
-            boolList* protectedHoles = nullptr
+            boolList* protectedHoles = nullptr,
+            const scalarList* donorVolumeRatio = nullptr
         ) const;
 
         //- Check that the layer count and requested layer are valid

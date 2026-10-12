@@ -1,0 +1,21 @@
+FoamFile
+{
+    version 2.0;
+    format ascii;
+    class dictionary;
+    object setFieldsDict;
+}
+defaultFieldValues (volScalarFieldValue zoneID 0);
+regions
+(
+    zoneToCell
+    {
+        zone component;
+        fieldValues (volScalarFieldValue zoneID 1);
+    }
+    zoneToCell
+    {
+        zone preferred;
+        fieldValues (volScalarFieldValue zoneID 2);
+    }
+);

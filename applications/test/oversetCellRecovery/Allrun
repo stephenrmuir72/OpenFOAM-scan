@@ -165,10 +165,12 @@ DebugSwitches\
 done
 
 if command -v mpirun >/dev/null 2>&1; then
-    caseDir="work/trackingInverseDistance-parallel"
+  for parallelMethod in trackingInverseDistance cellVolumeWeight
+  do
+    caseDir="work/${parallelMethod}-parallel"
     prepareCase "$caseDir"
     sed -i -E \
-        's/^([[:space:]]*method[[:space:]]+)[^;]+;/\1trackingInverseDistance;/' \
+        "s/^([[:space:]]*method[[:space:]]+)[^;]+;/\\1${parallelMethod};/" \
         "$caseDir/system/fvSchemes"
     sed -i -E \
         's/^[[:space:]]*searchBoxDivisions[[:space:]]+\(130 130 1\);/searchBoxDivisions  2{(64 64 1)};/' \
@@ -181,6 +183,7 @@ DebugSwitches\
 {\
     cellCellStencil 1;\
     trackingInverseDistance 1;\
+    cellVolumeWeight 1;\
 }' "$caseDir/system/controlDict"
 
     if ! (
@@ -208,8 +211,9 @@ DebugSwitches\
         exit 1
     fi
 
-    echo "Passed parallel moving-overset recovery smoke test: trackingInverseDistance"
+    echo "Passed parallel moving-overset recovery smoke test: $parallelMethod"
     echo "Exercised donor initialization, same-zone fallback, and unrecoverable holes in parallel"
+  done
 fi
 
 prepareAffineCase()
@@ -221,6 +225,10 @@ prepareAffineCase()
         -entry oversetInterpolation.method -set "$method" >/dev/null
     foamDictionary "$caseDir/system/fvSchemes" \
         -entry oversetInterpolation.weightingScheme -add linearExact >/dev/null
+    if [ "$method" = cellVolumeWeight ]; then
+        foamDictionary "$caseDir/system/fvSchemes" \
+            -entry oversetInterpolation.allowNegativeWeights -add true >/dev/null
+    fi
     if [ "$method" != trackingInverseDistance ]; then
         foamDictionary "$caseDir/system/fvSchemes" \
             -entry oversetInterpolation.searchBoxDivisions -set '(64 64 1)' >/dev/null
@@ -243,19 +251,39 @@ checkMovingAffine()
     logFile="$2"
     grep -q '^End$' "$logFile" &&
     [ "$(grep -c '^Time =' "$logFile")" -eq 20 ] || return 1
-    if grep -Eq 'nearest-donor (fallback|injection)|Invalid overset interpolation' "$logFile"; then
+    if grep -Eq 'nearest-donor (fallback|injection)|Invalid overset interpolation|cellVolumeWeight affine fallback calls:.* [1-9][0-9]* (invalid residual/weights|negative weights)' "$logFile"; then
         echo "Moving affine case unexpectedly rejected a stencil: $caseDir" >&2
         return 1
     fi
-    awk '
-        $1 == "calculated" && $2 == ":" { calculated = $3 }
-        $1 == "interpolated" && $2 == ":" { interpolated = $3 }
-        $1 == "hole" && $2 == ":" {
-            if (calculated + interpolated + $3 != 12008) { failed = 1 }
-            print calculated, interpolated, $3
-            ++updates
+    case "$caseDir" in
+        *cellVolumeWeight*) expectedAffine=20 ;;
+        *) expectedAffine=0 ;;
+    esac
+    awk -v expectedAffine="$expectedAffine" '
+        $1 == "calculated" && $2 == ":" {
+            calculated = $3
+            special = porous = 0
+            active = 1
         }
-        END { exit (failed || updates != 20) }
+        $1 == "interpolated" && $2 == ":" { interpolated = $3 }
+        $1 == "hole" && $2 == ":" { hole = $3 }
+        $1 == "special" && $2 == ":" { special = $3 }
+        $1 == "porous" && $2 == ":" { porous = $3 }
+        /cellVolumeWeight affine receivers:/ {
+            affineTotal = $4 + $6
+            if ($6 < 0) failed = 1
+            ++affineUpdates
+        }
+        active && /^[[:space:]]*$/ {
+            if (calculated + interpolated + hole + special + porous != 12008) {
+                failed = 1
+            }
+            if (expectedAffine && affineTotal != interpolated) failed = 1
+            print calculated, interpolated, hole, special, porous
+            ++updates
+            active = 0
+        }
+        END { exit (failed || updates != 20 || affineUpdates != expectedAffine) }
     ' "$logFile" > "$caseDir/partitionSignature" || return 1
     for field in p U
     do
@@ -285,7 +313,7 @@ checkMovingAffine()
     done
 }
 
-for method in trackingInverseDistance inverseDistance leastSquares
+for method in trackingInverseDistance inverseDistance leastSquares cellVolumeWeight
 do
     caseDir="work/affine-${method}"
     prepareAffineCase "$caseDir" "$method"
@@ -298,14 +326,23 @@ do
         tail -n 80 "$caseDir/log.pre" "$caseDir/log.solver" >&2
         exit 1
     fi
-    cmp work/affine-trackingInverseDistance/partitionSignature \
-        "$caseDir/partitionSignature"
-    echo "Passed 20-update moving affine regression without fallback: $method"
+    if [ "$method" != cellVolumeWeight ]; then
+        cmp work/affine-trackingInverseDistance/partitionSignature \
+            "$caseDir/partitionSignature"
+    fi
+    if [ "$method" = cellVolumeWeight ]; then
+        grep 'cellVolumeWeight affine fallback calls:' "$caseDir/log.solver" || :
+        echo "Passed 20-update CVW affine regression with reported infeasible-stencil fallback"
+    else
+        echo "Passed 20-update moving affine regression without fallback: $method"
+    fi
 done
 
 if command -v mpirun >/dev/null 2>&1; then
-    caseDir="work/affine-trackingInverseDistance-parallel"
-    prepareAffineCase "$caseDir" trackingInverseDistance
+  for parallelMethod in trackingInverseDistance cellVolumeWeight
+  do
+    caseDir="work/affine-${parallelMethod}-parallel"
+    prepareAffineCase "$caseDir" "$parallelMethod"
     if ! (
         cd "$caseDir"
         ./Allrun.pre > log.pre 2>&1 &&
@@ -316,7 +353,8 @@ if command -v mpirun >/dev/null 2>&1; then
         tail -n 80 "$caseDir/log.pre" "$caseDir/log.overPimpleDyMFoam" >&2
         exit 1
     fi
-    cmp work/affine-trackingInverseDistance/partitionSignature \
+    cmp "work/affine-${parallelMethod}/partitionSignature" \
         "$caseDir/partitionSignature"
-    echo "Passed parallel 20-update moving affine regression without fallback"
+    echo "Passed parallel 20-update moving affine regression: $parallelMethod"
+  done
 fi

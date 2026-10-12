@@ -1237,7 +1237,8 @@ void Foam::cellCellStencil::walkFront
     const labelList& zoneID,
     const label holeLayers,
     const label useLayer,
-    boolList* protectedHoles
+    boolList* protectedHoles,
+    const scalarList* donorVolumeRatio
 ) const
 {
     if (!validWalkFrontLayerSettings(holeLayers, useLayer))
@@ -1399,7 +1400,9 @@ void Foam::cellCellStencil::walkFront
 
                                 const label donorId = compactStencil[own][0];
 
-                                volRatio[own] = V[own]/compactCellVol[donorId];
+                                volRatio[own] = donorVolumeRatio
+                                    ? (*donorVolumeRatio)[own]
+                                    : V[own]/compactCellVol[donorId];
 
                                 seedCell
                                 (
@@ -1442,8 +1445,9 @@ void Foam::cellCellStencil::walkFront
                                     const label donorId =
                                         compactStencil[nei][0];
 
-                                    volRatio[nei] =
-                                        V[nei]/compactCellVol[donorId];
+                                    volRatio[nei] = donorVolumeRatio
+                                        ? (*donorVolumeRatio)[nei]
+                                        : V[nei]/compactCellVol[donorId];
 
                                     seedCell
                                     (

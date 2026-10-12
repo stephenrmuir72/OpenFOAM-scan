@@ -6,6 +6,25 @@
     The application and library can also serve as a minimal test case for
     wmake, or to provide a minimal library/executable target for testing.
 
+## oversetCellVolumeWeight
+
+    Analytic plain/corrected overlap volumes and centroids, contained and
+    disconnected cells, extreme size ratios, skew/coordinate scaling, bounded
+    and signed affine weights, coverage retry, distributed donor-demotion chains,
+    manufactured interpolation refinement, and output-sensitive search work.
+    Allrun checks full updates in serial, on 2/4 MPI ranks, and after random
+    renumbering using physical classification/weight/moment signatures.
+    Warped-face fixtures distinguish FV volume from first-vertex-fan volume,
+    test plain/corrected full/partial/reversed transfers and scalar/vector
+    moments, and retain inverted/degenerate-fan controls. Restart checks cover
+    finite repair, quiet integer roundoff, non-finite rejection, decomposition/
+    reconstruction, incomplete files and deliberately empty ranks.
+    Three-dimensional two/three-zone cases exercise legacy/alternate/same-zone
+    policies with volume, bounded and signed affine weights. Ordinary IDW keeps
+    partial blends and excludes historical/fallback receivers as donors.
+    The optional holeLeakProbe diagnoses an explicitly defined closed-cube
+    fixture; it reports active interior cells without changing hole cutting.
+
 
 ## Test-machine-sizes  (directory: 00-machine-sizes)
 

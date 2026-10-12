@@ -34,6 +34,9 @@ License
 #include "indexedOctree.H"
 #include "treeDataCell.H"
 
+#include <cmath>
+#include <limits>
+
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
 namespace Foam
@@ -59,6 +62,105 @@ Foam::treeBoundBox Foam::tetOverlapVolume::pyrBb
 
 
 // * * * * * * * * * * * Public Member Functions  * * * * * * * * * * * * * //
+
+Foam::Tuple2<Foam::scalar, Foam::scalar>
+Foam::tetOverlapVolume::cellVolumeMinDecomp
+(
+    const primitiveMesh& mesh,
+    const label celli
+)
+{
+    const scalar fvVolume = mesh.cellVolumes()[celli];
+    if (!std::isfinite(fvVolume) || fvVolume <= 0)
+    {
+        FatalErrorInFunction
+            << "Invalid finite-volume cell volume " << fvVolume
+            << " at cell " << celli << exit(FatalError);
+    }
+    const point& centre = mesh.cellCentres()[celli];
+    const pointField& points = mesh.points();
+    treeBoundBox bounds(centre);
+    long double volume = 0;
+    label nTets = 0;
+    scalar minAltitude = GREAT;
+    for (const label facei : mesh.cells()[celli])
+    {
+        const face& f = mesh.faces()[facei];
+        bounds.add(points, f);
+        for (label i = 1; i+1 < f.size(); ++i)
+        {
+            const label a = mesh.faceOwner()[facei] == celli ? f[i] : f[i+1];
+            const label b = mesh.faceOwner()[facei] == celli ? f[i+1] : f[i];
+            const tetPointRef tet(centre, points[f[0]], points[a], points[b]);
+            const scalar tetVolume = tet.mag();
+            ++nTets;
+            // The clipping engine also skips exactly degenerate face triangles.
+            if
+            (
+                tetVolume == 0
+             && magSqr((points[a]-points[f[0]])^(points[b]-points[f[0]])) == 0
+            )
+            {
+                continue;
+            }
+            if (!std::isfinite(tetVolume) || tetVolume <= 0)
+            {
+                FatalErrorInFunction
+                    << "Invalid CVW tessellation at cell " << celli
+                    << ", face " << facei << ", fan triangle " << i
+                    << ": oriented volume " << tetVolume
+                    << ". A positive first-vertex fan about the FV cell "
+                    << "centre is required." << exit(FatalError);
+            }
+            volume += tetVolume;
+            for (label side = 0; side < 4; ++side)
+            {
+                const scalar areaSqr = magSqr(tet.tri(side).areaNormal());
+                if (!std::isfinite(areaSqr) || areaSqr < ROOTVSMALL)
+                {
+                    FatalErrorInFunction
+                        << "Unresolved CVW tetrahedron area at cell " << celli
+                        << ", face " << facei << exit(FatalError);
+                }
+                const scalar area = Foam::sqrt(areaSqr);
+                minAltitude = min(minAltitude, 3*tetVolume/area);
+            }
+        }
+    }
+    const scalar geometricVolume = scalar(volume);
+    const vector span(bounds.span());
+    const scalar minSpan = min
+    (
+        minAltitude, min(span.x(), min(span.y(), span.z()))
+    );
+    if
+    (
+        !std::isfinite(geometricVolume) || geometricVolume <= 0
+     || !std::isfinite(minSpan) || minSpan <= 0
+    )
+    {
+        FatalErrorInFunction
+            << "Unresolved CVW geometric volume at cell " << celli
+            << ": volume " << geometricVolume << ", minimum span "
+            << minSpan << exit(FatalError);
+    }
+    const scalar coordinateScale = max(mag(bounds.min()), mag(bounds.max()));
+    const scalar relativeRoundoff =
+        64*std::numeric_limits<scalar>::epsilon()*(nTets+1)
+       *max(scalar(1), coordinateScale/minSpan);
+    if
+    (
+        !std::isfinite(relativeRoundoff) || relativeRoundoff >= 1
+    )
+    {
+        FatalErrorInFunction
+            << "Unresolved CVW geometric volume at cell " << celli
+            << ": volume " << geometricVolume << ", relative allowance "
+            << relativeRoundoff << exit(FatalError);
+    }
+    return Tuple2<scalar, scalar>(geometricVolume, relativeRoundoff);
+}
+
 
 bool Foam::tetOverlapVolume::cellCellOverlapMinDecomp
 (

@@ -584,6 +584,28 @@ void Foam::meshToMesh::calculate(const word& methodName, const bool normalise)
             map.comm()
         );
 
+        const bool haveVectors =
+            returnReduceOr(!tgtToSrcCellVec_.empty());
+        if (haveVectors)
+        {
+            mapDistributeBase::distribute
+            (
+                UPstream::commsTypes::nonBlocking,
+                UList<labelPair>::null(),
+                tgtRegion_.nCells(),
+                map.constructMap(),
+                false,
+                map.subMap(),
+                false,
+                tgtToSrcCellVec_,
+                pointList(),
+                ListOps::appendEqOp<point>(),
+                flipOp(),
+                UPstream::msgType(),
+                map.comm()
+            );
+        }
+
         // weights normalisation
         if (normalise)
         {

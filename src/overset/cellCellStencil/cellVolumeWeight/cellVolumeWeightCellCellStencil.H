@@ -27,11 +27,38 @@ Class
     Foam::cellCellStencils::cellVolumeWeight
 
 Description
-    Volume-weighted interpolation stencil
+    Volume-overlap interpolation stencil. Default positive weights preserve
+    constants and boundedness, but are not generally affine-exact or a globally
+    conservative overset coupling.
+
+    Optional controls:
+      donorSelection       legacy (default) | coverage
+      donorFallback        legacy (default) | alternateZones | sameZone
+      minCoverage          [0,1], default 0
+      minRetainedFraction  [0,1], default 0
+      weightingScheme      volume (default) | linearExact
+      allowNegativeWeights false (default)
+      stencilExpansionRings 0 | 1 (default)
+      layerDonorMetric      legacy (default) | overlapWeighted
+      processorMapMethod   AABB (default) | LOD
+
+    The affine option falls back to validated overlap weights when its moment
+    constraints or boundedness policy cannot be satisfied. Recovery uses IDW
+    as its fallback instead of geometric volumes. Signed weights require
+    explicit opt-in and can produce overshoots or negative interpolated fields.
+
+    Coverage uses the overlap engine's first-vertex fan volume, which can differ
+    from FV volume on warped faces. FV volumes remain unchanged. Positive
+    volume-carrying fan tets are required; exactly collinear face triangles are
+    ignored. Numerically unresolved tetrahedron areas are errors.
+    Optional coverage gates apply before fringe selection and after filtering.
+    IDW has separate provenance and is never interpreted as geometric coverage.
+
+    Finite restart classifications are rounded/clamped with global warnings;
+    non-finite and incomplete non-empty-rank restart data are errors.
 
 SourceFiles
     cellVolumeWeightCellCellStencil.C
-    cellVolumeWeightCellCellStencilTemplates.C
 
 \*---------------------------------------------------------------------------*/
 
@@ -90,11 +117,99 @@ protected:
         //- Amount of interpolation
         volScalarField cellInterpolationWeight_;
 
-        //- Allow interpolared as donors
+        //- Allow interpolated as donors
         const bool allowInterpolatedDonors_;
+
+        const word donorSelection_;
+        const word donorFallback_;
+        const scalar minCoverage_;
+        const scalar minRetainedFraction_;
+        const word weightingScheme_;
+        const bool allowNegativeWeights_;
+        const label stencilExpansionRings_;
+        const word layerDonorMetric_;
+        const word processorMapMethod_;
+        scalarField geometricVolumes_;
+        scalarField geometricRoundoff_;
+        mutable labelList weightFallbackCounts_;
+        mutable bool weightFallbackReported_;
+
+        struct donorCandidate
+        {
+            label zone;
+            labelList donors;
+            scalarList volumes;
+        };
 
    // Protected Member Functions
 
+        static bool normaliseVolumeWeights(scalarList& weights);
+
+        static label decodeRestartType
+        (
+            const scalar value,
+            bool& rounded,
+            bool& clamped
+        );
+
+        void refreshGeometry();
+
+        bool candidateCoverage
+        (
+            const label celli,
+            const scalarList& original,
+            const scalarList& retained,
+            scalar& coverage
+        ) const;
+
+        bool betterCandidate
+        (
+            const label celli,
+            const label zone,
+            const scalar coverage,
+            const label bestZone,
+            const scalar bestCoverage
+        ) const;
+
+        static scalar weightedDonorVolume
+        (
+            const pointList& centres,
+            const scalarList& volumes,
+            scalarList weights
+        );
+
+        static void distanceWeights
+        (
+            const point& sample,
+            const pointList& centres,
+            scalarList& weights
+        );
+
+        bool affineWeights
+        (
+            const point& sample,
+            const pointList& centres,
+            scalarList& weights
+        ) const;
+
+        void reportWeightFallbacks
+        (
+            label nAffineExact,
+            label nAffineFallback
+        ) const;
+
+        void finaliseDonors
+        (
+            const globalIndex& globalCells,
+            const boolList& previouslyBlanked,
+            const boolList& sameZoneFallback,
+            const List<DynamicList<donorCandidate>>& candidates,
+            labelList& types,
+            labelListList& stencil,
+            scalarListList& weights,
+            labelList& donorZones,
+            const boolList* donorExclusions = nullptr
+        ) const;
 
         //- Find cells next to cells of type PATCH
         void findHoles
@@ -129,7 +244,8 @@ protected:
             labelListList& allStencil,
             scalarListList& allWeights,
             labelList& allCellTypes,
-            labelList& allDonorID
+            labelList& allDonorID,
+            List<DynamicList<donorCandidate>>* candidates = nullptr
         ) const;
 
         //- interpolate (= combine) patch types
@@ -230,8 +346,7 @@ public:
             return cellInterpolationWeight_;
         }
 
-        //- Calculate inverse distance weights for a single acceptor. Revert
-        //  to inverse distance (so not consistent with volume overlap!)
+        //- Same-zone recovery weights (IDW baseline, optional affine correction)
         virtual void stencilWeights
         (
             const point& sample,

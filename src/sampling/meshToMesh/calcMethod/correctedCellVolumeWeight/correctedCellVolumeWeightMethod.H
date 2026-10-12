@@ -58,22 +58,6 @@ protected:
 
     // Protected Member Functions
 
-        //- Calculate the mesh-to-mesh addressing and weights
-        void calculateAddressing
-        (
-            labelListList& srcToTgtCellAddr,
-            scalarListList& srcToTgtCellWght,
-            pointListList& srcToTgtCellVec,
-            labelListList& tgtToSrcCellAddr,
-            scalarListList& tgtToSrcCellWght,
-            pointListList& tgtToSrcCellVec,
-            const label srcSeedI,
-            const label tgtSeedI,
-            const labelList& srcCellIDs,
-            boolList& mapFlag,
-            label& startSeedI
-        );
-
         //- No copy construct
         correctedCellVolumeWeightMethod
         (

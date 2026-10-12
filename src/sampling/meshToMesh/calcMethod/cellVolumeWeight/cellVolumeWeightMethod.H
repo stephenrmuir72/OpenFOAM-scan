@@ -29,7 +29,17 @@ Class
 Description
     Cell-volume-weighted mesh-to-mesh interpolation class
 
-    Volume conservative.
+    Piecewise-constant volume transfer with complete box-candidate searches.
+    Small overlaps and pair bounds use the smaller participating geometric
+    volume: the same oriented first-vertex fan as the intersection engine.
+    This can differ from FV volume on warped faces. Volume-carrying fan tets
+    must be positive; exactly collinear face triangles are ignored. Numerically
+    unresolved tetrahedron areas are errors.
+
+    Conservative on complete, non-overlapping partitions of the represented
+    geometry, up to discarded overlaps and geometric roundoff. This is not an
+    FV-volume conservation guarantee when the representations differ.
+    Normalization of partially covered cells changes that guarantee.
 
 SourceFiles
     cellVolumeWeightMethod.C
@@ -56,44 +66,22 @@ class cellVolumeWeightMethod
 {
 protected:
 
+    // Protected Data
+        label candidateTests_;
+        scalar discardedVolume_;
+
     // Protected Member Functions
-
-        //- Find indices of overlapping cells in src and tgt meshes - returns
-        //  true if found a matching pair
-        bool findInitialSeeds
-        (
-            const labelList& srcCellIDs,
-            const boolList& mapFlag,
-            const label startSeedI,
-            label& srcSeedI,
-            label& tgtSeedI
-        ) const;
-
         //- Calculate the mesh-to-mesh addressing and weights
         void calculateAddressing
         (
             labelListList& srcToTgtCellAddr,
             scalarListList& srcToTgtCellWght,
+            pointListList& srcToTgtCellVec,
             labelListList& tgtToSrcCellAddr,
             scalarListList& tgtToSrcCellWght,
-            const label srcSeedI,
-            const label tgtSeedI,
-            const labelList& srcCellIDs,
-            boolList& mapFlag,
-            label& startSeedI
+            pointListList& tgtToSrcCellVec,
+            const bool centroids
         );
-
-        //- Set the next cells in the advancing front algorithm
-        void setNextCells
-        (
-            label& startSeedI,
-            label& srcCelli,
-            label& tgtCelli,
-            const labelList& srcCellIDs,
-            const boolList& mapFlag,
-            const labelUList& visitedCells,
-            labelList& seedCells
-        ) const;
 
 
 private:
@@ -120,6 +108,9 @@ public:
 
 
     // Member Functions
+
+        label candidateTests() const noexcept { return candidateTests_; }
+        scalar discardedVolume() const noexcept { return discardedVolume_; }
 
         // Evaluate
 

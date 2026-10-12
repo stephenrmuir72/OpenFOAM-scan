@@ -211,6 +211,14 @@ public:
             const scalar threshold = 0.0
         ) const;
 
+        //- Oriented first-vertex fan volume and relative roundoff allowance.
+        //  Requires a positive tessellation about the FV cell centre.
+        static Tuple2<scalar, scalar> cellVolumeMinDecomp
+        (
+            const primitiveMesh& mesh,
+            const label celli
+        );
+
         //- Calculates the overlap volume
         scalar cellCellOverlapVolumeMinDecomp
         (

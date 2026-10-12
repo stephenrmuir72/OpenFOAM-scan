@@ -39,8 +39,13 @@ License
 #include "syncTools.H"
 #include "oversetFvMeshBase.H"
 #include "oversetFvPatchField.H"
+#include "SVD.H"
+#include "clockTime.H"
+#include "tetOverlapVolume.H"
 
 #include <cmath>
+#include <limits>
+#include <algorithm>
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -58,6 +63,592 @@ Foam::cellCellStencils::cellVolumeWeight::defaultOverlapTolerance_ = 1e-6;
 
 
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
+
+bool Foam::cellCellStencils::cellVolumeWeight::normaliseVolumeWeights
+(
+    scalarList& weights
+)
+{
+    scalar scale = 0;
+    for (const scalar weight : weights)
+    {
+        if (!std::isfinite(weight) || weight < 0)
+        {
+            return false;
+        }
+        scale = max(scale, weight);
+    }
+    if (scale <= 0)
+    {
+        return false;
+    }
+    long double sum = 0, correction = 0;
+    for (const scalar weight : weights)
+    {
+        const long double adjusted =
+            static_cast<long double>(weight)/scale - correction;
+        const long double next = sum + adjusted;
+        correction = (next - sum) - adjusted;
+        sum = next;
+    }
+    for (scalar& weight : weights)
+    {
+        weight = scalar((static_cast<long double>(weight)/scale)/sum);
+    }
+    return checkWeights(weights) == VALID_WEIGHTS;
+}
+
+
+bool Foam::cellCellStencils::cellVolumeWeight::affineWeights
+(
+    const point& sample,
+    const pointList& centres,
+    scalarList& weights
+) const
+{
+    if (weights.size() != centres.size() || checkWeights(weights) != VALID_WEIGHTS)
+    {
+        ++weightFallbackCounts_[1];
+        return false;
+    }
+    vector scale(Zero);
+    vector coordinateScale(Zero);
+    for (const point& centre : centres)
+    {
+        const vector d = centre - sample;
+        for (direction cmpt = 0; cmpt < 3; ++cmpt)
+        {
+            if (!std::isfinite(d[cmpt]))
+            {
+                ++weightFallbackCounts_[1];
+                return false;
+            }
+            scale[cmpt] = max(scale[cmpt], mag(d[cmpt]));
+            coordinateScale[cmpt] = max
+            (
+                coordinateScale[cmpt],
+                max(mag(centre[cmpt]), mag(sample[cmpt]))
+            );
+        }
+    }
+    for (direction cmpt = 0; cmpt < 3; ++cmpt)
+    {
+        if (scale[cmpt] <= 128*std::numeric_limits<scalar>::epsilon()*coordinateScale[cmpt])
+        {
+            scale[cmpt] = 1;
+        }
+    }
+
+    // Zero padding keeps the SVD tall even for one/two-donor planar stencils.
+    RectangularMatrix<scalar> A(centres.size() + 4, 4, Zero);
+    FixedList<long double, 4> residual({1, 0, 0, 0});
+    forAll(centres, j)
+    {
+        A[j][0] = 1;
+        for (direction cmpt = 0; cmpt < 3; ++cmpt)
+        {
+            A[j][cmpt+1] = (centres[j][cmpt]-sample[cmpt])/scale[cmpt];
+        }
+        for (label k = 0; k < 4; ++k)
+        {
+            residual[k] -= static_cast<long double>(weights[j])*A[j][k];
+        }
+    }
+    const scalar epsilon = std::numeric_limits<scalar>::epsilon();
+    SVD svd(A, 100*epsilon);
+    if (!svd.converged())
+    {
+        ++weightFallbackCounts_[0];
+        return false;
+    }
+    const auto inverse = svd.VSinvUt();
+    scalarList corrected(weights);
+    forAll(corrected, j)
+    {
+        long double delta = 0;
+        for (label k = 0; k < 4; ++k)
+        {
+            delta += static_cast<long double>(inverse[k][j])*residual[k];
+        }
+        corrected[j] += scalar(delta);
+        if (!std::isfinite(corrected[j]))
+        {
+            ++weightFallbackCounts_[1];
+            return false;
+        }
+    }
+    if (!allowNegativeWeights_)
+    {
+        const scalar tolerance = weightTolerance(corrected);
+        for (scalar& weight : corrected)
+        {
+            if (weight < -tolerance)
+            {
+                ++weightFallbackCounts_[2];
+                return false;
+            }
+            weight = max(weight, scalar(0));
+        }
+    }
+    FixedList<long double, 4> moment({-1, 0, 0, 0});
+    long double sumAbs = 0;
+    forAll(corrected, j)
+    {
+        sumAbs += mag(corrected[j]);
+        for (label k = 0; k < 4; ++k)
+        {
+            moment[k] += static_cast<long double>(corrected[j])*A[j][k];
+        }
+    }
+    const scalar tolerance = max(scalar(1e-10), 100*epsilon*centres.size());
+    for (label k = 0; k < 4; ++k)
+    {
+        if
+        (
+            sumAbs > 1/std::sqrt(epsilon)
+         || std::abs(moment[k]) > tolerance
+        )
+        {
+            ++weightFallbackCounts_[0];
+            return false;
+        }
+    }
+    if (checkWeights(corrected) != VALID_WEIGHTS)
+    {
+        ++weightFallbackCounts_[1];
+        return false;
+    }
+    weights.transfer(corrected);
+    return true;
+}
+
+
+void Foam::cellCellStencils::cellVolumeWeight::reportWeightFallbacks
+(
+    label nAffineExact,
+    label nAffineFallback
+) const
+{
+    labelList counts(weightFallbackCounts_);
+    Pstream::listReduce(counts, sumOp<label>());
+    weightFallbackCounts_ = Zero;
+    if (sum(counts))
+    {
+        if (!weightFallbackReported_)
+        {
+            WarningInFunction
+                << "cellVolumeWeight affine correction fell back to validated "
+                << "volume/IDW weights. Subsequent occurrences are summarized."
+                << nl << endl;
+            weightFallbackReported_ = true;
+        }
+        Info<< "cellVolumeWeight affine fallback calls: "
+            << counts[0] << " infeasible/ill-conditioned, "
+            << counts[1] << " invalid residual/weights, "
+            << counts[2] << " negative weights." << endl;
+    }
+    reduce(nAffineExact, sumOp<label>());
+    reduce(nAffineFallback, sumOp<label>());
+    Info<< "cellVolumeWeight affine receivers: " << nAffineExact
+        << " exact, " << nAffineFallback << " volume/IDW fallback." << endl;
+}
+
+
+Foam::label Foam::cellCellStencils::cellVolumeWeight::decodeRestartType
+(
+    const scalar value,
+    bool& rounded,
+    bool& clamped
+)
+{
+    if (!std::isfinite(value))
+    {
+        FatalErrorInFunction
+            << "Invalid restart cellTypes value " << value
+            << ": classification must be finite." << exit(FatalError);
+    }
+    const scalar nearest = std::round(value);
+    rounded = mag(value-nearest) > 100*SMALL;
+    clamped = nearest < scalar(CALCULATED) || nearest > scalar(POROUS);
+    return label(max(scalar(CALCULATED), min(scalar(POROUS), nearest)));
+}
+
+
+void Foam::cellCellStencils::cellVolumeWeight::refreshGeometry()
+{
+    geometricVolumes_.setSize(mesh_.nCells());
+    geometricRoundoff_.setSize(mesh_.nCells());
+    label mismatches = 0;
+    scalar maxMismatch = 0;
+    forAll(geometricVolumes_, celli)
+    {
+        const auto reference = tetOverlapVolume::cellVolumeMinDecomp(mesh_, celli);
+        geometricVolumes_[celli] = reference.first();
+        geometricRoundoff_[celli] = reference.second();
+        const scalar mismatch = mag(reference.first()/mesh_.V()[celli]-1);
+        mismatches += mismatch > reference.second();
+        maxMismatch = max(maxMismatch, mismatch);
+    }
+    reduce(mismatches, sumOp<label>());
+    reduce(maxMismatch, maxOp<scalar>());
+    if (mismatches)
+    {
+        Info<< "cellVolumeWeight geometric/FV volume mismatch: " << mismatches
+            << " owned cells, maximum relative mismatch " << maxMismatch
+            << ". Using overlap-tessellation volumes; FV volumes unchanged."
+            << endl;
+    }
+}
+
+
+bool Foam::cellCellStencils::cellVolumeWeight::candidateCoverage
+(
+    const label celli,
+    const scalarList& original,
+    const scalarList& retained,
+    scalar& coverage
+) const
+{
+    long double originalVolume = 0, retainedVolume = 0;
+    for (const scalar volume : original)
+    {
+        if (!std::isfinite(volume) || volume < 0) return false;
+        originalVolume += volume;
+    }
+    for (const scalar volume : retained)
+    {
+        if (!std::isfinite(volume) || volume < 0) return false;
+        retainedVolume += volume;
+    }
+    if (originalVolume <= 0 || retainedVolume <= 0) return false;
+    const long double geometricCoverage =
+        retainedVolume/geometricVolumes_[celli];
+    const scalar allowance = geometricRoundoff_[celli];
+    if
+    (
+        !std::isfinite(geometricCoverage)
+     || geometricCoverage > 1 + allowance
+     || geometricCoverage + allowance < minCoverage_
+     || retainedVolume/originalVolume + allowance < minRetainedFraction_
+    )
+    {
+        return false;
+    }
+    coverage = scalar(geometricCoverage);
+    return true;
+}
+
+
+bool Foam::cellCellStencils::cellVolumeWeight::betterCandidate
+(
+    const label celli,
+    const label zone,
+    const scalar coverage,
+    const label bestZone,
+    const scalar bestCoverage
+) const
+{
+    if (bestZone < 0) return true;
+    const scalar tie = 100*SMALL*max(scalar(1), coverage);
+    if (donorSelection_ == "coverage")
+    {
+        if (coverage > bestCoverage+tie) return true;
+        if (coverage < bestCoverage-tie) return false;
+    }
+    const label acceptorZone = zoneID()[celli];
+    const label diff = mag(acceptorZone-zone);
+    const label bestDiff = mag(acceptorZone-bestZone);
+    return diff < bestDiff || (diff == bestDiff && zone > bestZone);
+}
+
+
+Foam::scalar Foam::cellCellStencils::cellVolumeWeight::weightedDonorVolume
+(
+    const pointList& centres,
+    const scalarList& volumes,
+    scalarList weights
+)
+{
+    if (centres.size() != volumes.size() || weights.size() != volumes.size())
+    {
+        FatalErrorInFunction
+            << "Misaligned weighted donor geometry" << exit(FatalError);
+    }
+    if (!normaliseVolumeWeights(weights)) return 0;
+    forAll(volumes, i)
+    {
+        if
+        (
+            !std::isfinite(volumes[i]) || volumes[i] <= 0
+         || !std::isfinite(centres[i].x())
+         || !std::isfinite(centres[i].y())
+         || !std::isfinite(centres[i].z())
+        )
+        {
+            FatalErrorInFunction
+                << "Invalid weighted donor geometry" << exit(FatalError);
+        }
+    }
+    labelList order(Foam::identity(weights.size()));
+    std::sort(order.begin(), order.end(), [&](const label a, const label b)
+    {
+        for (direction c = 0; c < 3; ++c)
+        {
+            if (centres[a][c] != centres[b][c])
+            {
+                return centres[a][c] < centres[b][c];
+            }
+        }
+        if (volumes[a] != volumes[b]) return volumes[a] < volumes[b];
+        return weights[a] < weights[b];
+    });
+    static bool ambiguityReported = false;
+    for (label i = 1; i < order.size() && !ambiguityReported; ++i)
+    {
+        const label a = order[i-1], b = order[i];
+        if (centres[a] == centres[b])
+        {
+            WarningInFunction
+                << "Coincident donor centres in weighted "
+                << "layer scoring: physical donor identities are ambiguous; "
+                << "global labels cannot resolve this reproducibly."
+                << nl << endl;
+            ambiguityReported = true;
+        }
+    }
+    long double volume = 0, correction = 0;
+    for (const label i : order)
+    {
+        const long double term =
+            static_cast<long double>(weights[i])*volumes[i]-correction;
+        const long double next = volume+term;
+        correction = (next-volume)-term;
+        volume = next;
+    }
+    return scalar(volume);
+}
+
+
+void Foam::cellCellStencils::cellVolumeWeight::finaliseDonors
+(
+    const globalIndex& globalCells,
+    const boolList& previouslyBlanked,
+    const boolList& sameZoneFallback,
+    const List<DynamicList<donorCandidate>>& candidates,
+    labelList& types,
+    labelListList& stencil,
+    scalarListList& weights,
+    labelList& donorZones,
+    const boolList* donorExclusions
+) const
+{
+    labelListList joined(stencil.size());
+    forAll(types, celli)
+    {
+        if (types[celli] == INTERPOLATED)
+        {
+            joined[celli] = stencil[celli];
+        }
+    }
+    forAll(candidates, celli)
+    {
+        if (types[celli] != INTERPOLATED)
+        {
+            continue;
+        }
+        DynamicList<label> donors(joined[celli]);
+        for (const auto& candidate : candidates[celli])
+        {
+            donors.append(candidate.donors);
+        }
+        joined[celli] = labelList(donors);
+    }
+    List<Map<label>> compactMap;
+    const clockTime mapBuildTimer;
+    mapDistribute map(globalCells, joined, compactMap);
+    scalar mapBuildSeconds = mapBuildTimer.elapsedTime();
+    const clockTime mapDistributionTimer;
+    labelList globalIDs(Foam::identity(globalCells.range()));
+    map.distribute(globalIDs);
+    Map<label> slots(globalIDs.size()-mesh_.nCells());
+    for (label slot = mesh_.nCells(); slot < globalIDs.size(); ++slot)
+    {
+        slots.insert(globalIDs[slot], slot);
+    }
+    labelList oldHoles(previouslyBlanked.size(), Zero);
+    forAll(oldHoles, celli)
+    {
+        oldHoles[celli] = previouslyBlanked[celli]
+            || (donorExclusions && (*donorExclusions)[celli]);
+    }
+    map.distribute(oldHoles);
+    scalar mapDistributionSeconds = mapDistributionTimer.elapsedTime();
+    labelList reasons(3, Zero);
+    label rounds = 0;
+    for (;;)
+    {
+        ++rounds;
+        labelList compactTypes(types);
+        const clockTime distributionTimer;
+        map.distribute(compactTypes);
+        mapDistributionSeconds += distributionTimer.elapsedTime();
+        bool demoted = false;
+        forAll(types, celli)
+        {
+            if (types[celli] != INTERPOLATED)
+            {
+                stencil[celli].clear();
+                weights[celli].clear();
+                continue;
+            }
+            auto retain = [&](const labelList& donors, const scalarList& raw,
+                              labelList& kept, scalarList& keptWeights) -> bool
+            {
+                if (donors.size() != raw.size())
+                {
+                    ++reasons[0];
+                    return false;
+                }
+                DynamicList<label> retained;
+                DynamicList<scalar> retainedWeights;
+                forAll(donors, j)
+                {
+                    label slot = -1;
+                    if (globalCells.isLocal(donors[j]))
+                    {
+                        slot = globalCells.toLocal(donors[j]);
+                    }
+                    else
+                    {
+                        const auto iter = slots.cfind(donors[j]);
+                        if (iter.good())
+                        {
+                            slot = iter();
+                        }
+                    }
+                    if (slot < 0)
+                    {
+                        ++reasons[0];
+                        return false;
+                    }
+                    const label type = compactTypes[slot];
+                    if
+                    (
+                        oldHoles[slot] || type == HOLE || type == POROUS
+                     || (!allowInterpolatedDonors_ && type == INTERPOLATED)
+                    )
+                    {
+                        ++reasons[1];
+                    }
+                    else
+                    {
+                        retained.append(donors[j]);
+                        retainedWeights.append(raw[j]);
+                    }
+                }
+                kept = labelList(retained);
+                keptWeights = scalarList(retainedWeights);
+                return true;
+            };
+            labelList kept;
+            scalarList keptWeights;
+            bool valid = false;
+            if (!candidates.empty() && !sameZoneFallback[celli])
+            {
+                scalar bestCoverage = -1;
+                label bestZone = -1;
+                for (const auto& candidate : candidates[celli])
+                {
+                    labelList trial;
+                    scalarList trialWeights;
+                    if (!retain(candidate.donors, candidate.volumes, trial, trialWeights))
+                    {
+                        continue;
+                    }
+                    scalar coverage = 0;
+                    if
+                    (
+                        !candidateCoverage
+                        (
+                            celli, candidate.volumes, trialWeights, coverage
+                        )
+                     || !normaliseVolumeWeights(trialWeights)
+                    )
+                    {
+                        ++reasons[2];
+                        continue;
+                    }
+                    if (betterCandidate(celli, candidate.zone, coverage, bestZone, bestCoverage))
+                    {
+                        kept.transfer(trial);
+                        keptWeights.transfer(trialWeights);
+                        bestCoverage = coverage;
+                        bestZone = candidate.zone;
+                        valid = true;
+                    }
+                }
+                if (valid)
+                {
+                    donorZones[celli] = bestZone;
+                }
+            }
+            else
+            {
+                valid = retain(stencil[celli], weights[celli], kept, keptWeights)
+                     && normaliseVolumeWeights(keptWeights);
+                if (!valid)
+                {
+                    ++reasons[2];
+                }
+            }
+            if (valid)
+            {
+                stencil[celli].transfer(kept);
+                weights[celli].transfer(keptWeights);
+            }
+            else
+            {
+                types[celli] = previouslyBlanked[celli] ? HOLE : POROUS;
+                stencil[celli].clear();
+                weights[celli].clear();
+                demoted = true;
+            }
+        }
+        if (!returnReduceOr(demoted))
+        {
+            break;
+        }
+    }
+    Pstream::listReduce(reasons, sumOp<label>());
+    if (sum(reasons))
+    {
+        if (!invalidStencilReported_)
+        {
+            WarningInFunction
+                << "cellVolumeWeight discarded invalid/unready donors; "
+                << "subsequent occurrences are summarized." << nl << endl;
+            invalidStencilReported_ = true;
+        }
+        Info<< "cellVolumeWeight donor validation: " << reasons[0]
+            << " misaligned/addressing events, " << reasons[1]
+            << " unready donor events, " << reasons[2]
+            << " rejected weight/coverage events." << endl;
+    }
+    if (debug)
+    {
+        reduce(mapBuildSeconds, maxOp<scalar>());
+        reduce(mapDistributionSeconds, maxOp<scalar>());
+        const label halo = returnReduce
+        (
+            map.constructSize()-mesh_.nCells(), sumOp<label>()
+        );
+        Info<< "cellVolumeWeight donor validation rounds: " << rounds << endl;
+        Info<< "cellVolumeWeight donor map profile: build " << mapBuildSeconds
+            << " s, distribution " << mapDistributionSeconds
+            << " s, summed halo slots " << halo << endl;
+    }
+}
+
 
 void Foam::cellCellStencils::cellVolumeWeight::findHoles
 (
@@ -354,7 +945,6 @@ void Foam::cellCellStencils::cellVolumeWeight::interpolatePatchTypes
             {
                 // 'patch' overrides -1 and 'other'
                 result[cellI] = PATCH;
-                break;
             }
             else if (result[cellI] == -1)
             {
@@ -414,7 +1004,8 @@ void Foam::cellCellStencils::cellVolumeWeight::combineCellTypes
     labelListList& allStencil,
     scalarListList& allWeights,
     labelList& allCellTypes,
-    labelList& allDonorID
+    labelList& allDonorID,
+    List<DynamicList<donorCandidate>>* candidates
 ) const
 {
     forAll(subCellMap, subCellI)
@@ -468,6 +1059,15 @@ void Foam::cellCellStencils::cellVolumeWeight::combineCellTypes
 
         if (validDonors)
         {
+            if (candidates)
+            {
+                donorCandidate candidate;
+                candidate.zone = donorZoneID;
+                candidate.donors =
+                    labelUIndList(otherCells, addressing[subCellI]);
+                candidate.volumes = weights[subCellI];
+                (*candidates)[cellI].append(std::move(candidate));
+            }
             // There are a few possible choices how to choose between multiple
             // donor candidates:
             // 1 highest overlap volume. However this is generally already
@@ -540,7 +1140,20 @@ Foam::cellCellStencils::cellVolumeWeight::cellVolumeWeight
     allowInterpolatedDonors_
     (
         dict.getOrDefault("allowInterpolatedDonors", true)
-    )
+    ),
+    donorSelection_(dict.getOrDefault<word>("donorSelection", "legacy")),
+    donorFallback_(dict.getOrDefault<word>("donorFallback", "legacy")),
+    minCoverage_(dict.getOrDefault<scalar>("minCoverage", 0)),
+    minRetainedFraction_(dict.getOrDefault<scalar>("minRetainedFraction", 0)),
+    weightingScheme_(dict.getOrDefault<word>("weightingScheme", "volume")),
+    allowNegativeWeights_(dict.getOrDefault("allowNegativeWeights", false)),
+    stencilExpansionRings_(dict.getOrDefault<label>("stencilExpansionRings", 1)),
+    layerDonorMetric_(dict.getOrDefault<word>("layerDonorMetric", "legacy")),
+    processorMapMethod_(dict.getOrDefault<word>("processorMapMethod", "AABB")),
+    geometricVolumes_(mesh.nCells()),
+    geometricRoundoff_(mesh.nCells()),
+    weightFallbackCounts_(3, Zero),
+    weightFallbackReported_(false)
 {
     // Add motion-solver fields to non-interpolated fields
     suppressMotionFields();
@@ -550,6 +1163,32 @@ Foam::cellCellStencils::cellVolumeWeight::cellVolumeWeight
 
     overlapTolerance_ =
         dict_.getOrDefault("overlapTolerance", defaultOverlapTolerance_);
+
+    if
+    (
+        !std::isfinite(overlapTolerance_)
+     || overlapTolerance_ < 0 || overlapTolerance_ > 1
+     || !std::isfinite(minCoverage_)
+     || minCoverage_ < 0 || minCoverage_ > 1
+     || !std::isfinite(minRetainedFraction_)
+     || minRetainedFraction_ < 0 || minRetainedFraction_ > 1
+     || (donorSelection_ != "legacy" && donorSelection_ != "coverage")
+     || (donorFallback_ != "legacy" && donorFallback_ != "alternateZones"
+         && donorFallback_ != "sameZone")
+     || (weightingScheme_ != "volume" && weightingScheme_ != "linearExact")
+     || (layerDonorMetric_ != "legacy" && layerDonorMetric_ != "overlapWeighted")
+     || (processorMapMethod_ != "AABB" && processorMapMethod_ != "LOD")
+     || stencilExpansionRings_ < 0 || stencilExpansionRings_ > 1
+    )
+    {
+        FatalIOErrorInFunction(dict_)
+            << "Invalid cellVolumeWeight configuration: tolerances must be "
+            << "finite fractions in [0,1]; donorSelection is legacy|coverage, "
+            << "donorFallback is legacy|alternateZones|sameZone, "
+            << "weightingScheme is volume|linearExact, layerDonorMetric is "
+            << "legacy|overlapWeighted, processorMapMethod is AABB|LOD, and "
+            << "stencilExpansionRings is 0 or 1." << exit(FatalIOError);
+    }
 
     // Read old-time cellTypes
     IOobject io
@@ -561,7 +1200,20 @@ Foam::cellCellStencils::cellVolumeWeight::cellVolumeWeight
         IOobject::NO_WRITE,
         IOobject::NO_REGISTER
     );
-    if (io.typeHeaderOk<volScalarField>(true))
+    const bool haveRestart = io.typeHeaderOk<volScalarField>(true);
+    const bool anyRestart = returnReduceOr(haveRestart);
+    const label missing = returnReduce
+    (
+        label(!haveRestart && mesh_.nCells()), sumOp<label>()
+    );
+    if (anyRestart && missing)
+    {
+        FatalErrorInFunction
+            << "Incomplete restart cellTypes: missing on " << missing
+            << " non-empty ranks." << exit(FatalError);
+    }
+    labelList repairs(3, Zero);
+    if (haveRestart)
     {
         if (debug)
         {
@@ -572,14 +1224,32 @@ Foam::cellCellStencils::cellVolumeWeight::cellVolumeWeight
         const volScalarField volCellTypes(io, mesh_);
         forAll(volCellTypes, celli)
         {
-            // Round to integer
-            cellTypes_[celli] = volCellTypes[celli];
+            bool rounded = false, clamped = false;
+            cellTypes_[celli] = decodeRestartType
+            (
+                volCellTypes[celli], rounded, clamped
+            );
+            repairs[0] += rounded || clamped;
+            repairs[1] += rounded;
+            repairs[2] += clamped;
         }
     }
-
+    Pstream::listReduce(repairs, sumOp<label>());
+    if (repairs[0])
+    {
+        WarningInFunction
+            << "cellVolumeWeight restart repair: " << repairs[0]
+            << " affected cells, " << repairs[1] << " rounded, "
+            << repairs[2] << " clamped. cellTypes is categorical; arithmetic "
+            << "mapping does not reconstruct physical holes." << nl << endl;
+    }
     if (doUpdate)
     {
         update();
+    }
+    else
+    {
+        refreshGeometry();
     }
 }
 
@@ -594,6 +1264,10 @@ Foam::cellCellStencils::cellVolumeWeight::~cellVolumeWeight()
 
 bool Foam::cellCellStencils::cellVolumeWeight::update()
 {
+    const clockTime updateTimer;
+    const clockTime referenceTimer;
+    refreshGeometry();
+    const scalar referenceSeconds = referenceTimer.elapsedTime();
     boolList previouslyBlanked(mesh_.nCells(), false);
     forAll(previouslyBlanked, celli)
     {
@@ -640,6 +1314,14 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
     scalarListList allWeights(mesh_.nCells());
     // zoneID of donor
     labelList allDonorID(mesh_.nCells(), -1);
+    const bool qualitySelection =
+        donorSelection_ == "coverage"
+     || minCoverage_ > 0 || minRetainedFraction_ > 0;
+    const bool retainCandidates = qualitySelection || donorFallback_ != "legacy";
+    List<DynamicList<donorCandidate>> candidates
+    (
+        retainCandidates ? mesh_.nCells() : 0
+    );
 
 
     // Marking patch cells
@@ -678,6 +1360,16 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
 
     globalIndex globalCells(mesh_.nCells());
 
+    List<boundBox> zoneBounds(nZones);
+    forAll(meshParts, zonei)
+    {
+        if (nCellsPerZone[zonei])
+        {
+            zoneBounds[zonei] =
+                boundBox(meshParts[zonei].subMesh().points(), true);
+        }
+    }
+    const clockTime overlapTimer;
     for (label srcI = 0; srcI < meshParts.size()-1; srcI++)
     {
         const fvMesh& srcMesh = meshParts[srcI].subMesh();
@@ -685,6 +1377,14 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
 
         for (label tgtI = srcI+1; tgtI < meshParts.size(); tgtI++)
         {
+            if
+            (
+                !nCellsPerZone[srcI] || !nCellsPerZone[tgtI]
+             || !zoneBounds[srcI].overlaps(zoneBounds[tgtI])
+            )
+            {
+                continue;
+            }
             const fvMesh& tgtMesh = meshParts[tgtI].subMesh();
             const labelList& tgtCellMap = meshParts[tgtI].cellMap();
 
@@ -695,7 +1395,9 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
                 meshToMesh::interpolationMethod::imCellVolumeWeight,
                 HashTable<word>(0),     // patchMap,
                 wordList(0),            // cuttingPatches
-                meshToMesh::procMapMethod::pmAABB,
+                processorMapMethod_ == "LOD"
+              ? meshToMesh::procMapMethod::pmLOD
+              : meshToMesh::procMapMethod::pmAABB,
                 false                   // do not normalise
             );
 
@@ -742,7 +1444,8 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
                     allStencil,
                     allWeights,
                     allCellTypes,
-                    allDonorID
+                    allDonorID,
+                    candidates.empty() ? nullptr : &candidates
                 );
             }
 
@@ -786,13 +1489,15 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
                     allStencil,
                     allWeights,
                     allCellTypes,
-                    allDonorID
+                    allDonorID,
+                    candidates.empty() ? nullptr : &candidates
                 );
             }
         }
     }
 
 
+    const scalar overlapSeconds = overlapTimer.elapsedTime();
     if ((debug & 2) && mesh_.time().writeTime())
     {
         tmp<volScalarField> tfld
@@ -810,6 +1515,41 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
     }
 
 
+    labelList originalDonorID(retainCandidates ? allDonorID : labelList());
+    if (retainCandidates)
+    {
+        forAll(allCellTypes, celli)
+        {
+            if
+            (
+                allCellTypes[celli] == HOLE
+             || sum(allWeights[celli]) > overlapTolerance_*geometricVolumes_[celli]
+            )
+            {
+                continue;
+            }
+            scalar bestCoverage = -1;
+            label bestZone = -1;
+            for (const auto& candidate : candidates[celli])
+            {
+                const scalar coverage =
+                    sum(candidate.volumes)/geometricVolumes_[celli];
+                if
+                (
+                    coverage > overlapTolerance_
+                 && betterCandidate(celli, candidate.zone, coverage, bestZone, bestCoverage)
+                )
+                {
+                    allStencil[celli] = candidate.donors;
+                    allWeights[celli] = candidate.volumes;
+                    allDonorID[celli] = candidate.zone;
+                    bestZone = candidate.zone;
+                    bestCoverage = coverage;
+                }
+            }
+        }
+    }
+
     // Use the patch types and weights to decide what to do
     forAll(allPatchTypes, cellI)
     {
@@ -820,7 +1560,7 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
                 case OVERSET:
                 {
                     // Interpolate. Check if enough overlap
-                    scalar v = mesh_.V()[cellI];
+                    scalar v = geometricVolumes_[cellI];
                     scalar overlapVol = sum(allWeights[cellI]);
                     if (overlapVol > overlapTolerance_*v)
                     {
@@ -861,7 +1601,27 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
 
 
     // Mark unreachable bits
-    findHoles(globalCells, mesh_, zoneID, allStencil, allCellTypes);
+    labelListList holeStencil;
+    if (retainCandidates)
+    {
+        holeStencil.setSize(mesh_.nCells());
+        forAll(holeStencil, celli)
+        {
+            DynamicList<label> donors;
+            for (const auto& candidate : candidates[celli])
+            {
+                donors.append(candidate.donors);
+            }
+            holeStencil[celli] = labelList(donors);
+        }
+    }
+    const clockTime regionTimer;
+    findHoles
+    (
+        globalCells, mesh_, zoneID,
+        retainCandidates ? holeStencil : allStencil, allCellTypes
+    );
+    const scalar regionSeconds = regionTimer.elapsedTime();
 
     if ((debug & 2) && mesh_.time().writeTime())
     {
@@ -883,9 +1643,120 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
         tfldStencil().write();
     }
 
+    const clockTime policyTimer;
+    scalar frontMapBuildSeconds = 0, frontMapDistributionSeconds = 0;
+    label maxFrontHalo = 0;
     boolList reactivationCandidates(mesh_.nCells(), false);
     boolList sameZoneFallback(mesh_.nCells(), false);
     boolList protectedHoles(mesh_.nCells(), false);
+    const bool qualifiedSelection = retainCandidates;
+    boolList ordinaryCandidates
+    (
+        donorFallback_ == "sameZone" ? mesh_.nCells() : 0, false
+    );
+    boolList donorExclusions
+    (
+        donorFallback_ == "sameZone" ? previouslyBlanked : boolList()
+    );
+    boolList geometricEligible
+    (
+        qualifiedSelection ? mesh_.nCells() : 0, true
+    );
+    if (qualifiedSelection)
+    {
+        forAll(allCellTypes, celli)
+        {
+            if (allCellTypes[celli] == HOLE) continue;
+            scalar bestCoverage = -1;
+            label bestZone = -1;
+            for (const auto& candidate : candidates[celli])
+            {
+                scalar coverage = 0;
+                if
+                (
+                    candidateCoverage(celli, candidate.volumes, candidate.volumes, coverage)
+                 && sum(candidate.volumes) > overlapTolerance_*geometricVolumes_[celli]
+                 && betterCandidate(celli, candidate.zone, coverage, bestZone, bestCoverage)
+                )
+                {
+                    allStencil[celli] = candidate.donors;
+                    allWeights[celli] = candidate.volumes;
+                    allDonorID[celli] = candidate.zone;
+                    bestCoverage = coverage;
+                    bestZone = candidate.zone;
+                }
+            }
+            geometricEligible[celli] = bestZone >= 0;
+        }
+    }
+
+    auto walkInterpolationFront =
+        [&](const labelListList& frontStencil, labelList& types,
+            scalarField& blend, boolList& protectedCells)
+    {
+        labelListList compact(frontStencil);
+        List<Map<label>> compactMap;
+        const clockTime buildTimer;
+        mapDistribute frontMap(globalCells, compact, compactMap);
+        frontMapBuildSeconds += buildTimer.elapsedTime();
+        maxFrontHalo = max(maxFrontHalo, frontMap.constructSize()-mesh_.nCells());
+        const clockTime distributionTimer;
+        scalarList donorVolumes(mesh_.V());
+        frontMap.distribute(donorVolumes);
+        pointField donorCentres;
+        if (layerDonorMetric_ == "overlapWeighted")
+        {
+            donorCentres = mesh_.cellCentres();
+            frontMap.distribute(donorCentres);
+        }
+        frontMapDistributionSeconds += distributionTimer.elapsedTime();
+        scalarList volumeRatio(mesh_.nCells(), Zero);
+        if (layerDonorMetric_ == "overlapWeighted")
+        {
+            forAll(frontStencil, celli)
+            {
+                if (frontStencil[celli].empty()) continue;
+                const scalar volume = weightedDonorVolume
+                (
+                    pointList(UIndirectList<point>(donorCentres, compact[celli])),
+                    scalarList(UIndirectList<scalar>(donorVolumes, compact[celli])),
+                    allWeights[celli]
+                );
+                if (volume > 0) volumeRatio[celli] = mesh_.V()[celli]/volume;
+            }
+        }
+        walkFront
+        (
+            globalCells, layerRelax, frontStencil, types, blend,
+            donorVolumes, compact, zoneID,
+            dict_.getOrDefault("holeLayers", 1),
+            dict_.getOrDefault("useLayer", -1), &protectedCells,
+            layerDonorMetric_ == "overlapWeighted" ? &volumeRatio : nullptr
+        );
+    };
+
+    if (donorFallback_ == "sameZone")
+    {
+        // Discover requested fringe cells without replacing hole geometry.
+        labelList requestedTypes(allCellTypes);
+        scalarField requestedBlend(mesh_.nCells(), Zero);
+        boolList requestedProtected(mesh_.nCells(), false);
+        walkInterpolationFront
+        (
+            allStencil, requestedTypes, requestedBlend, requestedProtected
+        );
+        forAll(ordinaryCandidates, celli)
+        {
+            ordinaryCandidates[celli] =
+                !previouslyBlanked[celli] && !requestedProtected[celli]
+             && allCellTypes[celli] != HOLE && !geometricEligible[celli]
+             && (requestedTypes[celli] == INTERPOLATED
+                 || requestedTypes[celli] == HOLE);
+            donorExclusions[celli] =
+                donorExclusions[celli] || ordinaryCandidates[celli];
+            reactivationCandidates[celli] = ordinaryCandidates[celli];
+        }
+    }
     labelListList reactivationStencil(mesh_.nCells());
     List<scalarList> reactivationWeights(mesh_.nCells());
     DynamicList<label> reactivationCells;
@@ -916,6 +1787,12 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
         }
     }
 
+    DynamicList<label> provisionalCells(reactivationCells);
+    forAll(ordinaryCandidates, celli)
+    {
+        if (ordinaryCandidates[celli]) provisionalCells.append(celli);
+    }
+
     const boolList validSameZoneDonor
     (
         recoveryDonorMask
@@ -933,7 +1810,7 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
         mesh_,
         zoneID,
         validSameZoneDonor,
-        reactivationCells,
+        provisionalCells,
         sameZoneCellCells,
         sameZoneCellCentres,
         allCellTypes,
@@ -948,41 +1825,76 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
             sameZoneFallback[celli] = true;
             if (!sameZoneCellCells[celli].empty())
             {
-                allStencil[celli].setSize(1);
-                allStencil[celli][0] = sameZoneCellCells[celli][0];
-                allWeights[celli].setSize(1);
-                allWeights[celli][0] = 1.0;
+                if (layerDonorMetric_ == "overlapWeighted")
+                {
+                    allStencil[celli] = sameZoneCellCells[celli];
+                    distanceWeights
+                    (
+                        mesh_.cellCentres()[celli],
+                        sameZoneCellCentres[celli],
+                        allWeights[celli]
+                    );
+                }
+                else
+                {
+                    allStencil[celli].setSize(1);
+                    allStencil[celli][0] = sameZoneCellCells[celli][0];
+                    allWeights[celli].setSize(1);
+                    allWeights[celli][0] = 1.0;
+                }
             }
         }
         reactivationStencil[celli] = allStencil[celli];
         reactivationWeights[celli] = allWeights[celli];
     }
 
+    forAll(ordinaryCandidates, celli)
+    {
+        if (ordinaryCandidates[celli] && !sameZoneCellCells[celli].empty())
+        {
+            allStencil[celli] = sameZoneCellCells[celli];
+            distanceWeights
+            (
+                mesh_.cellCentres()[celli], sameZoneCellCentres[celli],
+                allWeights[celli]
+            );
+            sameZoneFallback[celli] = true;
+        }
+    }
 
     // Add buffer interpolation layer around holes
     scalarField allWeight(mesh_.nCells(), Zero);
-
-    labelListList compactStencil(allStencil);
-    List<Map<label>> compactStencilMap;
-    mapDistribute map(globalCells, compactStencil, compactStencilMap);
-
-    scalarList compactCellVol(mesh_.V());
-    map.distribute(compactCellVol);
-
-    walkFront
+    labelListList qualifiedStencil;
+    if (qualifiedSelection)
+    {
+        qualifiedStencil = allStencil;
+        forAll(qualifiedStencil, celli)
+        {
+            if (!geometricEligible[celli] && !sameZoneFallback[celli])
+            {
+                qualifiedStencil[celli].clear();
+            }
+        }
+    }
+    walkInterpolationFront
     (
-        globalCells,
-        layerRelax,
-        allStencil,
+        qualifiedSelection ? qualifiedStencil : allStencil,
         allCellTypes,
         allWeight,
-        compactCellVol,
-        compactStencil,
-        zoneID,
-        dict_.getOrDefault("holeLayers", 1),
-        dict_.getOrDefault("useLayer", -1),
-        &protectedHoles
+        protectedHoles
     );
+    forAll(allCellTypes, celli)
+    {
+        if
+        (
+            qualifiedSelection && !geometricEligible[celli]
+         && !sameZoneFallback[celli] && !protectedHoles[celli]
+         && allCellTypes[celli] == HOLE
+        )
+        {
+            allCellTypes[celli] = POROUS;
+        }
+    }
 
 
     if ((debug & 2) && mesh_.time().writeTime())
@@ -1026,127 +1938,29 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
     }
 
 
-    labelList compactCellTypes(allCellTypes);
-    labelList compactPreviouslyBlanked(mesh_.nCells(), Zero);
-    forAll(previouslyBlanked, celli)
+    boolList ordinaryRequested
+    (
+        donorFallback_ == "sameZone" ? mesh_.nCells() : 0, false
+    );
+    if (donorFallback_ == "sameZone")
     {
-        compactPreviouslyBlanked[celli] = previouslyBlanked[celli];
-    }
-    map.distribute(compactCellTypes);
-    map.distribute(compactPreviouslyBlanked);
-
-    label nHoleDonors = 0;
-    forAll(allCellTypes, cellI)
-    {
-        if (allCellTypes[cellI] == INTERPOLATED)
+        forAll(ordinaryRequested, celli)
         {
-            const labelList& slots = compactStencil[cellI];
-            if (slots.size() != allWeights[cellI].size())
-            {
-                allCellTypes[cellI] = POROUS;
-                allWeights[cellI].clear();
-                allStencil[cellI].clear();
-                continue;
-            }
-
-            DynamicList<label> retainedDonors(slots.size());
-            DynamicList<scalar> retainedWeights(slots.size());
-            forAll (slots, subCellI)
-            {
-                const label slot = slots[subCellI];
-                if (slot < 0 || slot >= compactCellTypes.size())
-                {
-                    allCellTypes[cellI] = POROUS;
-                    allWeights[cellI].clear();
-                    allStencil[cellI].clear();
-                    break;
-                }
-
-                const label donorType = compactCellTypes[slot];
-                if
+            ordinaryRequested[celli] = !previouslyBlanked[celli]
+                && !protectedHoles[celli]
+                &&
                 (
-                    compactPreviouslyBlanked[slot]
-                 || donorType == HOLE
-                 ||
-                    (
-                        !allowInterpolatedDonors_
-                     && donorType == INTERPOLATED
-                    )
-                 || donorType == POROUS
-                )
-                {
-                    nHoleDonors++;
-                }
-                else
-                {
-                    retainedDonors.append(allStencil[cellI][subCellI]);
-                    retainedWeights.append(allWeights[cellI][subCellI]);
-                }
-            }
-
-            if (allCellTypes[cellI] == INTERPOLATED)
-            {
-                allStencil[cellI] = labelList(retainedDonors);
-                allWeights[cellI] = scalarList(retainedWeights);
-            }
-        }
-        else
-        {
-            allWeights[cellI].clear();
-            allStencil[cellI].clear();
+                    (allCellTypes[celli] == INTERPOLATED && allWeight[celli] > 0)
+                 || (ordinaryCandidates[celli] && allCellTypes[celli] == POROUS)
+                );
         }
     }
-    reduce(nHoleDonors, sumOp<label>());
-
-
-    // Normalize weights
-    forAll(allCellTypes, cellI)
-    {
-        if (allCellTypes[cellI] == INTERPOLATED)
-        {
-            scalar s = 0;
-            bool validWeights = true;
-            for (const scalar weight : allWeights[cellI])
-            {
-                if (!std::isfinite(weight))
-                {
-                    validWeights = false;
-                    break;
-                }
-                s += weight;
-            }
-            validWeights =
-                validWeights
-             && std::isfinite(s)
-             && s > SMALL;
-
-            if (!validWeights)
-            {
-                allCellTypes[cellI] = POROUS;
-                allWeights[cellI].clear();
-                allStencil[cellI].clear();
-            }
-            else
-            {
-                forAll(allWeights[cellI], i)
-                {
-                    allWeights[cellI][i] /= s;
-                    if (!std::isfinite(allWeights[cellI][i]))
-                    {
-                        validWeights = false;
-                        break;
-                    }
-                }
-
-                if (!validWeights)
-                {
-                    allCellTypes[cellI] = POROUS;
-                    allWeights[cellI].clear();
-                    allStencil[cellI].clear();
-                }
-            }
-        }
-    }
+    finaliseDonors
+    (
+        globalCells, previouslyBlanked, sameZoneFallback, candidates,
+        allCellTypes, allStencil, allWeights, allDonorID,
+        donorFallback_ == "sameZone" ? &donorExclusions : nullptr
+    );
 
     DynamicList<label> fallbackCells;
     label nRecovered = 0;
@@ -1177,6 +1991,21 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
         else
         {
             fallbackCells.append(celli);
+        }
+    }
+
+    forAll(ordinaryRequested, celli)
+    {
+        if
+        (
+            ordinaryRequested[celli]
+         && (sameZoneFallback[celli] || allCellTypes[celli] == POROUS)
+        )
+        {
+            fallbackCells.append(celli);
+            ordinaryCandidates[celli] = true;
+            reactivationCandidates[celli] = true;
+            donorExclusions[celli] = true;
         }
     }
 
@@ -1211,9 +2040,9 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
         const label celli = fallbackCells[i];
         const labelList& donors = fallbackCellCells[celli];
 
-        if (donors.empty())
+        if (donors.empty() || (!previouslyBlanked[celli] && allWeight[celli] <= 0))
         {
-            allCellTypes[celli] = HOLE;
+            allCellTypes[celli] = previouslyBlanked[celli] ? HOLE : POROUS;
             allStencil[celli].clear();
             allWeights[celli].clear();
             allWeight[celli] = 0.0;
@@ -1222,16 +2051,43 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
         else
         {
             allStencil[celli] = donors;
-            stencilWeights
+            distanceWeights
             (
                 mesh_.cellCentres()[celli],
                 fallbackCellCentres[celli],
                 allWeights[celli]
             );
             allCellTypes[celli] = INTERPOLATED;
-            allWeight[celli] = 1.0;
+            if (previouslyBlanked[celli]) allWeight[celli] = 1.0;
+            sameZoneFallback[celli] = true;
             ++nRecovered;
             ++nSameZoneFallback;
+        }
+    }
+    if (returnReduceOr(!fallbackCells.empty()))
+    {
+        finaliseDonors
+        (
+            globalCells, previouslyBlanked, sameZoneFallback, candidates,
+            allCellTypes, allStencil, allWeights, allDonorID,
+            donorFallback_ == "sameZone" ? &donorExclusions : nullptr
+        );
+    }
+    nRecovered = nSameZoneFallback = nUnrecoverable = 0;
+    for (const label celli : reactivationCells)
+    {
+        if (protectedHoles[celli])
+        {
+            continue;
+        }
+        if (allCellTypes[celli] == INTERPOLATED)
+        {
+            ++nRecovered;
+            nSameZoneFallback += sameZoneFallback[celli];
+        }
+        else
+        {
+            ++nUnrecoverable;
         }
     }
     reduce(nRecovered, sumOp<label>());
@@ -1251,6 +2107,32 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
             << " previously blanked cells from ready same-zone neighbours; "
             << "retaining them as holes." << nl << endl;
     }
+    if (qualifiedSelection)
+    {
+        label retries = 0, ordinaryRecovered = 0, ordinaryFailed = 0;
+        forAll(allCellTypes, celli)
+        {
+            retries += allCellTypes[celli] == INTERPOLATED
+                && !sameZoneFallback[celli]
+                && allDonorID[celli] != originalDonorID[celli];
+            if
+            (
+                donorFallback_ == "sameZone"
+             && ordinaryRequested[celli] && ordinaryCandidates[celli]
+            )
+            {
+                ordinaryRecovered += allCellTypes[celli] == INTERPOLATED;
+                ordinaryFailed += allCellTypes[celli] != INTERPOLATED;
+            }
+        }
+        reduce(retries, sumOp<label>());
+        reduce(ordinaryRecovered, sumOp<label>());
+        reduce(ordinaryFailed, sumOp<label>());
+        Info<< "cellVolumeWeight optional donor fallback: " << retries
+            << " alternate-zone retries, " << ordinaryRecovered
+            << " ordinary same-zone recoveries, " << ordinaryFailed
+            << " unrecoverable ordinary receivers." << endl;
+    }
 
     forAll(allCellTypes, celli)
     {
@@ -1259,6 +2141,140 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
             allWeight[celli] = 0.0;
         }
     }
+
+    const scalar policySeconds = policyTimer.elapsedTime();
+    const clockTime affineTimer;
+    if (weightingScheme_ == "linearExact")
+    {
+        label nAffineReceivers = 0;
+        label nAffineExact = 0;
+        labelListList compact(allStencil);
+        List<Map<label>> compactMap;
+        mapDistribute affineMap(globalCells, compact, compactMap);
+        pointField centres(mesh_.cellCentres());
+        affineMap.distribute(centres);
+
+        labelListList neighbours;
+        pointListList neighbourCentres;
+        labelListList neighbourZones;
+        labelListList compactNeighbours;
+        pointField expansionCentres;
+        if (stencilExpansionRings_)
+        {
+            labelList needed(affineMap.constructSize(), Zero);
+            for (const auto& stencil : compact)
+            {
+                for (const label slot : stencil)
+                {
+                    needed[slot] = 1;
+                }
+            }
+            mapDistributeBase::distribute
+            (
+                UPstream::commsTypes::nonBlocking,
+                UList<labelPair>::null(),
+                mesh_.nCells(),
+                affineMap.constructMap(),
+                false,
+                affineMap.subMap(),
+                false,
+                needed,
+                label(0),
+                maxEqOp<label>(),
+                flipOp(),
+                UPstream::msgType(),
+                affineMap.comm()
+            );
+            const boolList ready
+            (
+                recoveryDonorMask
+                (
+                    allCellTypes, previouslyBlanked, protectedHoles,
+                    reactivationCandidates, allowInterpolatedDonors_
+                )
+            );
+            DynamicList<label> selected;
+            forAll(needed, celli)
+            {
+                if (needed[celli])
+                {
+                    selected.append(celli);
+                }
+            }
+            globalCellCells
+            (
+                globalCells, mesh_, ready, selected,
+                neighbours, neighbourCentres, &zoneID, &neighbourZones
+            );
+            affineMap.distribute(neighbours);
+            affineMap.distribute(neighbourZones);
+            // Use canonical centres for the physical IDs sampled by the
+            // stencil, not coupled-patch transformed neighbour images.
+            compactNeighbours = neighbours;
+            List<Map<label>> expansionCompactMap;
+            mapDistribute expansionMap
+            (
+                globalCells, compactNeighbours, expansionCompactMap
+            );
+            expansionCentres = mesh_.cellCentres();
+            expansionMap.distribute(expansionCentres);
+        }
+        forAll(allCellTypes, celli)
+        {
+            if (allCellTypes[celli] != INTERPOLATED)
+            {
+                continue;
+            }
+            ++nAffineReceivers;
+            pointList donors(UIndirectList<point>(centres, compact[celli]));
+            const labelList savedCounts(weightFallbackCounts_);
+            if (affineWeights(mesh_.cellCentres()[celli], donors, allWeights[celli]))
+            {
+                ++nAffineExact;
+                continue;
+            }
+            if (!stencilExpansionRings_ || sameZoneFallback[celli])
+            {
+                continue;
+            }
+            DynamicList<label> expanded(allStencil[celli]);
+            labelHashSet seen(allStencil[celli]);
+            DynamicList<point> expandedCentres(donors);
+            for (const label slot : compact[celli])
+            {
+                forAll(neighbours[slot], j)
+                {
+                    if
+                    (
+                        neighbourZones[slot][j] == allDonorID[celli]
+                     && seen.insert(neighbours[slot][j])
+                    )
+                    {
+                        expanded.append(neighbours[slot][j]);
+                        expandedCentres.append
+                        (
+                            expansionCentres[compactNeighbours[slot][j]]
+                        );
+                    }
+                }
+            }
+            if (expanded.size() != allStencil[celli].size())
+            {
+                scalarList trial(allWeights[celli]);
+                trial.setSize(expanded.size(), 0);
+                weightFallbackCounts_ = savedCounts;
+                const pointList trialCentres(expandedCentres);
+                if (affineWeights(mesh_.cellCentres()[celli], trialCentres, trial))
+                {
+                    ++nAffineExact;
+                    allStencil[celli] = labelList(expanded);
+                    allWeights[celli].transfer(trial);
+                }
+            }
+        }
+        reportWeightFallbacks(nAffineExact, nAffineReceivers-nAffineExact);
+    }
+    const scalar affineSeconds = affineTimer.elapsedTime();
 
     // Write to volField for debugging
     if ((debug & 2) && mesh_.time().writeTime())
@@ -1338,6 +2354,27 @@ bool Foam::cellCellStencils::cellVolumeWeight::update()
         }
     }
 
+    if (debug)
+    {
+        scalar overlapMax = overlapSeconds;
+        scalar updateMax = updateTimer.elapsedTime();
+        reduce(overlapMax, maxOp<scalar>());
+        reduce(updateMax, maxOp<scalar>());
+        Info<< "cellVolumeWeight maximum-rank times: overlap " << overlapMax
+            << " s, update " << updateMax << " s" << endl;
+        scalarField phases
+        ({
+            referenceSeconds, regionSeconds, policySeconds, affineSeconds,
+            frontMapBuildSeconds, frontMapDistributionSeconds
+        });
+        Pstream::listReduce(phases, maxOp<scalar>());
+        reduce(maxFrontHalo, sumOp<label>());
+        Info<< "cellVolumeWeight phase maxima: reference " << phases[0]
+            << " s, regions " << phases[1] << " s, donor policy " << phases[2]
+            << " s, affine " << phases[3] << " s, front map build "
+            << phases[4] << " s, front distribution " << phases[5]
+            << " s, summed peak front halo slots " << maxFrontHalo << endl;
+    }
     Info << this->info();
 
     return true;
@@ -1351,30 +2388,52 @@ void Foam::cellCellStencils::cellVolumeWeight::stencilWeights
     scalarList& weights
 ) const
 {
-    // Inverse-distance weighting
+    distanceWeights(sample, donorCcs, weights);
+    if (weightingScheme_ == "linearExact")
+    {
+        affineWeights(sample, donorCcs, weights);
+    }
+}
 
+
+void Foam::cellCellStencils::cellVolumeWeight::distanceWeights
+(
+    const point& sample,
+    const pointList& donorCcs,
+    scalarList& weights
+)
+{
     weights.setSize(donorCcs.size());
-    scalar sum = 0.0;
+    scalar nearest = std::numeric_limits<scalar>::infinity();
     forAll(donorCcs, i)
     {
-        scalar d = mag(sample-donorCcs[i]);
-
-        if (d > ROOTVSMALL)
+        const vector delta = sample-donorCcs[i];
+        const scalar d =
+            std::hypot(std::hypot(delta.x(), delta.y()), delta.z());
+        if (!std::isfinite(d))
         {
-            weights[i] = 1.0/d;
-            sum += weights[i];
+            FatalErrorInFunction
+                << "Nonfinite recovery donor distance at " << sample
+                << exit(FatalError);
         }
-        else
+        if (d == 0)
         {
-            // Short circuit
             weights = 0.0;
             weights[i] = 1.0;
             return;
         }
+        weights[i] = d;
+        nearest = min(nearest, d);
     }
-    forAll(weights, i)
+    for (scalar& weight : weights)
     {
-        weights[i] /= sum;
+        weight = nearest/weight;
+    }
+    if (!normaliseVolumeWeights(weights))
+    {
+        FatalErrorInFunction
+            << "No valid same-zone recovery weights at " << sample
+            << exit(FatalError);
     }
 }
 
