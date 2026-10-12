@@ -621,7 +621,7 @@ int main(int argc, char *argv[])
         }
 
         // Execute all polyMeshModifiers
-        autoPtr<mapPolyMesh> morphMap = stitcher.changeMesh(true);
+        autoPtr<mapPolyMesh> morphMap = stitcher.changeMesh();
 
         mesh.movePoints(morphMap->preMotionPoints());
 
