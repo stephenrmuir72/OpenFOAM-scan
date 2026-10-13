@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2015-2020 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -174,7 +175,7 @@ protected:
         //- Time at last call, prevents repeated averaging
         label prevTimeIndex_;
 
-        //- Initialised flag
+        //- All requested average fields are initialised
         bool initialised_;
 
         //- Restart the averaging process on restart
@@ -215,6 +216,9 @@ protected:
             //- Reset lists (clear existing values) and initialize averaging.
             //  Check requested field averages are valid, populate field lists
             void initialize();
+
+            //- Initialise available fields, optionally clearing existing values
+            void initialize(bool clearFields);
 
             //- Restart averaging for restartOnOutput
             void restart();
