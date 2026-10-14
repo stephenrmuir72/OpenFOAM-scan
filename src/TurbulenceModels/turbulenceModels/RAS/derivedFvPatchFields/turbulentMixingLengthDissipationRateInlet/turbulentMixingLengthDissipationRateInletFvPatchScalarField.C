@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2020 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -28,10 +29,7 @@ License
 
 #include "turbulentMixingLengthDissipationRateInletFvPatchScalarField.H"
 #include "addToRunTimeSelectionTable.H"
-#include "fvPatchFieldMapper.H"
 #include "surfaceFields.H"
-#include "volFields.H"
-#include "turbulenceModel.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -47,15 +45,8 @@ turbulentMixingLengthDissipationRateInletFvPatchScalarField
     const DimensionedField<scalar, volMesh>& iF
 )
 :
-    parent_bctype(p, iF),
-    kName_("k"),
-    mixingLength_(0.0),
-    Cmu_(0.0)
-{
-    this->refValue() = Zero;
-    this->refGrad() = Zero;
-    this->valueFraction() = 0.0;
-}
+    parent_bctype(p, iF)
+{}
 
 
 turbulentMixingLengthDissipationRateInletFvPatchScalarField::
@@ -67,10 +58,7 @@ turbulentMixingLengthDissipationRateInletFvPatchScalarField
     const fvPatchFieldMapper& mapper
 )
 :
-    parent_bctype(ptf, p, iF, mapper),
-    kName_(ptf.kName_),
-    mixingLength_(ptf.mixingLength_),
-    Cmu_(ptf.Cmu_)
+    parent_bctype(ptf, p, iF, mapper)
 {}
 
 
@@ -82,22 +70,8 @@ turbulentMixingLengthDissipationRateInletFvPatchScalarField
     const dictionary& dict
 )
 :
-    parent_bctype(p, iF),
-    kName_(dict.getOrDefault<word>("k", "k")),
-    mixingLength_
-    (
-        dict.getCheck<scalar>("mixingLength", scalarMinMax::ge(SMALL))
-    ),
-    Cmu_(dict.getCheckOrDefault<scalar>("Cmu", 0.09, scalarMinMax::ge(SMALL)))
-{
-    this->phiName_ = dict.getOrDefault<word>("phi", "phi");
-
-    this->readValueEntry(dict, IOobjectOption::MUST_READ);
-
-    this->refValue() = Zero;
-    this->refGrad() = Zero;
-    this->valueFraction() = 0.0;
-}
+    parent_bctype(p, iF, dict, word("mixingLength"))
+{}
 
 
 turbulentMixingLengthDissipationRateInletFvPatchScalarField::
@@ -107,60 +81,8 @@ turbulentMixingLengthDissipationRateInletFvPatchScalarField
     const DimensionedField<scalar, volMesh>& iF
 )
 :
-    parent_bctype(ptf, iF),
-    kName_(ptf.kName_),
-    mixingLength_(ptf.mixingLength_),
-    Cmu_(ptf.Cmu_)
+    parent_bctype(ptf, iF)
 {}
-
-
-// * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
-
-void turbulentMixingLengthDissipationRateInletFvPatchScalarField::updateCoeffs()
-{
-    if (updated())
-    {
-        return;
-    }
-
-    // Lookup Cmu corresponding to the turbulence model selected
-    const turbulenceModel& turbModel = db().lookupObject<turbulenceModel>
-    (
-        IOobject::groupName
-        (
-            turbulenceModel::propertiesName,
-            internalField().group()
-        )
-    );
-
-    Cmu_ = turbModel.coeffDict().getOrDefault<scalar>("Cmu", Cmu_);
-
-    const scalar Cmu75 = pow(Cmu_, 0.75);
-
-    const auto& kp =
-        patch().lookupPatchField<volScalarField>(kName_);
-
-    const auto& phip =
-        patch().lookupPatchField<surfaceScalarField>(this->phiName_);
-
-    this->refValue() = (Cmu75/mixingLength_)*pow(kp, 1.5);
-    this->valueFraction() = neg(phip);
-
-    this->parent_bctype::updateCoeffs();
-}
-
-
-void turbulentMixingLengthDissipationRateInletFvPatchScalarField::write
-(
-    Ostream& os
-) const
-{
-    fvPatchField<scalar>::write(os);
-    os.writeEntry("mixingLength", mixingLength_);
-    os.writeEntry("phi", this->phiName_);
-    os.writeEntry("k", kName_);
-    fvPatchField<scalar>::writeValueEntry(os);
-}
 
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //

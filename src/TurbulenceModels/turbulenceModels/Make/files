@@ -65,6 +65,7 @@ $(kqRWallFunctions)/kLowReWallFunction/kLowReWallFunctionFvPatchScalarField.C
 RASBCs = RAS/derivedFvPatchFields
 
 /* Inlet turbulence BCs */
+$(RASBCs)/turbulentEpsilonOmegaInlet/turbulentEpsilonOmegaInletFvPatchScalarField.C
 $(RASBCs)/turbulentMixingLengthDissipationRateInlet/turbulentMixingLengthDissipationRateInletFvPatchScalarField.C
 $(RASBCs)/turbulentMixingLengthFrequencyInlet/turbulentMixingLengthFrequencyInletFvPatchScalarField.C
 

@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -42,17 +43,18 @@ Description
 
     \vartable
         \omega_p | patch omega values
-        C_{\mu} | Model coefficient, set to 0.09
+        C_{\mu} | Empirical model constant (default 0.09)
         k       | turbulence kinetic energy
         L       | length scale
     \endvartable
 
 Usage
     \table
-        Property     | Description             | Required    | Default value
-        mixingLength | Length scale [m]        | yes         |
-        phi          | flux field name         | no          | phi
-        k            | turbulence kinetic energy field name | no | k
+      Property     | Description                  | Type   | Req'd | Dflt
+      mixingLength | Mixing length scale [m]      | scalar |  yes  | -
+      Cmu          | Empirical model constant     | scalar |  no   | 0.09
+      phi          | Name of flux field           | word   |  no   | phi
+      k            | Name of turbulent kinetic energy field | word | no | k
     \endtable
 
     Example of the boundary condition specification:
@@ -61,15 +63,19 @@ Usage
     {
         type            turbulentMixingLengthFrequencyInlet;
         mixingLength    0.005;
+        Cmu             0.09;          // optional
         value           uniform 200;   // placeholder
     }
     \endverbatim
 
 Note
-    In the event of reverse flow, a zero-gradient condition is applied
+    - In the event of reverse flow, a zero-gradient condition is applied.
+    - The order of precedence for the empirical model constant \c Cmu is:
+      the \c Cmu entry in the turbulence-model coefficient dictionary,
+      the boundary condition dictionary, and the default value of 0.09.
 
 See also
-    Foam::inletOutletFvPatchField
+    Foam::turbulentEpsilonOmegaInletFvPatchScalarField
 
 
 SourceFiles
@@ -80,7 +86,7 @@ SourceFiles
 #ifndef turbulentMixingLengthFrequencyInletFvPatchScalarField_H
 #define turbulentMixingLengthFrequencyInletFvPatchScalarField_H
 
-#include "inletOutletFvPatchFields.H"
+#include "turbulentEpsilonOmegaInletFvPatchScalarField.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -93,18 +99,10 @@ namespace Foam
 
 class turbulentMixingLengthFrequencyInletFvPatchScalarField
 :
-    public inletOutletFvPatchScalarField
+    public turbulentEpsilonOmegaInletFvPatchScalarField
 {
     typedef turbulentMixingLengthFrequencyInletFvPatchScalarField this_bctype;
-    typedef inletOutletFvPatchScalarField parent_bctype;
-
-    // Private Data
-
-        //- Turbulent length scale
-        scalar mixingLength_;
-
-        //- Name of the turbulent kinetic energy field
-        word kName_;
+    typedef turbulentEpsilonOmegaInletFvPatchScalarField parent_bctype;
 
 
 public:
@@ -160,15 +158,6 @@ public:
         {
             return fvPatchField<scalar>::Clone(*this, iF);
         }
-
-
-    // Member functions
-
-        //- Update the coefficients associated with the patch field
-        virtual void updateCoeffs();
-
-        //- Write
-        virtual void write(Ostream&) const;
 
 
     // Member Operators
