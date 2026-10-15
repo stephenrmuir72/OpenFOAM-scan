@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2017-2023 OpenCFD Ltd.
+    Copyright (C) 2026 Patrick Wilhelm, Data Lab Hell
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -51,6 +52,7 @@ Usage
         logInterval         <scalar>;
         thermalInertia      <bool>;
         verbose             <bool>;
+        useImplicit         <bool>;
         prefix              <word>;
 
         // Conditional entries
@@ -100,6 +102,8 @@ Usage
                -->                                                     | false
       verbose | Flag to enable verbose output with extra fields | bool | no <!--
               -->                                                      | false
+      useImplicit | Flag to add the interface to an assembled <!--
+              -->  multi-region matrix                     | bool | no | false
       prefix  | Name of output-field prefix (in verbose mode)         <!--
               -->                                       | word | no | multiWorld
       thicknessLayers | List of thicknesses per layer [m] | scalarList <!--
@@ -120,6 +124,8 @@ Usage
 
 Note
   - Needs to be on underlying \c mapped(Wall)FvPatch.
+  - With \c useImplicit the assembled matrix is asymmetric and needs an
+    asymmetric linear solver.
 
 SourceFiles
     turbulentTemperatureRadCoupledMixedFvPatchScalarField.C
@@ -192,15 +198,6 @@ class turbulentTemperatureRadCoupledMixedFvPatchScalarField
 
 
      // Private Functions
-
-        //- Return local alphaSfDelta
-        tmp<scalarField> alphaSfDelta() const;
-
-        //- Return delta enthalpy between regions
-        tmp<scalarField> deltaH() const;
-
-        //- Return the sum of deltaCoeff*alpha from nbr and local
-        tmp<scalarField> beta() const;
 
         //- Calculate coefficients for assembly matrix
         tmp<Field<scalar>> coeffs

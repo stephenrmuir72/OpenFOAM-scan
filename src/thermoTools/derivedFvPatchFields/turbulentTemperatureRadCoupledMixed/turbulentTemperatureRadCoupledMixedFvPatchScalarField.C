@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2017-2024 OpenCFD Ltd.
+    Copyright (C) 2026 Patrick Wilhelm, Data Lab Hell
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -613,19 +614,31 @@ void turbulentTemperatureRadCoupledMixedFvPatchScalarField::updateCoeffs()
 
         valueFraction() = KDeltaNbr/(KDeltaNbr + alpha);
         refValue() = TcNbr;
-        refGrad() = (qr + qrNbr)/kappaTp;
+        // qrNbr is absorbed on the neighbour side and crosses the layer
+        refGrad() = (qr + qrNbr/(1 + KDeltaNbr/KDeltaC))/kappaTp;
     }
 
     source() = Zero;
 
-    // If useImplicit is true we need the source term associated with this BC
     if (this->useImplicit())
     {
+        if (!mpp.sameWorld())
+        {
+            FatalErrorInFunction
+                << "Implicit energy coupling is not supported "
+                << "in combination with multi-world, on "
+                << mesh.name() << ':' << patch().name()
+                << ", sampling world " << mpp.sampleWorld()
+                << exit(FatalError);
+        }
+
+        // Wall flux leaving the cell, from the Robin coefficients since the
+        // patch value is evaluated after the solve
         source() =
-            alphaSfDelta()*
-            (
-                valueFraction()*deltaH()
-              + (qr + qrNbr)/beta()
+          - kappaTp*patch().magSf()
+           *(
+                valueFraction()*patch().deltaCoeffs()*(refValue() - Tc)
+              + (1 - valueFraction())*refGrad()
             );
     }
 
@@ -770,113 +783,6 @@ tmp<Field<scalar>> turbulentTemperatureRadCoupledMixedFvPatchScalarField::coeffs
         << abort(FatalError);
 
     return nullptr;
-}
-
-
-tmp<scalarField>
-turbulentTemperatureRadCoupledMixedFvPatchScalarField::alphaSfDelta() const
-{
-    return (alpha(*this)*patch().deltaCoeffs()*patch().magSf());
-}
-
-
-tmp<scalarField> turbulentTemperatureRadCoupledMixedFvPatchScalarField::
-beta() const
-{
-    const auto& mpp = refCast<const mappedPatchBase>(patch().patch());
-
-    if (!mpp.sameWorld())
-    {
-        FatalErrorInFunction
-            << "coupled energy not supported in combination with multi-world"
-            << exit(FatalError);
-    }
-
-    const label samplePatchi = mpp.samplePolyPatch().index();
-    const polyMesh& nbrMesh = mpp.sampleMesh();
-
-    const fvPatch& nbrPatch =
-        refCast<const fvMesh>(nbrMesh).boundary()[samplePatchi];
-
-    const auto& nbrField =
-        refCast<const this_bctype>
-        (
-            nbrPatch.lookupPatchField<volScalarField>(TnbrName_)
-        );
-
-    // Swap to obtain full local values of neighbour internal field
-    scalarField TcNbr(nbrField.patchInternalField());
-    mpp.distribute(TcNbr);
-
-    scalarField alphaDeltaNbr
-    (
-        nbrField.alpha(TcNbr)*nbrPatch.deltaCoeffs()
-    );
-    mpp.distribute(alphaDeltaNbr);
-
-    scalarField alphaDelta
-    (
-         alpha(*this)*patch().deltaCoeffs()
-    );
-
-    return (alphaDeltaNbr + alphaDelta);
-}
-
-
-tmp<scalarField> turbulentTemperatureRadCoupledMixedFvPatchScalarField::
-deltaH() const
-{
-    const auto& mpp = refCast<const mappedPatchBase>(patch().patch());
-
-    if (!mpp.sameWorld())
-    {
-        FatalErrorInFunction
-            << "coupled energy not supported in combination with multi-world"
-            << exit(FatalError);
-    }
-
-    const polyMesh& nbrMesh = mpp.sampleMesh();
-
-    const basicThermo* nbrThermo =
-        nbrMesh.cfindObject<basicThermo>(basicThermo::dictName);
-
-    const polyMesh& mesh = patch().boundaryMesh().mesh();
-
-    const basicThermo* localThermo =
-        mesh.cfindObject<basicThermo>(basicThermo::dictName);
-
-
-    if (nbrThermo && localThermo)
-    {
-        const label patchi = patch().index();
-        const scalarField& pp = localThermo->p().boundaryField()[patchi];
-        const scalarField& Tp = *this;
-
-        const label patchiNrb = mpp.samplePolyPatch().index();
-
-        const scalarField& ppNbr = nbrThermo->p().boundaryField()[patchiNrb];
-        //const scalarField& TpNbr = nbrThermo->T().boundaryField()[patchiNrb];
-
-        // Use this Tp to evaluate he jump as this is updated while doing
-        // updateCoeffs on boundary fields which set T values on patches
-        // then non consistent Tp and Tpnbr could be used from different
-        // updated values (specially when T changes drastically between time
-        // steps/
-        return
-        (
-          -  localThermo->he(pp, Tp, patchi)
-          +  nbrThermo->he(ppNbr, Tp, patchiNrb)
-        );
-    }
-    else
-    {
-        FatalErrorInFunction
-            << "Can't find thermos on mapped patch "
-            << " method, but thermo package not available"
-            << exit(FatalError);
-    }
-
-    return tmp<scalarField>::New(patch().size(), Zero);
 }
 
 

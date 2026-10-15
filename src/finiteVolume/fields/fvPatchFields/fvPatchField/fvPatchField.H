@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2019-2025 OpenCFD Ltd.
+    Copyright (C) 2026 Patrick Wilhelm, Data Lab Hell
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -274,6 +275,12 @@ public:
             bool old(useImplicit_);
             useImplicit_ = on;
             return old;
+        }
+
+        //- True if an implicit patch needs lower as well as upper assembled
+        virtual bool needsAsymmetricAssembly() const
+        {
+            return false;
         }
 
 
