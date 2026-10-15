@@ -95,10 +95,26 @@ class tetOverlapVolume
                 ok_(false)
             {}
 
-            //- Overlap two tets
-            inline bool operator()(const tetPoints& A, const tetPoints& B)
+            //- Overlap two positively oriented tets. Early exit is only
+            //  valid for all-positive fans (see cellCellOverlapMinDecomp).
+            inline bool operator()
+            (
+                const tetPoints& A,
+                const tetPoints& B,
+                const scalar sign
+            )
             {
-                tetTetOverlap<tetPointRef::sumVolOp>(A, B, iop_);
+                if (sign > 0)
+                {
+                    // Same accumulation order as the unsigned engine
+                    tetTetOverlap<tetPointRef::sumVolOp>(A, B, iop_);
+                }
+                else
+                {
+                    tetPointRef::sumVolOp piece;
+                    tetTetOverlap<tetPointRef::sumVolOp>(A, B, piece);
+                    iop_.vol_ -= piece.vol_;
+                }
                 ok_ = (iop_.vol_ > threshold_);
                 return ok_;
             }
@@ -116,10 +132,26 @@ class tetOverlapVolume
                 iop_()
             {}
 
-            //- Overlap two tets
-            inline bool operator()(const tetPoints& A, const tetPoints& B)
+            //- Overlap two positively oriented tets; accumulate with the
+            //  product of the fan orientations
+            inline bool operator()
+            (
+                const tetPoints& A,
+                const tetPoints& B,
+                const scalar sign
+            )
             {
-                tetTetOverlap<tetPointRef::sumVolOp>(A, B, iop_);
+                if (sign > 0)
+                {
+                    // Same accumulation order as the unsigned engine
+                    tetTetOverlap<tetPointRef::sumVolOp>(A, B, iop_);
+                }
+                else
+                {
+                    tetPointRef::sumVolOp piece;
+                    tetTetOverlap<tetPointRef::sumVolOp>(A, B, piece);
+                    iop_.vol_ -= piece.vol_;
+                }
                 return false;
             }
         };
@@ -136,10 +168,26 @@ class tetOverlapVolume
                 iop_()
             {}
 
-            //- Overlap two tets
-            inline bool operator()(const tetPoints& A, const tetPoints& B)
+            //- Overlap two positively oriented tets; accumulate with the
+            //  product of the fan orientations
+            inline bool operator()
+            (
+                const tetPoints& A,
+                const tetPoints& B,
+                const scalar sign
+            )
             {
-                tetTetOverlap<sumMomentOp>(A, B, iop_);
+                if (sign > 0)
+                {
+                    tetTetOverlap<sumMomentOp>(A, B, iop_);
+                }
+                else
+                {
+                    sumMomentOp piece;
+                    tetTetOverlap<sumMomentOp>(A, B, piece);
+                    iop_.vol_.first() -= piece.vol_.first();
+                    iop_.vol_.second() -= piece.vol_.second();
+                }
                 return false;
             }
         };
@@ -167,6 +215,10 @@ class tetOverlapVolume
             const treeBoundBox& cellBbB,
             tetsOp& combineTetsOp
         );
+
+        //- True if every non-degenerate first-vertex fan tet of the cell
+        //  is positively oriented about the cell centre
+        static bool positiveFan(const primitiveMesh& mesh, const label celli);
 
         //- Return a const treeBoundBox
         static treeBoundBox pyrBb
@@ -211,8 +263,11 @@ public:
             const scalar threshold = 0.0
         ) const;
 
-        //- Oriented first-vertex fan volume and relative roundoff allowance.
-        //  Requires a positive tessellation about the FV cell centre.
+        //- Signed first-vertex fan volume and relative roundoff allowance.
+        //  Inverted fan tets (concave or warped faces) are accepted with a
+        //  negative sign; the signed sum equals the volume enclosed by the
+        //  fan-triangulated cell surface. Overlap volumes use the same
+        //  signed decomposition, so both remain consistent.
         static Tuple2<scalar, scalar> cellVolumeMinDecomp
         (
             const primitiveMesh& mesh,

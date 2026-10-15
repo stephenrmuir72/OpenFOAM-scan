@@ -13,12 +13,20 @@
 #include "meshToMesh.H"
 #include "tetOverlapVolume.H"
 #include "clockTime.H"
+#include "Tuple2.H"
 
 #include <cmath>
 #include <limits>
 #include <algorithm>
 
 using namespace Foam;
+
+// Access to the protected containment test of the overlap method (P5)
+class containmentProbe : public cellVolumeWeightMethod
+{
+public:
+    using cellVolumeWeightMethod::containsCell;
+};
 
 void require(const bool condition, const char* description)
 {
@@ -41,6 +49,7 @@ public:
     using cellVolumeWeight::decodeRestartType;
     using cellVolumeWeight::weightedDonorVolume;
     using cellVolumeWeight::distanceWeights;
+    using cellVolumeWeight::preferZone;
 
     void seedHistoricalDonors(const bool preferred = false)
     {
@@ -1090,13 +1099,64 @@ int main(int argc, char *argv[])
     }
     if (args.found("invalidGeometry"))
     {
+        // Moving the (1,1,1) vertex by w in z gives the first-vertex fan
+        // volume 1 + w/3 exactly. w = -1.2 inverts two fan tets but the
+        // signed total 0.6 is valid; w = -4 has total -1/3 and is invalid.
+        {
+            autoPtr<polyMesh> inverted
+            (
+                boxesMesh
+                (
+                    "invertedFan", runTime,
+                    List<boundBox>(1, boundBox(point(0,0,0), point(1,1,1))),
+                    true, false, -1.2
+                )
+            );
+            autoPtr<polyMesh> enclosing
+            (
+                boxesMesh
+                (
+                    "enclosingBox", runTime,
+                    List<boundBox>(1, boundBox(point(-1,-1,-2), point(2,2,2))),
+                    true
+                )
+            );
+            bool valid = true;
+            if (inverted->nCells() && enclosing->nCells())
+            {
+                const scalar volume =
+                    tetOverlapVolume::cellVolumeMinDecomp(inverted(), 0).first();
+                valid &= mag(volume - 0.6) < 1e-12;
+                // Overlap with a convex cell containing the whole cell
+                // integrates the winding number: equals the signed volume
+                const scalar overlap =
+                    tetOverlapVolume().cellCellOverlapVolumeMinDecomp
+                    (
+                        enclosing(), 0, inverted(), 0,
+                        treeBoundBox(inverted->cellBb(0))
+                    );
+                valid &= mag(overlap - volume) < 1e-12;
+                // Containment shortcut must reject a non-convex outer cell
+                // and accept the inverted cell inside the convex box
+                valid &= !containmentProbe::containsCell
+                (
+                    inverted(), 0, enclosing(), 0
+                );
+                valid &= containmentProbe::containsCell
+                (
+                    enclosing(), 0, inverted(), 0
+                );
+            }
+            require(valid, "Signed tessellation volume/overlap mismatch");
+            Info<< "Passed CVW signed tessellation" << endl;
+        }
         autoPtr<polyMesh> invalid
         (
             boxesMesh
             (
                 "invalidFan", runTime,
                 List<boundBox>(1, boundBox(point(0,0,0), point(1,1,1))),
-                true, false, -1.2
+                true, false, -4
             )
         );
         if (invalid->nCells())
@@ -1161,8 +1221,23 @@ int main(int argc, char *argv[])
         dictionary invalid;
         const word key(args.get<word>("invalidSetting"));
         if (key == "minCoverage" || key == "minRetainedFraction" ||
-            key == "overlapTolerance") invalid.add(key, scalar(-1));
+            key == "overlapTolerance" || key == "patchOverlapFraction" ||
+            key == "patchCutHysteresis" || key == "donorSwitchMargin" ||
+            key == "maxWeightAmplification" || key == "affineSvdTolerance")
+            invalid.add(key, scalar(-1));
         else if (key == "stencilExpansionRings") invalid.add(key, label(2));
+        else if (key == "donorPriority") invalid.add(key, labelList({0, 0}));
+        else if (key == "holePoints")
+        {
+            invalid.add
+            (
+                key,
+                List<Tuple2<label, point>>
+                (
+                    1, Tuple2<label, point>(-1, point::zero)
+                )
+            );
+        }
         else invalid.add(key, word("invalid"));
         volumeHarness rejected(mesh, invalid);
         FatalErrorInFunction << "Invalid setting was accepted" << exit(FatalError);
@@ -1188,6 +1263,96 @@ int main(int argc, char *argv[])
     harness.checkDonorChains();
     harness.checkReadiness();
     harness.checkFallbackExclusions();
+    {
+        // A6: explicit donor priority overrides the nearest-zone rule;
+        // unlisted zones rank last; without a list the legacy rule applies
+        dictionary priority;
+        priority.add("donorPriority", labelList({2, 0}));
+        volumeHarness ranked(mesh, priority);
+        require
+        (
+            ranked.preferZone(1, 2, 0) && !ranked.preferZone(1, 0, 2)
+         && ranked.preferZone(1, 0, 1) && !ranked.preferZone(1, 1, 0)
+         && harness.preferZone(0, 1, 2) && !harness.preferZone(0, 2, 1)
+         && harness.preferZone(1, 2, 0),
+            "Donor priority ordering"
+        );
+    }
+    {
+        // P5: containment shortcut against the clipped overlap volume
+        autoPtr<polyMesh> outer
+        (
+            boxesMesh
+            (
+                "outerBox", runTime,
+                List<boundBox>(1, boundBox(point(0,0,0), point(1,1,1))),
+                false
+            )
+        );
+        autoPtr<polyMesh> inner
+        (
+            boxesMesh
+            (
+                "innerBox", runTime,
+                List<boundBox>
+                ({
+                    boundBox(point(.2,.2,.2), point(.8,.8,.8)),
+                    boundBox(point(.5,.5,.5), point(1.5,1.5,1.5)),
+                    boundBox(point(0,.2,.2), point(.5,.8,.8))
+                }),
+                false
+            )
+        );
+        const scalar overlap = tetOverlapVolume().cellCellOverlapVolumeMinDecomp
+        (
+            outer(), 0, inner(), 0, treeBoundBox(inner->cellBb(0))
+        );
+        require
+        (
+            containmentProbe::containsCell(outer(), 0, inner(), 0)
+         && mag(overlap - .216) < 1e-13
+         && !containmentProbe::containsCell(outer(), 0, inner(), 1)
+         && !containmentProbe::containsCell(outer(), 0, inner(), 2),
+            "Containment shortcut disagrees with clipped overlap"
+        );
+    }
+    for (const word correction : {"minNorm", "weighted", "positive"})
+    {
+        // A5: all corrections reproduce linear fields; weighted keeps a
+        // small-overlap donor small; positive returns non-negative weights
+        dictionary config;
+        config.add("weightingScheme", word("linearExact"));
+        config.add("affineCorrection", correction);
+        // Five donors: the unconstrained projections may legitimately
+        // produce small negative weights; positive must not need them
+        config.add("allowNegativeWeights", correction != "positive");
+        volumeHarness affine(mesh, config);
+        const pointList centres
+        ({
+            point(0,0,0), point(1,0,0), point(0,1,0), point(0,0,1),
+            point(1,1,1)
+        });
+        const point sample(.2, .25, .3);
+        scalarList weights({.3, .2, .2, .3, 1e-6});
+        require(affine.affineWeights(sample, centres, weights),
+            "Feasible affine correction rejected");
+        scalar sum = 0;
+        vector value(Zero);
+        bool positive = true;
+        forAll(weights, i)
+        {
+            sum += weights[i];
+            value += weights[i]*centres[i];
+            positive &= weights[i] >= 0;
+        }
+        require
+        (
+            mag(sum - 1) < 1e-12 && mag(value - sample) < 1e-12
+         && (correction != "weighted" || mag(weights[4]) < 1e-4)
+         && (correction != "positive" || positive),
+            "Affine correction variant"
+        );
+    }
     labelList order({0,1,2,3});
     const pointList centres
     ({point(1,0,0), point(0,0,0), point(0,1,0), point(0,0,1)});

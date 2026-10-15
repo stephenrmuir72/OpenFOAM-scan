@@ -45,6 +45,63 @@ namespace Foam
     );
 }
 
+bool Foam::cellVolumeWeightMethod::overlapShortcut = false;
+
+
+bool Foam::cellVolumeWeightMethod::containsCell
+(
+    const polyMesh& outerMesh,
+    const label outerCelli,
+    const polyMesh& innerMesh,
+    const label innerCelli
+)
+{
+    const pointField& outerPoints = outerMesh.points();
+    const pointField& innerPoints = innerMesh.points();
+    const labelList& outerCellPoints = outerMesh.cellPoints()[outerCelli];
+    const labelList& innerCellPoints = innerMesh.cellPoints()[innerCelli];
+    const boundBox outerBox(outerMesh.cellBb(outerCelli));
+    const scalar length = cmptMax(outerBox.span());
+    const scalar tolerance = 1e3*SMALL*length;
+
+    for (const label facei : outerMesh.cells()[outerCelli])
+    {
+        const face& f = outerMesh.faces()[facei];
+        const bool flip = outerMesh.faceOwner()[facei] != outerCelli;
+        const point& p0 = outerPoints[f[0]];
+        for (label i = 1; i < f.size()-1; ++i)
+        {
+            vector n =
+                (outerPoints[f[i]] - p0) ^ (outerPoints[f[i+1]] - p0);
+            const scalar magN = mag(n);
+            if (!(magN > 1e3*SMALL*sqr(length)))
+            {
+                // Degenerate fan triangle: no reliable half-space
+                return false;
+            }
+            n /= (flip ? -magN : magN);
+            // Convexity of the tessellated outer cell
+            for (const label pointi : outerCellPoints)
+            {
+                if (((outerPoints[pointi] - p0) & n) > tolerance)
+                {
+                    return false;
+                }
+            }
+            // Strict containment of the inner cell vertices
+            for (const label pointi : innerCellPoints)
+            {
+                if (!(((innerPoints[pointi] - p0) & n) < -tolerance))
+                {
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
+
 Foam::cellVolumeWeightMethod::cellVolumeWeightMethod
 (
     const polyMesh& src,
@@ -87,25 +144,32 @@ void Foam::cellVolumeWeightMethod::calculateAddressing
     const clockTime timer;
     label roundoffVolumes = 0;
     label acceptedPairs = 0;
-    scalarField srcVol(src_.nCells()), tgtVol(tgt_.nCells());
-    scalarField srcRoundoff(src_.nCells()), tgtRoundoff(tgt_.nCells());
+    label clampedVolumes = 0;
+    scalar maxViolation = 0;
+    // Reference volumes are evaluated only for source cells that are
+    // intersected and, lazily, for target cells that are candidates
+    // (-1: not evaluated)
+    scalarField srcVol(src_.nCells(), -1), tgtVol(tgt_.nCells(), -1);
+    scalarField srcRoundoff(src_.nCells(), -1), tgtRoundoff(tgt_.nCells(), -1);
     label mismatches = 0;
-    forAll(srcVol, celli)
+    auto evaluate = [&mismatches]
+    (
+        const polyMesh& mesh,
+        const label celli,
+        scalarField& vol,
+        scalarField& roundoff
+    )
     {
-        const auto reference = tetOverlapVolume::cellVolumeMinDecomp(src_, celli);
-        srcVol[celli] = reference.first();
-        srcRoundoff[celli] = reference.second();
-        mismatches += mag(srcVol[celli]/src_.cellVolumes()[celli]-1)
-            > srcRoundoff[celli];
-    }
-    forAll(tgtVol, celli)
-    {
-        const auto reference = tetOverlapVolume::cellVolumeMinDecomp(tgt_, celli);
-        tgtVol[celli] = reference.first();
-        tgtRoundoff[celli] = reference.second();
-        mismatches += mag(tgtVol[celli]/tgt_.cellVolumes()[celli]-1)
-            > tgtRoundoff[celli];
-    }
+        if (vol[celli] < 0)
+        {
+            const auto reference =
+                tetOverlapVolume::cellVolumeMinDecomp(mesh, celli);
+            vol[celli] = reference.first();
+            roundoff[celli] = reference.second();
+            mismatches += mag(vol[celli]/mesh.cellVolumes()[celli]-1)
+                > roundoff[celli];
+        }
+    };
 
     const auto& tree = tgt_.cellTree();
     List<DynamicList<label>> reverseAddr(tgt_.nCells());
@@ -114,12 +178,11 @@ void Foam::cellVolumeWeightMethod::calculateAddressing
     tetOverlapVolume overlap;
     for (const label srcCelli : maskCells())
     {
+        evaluate(src_, srcCelli, srcVol, srcRoundoff);
         // Box queries find contained and disconnected overlaps without
         // depending on vertex seeds, neighbour connectivity, or sliver tests.
-        const labelList candidates
-        (
-            tree.findBox(treeBoundBox(src_.cellBb(srcCelli)))
-        );
+        const treeBoundBox sourceBox(src_.cellBb(srcCelli));
+        const labelList candidates(tree.findBox(sourceBox));
         DynamicList<label> addresses(candidates.size());
         DynamicList<scalar> weights(candidates.size());
         DynamicList<point> vectors(centroids ? candidates.size() : 0);
@@ -127,6 +190,7 @@ void Foam::cellVolumeWeightMethod::calculateAddressing
         {
             const label tgtCelli = tree.shapes().objectIndex(shapei);
             ++candidateTests_;
+            evaluate(tgt_, tgtCelli, tgtVol, tgtRoundoff);
             const treeBoundBox targetBox(tgt_.cellBb(tgtCelli));
             scalar volume = 0;
             point centroid(Zero);
@@ -142,6 +206,28 @@ void Foam::cellVolumeWeightMethod::calculateAddressing
                     centroid = moment.second()/volume;
                 }
             }
+            else if
+            (
+                overlapShortcut
+             && targetBox.contains(sourceBox.min())
+             && targetBox.contains(sourceBox.max())
+             && containsCell(tgt_, tgtCelli, src_, srcCelli)
+            )
+            {
+                // Source cell inside convex target cell
+                volume = srcVol[srcCelli];
+            }
+            else if
+            (
+                overlapShortcut
+             && sourceBox.contains(targetBox.min())
+             && sourceBox.contains(targetBox.max())
+             && containsCell(src_, srcCelli, tgt_, tgtCelli)
+            )
+            {
+                // Target cell inside convex source cell
+                volume = tgtVol[tgtCelli];
+            }
             else
             {
                 volume = overlap.cellCellOverlapVolumeMinDecomp
@@ -152,11 +238,16 @@ void Foam::cellVolumeWeightMethod::calculateAddressing
             const scalar referenceVolume = min(srcVol[srcCelli], tgtVol[tgtCelli]);
             const scalar allowance =
                 max(srcRoundoff[srcCelli], tgtRoundoff[tgtCelli])*referenceVolume;
+            // Bound violations slightly beyond the a-priori roundoff
+            // estimate (e.g. strongly warped faces) are clamped; only
+            // non-finite or gross violations are fatal.
+            const scalar grossAllowance =
+                max(1e3*allowance, ROOTVSMALL*referenceVolume);
             if
             (
                 !std::isfinite(volume)
-             || volume < -allowance
-             || volume-referenceVolume > allowance
+             || volume < -grossAllowance
+             || volume-referenceVolume > grossAllowance
             )
             {
                 FatalErrorInFunction
@@ -165,6 +256,19 @@ void Foam::cellVolumeWeightMethod::calculateAddressing
                     << ", geometric bound " << referenceVolume
                     << ", roundoff allowance " << allowance
                     << exit(FatalError);
+            }
+            if (volume < -allowance || volume-referenceVolume > allowance)
+            {
+                ++clampedVolumes;
+                maxViolation = max
+                (
+                    maxViolation,
+                    max(-volume, volume-referenceVolume)/referenceVolume
+                );
+            }
+            if (volume > referenceVolume)
+            {
+                volume = referenceVolume;
             }
             if (volume < 0)
             {
@@ -209,6 +313,15 @@ void Foam::cellVolumeWeightMethod::calculateAddressing
             tgtToSrcVec[celli].transfer(reverseVectors[celli]);
         }
     }
+    if (clampedVolumes)
+    {
+        // Local (per-rank) report: this routine is not called collectively
+        // on ranks without cells, so no reduction is possible here.
+        Pout<< "Warning: cellVolumeWeight clamped " << clampedVolumes
+            << " intersection volumes exceeding the roundoff allowance "
+            << "(maximum relative violation " << maxViolation
+            << "). Check cell quality (warped faces)." << endl;
+    }
     if (debug)
     {
         Pout<< "cellVolumeWeight search: " << candidateTests_
@@ -219,7 +332,8 @@ void Foam::cellVolumeWeightMethod::calculateAddressing
             << timer.elapsedTime() << " s, " << src_.nCells()
             << " source and " << tgt_.nCells() << " target cells" << endl;
         Pout<< "cellVolumeWeight local geometric/FV mismatches: "
-            << mismatches << " (includes distributed geometry copies)" << endl;
+            << mismatches << " (evaluated cells only; includes distributed "
+            << "geometry copies)" << endl;
     }
 }
 

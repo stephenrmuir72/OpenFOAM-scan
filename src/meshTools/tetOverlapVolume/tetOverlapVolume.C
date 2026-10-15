@@ -94,36 +94,38 @@ Foam::tetOverlapVolume::cellVolumeMinDecomp
             const tetPointRef tet(centre, points[f[0]], points[a], points[b]);
             const scalar tetVolume = tet.mag();
             ++nTets;
-            // The clipping engine also skips exactly degenerate face triangles.
-            if
-            (
-                tetVolume == 0
-             && magSqr((points[a]-points[f[0]])^(points[b]-points[f[0]])) == 0
-            )
+            if (!std::isfinite(tetVolume))
+            {
+                FatalErrorInFunction
+                    << "Non-finite CVW tetrahedron volume at cell " << celli
+                    << ", face " << facei << ", fan triangle " << i
+                    << exit(FatalError);
+            }
+            // Flat fan tets carry no volume; the clipping engine yields zero
+            // for them as well.
+            if (tetVolume == 0)
             {
                 continue;
             }
-            if (!std::isfinite(tetVolume) || tetVolume <= 0)
-            {
-                FatalErrorInFunction
-                    << "Invalid CVW tessellation at cell " << celli
-                    << ", face " << facei << ", fan triangle " << i
-                    << ": oriented volume " << tetVolume
-                    << ". A positive first-vertex fan about the FV cell "
-                    << "centre is required." << exit(FatalError);
-            }
+            // Inverted fan tets (concave or warped faces seen from the cell
+            // centre) are accepted with their sign. The overlap engine uses
+            // the same signed decomposition, so coverage stays consistent.
             volume += tetVolume;
+            const scalar magTetVolume = mag(tetVolume);
             for (label side = 0; side < 4; ++side)
             {
                 const scalar areaSqr = magSqr(tet.tri(side).areaNormal());
-                if (!std::isfinite(areaSqr) || areaSqr < ROOTVSMALL)
+                if (!std::isfinite(areaSqr))
                 {
                     FatalErrorInFunction
-                        << "Unresolved CVW tetrahedron area at cell " << celli
+                        << "Non-finite CVW tetrahedron area at cell " << celli
                         << ", face " << facei << exit(FatalError);
                 }
-                const scalar area = Foam::sqrt(areaSqr);
-                minAltitude = min(minAltitude, 3*tetVolume/area);
+                if (areaSqr > 0)
+                {
+                    const scalar area = Foam::sqrt(areaSqr);
+                    minAltitude = min(minAltitude, 3*magTetVolume/area);
+                }
             }
         }
     }
@@ -162,6 +164,36 @@ Foam::tetOverlapVolume::cellVolumeMinDecomp
 }
 
 
+bool Foam::tetOverlapVolume::positiveFan
+(
+    const primitiveMesh& mesh,
+    const label celli
+)
+{
+    const point& centre = mesh.cellCentres()[celli];
+    const pointField& points = mesh.points();
+    for (const label facei : mesh.cells()[celli])
+    {
+        const face& f = mesh.faces()[facei];
+        const bool own = mesh.faceOwner()[facei] == celli;
+        for (label i = 1; i+1 < f.size(); ++i)
+        {
+            const label a = own ? f[i] : f[i+1];
+            const label b = own ? f[i+1] : f[i];
+            if
+            (
+                tetPointRef(centre, points[f[0]], points[a], points[b]).mag()
+              < 0
+            )
+            {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+
 bool Foam::tetOverlapVolume::cellCellOverlapMinDecomp
 (
     const primitiveMesh& meshA,
@@ -172,6 +204,23 @@ bool Foam::tetOverlapVolume::cellCellOverlapMinDecomp
     const scalar threshold
 ) const
 {
+    // Signed (inverted) fan tets can reduce the running sum, so the early
+    // exit of hasOverlapOp is only valid for all-positive fans.
+    if (!positiveFan(meshA, cellAI) || !positiveFan(meshB, cellBI))
+    {
+        sumOverlapOp overlapSumOp;
+        cellCellOverlapMinDecomp<sumOverlapOp>
+        (
+            meshA,
+            cellAI,
+            meshB,
+            cellBI,
+            cellBbB,
+            overlapSumOp
+        );
+        return overlapSumOp.iop_.vol_ > threshold;
+    }
+
     hasOverlapOp overlapCheckOp(threshold);
     cellCellOverlapMinDecomp<hasOverlapOp>
     (

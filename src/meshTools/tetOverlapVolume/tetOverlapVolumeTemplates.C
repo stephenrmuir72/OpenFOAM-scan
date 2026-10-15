@@ -29,6 +29,8 @@ License
 #include "tetOverlapVolume.H"
 #include "primitiveMesh.H"
 
+#include <utility>
+
 // * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * * * //
 
 template<class tetPointsOp>
@@ -190,6 +192,22 @@ void Foam::tetOverlapVolume::cellCellOverlapMinDecomp
                 pt1I = fA[facePtAI];
             }
 
+            // Inverted fan tets (concave/warped faces) are re-oriented and
+            // carry a negative sign: the signed sum of the fan tets is the
+            // indicator function of the cell (winding number identity).
+            scalar signA = 1;
+            if
+            (
+                tetPointRef
+                (
+                    ccA, tetBasePtA, meshA.points()[pt0I], meshA.points()[pt1I]
+                ).mag() < 0
+            )
+            {
+                std::swap(pt0I, pt1I);
+                signA = -1;
+            }
+
             const tetPoints tetA
             (
                 ccA,
@@ -237,6 +255,20 @@ void Foam::tetOverlapVolume::cellCellOverlapMinDecomp
                         pt1I = fB[facePtBI];
                     }
 
+                    scalar signB = 1;
+                    if
+                    (
+                        tetPointRef
+                        (
+                            ccB, tetBasePtB,
+                            meshB.points()[pt0I], meshB.points()[pt1I]
+                        ).mag() < 0
+                    )
+                    {
+                        std::swap(pt0I, pt1I);
+                        signB = -1;
+                    }
+
                     const tetPoints tetB
                     (
                         ccB,
@@ -252,7 +284,7 @@ void Foam::tetOverlapVolume::cellCellOverlapMinDecomp
                         continue;
                     }
 
-                    if (combineTetsOp(tetA, tetB))
+                    if (combineTetsOp(tetA, tetB, signA*signB))
                     {
                         return;
                     }

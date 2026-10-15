@@ -71,6 +71,18 @@ protected:
         scalar discardedVolume_;
 
     // Protected Member Functions
+
+        //- True if all points of the inner cell lie strictly inside the
+        //  outer cell and the f[0]-fan tessellated outer cell is convex.
+        //  The overlap volume then equals the inner cell volume.
+        static bool containsCell
+        (
+            const polyMesh& outerMesh,
+            const label outerCelli,
+            const polyMesh& innerMesh,
+            const label innerCelli
+        );
+
         //- Calculate the mesh-to-mesh addressing and weights
         void calculateAddressing
         (
@@ -99,6 +111,12 @@ public:
 
     //- Run-time type information
     TypeName("cellVolumeWeight");
+
+    // Static Data
+
+        //- Use the containment shortcut for (volume-only) overlaps
+        //  (default false). Exact up to roundoff.
+        static bool overlapShortcut;
 
     //- Construct from source and target meshes
     cellVolumeWeightMethod(const polyMesh& src, const polyMesh& tgt);

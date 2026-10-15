@@ -48,7 +48,8 @@ done
             exit 1
         fi
     done
-    grep -q 'Invalid CVW tessellation' log.invalidGeometry
+    grep -q '^Passed CVW signed tessellation$' log.invalidGeometry
+    grep -q 'Unresolved CVW geometric volume' log.invalidGeometry
     grep -q 'Invalid restart cellTypes value' log.nonFiniteRestart
     for option in default linearExact coverage fixedLayer; do
         if [ "$option" = default ]; then
@@ -61,12 +62,21 @@ done
     awk '/^CVW (work scaling|refinement|thin-cell relative volume error):/ && !seen[$0]++' log.default
     for setting in overlapTolerance minCoverage minRetainedFraction \
         donorSelection donorFallback weightingScheme layerDonorMetric processorMapMethod \
-        stencilExpansionRings; do
+        stencilExpansionRings checkPockets patchCutting patchOverlapFraction \
+        patchCutHysteresis donorSwitchMargin affineCorrection \
+        maxWeightAmplification affineSvdTolerance affineScaling pairOrientation; do
         if oversetCellVolumeWeight -invalidSetting "$setting" > "log.invalid.$setting" 2>&1; then
             echo "Invalid setting accepted: $setting" >&2
             exit 1
         fi
         grep -q 'Invalid cellVolumeWeight configuration' "log.invalid.$setting"
+    done
+    for setting in donorPriority holePoints; do
+        if oversetCellVolumeWeight -invalidSetting "$setting" > "log.invalid.$setting" 2>&1; then
+            echo "Invalid setting accepted: $setting" >&2
+            exit 1
+        fi
+        grep -q 'must list distinct\|Invalid holePoints entry' "log.invalid.$setting"
     done
     cp 0/zoneID 0/cellTypes
     foamDictionary 0/cellTypes -entry FoamFile.object -set cellTypes >/dev/null
