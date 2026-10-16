@@ -3,7 +3,7 @@
 #------------------------------------------------------------------------------
 SUFFIXES   += .C .cc .cpp .cxx
 
-CC         := /home/jn75hyke/software/AdaptiveCpp/installation/bin/acpp$(COMPILER_VERSION) -std=c++17 --acpp-stdpar --acpp-targets=generic -DFOAM_OFFLOAD -DFOAM_OFFLOAD_ACPP -D__host__= -D__device__=
+CC         := acpp$(COMPILER_VERSION) -std=c++17 --acpp-stdpar --acpp-targets=generic -DFOAM_OFFLOAD -DFOAM_OFFLOAD_ACPP -D__host__= -D__device__=
 
 c++ARCH    :=
 c++DBUG    :=
