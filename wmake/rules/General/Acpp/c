@@ -3,7 +3,7 @@
 #------------------------------------------------------------------------------
 SUFFIXES   += .c
 
-cc         := /home/jn75hyke/miniforge3/envs/OpenFoam_env/bin/clang$(COMPILER_VERSION)
+cc         := clang$(COMPILER_VERSION)
 
 cARCH      :=
 cDBUG      :=
