@@ -320,13 +320,34 @@ void Foam::Field<Type>::map
 
     if (mapF.size() > 0)
     {
-        forAll(f, i)
+        #ifdef FOAM_OFFLOAD
+        if constexpr (is_contiguous_v<Type> )
         {
-            const label mapI = mapAddressing[i];
-
-            if (mapI >= 0)
+            labelRange indices(0, f.size());
+            apply_policy(f.size(), [&](auto policy)
             {
-                f[i] = mapF[mapI];
+                std::for_each(policy, indices.begin(), indices.end(), [&](const label& index)
+                {
+                    const label mapI = mapAddressing[index];
+
+                    if (mapI >= 0)
+                    {
+                        f[index] = mapF[mapI];
+                    }
+                });
+            });
+        }
+        else
+        #endif
+        {
+            forAll(f, i)
+            {
+                const label mapI = mapAddressing[i];
+
+                if (mapI >= 0)
+                {
+                    f[i] = mapF[mapI];
+                }
             }
         }
     }
