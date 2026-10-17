@@ -6,7 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
-    Copyright (C) 2020-2025 OpenCFD Ltd.
+    Copyright (C) 2020-2026 OpenCFD Ltd.
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -29,10 +29,9 @@ License
 #include "symmTensor.H"
 #include "cubicEqn.H"
 #include "mathematicalConstants.H"
-
-#ifndef FOAM_OFFLOAD
 #include "SVD.H"
-#endif
+#include <algorithm>
+#include <cmath>
 
 using namespace Foam::constant::mathematical;
 
@@ -116,9 +115,10 @@ defineTraits(Foam::scalar, );
 
 #undef defineTraits
 
-#ifndef FOAM_OFFLOAD
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+#if defined(WM_DP)
 
 Foam::vector Foam::eigenValues(const symmTensor& T)
 {
@@ -173,6 +173,91 @@ Foam::vector Foam::eigenValues(const symmTensor& T)
 
     return eVals;
 }
+
+#else
+
+// WM_SP, WM_SPDP
+//
+// scalar is float and ROOTSMALL is 1e-3, so the characteristic-polynomial
+// route used for WM_DP treats a modest off-diagonal tensor as diagonal. That breaks
+// S^2+Omega^2 in the Lambda2 function object. Evaluate the symmetric 3x3
+// eigenvalues in double instead.
+// (Kopp, arXiv:physics/0610206; Smith, Comm. ACM 1961)
+Foam::vector Foam::eigenValues(const symmTensor& T)
+{
+    const doubleScalar xx = T.xx();
+    const doubleScalar yy = T.yy();
+    const doubleScalar zz = T.zz();
+    const doubleScalar xy = T.xy();
+    const doubleScalar xz = T.xz();
+    const doubleScalar yz = T.yz();
+
+    const doubleScalar q = (xx + yy + zz)/3.0;
+    const doubleScalar p1 = xy*xy + xz*xz + yz*yz;
+
+    doubleScalar e0, e1, e2;
+
+    if (p1 == 0.0)
+    {
+        e0 = xx;
+        e1 = yy;
+        e2 = zz;
+    }
+    else
+    {
+        const doubleScalar b00 = xx - q;
+        const doubleScalar b11 = yy - q;
+        const doubleScalar b22 = zz - q;
+        const doubleScalar p2 = b00*b00 + b11*b11 + b22*b22 + 2.0*p1;
+
+        if (p2 <= 0.0)
+        {
+            e0 = xx;
+            e1 = yy;
+            e2 = zz;
+        }
+        else
+        {
+            const doubleScalar p = std::sqrt(p2/6.0);
+            const doubleScalar invP = 1.0/p;
+            const doubleScalar c00 = b00*invP;
+            const doubleScalar c11 = b11*invP;
+            const doubleScalar c22 = b22*invP;
+            const doubleScalar c01 = xy*invP;
+            const doubleScalar c02 = xz*invP;
+            const doubleScalar c12 = yz*invP;
+
+            // r = det(B)/2 with B = (T - q*I)/p.  |r| <= 1 analytically.
+            // constant::mathematical::pi has type scalar, so it is float here.
+            const doubleScalar r = 0.5*
+            (
+                c00*(c11*c22 - c12*c12)
+              - c01*(c01*c22 - c12*c02)
+              + c02*(c01*c12 - c11*c02)
+            );
+
+            const doubleScalar phi =
+            (
+                r >= 1.0 ? 0.0 :
+                r <= -1.0 ? M_PI/3.0 :
+                std::acos(r)/3.0
+            );
+
+            // Largest and smallest.  The middle root comes from the trace.
+            const doubleScalar twoP = 2.0*p;
+            e0 = q + twoP*std::cos(phi);
+            e2 = q + twoP*std::cos(phi + 2.0*M_PI/3.0);
+            e1 = 3.0*q - e0 - e2;
+        }
+    }
+
+    doubleScalar evals[3] = {e0, e1, e2};
+    std::sort(evals, evals + 3);
+
+    return vector(scalar(evals[0]), scalar(evals[1]), scalar(evals[2]));
+}
+
+#endif
 
 
 Foam::vector Foam::eigenVector
@@ -385,6 +470,5 @@ Foam::symmTensor Foam::pinv(const symmTensor& st)
     return Foam::inv(st, detval);
 }
 
-#endif // not FOAM_OFFLOAD
 
 // ************************************************************************* //
