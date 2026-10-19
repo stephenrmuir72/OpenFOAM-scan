@@ -104,6 +104,7 @@ class combineFaces
         (
             const scalar minCos,
             const bool mergeAcrossPatches,
+            const bool* mergeAcrossPatchExceptions,
             const label celli,
             const labelList& cEdges,
             Map<label>& faceRegion
@@ -157,15 +158,20 @@ public:
             //- Extract lists of all (non-coupled) boundary faces on selected
             //  cells that can be merged. Uses getFaceRegions. Optionally
             //  allow faces-on-different-patches to be merged (into the largest
-            //  area face - could be improved). Note: causes a problem in
-            //  undoing - all restored faces get the patch/zone from the
-            //  master face.
+            //  area face - could be improved).
+            //  mergeAcrossPatchExceptions is indexed by patch id. A true
+            //  entry is never merged with a different patch (the patch is
+            //  preserved). nullptr if there are no such patches; ignored
+            //  when mergeAcrossPatches is false.
+            //  Note: causes a problem in undoing - all restored faces get
+            //  the patch/zone from the master face.
             labelListList getMergeSets
             (
                 const scalar featureCos,
                 const scalar minConcaveCos,
                 const labelHashSet& boundaryCells,
-                const bool mergeAcrossPatches = false
+                const bool mergeAcrossPatches = false,
+                const bool* mergeAcrossPatchExceptions = nullptr
             ) const;
 
             //- Extract lists of all (non-coupled) boundary faces that can
@@ -175,7 +181,8 @@ public:
             (
                 const scalar featureCos,
                 const scalar minConcaveCos,
-                const bool mergeAcrossPatches = false
+                const bool mergeAcrossPatches = false,
+                const bool* mergeAcrossPatchExceptions = nullptr
             ) const;
 
             //- Gets outside of patch as a face (in mesh point labels)

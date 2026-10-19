@@ -56,6 +56,7 @@ SourceFiles
 #include "Tuple2.H"
 #include "pointIndexHit.H"
 #include "wordPairHashes.H"
+#include "wordRes.H"
 #include "surfaceZonesInfo.H"
 #include "volumeType.H"
 #include "DynamicField.H"
@@ -218,6 +219,11 @@ private:
         //- Meshed patches - are treated differently. Stored as wordList since
         //  order changes.
         wordList meshedPatches_;
+
+        //- Patch names or regular expressions that mergeAcrossPatches must
+        //  not cross. Quoted entries are regular expressions. Empty unless
+        //  set from snappyHexMeshDict.
+        wordRes mergeAcrossPatchExceptions_;
 
         //- FaceZone to master patch name
         HashTable<word> faceZoneToMasterPatch_;
@@ -996,6 +1002,12 @@ private:
             ) const;
 
 
+        //- Per-patch mask for mergeAcrossPatchExceptions_. Empty if no
+        //  current patch matches, so the merge loop can skip the test.
+        //  Otherwise indexed by patch id.
+        boolList mergeAcrossPatchExceptionMask() const;
+
+
         //- No copy construct
         meshRefinement(const meshRefinement&) = delete;
 
@@ -1566,6 +1578,14 @@ public:
 
             //- Get patchIDs for patches added in addMeshedPatch.
             labelList meshedPatches() const;
+
+            //- Names or regular expressions of patches that
+            //  mergeAcrossPatches must not cross. Quoted entries are
+            //  regular expressions; bare words are exact patch names.
+            void setMergeAcrossPatchExceptions(const wordRes& patterns)
+            {
+                mergeAcrossPatchExceptions_ = patterns;
+            }
 
             //- Add/lookup faceZone and update information. Return index of
             //  faceZone

@@ -37,6 +37,53 @@ License
 
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
 
+// Patch-id mask for patches that mergeAcrossPatches must not cross.
+// Empty if nothing matches, so callers pass nullptr into the per-edge test.
+Foam::boolList Foam::meshRefinement::mergeAcrossPatchExceptionMask() const
+{
+    if (mergeAcrossPatchExceptions_.empty())
+    {
+        return boolList();
+    }
+
+    const polyBoundaryMesh& patches = mesh_.boundaryMesh();
+
+    boolList mask(patches.size(), false);
+    label nMatched = 0;
+
+    forAll(patches, patchi)
+    {
+        if (mergeAcrossPatchExceptions_.match(patches[patchi].name()))
+        {
+            mask[patchi] = true;
+            ++nMatched;
+        }
+    }
+
+    if (!nMatched)
+    {
+        Info<< "mergeAcrossPatchExceptions " << mergeAcrossPatchExceptions_
+            << " matched no patches" << nl << endl;
+        return boolList();
+    }
+
+    wordList matched(nMatched);
+    nMatched = 0;
+    forAll(mask, patchi)
+    {
+        if (mask[patchi])
+        {
+            matched[nMatched++] = patches[patchi].name();
+        }
+    }
+
+    Info<< "Preserving patches from mergeAcrossPatches: " << matched
+        << nl << endl;
+
+    return mask;
+}
+
+
 // Merge faces that are in-line.
 Foam::label Foam::meshRefinement::mergePatchFaces
 (
@@ -68,6 +115,23 @@ Foam::label Foam::meshRefinement::mergePatchFaces
         }
     }
 
+    // Resolve exception patches once. The per-edge test is a bool lookup.
+    const bool mergeAcrossPatches =
+        (mergeType == FaceMergeType::IGNOREPATCH);
+
+    boolList exceptionMask;
+    const bool* exceptionPtr = nullptr;
+
+    if (mergeAcrossPatches)
+    {
+        exceptionMask = mergeAcrossPatchExceptionMask();
+
+        if (exceptionMask.size())
+        {
+            exceptionPtr = exceptionMask.cdata();
+        }
+    }
+
     // Get all sets of faces that can be merged
     labelListList mergeSets
     (
@@ -76,7 +140,8 @@ Foam::label Foam::meshRefinement::mergePatchFaces
             minCos,
             concaveCos,
             boundaryCells,
-            (mergeType == FaceMergeType::IGNOREPATCH) // merge across patches?
+            mergeAcrossPatches,
+            exceptionPtr
         )
     );
 
@@ -287,11 +352,28 @@ Foam::label Foam::meshRefinement::mergePatchFacesUndo
         }
     }
 
-    // Get all sets of faces that can be merged. Since only faces on the same
-    // patch get merged there is no risk of e.g. patchID faces getting merged
-    // with original patches (or even processor patches). There is a risk
-    // though of original patch faces getting merged if they make a small
-    // angle. Would be pretty weird starting mesh though.
+    // Resolve exception patches once. The per-edge test is a bool lookup.
+    const bool mergeAcrossPatches =
+        (mergeType == FaceMergeType::IGNOREPATCH);
+
+    boolList exceptionMask;
+    const bool* exceptionPtr = nullptr;
+
+    if (mergeAcrossPatches)
+    {
+        exceptionMask = mergeAcrossPatchExceptionMask();
+
+        if (exceptionMask.size())
+        {
+            exceptionPtr = exceptionMask.cdata();
+        }
+    }
+
+    // Get all sets of faces that can be merged. Faces on different patches
+    // merge only when mergeAcrossPatches is set, and never when either patch
+    // is an exception (that patch is preserved). There is a risk of original
+    // patch faces getting merged if they make a small angle. Would be pretty
+    // weird starting mesh though.
     labelListList allFaceSets
     (
         faceCombiner.getMergeSets
@@ -299,7 +381,8 @@ Foam::label Foam::meshRefinement::mergePatchFacesUndo
             minCos,
             concaveCos,
             boundaryCells,
-            (mergeType == FaceMergeType::IGNOREPATCH) // merge across patches?
+            mergeAcrossPatches,
+            exceptionPtr
         )
     );
 
