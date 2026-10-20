@@ -20,6 +20,12 @@
     Simple test program for compiling/running openmp
 
 
+## Test-AMIInterpolation  (directory: AMIInterpolation)
+
+    Numerical regression tests for cyclicAMI and faceAreaWeightAMI.
+    See the directory README for the isolated runner and result contract.
+
+
 ## Test-BinSum  (directory: BinSum)
 
     Test BinSum container

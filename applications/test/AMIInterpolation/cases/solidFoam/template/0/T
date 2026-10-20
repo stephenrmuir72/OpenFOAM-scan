@@ -1,0 +1,47 @@
+FoamFile
+{
+    version 2.0;
+    format ascii;
+    class volScalarField;
+    location "0";
+    object T;
+}
+
+dimensions [0 0 0 1 0 0 0];
+internalField uniform @INITIAL_T@;
+
+boundaryField
+{
+    AMI1
+    {
+        type cyclicAMI;
+        value uniform @INITIAL_T@;
+    }
+    AMI2
+    {
+        type cyclicAMI;
+        value uniform @INITIAL_T@;
+    }
+    hot
+    {
+        type fixedValue;
+        value uniform @HOT_T@;
+    }
+    cold
+    {
+        type fixedValue;
+        value uniform @COLD_T@;
+    }
+    top
+    {
+        type zeroGradient;
+    }
+    bottom
+    {
+        type zeroGradient;
+    }
+    frontAndBack
+    {
+        type empty;
+    }
+}

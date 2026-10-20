@@ -1,0 +1,100 @@
+FoamFile
+{
+    version 2.0;
+    format ascii;
+    class dictionary;
+    location "constant";
+    object thermophysicalProperties;
+}
+
+thermoType
+{
+    type heSolidThermo;
+    mixture pureZoneMixture;
+    transport constAnIso;
+    thermo hConst;
+    equationOfState rhoConst;
+    specie specie;
+    energy sensibleEnthalpy;
+}
+
+coordinateSystem
+{
+    type cartesian;
+    origin (0 0 0);
+    rotation
+    {
+        type axes;
+        e1 @E1@;
+        e2 @E2@;
+    }
+}
+
+mixture
+{
+    none
+    {
+        specie
+        {
+            molWeight 50;
+        }
+        thermodynamics
+        {
+            Hf 0;
+            Sf 0;
+            Cp @LEFT_CP@;
+        }
+        transport
+        {
+            kappa @LEFT_KAPPA@;
+        }
+        equationOfState
+        {
+            rho @LEFT_RHO@;
+        }
+    }
+
+    left
+    {
+        specie
+        {
+            molWeight 50;
+        }
+        thermodynamics
+        {
+            Hf 0;
+            Sf 0;
+            Cp @LEFT_CP@;
+        }
+        transport
+        {
+            kappa @LEFT_KAPPA@;
+        }
+        equationOfState
+        {
+            rho @LEFT_RHO@;
+        }
+    }
+
+    right
+    {
+        specie
+        {
+            molWeight 50;
+        }
+        thermodynamics
+        {
+            Hf 0;
+            Sf 0;
+            Cp @RIGHT_CP@;
+        }
+        transport
+        {
+            kappa @RIGHT_KAPPA@;
+        }
+        equationOfState
+        {
+            rho @RIGHT_RHO@;
+        }
+    }
+}

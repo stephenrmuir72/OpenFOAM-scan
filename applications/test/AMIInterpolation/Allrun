@@ -1,0 +1,17 @@
+#!/bin/sh
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+project_dir=$(git -C "$script_dir" rev-parse --show-toplevel)
+workspace=${AMI_IMPROVEMENTS_ROOT:-"$HOME/OpenFOAM/OF2312/tests/my_work/03_KTM/14_AMI_improvements"}
+
+: "${WM_PROJECT_DIR:?Source the current OpenFOAM checkout before running Allrun}"
+
+exec python3 "$script_dir/runTests.py" \
+    --project-dir "$project_dir" \
+    --build-root "$workspace/06_build/current-before/S02" \
+    --run-root "$workspace/04_runs/current-before/S02" \
+    --results-dir "$workspace/05_results/S02" \
+    --build \
+    --validate-solid-fixtures \
+    "$@"

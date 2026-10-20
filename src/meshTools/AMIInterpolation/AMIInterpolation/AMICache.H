@@ -201,7 +201,7 @@ public:
         constexpr label index1() const noexcept { return index1_; }
 
         //- Return cache interpolation weight
-        constexpr label weight() const noexcept { return interpWeight_; }
+        constexpr scalar weight() const noexcept { return interpWeight_; }
 
         //- Return list of cached rotation angles
         const List<scalar>& theta() const noexcept { return theta_; }
