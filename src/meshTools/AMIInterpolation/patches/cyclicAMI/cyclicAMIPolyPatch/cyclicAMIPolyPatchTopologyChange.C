@@ -396,6 +396,9 @@ void Foam::cyclicAMIPolyPatch::setAMIFaces()
         }
         AMIPtr_->srcMap().distribute(globalSrcToTgtAddr);
 
+        // Source areas in the neighbour frame, distributed to the target side
+        vectorList newSrcGlobalFaceAreas(faceAreas0_);
+
         label nError = 0;
         forAll(srcToTgtAddr0, srcFacei0)
         {
@@ -439,6 +442,12 @@ void Foam::cyclicAMIPolyPatch::setAMIFaces()
 
                 srcToTgtAddr1[srcFacei1] = labelList(1, tgtFacei1);
                 faceAreas0_[srcFacei1] *= srcToTgtWght0[srcFacei0][i];
+                newSrcGlobalFaceAreas[srcFacei1] = faceAreas0_[srcFacei1];
+                reverseTransformDirection
+                (
+                    newSrcGlobalFaceAreas[srcFacei1],
+                    srcFacei0
+                );
                 faceCentres0_[srcFacei1] = srcCtr0[srcFacei0][i];
             }
         }
@@ -541,8 +550,6 @@ void Foam::cyclicAMIPolyPatch::setAMIFaces()
         }
 
         // Reset tgt patch areas using the new map
-        vectorList newSrcGlobalFaceAreas(faceAreas0_);
-
         srcToTgtMap1->distribute(newSrcGlobalFaceAreas);
         forAll(nbrFaceAreas0, tgtFacei)
         {
@@ -587,7 +594,12 @@ void Foam::cyclicAMIPolyPatch::setAMIFaces()
                 const label tgtFacei1 = tgtFaceIDs_[tgtFacei0][tgtAddri0];
 
                 faceAreas0_[srcFacei1] *= srcFaceTgtWght0[addri];
-                nbrFaceAreas0[tgtFacei1] = -faceAreas0_[srcFacei1];
+
+                // Neighbour-frame area: transform the weighted owner area,
+                // then reverse its orientation once
+                vector nbrArea(faceAreas0_[srcFacei1]);
+                reverseTransformDirection(nbrArea, srcFacei0);
+                nbrFaceAreas0[tgtFacei1] = -nbrArea;
 
                 point pt(srcFaceTgtCtr0[addri]);
                 faceCentres0_[srcFacei1] = pt;

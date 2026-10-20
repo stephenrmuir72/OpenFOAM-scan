@@ -1789,6 +1789,25 @@ void runCacheFractionTest
 }
 
 
+// Independent Rodrigues rotation used as the T03 oracle.  Deliberately
+// not the production cyclicAMI transform code.
+vector rotateOracle
+(
+    const vector& v,
+    const vector& axis,
+    const scalar angleDeg
+)
+{
+    const scalar theta = angleDeg*constant::mathematical::pi/180.0;
+    const vector k = axis/mag(axis);
+
+    return
+        v*std::cos(theta)
+      + (k ^ v)*std::sin(theta)
+      + k*(k & v)*(1 - std::cos(theta));
+}
+
+
 void runMeshTest
 (
     const word& test,
@@ -1882,67 +1901,244 @@ void runMeshTest
 
     if (test == "T03")
     {
-        reportBool
+        // Optional variant description, generated per run by the runner.
+        // Absent file reproduces the 90 degree fixture.
+        const IOdictionary t03Variant
         (
-            test,
-            "T03_OWNER_FACE_EXISTS",
-            !amiPatchA.Sf().empty(),
-            true,
-            nFailures
-        );
-        reportBool
-        (
-            test,
-            "T03_NEIGHBOUR_FACE_EXISTS",
-            !amiPatchB.Sf().empty(),
-            true,
-            nFailures
+            IOobject
+            (
+                "t03Variant",
+                runTime.system(),
+                runTime,
+                IOobject::READ_IF_PRESENT,
+                IOobject::NO_WRITE,
+                false
+            )
         );
 
-        if (!amiPatchA.Sf().empty() && !amiPatchB.Sf().empty())
+        const bool rotational =
+            t03Variant.lookupOrDefault<word>("transform", word("rotational"))
+         == "rotational";
+        const vector rotationAxis
+        (
+            t03Variant.lookupOrDefault<vector>
+            (
+                "rotationAxis",
+                vector(0, 0, 1)
+            )
+        );
+        const vector rotationCentre
+        (
+            t03Variant.lookupOrDefault<vector>
+            (
+                "rotationCentre",
+                vector(0, 0, 0)
+            )
+        );
+        const scalar rotationAngle =
+            rotational
+          ? t03Variant.lookupOrDefault<scalar>("rotationAngle", 90.0)
+          : 0.0;
+        const vector separationVector
+        (
+            t03Variant.lookupOrDefault<vector>
+            (
+                "separationVector",
+                vector(0, 0, 0)
+            )
+        );
+
+        // Owner face normal in the fixture; neighbour is the rotated image
+        // with its outward normal reversed.
+        const vector ownerNormal(0, -1, 0);
+        const vector expectedNeighbourArea =
+            -rotateOracle(ownerNormal, rotationAxis, rotationAngle);
+
+        const polyPatch& ownerPatch = amiPatchA.patch();
+        const polyPatch& nbrPatch = amiPatchB.patch();
+
+        // Face counts are summed over ranks, so every rank takes the same
+        // branch.  Each raw/stored quantity is a sum over local faces, which
+        // equals the single global face because the count is checked above.
+        label nOwnerFaces = ownerPatch.size();
+        label nNbrFaces = nbrPatch.size();
+        reduce(nOwnerFaces, sumOp<label>());
+        reduce(nNbrFaces, sumOp<label>());
+        report(test, "T03_OWNER_FACE_EXISTS", nOwnerFaces, 1, 0, nFailures);
+        report(test, "T03_NEIGHBOUR_FACE_EXISTS", nNbrFaces, 1, 0, nFailures);
+
+        vector ownerRaw(0, 0, 0);
+        vector ownerCentre(0, 0, 0);
+        forAll(ownerPatch.localFaces(), fi)
         {
-            const vector ownerRaw =
-                amiPatchA.patch().localFaces()[0].areaNormal
+            ownerRaw +=
+                ownerPatch.localFaces()[fi].areaNormal
                 (
-                    amiPatchA.patch().localPoints()
+                    ownerPatch.localPoints()
                 );
-            const vector neighbourRaw =
-                amiPatchB.patch().localFaces()[0].areaNormal
-                (
-                    amiPatchB.patch().localPoints()
-                );
-
-            reportVector
-            (
-                test,
-                "T03_OWNER_AREA_GEOMETRY",
-                ownerRaw,
-                vector(0, -1, 0),
-                identityTol,
-                1,
-                nFailures
-            );
-            reportVector
-            (
-                test,
-                "T03_NEIGHBOUR_AREA_GEOMETRY",
-                neighbourRaw,
-                vector(-1, 0, 0),
-                identityTol,
-                1,
-                nFailures
-            );
-            reportVector
-            (
-                test,
-                "T03_NEIGHBOUR_AREA_FRAME",
-                amiPatchB.Sf()[0],
-                vector(-1, 0, 0),
-                identityTol,
-                1,
-                nFailures
-            );
+            ownerCentre +=
+                ownerPatch.localFaces()[fi].centre(ownerPatch.localPoints());
         }
+        reduce(ownerRaw, sumOp<vector>());
+        reduce(ownerCentre, sumOp<vector>());
+
+        vector nbrRaw(0, 0, 0);
+        vector nbrCentre(0, 0, 0);
+        forAll(nbrPatch.localFaces(), fi)
+        {
+            nbrRaw +=
+                nbrPatch.localFaces()[fi].areaNormal
+                (
+                    nbrPatch.localPoints()
+                );
+            nbrCentre +=
+                nbrPatch.localFaces()[fi].centre(nbrPatch.localPoints());
+        }
+        reduce(nbrRaw, sumOp<vector>());
+        reduce(nbrCentre, sumOp<vector>());
+
+        vector ownerStored(0, 0, 0);
+        forAll(amiPatchA.Sf(), fi)
+        {
+            ownerStored += amiPatchA.Sf()[fi];
+        }
+        reduce(ownerStored, sumOp<vector>());
+
+        vector nbrStored(0, 0, 0);
+        forAll(amiPatchB.Sf(), fi)
+        {
+            nbrStored += amiPatchB.Sf()[fi];
+        }
+        reduce(nbrStored, sumOp<vector>());
+
+        const vector expectedNbrCentre =
+            rotateOracle
+            (
+                ownerCentre - rotationCentre,
+                rotationAxis,
+                rotationAngle
+            )
+          + rotationCentre
+          + separationVector;
+
+        reportVector
+        (
+            test,
+            "T03_OWNER_AREA_GEOMETRY",
+            ownerRaw,
+            ownerNormal,
+            identityTol,
+            1,
+            nFailures
+        );
+        reportVector
+        (
+            test,
+            "T03_OWNER_AREA_FRAME",
+            ownerStored,
+            ownerNormal,
+            identityTol,
+            1,
+            nFailures
+        );
+        reportVector
+        (
+            test,
+            "T03_NEIGHBOUR_AREA_GEOMETRY",
+            nbrRaw,
+            expectedNeighbourArea,
+            identityTol,
+            1,
+            nFailures
+        );
+        reportVector
+        (
+            test,
+            "T03_NEIGHBOUR_AREA_FRAME",
+            nbrStored,
+            expectedNeighbourArea,
+            identityTol,
+            1,
+            nFailures
+        );
+        report
+        (
+            test,
+            "T03_NEIGHBOUR_MAGNITUDE",
+            mag(nbrStored),
+            1,
+            identityTol,
+            nFailures
+        );
+        reportVector
+        (
+            test,
+            "T03_NEIGHBOUR_CENTRE_GEOMETRY",
+            nbrCentre,
+            expectedNbrCentre,
+            identityTol,
+            1,
+            nFailures
+        );
+
+        // Cell volumes and per-cell closure over the whole local mesh.
+        scalar minVolume = std::numeric_limits<scalar>::max();
+        forAll(mesh.V(), celli)
+        {
+            minVolume = min(minVolume, mesh.V()[celli]);
+        }
+        reduce(minVolume, minOp<scalar>());
+        reportBool
+        (
+            test,
+            "T03_CELL_VOLUMES_POSITIVE",
+            minVolume > 0,
+            true,
+            nFailures
+        );
+
+        const surfaceVectorField& Sf = mesh.Sf();
+        const labelUList& own = mesh.owner();
+        const labelUList& nei = mesh.neighbour();
+        vectorField closure(mesh.nCells(), Zero);
+        forAll(nei, facei)
+        {
+            closure[own[facei]] += Sf[facei];
+            closure[nei[facei]] -= Sf[facei];
+        }
+        forAll(mesh.boundary(), patchi)
+        {
+            const vectorField& Sfp = Sf.boundaryField()[patchi];
+            const labelUList& faceCells = mesh.boundary()[patchi].faceCells();
+            forAll(faceCells, i)
+            {
+                closure[faceCells[i]] += Sfp[i];
+            }
+        }
+        scalar maxClosure = 0;
+        forAll(closure, celli)
+        {
+            maxClosure = max(maxClosure, mag(closure[celli]));
+        }
+        reduce(maxClosure, maxOp<scalar>());
+        report(test, "T03_CELL_CLOSURE", maxClosure, 0, 1e-10, nFailures);
+
+        // Distributed branch is only taken when the AMI is distributed.
+        bool distributed = false;
+        if (amiPatchA.size())
+        {
+            distributed = amiPatchA.AMI().distributed();
+        }
+        reduce(distributed, orOp<bool>());
+        reportBool
+        (
+            test,
+            "T03_AMI_DISTRIBUTED",
+            distributed,
+            UPstream::parRun(),
+            nFailures
+        );
+
         return;
     }
 

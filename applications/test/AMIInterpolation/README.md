@@ -183,6 +183,68 @@ fraction with `0 < w < 1` and a GAMG solve at the same time. Available field
 metrics prove that the solver produced output; they do not replace the S13
 thermal-accuracy acceptance tests.
 
+## S05 post-fix rotational area-frame gate
+
+S05 verifies that topology-created cyclicAMI faces store the neighbour area
+in the neighbour frame. It rebuilds only `libmeshTools` outside the C0 source
+tree, then runs the T03 rotation variants, T08, and T09 with pass-only
+expectations. Serial and two-rank T03 variants each write a `t03Variant`
+file, and the runner copies it into every `processor*/system` directory.
+
+Run from the C0 repository root in a fresh shell after sourcing C0:
+
+```sh
+source /home/pc/gitRepos/OpenFOAM/openfoam/etc/bashrc
+set -euo pipefail
+AMI_ROOT=/home/pc/OpenFOAM/OF2312/tests/my_work/03_KTM/14_AMI_improvements
+S05_ROOT="$AMI_ROOT/06_build/current-fixed/S05-final"
+PRODUCTS="$S05_ROOT/products"
+C0_LIBBIN="$FOAM_LIBBIN"
+mkdir -p "$PRODUCTS/build-root" "$PRODUCTS/lib"
+export FOAM_LIBBIN="$PRODUCTS/lib"
+export FOAM_BUILDROOT="$PRODUCTS/build-root"
+export LIBRARY_PATH="$FOAM_LIBBIN:$C0_LIBBIN:$C0_LIBBIN/sys-openmpi"
+export LD_LIBRARY_PATH="$FOAM_LIBBIN:$C0_LIBBIN:$C0_LIBBIN/sys-openmpi:${LD_LIBRARY_PATH:-}"
+
+for lib in "$C0_LIBBIN"/*.so; do
+  name="$(basename "$lib")"
+  if [ "$name" != "libmeshTools.so" ] && [ ! -e "$FOAM_LIBBIN/$name" ]; then
+    ln -s "$lib" "$FOAM_LIBBIN/$name"
+  fi
+done
+
+(cd "$WM_PROJECT_DIR/src/meshTools" && \
+  wmake -build-root="$FOAM_BUILDROOT" libso) \
+  2>&1 | tee "$S05_ROOT/rebuild-meshTools.log"
+
+python3 applications/test/AMIInterpolation/runTests.py \
+  --stage S05 --target-id C0 --project-dir "$WM_PROJECT_DIR" \
+  --build-root "$S05_ROOT" \
+  --run-root "$AMI_ROOT/04_runs/current-fixed/S05-final" \
+  --results-dir "$AMI_ROOT/05_results/S05" \
+  --library-root "$FOAM_LIBBIN" --build --timeout 600
+```
+
+The runner requires `FOAM_LIBBIN` to equal `--library-root`, and the library
+root must lie under `--build-root`. It checks that the driver resolves
+`libmeshTools.so` to that root. The S05 stage has no expected failures. Any
+failure, timeout, or missing scenario makes the stage fail.
+
+The S05 gate requires 32 passing scenarios: 13 T03 variants (11 serial
+and 2 with two ranks: 90 degrees and 53.13 degrees about z), 13 T08 topology
+scenarios, and 6 T09 state-transition scenarios including the
+cache-plus-face-creation rejection. The serial T03 matrix includes 0, ±30,
+90, and 180 degree rotations, an additional ±53.13 degree pair, an arbitrary
+axis and non-zero centre, a zero-separation translational control, and a
+non-zero translation with `separationVector (0 2 0)`. The input manifest
+records the production source and rebuilt `libmeshTools.so` hashes.
+
+Do not run S02 in C0 expected-failure mode against an S05 library. The fix
+removes the T03 defect, so S02 is expected to report `T03_NEIGHBOUR_AREA_FRAME`
+as an unexpected pass. This is inferred from the code and was not run. S02
+remains the pre-fix record. The runner refuses S02 with
+an external library root, so this combination is blocked.
+
 ## Result interpretation
 
 The C0 defect tests must fail their named assertions. The runner records these

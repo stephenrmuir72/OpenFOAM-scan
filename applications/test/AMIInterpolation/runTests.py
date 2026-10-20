@@ -21,6 +21,7 @@ import uuid
 
 sys.dont_write_bytecode = True
 from solidMetrics import SOLID_ACCEPTANCE_LIMITS, solid_reference_metrics
+from t03Variants import write_case as write_t03_variant
 
 
 TEST_DIR = Path(__file__).resolve().parent
@@ -72,8 +73,14 @@ TEST_SPECS = {
             "T03_OWNER_FACE_EXISTS",
             "T03_NEIGHBOUR_FACE_EXISTS",
             "T03_OWNER_AREA_GEOMETRY",
+            "T03_OWNER_AREA_FRAME",
             "T03_NEIGHBOUR_AREA_GEOMETRY",
             "T03_NEIGHBOUR_AREA_FRAME",
+            "T03_NEIGHBOUR_MAGNITUDE",
+            "T03_NEIGHBOUR_CENTRE_GEOMETRY",
+            "T03_CELL_VOLUMES_POSITIVE",
+            "T03_CELL_CLOSURE",
+            "T03_AMI_DISTRIBUTED",
         },
         "expected_failures": {"T03_NEIGHBOUR_AREA_FRAME"},
     },
@@ -435,6 +442,73 @@ S03_SCENARIOS = {
 
 S04_SCENARIOS = {
     "T02": cache_fraction_scenarios(),
+    "T08": topology_scenarios(),
+    "T09": state_transition_scenarios(),
+}
+
+T03_ANGLE_53_13 = 53.13010235415598
+
+T03_SERIAL_VARIANTS = (
+    ("rot90", "rotational", (0, 0, 1), (0, 0, 0), 90.0, (0, 0, 0)),
+    ("rot0", "rotational", (0, 0, 1), (0, 0, 0), 0.0, (0, 0, 0)),
+    ("trans0", "translational", (0, 0, 1), (0, 0, 0), 0.0, (0, 0, 0)),
+    ("rot180", "rotational", (0, 0, 1), (0, 0, 0), 180.0, (0, 0, 0)),
+    ("rot90off", "rotational", (0, 0, 1), (0.5, 0.5, 0), 90.0, (0, 0, 0)),
+    ("rotpos_z", "rotational", (0, 0, 1), (0, 0, 0), T03_ANGLE_53_13, (0, 0, 0)),
+    ("rotneg_z", "rotational", (0, 0, 1), (0, 0, 0), -T03_ANGLE_53_13, (0, 0, 0)),
+    ("rot_ax34", "rotational", (3, 4, 0), (0.5, 0.5, 0), T03_ANGLE_53_13, (0, 0, 0)),
+    ("rotpos_z30", "rotational", (0, 0, 1), (0, 0, 0), 30.0, (0, 0, 0)),
+    ("rotneg_z30", "rotational", (0, 0, 1), (0, 0, 0), -30.0, (0, 0, 0)),
+    ("trans_y2", "translational", (0, 0, 1), (0, 0, 0), 0.0, (0, 2, 0)),
+)
+
+T03_PARALLEL_VARIANTS = (
+    ("rot90", "rotational", (0, 0, 1), (0, 0, 0), 90.0, (0, 0, 0)),
+    ("rotpos_z", "rotational", (0, 0, 1), (0, 0, 0), T03_ANGLE_53_13, (0, 0, 0)),
+)
+
+
+def t03_s05_scenarios() -> list[dict]:
+    scenarios = []
+    for name, transform, axis, centre, angle, sep in T03_SERIAL_VARIANTS:
+        scenarios.append(
+            {
+                "variant": f"{name}-serial",
+                "variant_config": {
+                    "transform": transform,
+                    "axis": axis,
+                    "centre": centre,
+                    "angle": angle,
+                    "sep": sep,
+                },
+                "arguments": ["-test", "T03"],
+            }
+        )
+    for name, transform, axis, centre, angle, sep in T03_PARALLEL_VARIANTS:
+        scenarios.append(
+            {
+                "variant": f"{name}-two-rank-distributed",
+                "ranks": 2,
+                "decompose": True,
+                "variant_config": {
+                    "transform": transform,
+                    "axis": axis,
+                    "centre": centre,
+                    "angle": angle,
+                    "sep": sep,
+                },
+                "arguments": [
+                    "-parallel",
+                    "-test", "T03",
+                    "-opt-switch", "localAMIComm=0",
+                ],
+            }
+        )
+    return scenarios
+
+
+S05_SCENARIOS = {
+    "T03": t03_s05_scenarios(),
     "T08": topology_scenarios(),
     "T09": state_transition_scenarios(),
 }
@@ -1011,6 +1085,8 @@ def run_test(
     run_dir = run_root / run_id / record_id
     run_dir.mkdir(parents=True, exist_ok=False)
     case_dir = prepare_case(spec["case"], run_dir)
+    if spec.get("variant_config"):
+        write_t03_variant(case_dir, **spec["variant_config"])
 
     prep_result = None
     if spec.get("prepare_mesh"):
@@ -1046,6 +1122,43 @@ def run_test(
                     "log": str(run_dir / "log.blockMesh"),
                 },
             }
+
+    if spec.get("decompose"):
+        decompose_command = shutil.which(
+            "decomposePar", path=env.get("PATH")
+        )
+        if not decompose_command:
+            raise ValueError("decomposePar is not available in the selected target")
+        decompose_result = run_process(
+            [decompose_command, "-force", "-case", str(case_dir)],
+            run_dir,
+            env,
+            timeout,
+        )
+        write_log(run_dir / "log.decomposePar", decompose_result)
+        if decompose_result["return_code"] != 0 or decompose_result["timed_out"]:
+            return {
+                "id": record_id,
+                "test_id": test_id,
+                "name": spec["name"],
+                "variant": spec.get("variant", "default"),
+                "case": spec["case"],
+                "rank_count": spec.get("ranks") or 1,
+                "status": "failure",
+                "reason": "decomposePar fixture preparation failed",
+                "prepare": {
+                    "return_code": decompose_result["return_code"],
+                    "timed_out": decompose_result["timed_out"],
+                    "log": str(run_dir / "log.decomposePar"),
+                },
+            }
+        for rank_dir in sorted(case_dir.glob("processor*")):
+            (rank_dir / "system").mkdir(exist_ok=True)
+            for name in ("t03Variant", "controlDict"):
+                shutil.copy2(
+                    case_dir / "system" / name,
+                    rank_dir / "system" / name,
+                )
 
     command = [str(binary.resolve())]
     if spec.get("ranks"):
@@ -1818,6 +1931,37 @@ def write_input_manifest(
                 "sha256": sha256_file(implementation_path),
             }
         ]
+    elif args.stage == "S05":
+        implementation_path = (
+            REPO_ROOT
+            / "src/meshTools/AMIInterpolation/patches/cyclicAMI"
+            / "cyclicAMIPolyPatch"
+            / "cyclicAMIPolyPatchTopologyChange.C"
+        )
+        library_path = args.library_root.resolve() / "libmeshTools.so"
+        if not implementation_path.is_file():
+            raise FileNotFoundError(
+                f"S05 implementation source is missing: {implementation_path}"
+            )
+        if not library_path.is_file():
+            raise FileNotFoundError(
+                f"S05 implementation library is missing: {library_path}"
+            )
+        manifest["library_root"] = str(args.library_root.resolve())
+        manifest["implementation_sources"] = [
+            {
+                "path": str(implementation_path),
+                "sha256": sha256_file(implementation_path),
+            }
+        ]
+        manifest["implementation_libraries"] = [
+            {
+                "soname": "libmeshTools.so",
+                "path": str(library_path),
+                "resolved_path": str(library_path.resolve()),
+                "sha256": sha256_file(library_path),
+            }
+        ]
     manifest_path.write_text(
         json.dumps(manifest, indent=2, allow_nan=False) + "\n",
         encoding="utf-8",
@@ -1827,7 +1971,9 @@ def write_input_manifest(
 
 def load_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--stage", choices=("S02", "S03", "S04"), default="S02")
+    parser.add_argument(
+        "--stage", choices=("S02", "S03", "S04", "S05"), default="S02"
+    )
     parser.add_argument("--target-id", choices=("B0", "C0"), default="C0")
     parser.add_argument(
         "--observation-mode",
@@ -1866,6 +2012,8 @@ def load_args() -> argparse.Namespace:
             ]
         elif args.stage == "S04":
             args.tests = ["T01", "T02", "T08", "T09", "T13"]
+        elif args.stage == "S05":
+            args.tests = ["T03", "T08", "T09"]
     return args
 
 
@@ -1939,6 +2087,10 @@ def main() -> int:
         args.target_id != "C0" or args.observation_mode
     ):
         raise ValueError("S04 supports only C0 post-fix mode")
+    if args.stage == "S05" and (
+        args.target_id != "C0" or args.observation_mode
+    ):
+        raise ValueError("S05 supports only C0 post-fix mode")
     if args.stage == "S04":
         if not args.library_root or not args.solid_foam:
             raise ValueError(
@@ -1968,6 +2120,26 @@ def main() -> int:
             )
         if not library_root.is_dir() or not solid_foam.is_file():
             raise ValueError("S04 library root or solidFoam is missing")
+        configured_libbin = Path(env.get("FOAM_LIBBIN", "")).resolve()
+        if configured_libbin != library_root:
+            raise ValueError(
+                f"FOAM_LIBBIN={configured_libbin} does not match "
+                f"--library-root={library_root}"
+            )
+    if args.stage == "S05":
+        if not args.library_root:
+            raise ValueError("S05 requires --library-root")
+        build_root = args.build_root.resolve()
+        library_root = args.library_root.resolve(strict=True)
+        protected_roots = {REPO_ROOT.resolve(), B0_PROJECT_DIR.resolve(strict=True)}
+        if any(library_root.is_relative_to(root) for root in protected_roots):
+            raise ValueError(
+                "S05 libraries must be outside OpenFOAM trees"
+            )
+        if not library_root.is_relative_to(build_root):
+            raise ValueError("S05 libraries must be under --build-root")
+        if not library_root.is_dir():
+            raise ValueError("S05 library root is missing")
         configured_libbin = Path(env.get("FOAM_LIBBIN", "")).resolve()
         if configured_libbin != library_root:
             raise ValueError(
@@ -2081,7 +2253,7 @@ def main() -> int:
         run_dir,
         (
             (args.library_root.resolve(),)
-            if args.stage == "S04"
+            if args.stage in {"S04", "S05"}
             else ()
         ),
     )
@@ -2091,11 +2263,14 @@ def main() -> int:
         scenario_matrix = (
             S03_SCENARIOS if args.stage == "S03"
             else S04_SCENARIOS if args.stage == "S04"
+            else S05_SCENARIOS if args.stage == "S05"
             else {}
         )
         if test_id in scenario_matrix:
             for scenario in scenario_matrix[test_id]:
                 spec = {**TEST_SPECS[test_id], **scenario}
+                if args.stage == "S05":
+                    spec["expected_failures"] = set()
                 if args.stage == "S04" and test_id == "T02":
                     spec["assertions"] = T02_S04_ASSERTIONS
                     spec["expected_failures"] = set()
@@ -2121,7 +2296,7 @@ def main() -> int:
                     env,
                     args.timeout,
                 )
-                if args.stage == "S04":
+                if args.stage in {"S04", "S05"}:
                     rejection_record["status"] = (
                         "pass"
                         if rejection_record["status"] == "observed_pass"
@@ -2238,6 +2413,27 @@ def main() -> int:
             and reference_test_record["status"] == "pass"
         )
         suite_pass = gate_pass
+    elif args.stage == "S05":
+        required_record_ids = {
+            f"{test_id}-{scenario['variant']}"
+            for test_id, scenarios in S05_SCENARIOS.items()
+            for scenario in scenarios
+        }
+        required_record_ids.add("T09-cache-plus-face-creation")
+        records_by_id = {record["id"]: record for record in run_records}
+        gate_pass = (
+            required_record_ids <= records_by_id.keys()
+            and all(
+                records_by_id[record_id]["status"] == "pass"
+                for record_id in required_record_ids
+            )
+            and timeout_record["status"] == "pass"
+            and reference_test_record["status"] == "pass"
+        )
+        suite_pass = (
+            gate_pass
+            and all(record["status"] == "pass" for record in run_records)
+        )
     else:
         required_record_ids = {"T01", "T13", "T09-cache-plus-face-creation"}
         required_record_ids |= {
@@ -2279,6 +2475,7 @@ def main() -> int:
         "schema_version": (
             2 if args.stage == "S02"
             else 3 if args.stage == "S03"
+            else 5 if args.stage == "S05"
             else 4
         ),
         "stage": args.stage,
@@ -2305,9 +2502,12 @@ def main() -> int:
         "s04_exit_gate": (
             "pass" if gate_pass else "failure"
         ) if args.stage == "S04" else "not_applicable",
+        "s05_exit_gate": (
+            "pass" if gate_pass else "failure"
+        ) if args.stage == "S05" else "not_applicable",
         "suite_status": (
             "pass" if suite_pass else "failure"
-        ) if args.stage in {"S02", "S04"} else (
+        ) if args.stage in {"S02", "S04", "S05"} else (
             "ami_observation_complete" if suite_pass else "failure"
         ),
     }
@@ -2329,6 +2529,9 @@ def main() -> int:
             if report["suite_status"] == "ami_observation_complete"
             else 1
         )
+    if args.stage == "S05":
+        print(f"S05 exit gate: {report['s05_exit_gate']}")
+        return 0 if report["suite_status"] == "pass" else 1
     print(f"S04 exit gate: {report['s04_exit_gate']}")
     return 0 if report["suite_status"] == "pass" else 1
 
