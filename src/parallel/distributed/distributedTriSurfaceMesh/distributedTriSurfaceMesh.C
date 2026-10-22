@@ -651,15 +651,18 @@ Foam::treeBoundBox Foam::distributedTriSurfaceMesh::subtract
 )
 {
     // Subtract b from a
-    // We calculcate the biggest single bounding box that is exclusively
+    // We calculate the biggest single bounding box that is exclusively
     // in a. Done by slicing with all 6 faces of bb and seeing which
     // one returns largest remaining volume.
 
-    const vector aSpan(a.span());
-    const scalar vol(a.volume());
+    // New approach with better handling for collapsed boxes (OCT-2026)
 
+    enum states : uint8_t { ignore_dir, keep_lower, keep_upper };
+
+    FixedList<uint8_t, 3> state(states::keep_upper);
     FixedList<scalar, 3> maxVol(pTraits<scalar>::min);
-    FixedList<bool, 3> adjustMin(true);
+
+    scalar vol(1);
 
     for (direction dir = 0; dir < vector::nComponents; dir++)
     {
@@ -669,57 +672,73 @@ Foam::treeBoundBox Foam::distributedTriSurfaceMesh::subtract
             return a;
         }
 
+        const scalar a_span = (a.max()[dir] - a.min()[dir]);
+
+        if (a_span < VSMALL)
+        {
+            // Collapsed in this direction...
+            state[dir] = states::ignore_dir;
+            continue;
+        }
+
+        // Add its contribution to volume
+        vol *= a_span;
+
         if (b.min()[dir] > a.min()[dir])
         {
             // Plane at bb.min. Keep bit to the left; shift max to left
-            maxVol[dir] = min
-            (
-                1.0,
-                (b.min()[dir]-a.min()[dir])/aSpan[dir]
-            )*vol;
-            adjustMin[dir] = false;
+            maxVol[dir] = Foam::min(1.0, (b.min()[dir]-a.min()[dir])/a_span);
+            state[dir] = states::keep_lower;
         }
+
         if (b.max()[dir] > a.min()[dir])
         {
             // Plane at bb.max. Keep bit to the right i.e. modify a.min
-            const scalar remaining = min
-            (
-                1.0,
-                (a.max()[dir]-b.max()[dir])/aSpan[dir]
-            )*vol;
-            if (remaining > maxVol[dir])
+            scalar remaining = Foam::min(1.0, (a.max()[dir]-b.max()[dir])/a_span);
+            if (maxVol[dir] < remaining)
             {
                 maxVol[dir] = remaining;
-                adjustMin[dir] = true;
+                state[dir] = states::keep_upper;
             }
         }
     }
 
-    // Search direction that keeps max volume
-    direction maxIndex = 0;
-    scalar max = maxVol[maxIndex];
-    for (direction dir = 1; dir < vector::nComponents; dir++)
+    // Find direction that keeps max volume (or area for a collapsed box).
+
+    direction maxIndex = vector::nComponents;
+    scalar maxValue(pTraits<scalar>::min);
+
+    for (direction dir = 0; dir < vector::nComponents; dir++)
     {
-        if (maxVol[dir] > max)
+        if
+        (
+            (state[dir] != states::ignore_dir) &&
+            (
+                (maxIndex == vector::nComponents)
+             || (maxValue < maxVol[dir])
+            )
+        )
         {
-            max = maxVol[dir];
+            maxValue = maxVol[dir];
             maxIndex = dir;
         }
     }
 
-    if (max <= 0)
+    if ((maxValue <= 0) || (vol <= 0) || maxIndex == vector::nComponents)
     {
         return treeBoundBox::null();
     }
     else
     {
         treeBoundBox subBb(a);
-        if (adjustMin[maxIndex])
+        if (state[maxIndex] == states::keep_upper)
         {
+            // keep_upper => adjust min
             subBb.min()[maxIndex] = b.max()[maxIndex];
         }
         else
         {
+            // keep_lower => adjust max
             subBb.max()[maxIndex] = b.min()[maxIndex];
         }
         return subBb;
