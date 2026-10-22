@@ -61,7 +61,11 @@ struct scalarDivideOp
 {
     T operator()(const T& x, const T2& y) const
     {
+        #ifdef FOAM_OFFLOAD
+        return (x / stabilise(y, pTraits<T2>::vsmall_));
+        #else
         return (x / stabilise(y, pTraits<T2>::vsmall));
+        #endif
     }
 };
 
@@ -72,10 +76,17 @@ struct scalarModuloOp
 {
     T operator()(const T& x, const T2& y) const
     {
+        #ifdef FOAM_OFFLOAD
+        if (Foam::mag(y) < pTraits<T2>::vsmall_)
+        {
+            return T(0);
+        }
+        #else
         if (Foam::mag(y) < pTraits<T2>::vsmall)
         {
             return pTraits<T>::zero;
         }
+        #endif
         return std::fmod(x, y);
     }
 };

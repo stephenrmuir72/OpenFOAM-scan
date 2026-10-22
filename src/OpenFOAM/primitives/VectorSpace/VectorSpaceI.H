@@ -363,6 +363,14 @@ inline void Foam::VectorSpace<Form, Cmpt, Ncmpts>::operator/=
 namespace Foam
 {
 
+// Work-around for malformed device IR for uint8_t loop counters
+// in NVC++ 24.11.
+#ifdef FOAM_OFFLOAD
+typedef label directionInt;
+#else
+typedef direction directionInt;
+#endif
+
 // * * * * * * * * * * * * * * * Global Functions  * * * * * * * * * * * * * //
 
 template<class Form, class Cmpt, direction Ncmpts>
@@ -799,7 +807,7 @@ inline Cmpt operator&&
 )
 {
     Cmpt ddProd = vs1.v_[0]*vs2.v_[0];
-    for (direction i=1; i<Ncmpts; ++i)
+    for (directionInt i=1; i<Ncmpts; ++i)
     {
         ddProd += vs1.v_[i]*vs2.v_[i];
     }
@@ -814,7 +822,7 @@ inline bool operator==
     const VectorSpace<Form, Cmpt, Ncmpts>& vs2
 )
 {
-    for (direction i=0; i<Ncmpts; ++i)
+    for (directionInt i=0; i<Ncmpts; ++i)
     {
         if (!equal(vs1.v_[i], vs2.v_[i])) return false;
     }
@@ -841,7 +849,7 @@ inline bool operator<
 )
 {
     // Compare all components, stop at first non less-than component
-    for (direction i=0; i<Ncmpts; ++i)
+    for (directionInt i=0; i<Ncmpts; ++i)
     {
         if (!(vs1.v_[i] < vs2.v_[i])) return false;
     }
