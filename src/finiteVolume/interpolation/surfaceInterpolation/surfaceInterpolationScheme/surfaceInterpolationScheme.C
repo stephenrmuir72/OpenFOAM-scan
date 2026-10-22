@@ -204,21 +204,15 @@ Foam::surfaceInterpolationScheme<Type>::interpolate
             const auto& internalValues = tInternal();
             const auto& neighbourValues = tNeighbour();
 
-            forAll(resultValues, facei)
-            {
-                resultValues[facei] =
-                    pLambda[facei]*internalValues[facei]
-                  + pY[facei]*neighbourValues[facei];
-            }
+            resultValues =
+                pLambda.expr()*internalValues.expr()
+              + pY.expr()*neighbourValues.expr();
         }
         else
         {
             const auto sourceValues = vf.boundaryField().patchValues(pi);
 
-            forAll(resultValues, facei)
-            {
-                resultValues[facei] = sourceValues[facei];
-            }
+            resultValues = sourceValues.expr();
         }
     }
 
@@ -328,6 +322,33 @@ Foam::surfaceInterpolationScheme<Type>::dotInterpolate
             const auto& internalValues = tInternal();
             const auto& neighbourValues = tNeighbour();
 
+            #ifdef FOAM_OFFLOAD
+            const labelRange faceRange(resultValues.size());
+
+            apply_policy
+            (
+                static_cast<std::size_t>(faceRange.size()),
+                [&](auto policy)
+                {
+                    std::transform
+                    (
+                        policy,
+                        faceRange.begin(),
+                        faceRange.end(),
+                        resultValues.begin(),
+                        [&](const label facei)
+                        {
+                            return pSf[facei] & lerp
+                            (
+                                neighbourValues[facei],
+                                internalValues[facei],
+                                pLambda[facei]
+                            );
+                        }
+                    );
+                }
+            );
+            #else
             forAll(resultValues, facei)
             {
                 resultValues[facei] = pSf[facei] & lerp
@@ -337,15 +358,41 @@ Foam::surfaceInterpolationScheme<Type>::dotInterpolate
                     pLambda[facei]
                 );
             }
+            #endif
         }
         else
         {
             const auto sourceValues = vf.boundaryField().patchValues(pi);
 
+            // Can't use expression template here since OneField is not compatible
+            // with them and some instantiations would cause a compile-time error.
+            #ifdef FOAM_OFFLOAD
+            const labelRange faceRange(resultValues.size());
+
+            apply_policy
+            (
+                static_cast<std::size_t>(faceRange.size()),
+                [&](auto policy)
+                {
+                    std::transform
+                    (
+                        policy,
+                        faceRange.begin(),
+                        faceRange.end(),
+                        resultValues.begin(),
+                        [&](const label facei)
+                        {
+                            return pSf[facei] & sourceValues[facei];
+                        }
+                    );
+                }
+            );
+            #else
             forAll(resultValues, facei)
             {
                 resultValues[facei] = pSf[facei] & sourceValues[facei];
             }
+            #endif
         }
     }
 

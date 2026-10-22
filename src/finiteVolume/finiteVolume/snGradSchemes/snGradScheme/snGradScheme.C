@@ -156,20 +156,14 @@ snGradScheme<Type>::snGrad
                 pvf.snGrad(tdeltaCoeffs().boundaryField()[patchi]);
             const auto& values = tValues();
 
-            forAll(patchValues, facei)
-            {
-                patchValues[facei] = values[facei];
-            }
+            patchValues = values.expr();
         }
         else
         {
             const auto tValues = pvf.snGrad();
             const auto& values = tValues();
 
-            forAll(patchValues, facei)
-            {
-                patchValues[facei] = values[facei];
-            }
+            patchValues = values.expr();
         }
     }
 

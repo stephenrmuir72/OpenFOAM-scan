@@ -330,10 +330,32 @@ public:
                 auto resultValues = patchValues(patchi);
                 const auto rhsValues = rhs.patchValues(patchi);
 
+                #ifdef FOAM_OFFLOAD
+                apply_policy
+                (
+                    static_cast<std::size_t>(resultValues.size()),
+                    [&](auto policy)
+                    {
+                        std::transform
+                        (
+                            policy,
+                            resultValues.begin(),
+                            resultValues.end(),
+                            rhsValues.begin(),
+                            resultValues.begin(),
+                            [&](const auto& resultValue, const auto& rhsValue)
+                            {
+                                return op(resultValue, rhsValue);
+                            }
+                        );
+                    }
+                );
+                #else
                 forAll(resultValues, i)
                 {
                     resultValues[i] = op(resultValues[i], rhsValues[i]);
                 }
+                #endif
             }
         }
 
@@ -352,10 +374,32 @@ public:
                 const auto lhsValues = lhs.patchValues(patchi);
                 const auto rhsValues = rhs.patchValues(patchi);
 
+                #ifdef FOAM_OFFLOAD
+                apply_policy
+                (
+                    static_cast<std::size_t>(resultValues.size()),
+                    [&](auto policy)
+                    {
+                        std::transform
+                        (
+                            policy,
+                            lhsValues.begin(),
+                            lhsValues.end(),
+                            rhsValues.begin(),
+                            resultValues.begin(),
+                            [&](const auto& lhsValue, const auto& rhsValue)
+                            {
+                                return op(lhsValue, rhsValue);
+                            }
+                        );
+                    }
+                );
+                #else
                 forAll(resultValues, i)
                 {
                     resultValues[i] = op(lhsValues[i], rhsValues[i]);
                 }
+                #endif
             }
         }
 
@@ -373,10 +417,31 @@ public:
                 auto resultValues = patchValues(patchi);
                 const auto rhsValues = rhs.patchValues(patchi);
 
+                #ifdef FOAM_OFFLOAD
+                apply_policy
+                (
+                    static_cast<std::size_t>(resultValues.size()),
+                    [&](auto policy)
+                    {
+                        std::transform
+                        (
+                            policy,
+                            rhsValues.begin(),
+                            rhsValues.end(),
+                            resultValues.begin(),
+                            [&](const auto& rhsValue)
+                            {
+                                return op(lhs, rhsValue);
+                            }
+                        );
+                    }
+                );
+                #else
                 forAll(resultValues, i)
                 {
                     resultValues[i] = op(lhs, rhsValues[i]);
                 }
+                #endif
             }
         }
 
@@ -394,10 +459,31 @@ public:
                 auto resultValues = patchValues(patchi);
                 const auto lhsValues = lhs.patchValues(patchi);
 
+                #ifdef FOAM_OFFLOAD
+                apply_policy
+                (
+                    static_cast<std::size_t>(resultValues.size()),
+                    [&](auto policy)
+                    {
+                        std::transform
+                        (
+                            policy,
+                            lhsValues.begin(),
+                            lhsValues.end(),
+                            resultValues.begin(),
+                            [&](const auto& lhsValue)
+                            {
+                                return op(lhsValue, rhs);
+                            }
+                        );
+                    }
+                );
+                #else
                 forAll(resultValues, i)
                 {
                     resultValues[i] = op(lhsValues[i], rhs);
                 }
+                #endif
             }
         }
 
@@ -414,10 +500,31 @@ public:
                 auto resultValues = patchValues(patchi);
                 const auto rhsValues = rhs.patchValues(patchi);
 
+                #ifdef FOAM_OFFLOAD
+                apply_policy
+                (
+                    static_cast<std::size_t>(resultValues.size()),
+                    [&](auto policy)
+                    {
+                        std::transform
+                        (
+                            policy,
+                            rhsValues.begin(),
+                            rhsValues.end(),
+                            resultValues.begin(),
+                            [&](const auto& rhsValue)
+                            {
+                                return op(rhsValue);
+                            }
+                        );
+                    }
+                );
+                #else
                 forAll(resultValues, i)
                 {
                     resultValues[i] = op(rhsValues[i]);
                 }
+                #endif
             }
         }
 
@@ -434,10 +541,31 @@ public:
                 auto resultValues = patchValues(patchi);
                 const auto rhsValues = rhs.patchValues(patchi);
 
+                #ifdef FOAM_OFFLOAD
+                apply_policy
+                (
+                    static_cast<std::size_t>(resultValues.size()),
+                    [&](auto policy)
+                    {
+                        std::transform
+                        (
+                            policy,
+                            rhsValues.begin(),
+                            rhsValues.end(),
+                            resultValues.begin(),
+                            [&](const auto& rhsValue)
+                            {
+                                return op(rhsValue, value);
+                            }
+                        );
+                    }
+                );
+                #else
                 forAll(resultValues, i)
                 {
                     resultValues[i] = op(rhsValues[i], value);
                 }
+                #endif
             }
         }
 
@@ -454,10 +582,31 @@ public:
                 auto resultValues = patchValues(patchi);
                 const auto rhsValues = rhs.patchValues(patchi);
 
+                #ifdef FOAM_OFFLOAD
+                apply_policy
+                (
+                    static_cast<std::size_t>(resultValues.size()),
+                    [&](auto policy)
+                    {
+                        std::transform
+                        (
+                            policy,
+                            rhsValues.begin(),
+                            rhsValues.end(),
+                            resultValues.begin(),
+                            [&](const auto& rhsValue)
+                            {
+                                return op(value, rhsValue);
+                            }
+                        );
+                    }
+                );
+                #else
                 forAll(resultValues, i)
                 {
                     resultValues[i] = op(value, rhsValues[i]);
                 }
+                #endif
             }
         }
 

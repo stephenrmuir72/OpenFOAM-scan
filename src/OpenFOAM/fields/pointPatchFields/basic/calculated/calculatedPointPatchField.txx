@@ -38,7 +38,12 @@ Foam::calculatedPointPatchField<Type>::calculatedPointPatchField
 )
 :
     parent_bctype(p, iF)
-{}
+{
+    DebugInfo
+        << "Constructed calculatedPointPatchField for field "
+        << this->internalField().name() << " on patch "
+        << this->patch().name() << endl;
+}
 
 
 template<class Type>
@@ -50,7 +55,12 @@ Foam::calculatedPointPatchField<Type>::calculatedPointPatchField
 )
 :
     parent_bctype(p, iF, dict)
-{}
+{
+    DebugInfo
+        << "Constructed calculatedPointPatchField for field "
+        << this->internalField().name() << " on patch "
+        << this->patch().name() << endl;
+}
 
 
 template<class Type>
@@ -63,7 +73,12 @@ Foam::calculatedPointPatchField<Type>::calculatedPointPatchField
 )
 :
     parent_bctype(ptf, p, iF, mapper)
-{}
+{
+    DebugInfo
+        << "Constructed calculatedPointPatchField for field "
+        << this->internalField().name() << " on patch "
+        << this->patch().name() << endl;
+}
 
 
 template<class Type>
@@ -74,7 +89,12 @@ Foam::calculatedPointPatchField<Type>::calculatedPointPatchField
 )
 :
     parent_bctype(ptf, iF)
-{}
+{
+    DebugInfo
+        << "Constructed calculatedPointPatchField for field "
+        << this->internalField().name() << " on patch "
+        << this->patch().name() << endl;
+}
 
 
 template<class Type>

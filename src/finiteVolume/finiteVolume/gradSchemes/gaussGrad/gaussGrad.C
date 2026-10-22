@@ -319,21 +319,18 @@ void Foam::fv::gaussGrad<Type>::correctBoundaryConditions
               / vsf.mesh().magSf().boundaryField()[patchi]
             );
 
-                        auto gradValues = gGradbf.patchValues(patchi);
-                        const auto tSnGrad = pVf.snGrad();
-                        const auto& snGradValues = tSnGrad();
+            auto gradValues = gGradbf.patchValues(patchi);
+            const auto tSnGrad = pVf.snGrad();
+            const auto& snGradValues = tSnGrad();
 
-                        forAll(gradValues, facei)
-                        {
-                                gradValues[facei] += n[facei]
-                                     *
-                                        (
-                                                snGradValues[facei]
-                                            - (n[facei] & gradValues[facei])
-                                        );
-                        }
+            gradValues = gradValues.expr() + n.expr()
+                *
+                (
+                    snGradValues.expr()
+                    - (n.expr() & gradValues.expr())
+                );
         }
-     }
+    }
 }
 
 

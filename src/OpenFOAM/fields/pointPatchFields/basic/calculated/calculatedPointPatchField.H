@@ -62,6 +62,7 @@ public:
     //- Runtime type information
     TypeName("calculated");  // fieldTypes::calculatedTypeName_()
 
+    // static const bool debug = true;
 
     // Constructors
 

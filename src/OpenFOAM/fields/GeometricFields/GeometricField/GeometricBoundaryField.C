@@ -1075,10 +1075,7 @@ void Foam::GeometricBoundaryField<Type, PatchField, GeoMesh>::operator=
                 auto resultValues = patchValues(patchi);
                 const auto sourceValues = bf.patchValues(patchi);
 
-                forAll(resultValues, i)
-                {
-                    resultValues[i] = sourceValues[i];
-                }
+                resultValues = sourceValues.expr();
             }
             else
             {
@@ -1171,10 +1168,7 @@ void Foam::GeometricBoundaryField<Type, PatchField, GeoMesh>::operator==
                 auto resultValues = patchValues(patchi);
                 const auto sourceValues = bf.patchValues(patchi);
 
-                forAll(resultValues, i)
-                {
-                    resultValues[i] = sourceValues[i];
-                }
+                resultValues = sourceValues.expr();
             }
             else
             {

@@ -143,10 +143,31 @@ bool assignFlat
     auto resultValues = flatValues(result);
     const auto inputValues = flatValues(input);
 
+    #ifdef FOAM_OFFLOAD
+    apply_policy
+    (
+        static_cast<std::size_t>(resultValues.size()),
+        [&](auto policy)
+        {
+            std::transform
+            (
+                policy,
+                inputValues.begin(),
+                inputValues.end(),
+                resultValues.begin(),
+                [&](const auto& inputValue)
+                {
+                    return op(inputValue);
+                }
+            );
+        }
+    );
+    #else
     forAll(resultValues, i)
     {
         resultValues[i] = op(inputValues[i]);
     }
+    #endif
 
     return true;
 }
@@ -181,10 +202,32 @@ bool assignFlat
     const auto lhsValues = flatValues(lhs);
     const auto rhsValues = flatValues(rhs);
 
+    #ifdef FOAM_OFFLOAD
+    apply_policy
+    (
+        static_cast<std::size_t>(resultValues.size()),
+        [&](auto policy)
+        {
+            std::transform
+            (
+                policy,
+                lhsValues.begin(),
+                lhsValues.end(),
+                rhsValues.begin(),
+                resultValues.begin(),
+                [&](const auto& lhsValue, const auto& rhsValue)
+                {
+                    return op(lhsValue, rhsValue);
+                }
+            );
+        }
+    );
+    #else
     forAll(resultValues, i)
     {
         resultValues[i] = op(lhsValues[i], rhsValues[i]);
     }
+    #endif
 
     return true;
 }
@@ -216,10 +259,31 @@ bool assignFlat
     auto resultValues = flatValues(result);
     const auto rhsValues = flatValues(rhs);
 
+    #ifdef FOAM_OFFLOAD
+    apply_policy
+    (
+        static_cast<std::size_t>(resultValues.size()),
+        [&](auto policy)
+        {
+            std::transform
+            (
+                policy,
+                rhsValues.begin(),
+                rhsValues.end(),
+                resultValues.begin(),
+                [&](const auto& rhsValue)
+                {
+                    return op(lhs, rhsValue);
+                }
+            );
+        }
+    );
+    #else
     forAll(resultValues, i)
     {
         resultValues[i] = op(lhs, rhsValues[i]);
     }
+    #endif
 
     return true;
 }
@@ -251,10 +315,31 @@ bool assignFlat
     auto resultValues = flatValues(result);
     const auto lhsValues = flatValues(lhs);
 
+    #ifdef FOAM_OFFLOAD
+    apply_policy
+    (
+        static_cast<std::size_t>(resultValues.size()),
+        [&](auto policy)
+        {
+            std::transform
+            (
+                policy,
+                lhsValues.begin(),
+                lhsValues.end(),
+                resultValues.begin(),
+                [&](const auto& lhsValue)
+                {
+                    return op(lhsValue, rhs);
+                }
+            );
+        }
+    );
+    #else
     forAll(resultValues, i)
     {
         resultValues[i] = op(lhsValues[i], rhs);
     }
+    #endif
 
     return true;
 }
@@ -293,6 +378,33 @@ bool assignFlat
     const auto secondValues = flatValues(second);
     const auto thirdValues = flatValues(third);
 
+    #ifdef FOAM_OFFLOAD
+    const labelRange indexRange(resultValues.size());
+
+    apply_policy
+    (
+        static_cast<std::size_t>(indexRange.size()),
+        [&](auto policy)
+        {
+            std::transform
+            (
+                policy,
+                indexRange.begin(),
+                indexRange.end(),
+                resultValues.begin(),
+                [&](const label i)
+                {
+                    return op
+                    (
+                        firstValues[i],
+                        secondValues[i],
+                        thirdValues[i]
+                    );
+                }
+            );
+        }
+    );
+    #else
     forAll(resultValues, i)
     {
         resultValues[i] = op
@@ -302,6 +414,7 @@ bool assignFlat
             thirdValues[i]
         );
     }
+    #endif
 
     return true;
 }
@@ -337,10 +450,37 @@ bool assignFlat
     const auto firstValues = flatValues(first);
     const auto secondValues = flatValues(second);
 
+    #ifdef FOAM_OFFLOAD
+    apply_policy
+    (
+        static_cast<std::size_t>(resultValues.size()),
+        [&](auto policy)
+        {
+            std::transform
+            (
+                policy,
+                firstValues.begin(),
+                firstValues.end(),
+                secondValues.begin(),
+                resultValues.begin(),
+                [&](const auto& firstValue, const auto& secondValue)
+                {
+                    return op
+                    (
+                        firstValue,
+                        secondValue,
+                        third
+                    );
+                }
+            );
+        }
+    );
+    #else
     forAll(resultValues, i)
     {
         resultValues[i] = op(firstValues[i], secondValues[i], third);
     }
+    #endif
 
     return true;
 }
