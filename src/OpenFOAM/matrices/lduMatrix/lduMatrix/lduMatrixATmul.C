@@ -434,7 +434,7 @@ void Foam::lduMatrix::sumA
                     policy,
                     faceIndices.begin(),
                     faceIndices.end(),
-                    [&](const auto& face)
+                    [&, pCoeffs](const auto& face)
                     {
                         sumAPtr[pa[face]] -= pCoeffs[face];
                     }

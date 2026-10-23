@@ -2219,6 +2219,7 @@ void Foam::fvMatrix<Type>::operator=(const fvMatrix<Type>& fvmv)
     source_ = fvmv.source_;
     internalCoeffs_ = fvmv.internalCoeffs_;
     boundaryCoeffs_ = fvmv.boundaryCoeffs_;
+    coeffsOffset_ = fvmv.coeffsOffset_;
 
     if (faceFluxCorrectionPtr_ && fvmv.faceFluxCorrectionPtr_)
     {
