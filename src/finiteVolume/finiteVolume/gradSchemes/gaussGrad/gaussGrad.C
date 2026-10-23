@@ -154,7 +154,7 @@ Foam::fv::gaussGrad<Type>::gradf
 
         const labelRange cellRange(patchCells.size());
 
-        auto neiFun = [&](const label, const label facei) -> GradType
+        auto neiFun = [&pSf, pssf](const label, const label facei) -> GradType
         {
             return pSf[facei]*pssf[facei];
         };
