@@ -121,7 +121,7 @@ void surfaceIntegrate
 
         labelRange indices(patchCells.size());
 
-        auto neiFun = [pssf](const label, const label facei)
+        auto neiFun = [&pssf](const label, const label facei)
         {
             return pssf[facei];
         };
