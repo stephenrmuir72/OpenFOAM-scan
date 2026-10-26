@@ -16,6 +16,8 @@ then
 else
     echo "    make '$appName' without cgal/boost" 1>&2
     export COMP_FLAGS="-DNO_CGAL"
+    WM_COMPILE_CONTROL="${WM_COMPILE_CONTROL} ~cgal"
+    export WM_COMPILE_CONTROL
 fi
 
 wmake $targetType

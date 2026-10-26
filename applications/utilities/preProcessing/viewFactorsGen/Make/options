@@ -1,4 +1,4 @@
-ifneq (,$(findstring NO_CGAL,$(COMP_FLAGS)))
+ifneq (,$(findstring ~cgal,$(WM_COMPILE_CONTROL)))
   include $(GENERAL_RULES)/no-cgal
 else
   include $(GENERAL_RULES)/cgal-header-only
