@@ -16,6 +16,7 @@ ODESolvers/rodas34/rodas34.C
 ODESolvers/SIBS/SIBS.C
 ODESolvers/SIBS/SIMPR.C
 ODESolvers/SIBS/polyExtrapolate.C
+ODESolvers/seulex/seulexSparseLU.C
 ODESolvers/seulex/seulex.C
 
 LIB = $(FOAM_LIBBIN)/libODE

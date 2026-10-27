@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2013-2016 OpenFOAM Foundation
     Copyright (C) 2019 OpenCFD Ltd.
+    Copyright (C) 2026 OpenFOAM Contributors
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -36,6 +37,7 @@ namespace Foam
     defineTypeNameAndDebug(seulex, 0);
 
     addToRunTimeSelectionTable(ODESolver, seulex, dictionary);
+    addNamedToRunTimeSelectionTable(ODESolver, seulex, dictionary, seulexFast);
 
     const scalar
         seulex::stepFactor1_ = 0.6,
@@ -53,6 +55,8 @@ namespace Foam
 Foam::seulex::seulex(const ODESystem& ode, const dictionary& dict)
 :
     ODESolver(ode, dict),
+    useSparse_(dict.getOrDefault<Switch>("sparse", true)),
+    autonomous_(dict.getOrDefault<Switch>("autonomous", false)),
     jacRedo_(min(1e-4, min(relTol_))),
     nSeq_(iMaxx_),
     cpu_(iMaxx_),
@@ -70,7 +74,11 @@ Foam::seulex::seulex(const ODESystem& ode, const dictionary& dict)
     scale_(n_),
     dy_(n_),
     yTemp_(n_),
-    dydx_(n_)
+    dydx_(n_),
+    f0_(n_),
+    sparse_(false),
+    denseNow_(true),
+    nBuild_(0)
 {
     // The CPU time factors for the major parts of the algorithm
     const scalar cpuFunc = 1, cpuJac = 5, cpuLU = 1, cpuSolve = 1;
@@ -103,6 +111,145 @@ Foam::seulex::seulex(const ODESystem& ode, const dictionary& dict)
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
+void Foam::seulex::updatePattern
+(
+    const scalar x,
+    const scalarField& y
+) const
+{
+    const label n = n_;
+
+    if (!useSparse_ || nBuild_ > 10 || (!sparse_ && pattern_.size() == n*n))
+    {
+        sparse_ = false;
+        return;
+    }
+
+    bool grown = false;
+
+    if (pattern_.size() != n*n)
+    {
+        if (nBuild_ >= 10)
+        {
+            ++nBuild_;
+            sparse_ = false;
+            return;
+        }
+
+        pattern_.resize(n*n);
+        pattern_ = false;
+        for (label i = 0; i < n; ++i)
+        {
+            pattern_[i*n + i] = true;
+        }
+
+        // Entries that vanish only at this state (zero concentrations):
+        // the Jacobian at a state with every component shifted up
+        scalarField yProbe(y);
+        forAll(yProbe, i)
+        {
+            const scalar yi = y[i];
+            yProbe[i] =
+                yi >= -1e-6
+              ? mag(yi) + 1e-6*(1 + mag(yi))
+              : yi - 1e-6*(1 + mag(yi));
+        }
+        scalarField dfdxProbe(n);
+        scalarSquareMatrix dfdyProbe(n);
+        odes_.jacobian(x, yProbe, dfdxProbe, dfdyProbe);
+        const scalar* p = dfdyProbe.cdata();
+        forAll(pattern_, q)
+        {
+            if (p[q] != 0)
+            {
+                pattern_[q] = true;
+            }
+        }
+        grown = true;
+    }
+
+    // New non-zeros: taken into the current factors where those already
+    // store the position (fill-in), otherwise the pattern is rebuilt
+    const scalar* J = dfdy_.cdata();
+    label nTaken = 0;
+    forAll(pattern_, q)
+    {
+        if (J[q] != 0 && !pattern_[q])
+        {
+            pattern_[q] = true;
+            if (!grown && slu_.addEntry(q))
+            {
+                ++nTaken;
+            }
+            else
+            {
+                grown = true;
+            }
+        }
+    }
+
+    if (debug && nTaken && !grown)
+    {
+        Info<< type() << ": " << nTaken
+            << " new entries taken into the fill-in" << endl;
+    }
+
+    if (grown)
+    {
+        if (++nBuild_ > 10)
+        {
+            sparse_ = false;
+            return;
+        }
+
+        slu_.build(n, pattern_);
+        sparse_ = slu_.nUpdates() < 0.5*scalar(n)*n*n/3;
+
+        if (debug)
+        {
+            Info<< type() << ": pattern built (" << nBuild_ << "), n " << n
+                << ", sparse factorisation " << slu_.nUpdates()
+                << " multiply-adds against " << scalar(n)*n*n/3
+                << " dense, using " << (sparse_ ? "sparse" : "dense") << endl;
+        }
+    }
+}
+
+
+void Foam::seulex::factorise(const scalar dx) const
+{
+    denseNow_ = !(sparse_ && slu_.factor(dfdy_, 1/dx));
+
+    if (denseNow_)
+    {
+        for (label i=0; i<n_; i++)
+        {
+            for (label j=0; j<n_; j++)
+            {
+                a_(i, j) = -dfdy_(i, j);
+            }
+
+            a_(i, i) += 1/dx;
+        }
+
+        LUDecompose(a_, pivotIndices_);
+    }
+}
+
+
+void Foam::seulex::linSolve(scalarField& b) const
+{
+    if (denseNow_)
+    {
+        LUBacksubstitute(a_, pivotIndices_, b);
+    }
+    else
+    {
+        slu_.solve(b);
+    }
+}
+
+
 bool Foam::seulex::seul
 (
     const scalar x0,
@@ -116,23 +263,31 @@ bool Foam::seulex::seul
     label nSteps = nSeq_[k];
     scalar dx = dxTot/nSteps;
 
-    for (label i=0; i<n_; i++)
-    {
-        for (label j=0; j<n_; j++)
-        {
-            a_(i, j) = -dfdy_(i, j);
-        }
-
-        a_(i, i) += 1/dx;
-    }
-
-    LUDecompose(a_, pivotIndices_);
+    factorise(dx);
 
     scalar xnew = x0 + dx;
-    odes_.derivatives(xnew, y0, dy_);
-    LUBacksubstitute(a_, pivotIndices_, dy_);
+
+    if (autonomous_)
+    {
+        // The derivatives do not depend on the time argument, so every
+        // column's first right-hand side f(x0 + dx_k, y0) is the same
+        // vector: evaluated with the first column of each step attempt
+        if (k == 0)
+        {
+            odes_.derivatives(xnew, y0, f0_);
+        }
+        dy_ = f0_;
+    }
+    else
+    {
+        odes_.derivatives(xnew, y0, dy_);
+    }
+    linSolve(dy_);
 
     yTemp_ = y0;
+
+    // dydx_ holds f(yTemp_) after the divergence test (autonomous systems)
+    bool haveF = false;
 
     for (label nn=1; nn<nSteps; nn++)
     {
@@ -149,12 +304,13 @@ bool Foam::seulex::seul
             dy1 = sqrt(dy1);
 
             odes_.derivatives(x0 + dx, yTemp_, dydx_);
+            haveF = autonomous_;
             for (label i=0; i<n_; i++)
             {
                 dy_[i] = dydx_[i] - dy_[i]/dx;
             }
 
-            LUBacksubstitute(a_, pivotIndices_, dy_);
+            linSolve(dy_);
 
             const scalar denom = min(1, dy1 + SMALL);
             scalar dy2 = 0;
@@ -178,8 +334,17 @@ bool Foam::seulex::seul
             }
         }
 
-        odes_.derivatives(xnew, yTemp_, dy_);
-        LUBacksubstitute(a_, pivotIndices_, dy_);
+        if (haveF)
+        {
+            // The divergence test has just evaluated f at this same state
+            dy_ = dydx_;
+            haveF = false;
+        }
+        else
+        {
+            odes_.derivatives(xnew, yTemp_, dy_);
+        }
+        linSolve(dy_);
     }
 
     for (label i=0; i<n_; i++)
@@ -229,6 +394,11 @@ bool Foam::seulex::resize()
         resizeField(dy_);
         resizeField(yTemp_);
         resizeField(dydx_);
+        resizeField(f0_);
+
+        pattern_.clear();
+        sparse_ = false;
+        denseNow_ = true;
 
         return true;
     }
@@ -271,6 +441,7 @@ void Foam::seulex::solve
     if (theta_ > jacRedo_)
     {
         odes_.jacobian(x, y, dfdx_, dfdy_);
+        updatePattern(x, y);
         jacUpdated = true;
     }
 
@@ -423,6 +594,7 @@ void Foam::seulex::solve
                 if (theta_ > jacRedo_ && !jacUpdated)
                 {
                     odes_.jacobian(x, y, dfdx_, dfdy_);
+                    updatePattern(x, y);
                     jacUpdated = true;
                 }
             }
