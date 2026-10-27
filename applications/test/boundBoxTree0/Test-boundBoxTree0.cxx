@@ -24,15 +24,105 @@ License
     along with OpenFOAM.  If not, see <http://www.gnu.org/licenses/>.
 
 Description
-    Test boundBoxTree visitor traversal and overlap queries
+    Test boundBoxTree traversal, nearest searches, and stream extraction
 
 \*---------------------------------------------------------------------------*/
 
 #include "argList.H"
 #include "boundBoxTree.H"
 #include "Random.H"
+#include "StringStream.H"
 
 using namespace Foam;
+
+
+void check(const bool condition, const char* message)
+{
+    if (!condition)
+    {
+        FatalErrorInFunction
+            << message
+            << abort(FatalError);
+    }
+}
+
+
+void testFindNearest()
+{
+    List<treeBoundBox> boxes(1);
+    boxes[0] = treeBoundBox(point(1, 1, 1), point(2, 2, 2));
+
+    boundBoxTree tree(boxes);
+    DynamicList<label> hits;
+
+    const auto overlap = tree.findNearest(point(0, 1.5, 1.5), 1.1, hits);
+
+    check
+    (
+        overlap.second() == volumeType::MIXED,
+        "Expected the sphere to overlap the box"
+    );
+    check
+    (
+        hits.size() == 1 && hits[0] == 0,
+        "Expected the overlapping box in the nearest hits"
+    );
+
+    const auto tangent = tree.findNearest(point(0, 1.5, 1.5), 1, hits);
+
+    check
+    (
+        tangent.second() == volumeType::MIXED,
+        "Expected an exact tangent to count as an overlap"
+    );
+    check
+    (
+        hits.size() == 1 && hits[0] == 0,
+        "Expected the tangent box in the nearest hits"
+    );
+
+    List<treeBoundBox> orderBoxes(2);
+    orderBoxes[0] =
+        treeBoundBox(point(1, -10, -10), point(2, 10, 10));
+    orderBoxes[1] =
+        treeBoundBox(point(2, 0, 0), point(3, 0.1, 0.1));
+
+    boundBoxTree orderTree(orderBoxes);
+    const auto ordered =
+        orderTree.findNearest(point(0, 0, 0), 4.1, hits);
+
+    check
+    (
+        ordered.second() == volumeType::MIXED,
+        "Expected both boxes to overlap the search sphere"
+    );
+    check
+    (
+        hits.size() == 2 && hits[0] == 0 && hits[1] == 1,
+        "Expected boxes to be sorted by point-to-box distance"
+    );
+}
+
+
+// void testUnsupportedExtraction()
+// {
+//     List<treeBoundBox> boxes(1);
+//     boxes[0] = treeBoundBox(point(1, 1, 1), point(2, 2, 2));
+//
+//     boundBoxTree tree(boxes);
+//     IStringStream input("unsupported input");
+//     input >> tree;
+//
+//     check(input.fail(), "Expected unsupported extraction to fail");
+//     check
+//     (
+//         tree.size() == 1
+//      && tree[0].min() == boxes[0].min()
+//      && tree[0].max() == boxes[0].max(),
+//         "Expected failed extraction to leave the tree unchanged"
+//     );
+// }
+
 
 // Visitor tallying leaf/interior nodes and total indexed boxes
 struct treeStatsVisitor
@@ -78,6 +168,9 @@ int main(int argc, char* argv[])
     argList::noBanner();
     argList::noParallel();
     #include "setRootCase.H"
+
+    testFindNearest();
+    // testUnsupportedExtraction();
 
     Random rndGen(1234);
 

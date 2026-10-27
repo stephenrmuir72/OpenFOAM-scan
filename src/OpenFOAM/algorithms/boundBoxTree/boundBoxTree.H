@@ -70,7 +70,6 @@ namespace Foam
 
 // Forward Declarations
 class boundBoxTree;
-Istream& operator>>(Istream&, boundBoxTree&);
 Ostream& operator<<(Ostream&, const boundBoxTree&);
 
 template<>
@@ -536,9 +535,7 @@ public:
 
     // IOstream Operators
 
-        friend Istream& operator>>(Istream&, boundBoxTree&);
         friend Ostream& operator<<(Ostream&, const boundBoxTree&);
-
         friend Ostream& operator<<(Ostream&, const InfoProxy<boundBoxTree>&);
 
 

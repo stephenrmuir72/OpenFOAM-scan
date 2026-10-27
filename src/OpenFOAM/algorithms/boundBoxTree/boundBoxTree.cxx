@@ -47,6 +47,50 @@ const Foam::boundBoxTree::node& Foam::boundBoxTree::empty_leaf()
 static constexpr bool debuggingOn = false;
 
 
+// * * * * * * * * * * * * * * * Local Functions * * * * * * * * * * * * * * //
+
+namespace
+{
+
+// The distance of an outside point to the nearest box corner.
+// Is zero for an inside point
+Foam::scalar pointToBoxDistSqr
+(
+    const Foam::boundBox& bbox,
+    const Foam::point& p
+)
+{
+    Foam::scalar distSqr = 0;
+
+    for
+    (
+        Foam::direction cmpt = 0;
+        cmpt < Foam::vector::nComponents;
+        ++cmpt
+    )
+    {
+        Foam::scalar d = 0;
+
+        if (p[cmpt] < bbox.min()[cmpt])
+        {
+            // An outside point : distance to min corner
+            d = bbox.min()[cmpt] - p[cmpt];
+        }
+        else if (p[cmpt] > bbox.max()[cmpt])
+        {
+            // An outside point : distance to max corner
+            d = p[cmpt] - bbox.max()[cmpt];
+        }
+
+        distSqr += Foam::sqr(d);
+    }
+
+    return distSqr;
+}
+
+} // End namespace Foam
+
+
 // * * * * * * * * * * * * * * Private Member Functions * * * * * * * * * * //
 
 void Foam::boundBoxTree::autosize
@@ -771,12 +815,23 @@ Foam::boundBoxTree::findNearest
                     hits.push_back(i);
 
                     // min/max distances squared
-                    Pair<scalar> dsqr = bbox.distSqr(centre);
+                    const Pair<scalar> dsqr = bbox.distSqr(centre);
 
-                    if (dsqr.first() < minDistSqr)
+                    // Use the true point-to-AABB minimum distance for
+                    // candidate selection and hit ordering. Ensure an
+                    // inclusive first overlap can establish the nearest
+                    // candidate at an equal search bound.
+
+                    const scalar d2 = pointToBoxDistSqr(bbox, centre);
+
+                    if
+                    (
+                        (bestIndex < 0)
+                     || (d2 < minDistSqr)
+                    )
                     {
                         bestIndex = i;
-                        minDistSqr = dsqr.first();
+                        minDistSqr = d2;
                         maxDistSqr = Foam::min(maxDistSqr, dsqr.second());
                     }
                 }
@@ -847,7 +902,7 @@ Foam::boundBoxTree::findNearest
                 )
                 {
                     idxs.push_back(i);
-                    vals.push_back(bbox.minDistSqr(centre));
+                    vals.push_back(pointToBoxDistSqr(bbox, centre));
                 }
             }
         }
@@ -923,13 +978,6 @@ Foam::Ostream& Foam::operator<<(Ostream& os, const boundBoxTree& tree)
 
     os.check(FUNCTION_NAME);
     return os;
-}
-
-
-Foam::Istream& Foam::operator>>(Istream& is, boundBoxTree& tree)
-{
-    is.check(FUNCTION_NAME);
-    return is;
 }
 
 
