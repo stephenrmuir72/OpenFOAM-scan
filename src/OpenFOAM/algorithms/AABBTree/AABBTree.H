@@ -203,11 +203,10 @@ private:
 
     // Queries
 
-        //- Depth-first walking, returning first leaf object index
-        //- matching the predicate (-1 for no matches).
+        //- Depth-first search for a matching leaf bounding box.
         //  Note: requires navigation nodes.
         template<class Predicate>
-        label find_first_of(label nodei, const Predicate& pred) const;
+        bool found_first_of(label nodei, const Predicate& pred) const;
 
 
 protected:

@@ -192,7 +192,7 @@ void Foam::AABBTreeBase::build_impl
 
     const int minCount = std::max(1, ctrl.minLeafSize);
 
-    if (currLevel >= ctrl.maxLevel || (count < 2*minCount))
+    if (currLevel >= ctrl.maxLevel || count/2 < minCount)
     {
         // End condition reached == this is a leaf
         offsetsToBuild.push_back(last);
@@ -387,11 +387,11 @@ void Foam::AABBTreeBase::calcNodeAddressing() const
     nodes_.reset(nullptr);
     nodes_ = std::make_unique<List<node>>();
 
-    if (!offsets_.empty())
+    if (nLeafs() > 0)
     {
         DynamicList<node> nodesToBuild;
 
-        reindex_impl(0, offsets_.size(), nodesToBuild);
+        reindex_impl(0, nLeafs(), nodesToBuild);
 
         *nodes_ = std::move(nodesToBuild);
     }
@@ -451,13 +451,14 @@ bool Foam::AABBTreeBase::pointInside(const point& pt) const
 
     if (hasNodes())
     {
-        const auto pred =
+        return found_first_of
+        (
+            0,
             [&pt](const treeBoundBox& bb)
             {
                 return bb.contains(pt);
-            };
-
-        return (find_first_of(0, pred) >= 0);
+            }
+        );
     }
     else
     {
@@ -489,13 +490,14 @@ bool Foam::AABBTreeBase::overlaps(const boundBox& queryBb) const
 
     if (hasNodes())
     {
-        const auto pred =
+        return found_first_of
+        (
+            0,
             [&queryBb](const treeBoundBox& bb)
             {
                 return bb.overlaps(queryBb);
-            };
-
-        return (find_first_of(0, pred) >= 0);
+            }
+        );
     }
     else
     {
@@ -615,6 +617,9 @@ Foam::Ostream& Foam::operator<<(Ostream& os, const AABBTreeBase& tree)
 
 Foam::Istream& Foam::operator>>(Istream& is, AABBTreeBase& tree)
 {
+    // Invalidate any navigation
+    tree.clearNodes();
+
     is  >> tree.leafBoxes()  // content
         >> tree.offsets() >> tree.indices();  // compact addressing
 

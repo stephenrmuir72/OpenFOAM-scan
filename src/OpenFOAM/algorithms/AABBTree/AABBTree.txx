@@ -31,7 +31,7 @@ License
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
 template<class Predicate>
-Foam::label Foam::AABBTreeBase::find_first_of
+bool Foam::AABBTreeBase::found_first_of
 (
     label nodei,
     const Predicate& pred
@@ -41,33 +41,27 @@ Foam::label Foam::AABBTreeBase::find_first_of
 
     if (!pred(nd.bb()))
     {
-        return -1;
+        return false;
     }
 
     if (nd.is_leaf())
     {
-        for (auto i : nd.slice(indices_))
-        {
-            if (pred(leafBoxes_[i]))
-            {
-                return i;
-            }
-        }
+        return true;
     }
     else  // interior:
     {
         // Do left first, right second
-        if (label i = find_first_of(nd.left(), pred); i >= 0)
+        if
+        (
+            found_first_of(nd.left(), pred)
+         || found_first_of(nd.right(), pred)
+        )
         {
-            return i;
-        }
-        if (label i = find_first_of(nd.right(), pred); i >= 0)
-        {
-            return i;
+            return true;
         }
     }
 
-    return -1;
+    return false;
 }
 
 
@@ -85,11 +79,11 @@ Foam::label Foam::AABBTreeBase::reindex_impl
     );
 
     #ifdef FULLDEBUG
-    if (first < 0 || last > offsets_.size() || first >= last)
+    if (first < 0 || last > nLeafs() || first >= last)
     {
         FatalErrorInFunction
             << "Invalid range [" << first << ", " << last << ")"
-            << " for offsets of size " << offsets_.size()
+            << " for leaves of size " << nLeafs()
             << abort(FatalError);
     }
     #endif
@@ -199,6 +193,7 @@ Foam::AABBTreeBase::objectCentres
         auto& centres = tcentres.ref();
 
         bitSet pointsUsed(objectPoints.size());
+        DynamicList<label> currPoints;
 
         label objecti = 0;
         for (const auto& obj : objects)
@@ -206,21 +201,23 @@ Foam::AABBTreeBase::objectCentres
             auto& centre = centres[objecti];
             ++objecti;
 
-            pointsUsed.reset();
-            label nObjPoints = 0;
+            currPoints.clear();
 
             for (label pointi : obj)
             {
                 if (pointsUsed.set(pointi))
                 {
-                    ++nObjPoints;
+                    currPoints.push_back(pointi);
                     centre += objectPoints[pointi];
                 }
             }
 
-            if (nObjPoints)
+            if (const label nObjPoints = currPoints.size(); nObjPoints > 0)
             {
                 centre /= nObjPoints;
+
+                // clear out bits before the next loop
+                pointsUsed.unset(currPoints);
             }
         }
 
