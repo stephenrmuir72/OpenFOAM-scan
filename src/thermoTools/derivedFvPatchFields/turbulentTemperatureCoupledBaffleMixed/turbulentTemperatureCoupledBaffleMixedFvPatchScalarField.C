@@ -243,35 +243,6 @@ turbulentTemperatureCoupledBaffleMixedFvPatchScalarField::kappa
     // Get kappa from relevant thermo
     tmp<scalarField> tk(temperatureCoupledBase::kappa(Tp));
 
-    // Optionally modify with explicit resistance
-    if (thicknessLayer_ || thicknessLayers_.size())
-    {
-        scalarField KDelta(tk*patch().deltaCoeffs());
-
-        // Harmonic averaging of kappa*deltaCoeffs
-        {
-            KDelta = 1.0/KDelta;
-            if (thicknessLayer_)
-            {
-                const scalar t = db().time().timeOutputValue();
-                KDelta +=
-                    thicknessLayer_().value(t)
-                   /kappaLayer_().value(t);
-            }
-            if (thicknessLayers_.size())
-            {
-                forAll(thicknessLayers_, iLayer)
-                {
-                    KDelta += thicknessLayers_[iLayer]/kappaLayers_[iLayer];
-                }
-            }
-            KDelta = 1.0/KDelta;
-        }
-
-        // Update kappa from KDelta
-        tk = KDelta/patch().deltaCoeffs();
-    }
-
     return tk;
 }
 
@@ -328,6 +299,33 @@ void turbulentTemperatureCoupledBaffleMixedFvPatchScalarField::updateCoeffs()
     distribute(this->internalField().name() + "_value", nbrIntFld);
     distribute(this->internalField().name() + "_weights", nbrKDelta);
 
+    scalarField KDeltaC(this->size(), GREAT);
+    if (thicknessLayer_ || thicknessLayers_.size())
+    {
+        // Harmonic averaging
+        {
+            KDeltaC = 0.0;
+
+            if (thicknessLayer_)
+            {
+                const scalar t = db().time().timeOutputValue();
+                KDeltaC +=
+                    thicknessLayer_().value(t)
+                   /kappaLayer_().value(t);
+            }
+            if (thicknessLayers_.size())
+            {
+                forAll(thicknessLayers_, iLayer)
+                {
+                    KDeltaC += thicknessLayers_[iLayer]/kappaLayers_[iLayer];
+                }
+            }
+            KDeltaC = 1.0/(KDeltaC + SMALL);
+        }
+    }
+
+    scalarField alpha(kappaTp*(1 + nbrKDelta/KDeltaC)*patch().deltaCoeffs());
+
 
     // Both sides agree on
     // - temperature : (myKDelta*fld + nbrKDelta*nbrFld)/(myKDelta+nbrKDelta)
@@ -346,7 +344,7 @@ void turbulentTemperatureCoupledBaffleMixedFvPatchScalarField::updateCoeffs()
 
     this->refValue() = nbrIntFld;
     this->refGrad() = Zero;
-    this->valueFraction() = nbrKDelta/(nbrKDelta + myKDelta());
+    this->valueFraction() = nbrKDelta/(nbrKDelta + alpha);
 
     this->parent_bctype::updateCoeffs();
 
