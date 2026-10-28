@@ -55,7 +55,7 @@ class Identity
 public:
 
     //- Construct initializing the SphericalTensor to 1
-    constexpr Identity()
+    Foam_VectorSpace_constexpr Identity()
     :
         SphericalTensor<Cmpt>(1)
     {}
@@ -87,7 +87,7 @@ public:
 
 
 //- Global Identity tensor
-static constexpr Identity<scalar> I;
+static Foam_VectorSpace_constexpr const Identity<scalar> I;
 
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //

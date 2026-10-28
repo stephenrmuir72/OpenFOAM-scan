@@ -54,6 +54,20 @@ SourceFiles
 #include "word.H"
 #include "zero.H"
 
+// Handling compiler defects: eg Nvidia duplicate symbol error (issue #3659)
+// - Derived constexpr constructors calling VectorSpace's variadic argument
+//   constructor cause nvc++ to report a spurious duplicate symbol error when
+//   compiling stdpar build (NOV-2026)
+#if defined(FOAM_OFFLOAD) && defined(__NVCOMPILER_STDPAR_GPU)
+#define Foam_VectorSpace_constexpr              /* constexpr == empty */
+#define Foam_VectorSpace_brokenDirectConstructor
+#endif
+
+// For non-offloaded builds and other compilers constexpr works as expected
+#ifndef Foam_VectorSpace_constexpr
+#define Foam_VectorSpace_constexpr constexpr    /* constexpr == constexpr */
+#endif
+
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 namespace Foam

@@ -143,12 +143,19 @@ inline Foam::Tensor<Cmpt>::Tensor
 
 
 template<class Cmpt>
-inline constexpr Foam::Tensor<Cmpt>::Tensor
+inline Foam_VectorSpace_constexpr Foam::Tensor<Cmpt>::Tensor
 (
     const Cmpt txx, const Cmpt txy, const Cmpt txz,
     const Cmpt tyx, const Cmpt tyy, const Cmpt tyz,
     const Cmpt tzx, const Cmpt tzy, const Cmpt tzz
 )
+#ifdef Foam_VectorSpace_brokenDirectConstructor
+{
+    this->v_[XX] = txx; this->v_[XY] = txy; this->v_[XZ] = txz;
+    this->v_[YX] = tyx; this->v_[YY] = tyy; this->v_[YZ] = tyz;
+    this->v_[ZX] = tzx; this->v_[ZY] = tzy; this->v_[ZZ] = tzz;
+}
+#else
 :
     // aggregate initialization
     Tensor::msType
@@ -159,6 +166,7 @@ inline constexpr Foam::Tensor<Cmpt>::Tensor
         tzx, tzy, tzz
     )
 {}
+#endif
 
 
 template<class Cmpt>

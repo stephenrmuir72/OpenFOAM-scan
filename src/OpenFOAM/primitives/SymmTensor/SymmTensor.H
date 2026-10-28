@@ -120,7 +120,7 @@ public:
         );
 
         //- Construct given the six components
-        inline constexpr SymmTensor
+        inline Foam_VectorSpace_constexpr SymmTensor
         (
             const Cmpt txx, const Cmpt txy, const Cmpt txz,
                             const Cmpt tyy, const Cmpt tyz,

@@ -71,12 +71,19 @@ inline Foam::SymmTensor<Cmpt>::SymmTensor
 
 
 template<class Cmpt>
-inline constexpr Foam::SymmTensor<Cmpt>::SymmTensor
+inline Foam_VectorSpace_constexpr Foam::SymmTensor<Cmpt>::SymmTensor
 (
     const Cmpt txx, const Cmpt txy, const Cmpt txz,
                     const Cmpt tyy, const Cmpt tyz,
                                     const Cmpt tzz
 )
+#ifdef Foam_VectorSpace_brokenDirectConstructor
+{
+    this->v_[XX] = txx; this->v_[XY] = txy; this->v_[XZ] = txz;
+                        this->v_[YY] = tyy; this->v_[YZ] = tyz;
+                                            this->v_[ZZ] = tzz;
+}
+#else
 :
     // aggregate initialization
     SymmTensor::vsType
@@ -87,6 +94,7 @@ inline constexpr Foam::SymmTensor<Cmpt>::SymmTensor
                   tzz
     )
 {}
+#endif
 
 
 template<class Cmpt>

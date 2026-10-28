@@ -165,7 +165,7 @@ public:
         );
 
         //- Construct given the nine components
-        inline constexpr Tensor
+        inline Foam_VectorSpace_constexpr Tensor
         (
             const Cmpt txx, const Cmpt txy, const Cmpt txz,
             const Cmpt tyx, const Cmpt tyy, const Cmpt tyz,
