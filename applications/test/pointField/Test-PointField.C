@@ -27,15 +27,17 @@ Application
     testPointField
 
 Description
-    For each time calculate the magnitude of velocity.
+    Basic test for point fields.
 
 \*---------------------------------------------------------------------------*/
 
-#include "fvCFD.H"
 #include "pointMesh.H"
 #include "pointFields.H"
+#include "argList.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+using namespace Foam;
 
 int main(int argc, char *argv[])
 {
@@ -43,7 +45,7 @@ int main(int argc, char *argv[])
     #include "setRootCase.H"
 
     #include "createTime.H"
-    #include "createMesh.H"
+    #include "createPolyMesh.H"
 
     const pointMesh& pMesh = pointMesh::New(mesh);
 
