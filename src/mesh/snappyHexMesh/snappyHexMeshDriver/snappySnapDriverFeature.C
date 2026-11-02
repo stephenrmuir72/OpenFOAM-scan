@@ -3713,7 +3713,7 @@ void Foam::snappySnapDriver::featureAttractionUsingFeatureEdges
         iter,
         featureCos,
         multiRegionFeatureSnap,
-        strictRegionFeatureSnap, // extra logic for points on >=3 patches 
+        strictRegionFeatureSnap, // extra logic for points on >=3 patches
 
         pp,
         ppLocalPoints,

@@ -59,6 +59,7 @@ License
 #include "FaceCellWave.H"
 #include "wallPoints.H"
 #include "searchableSurfaces.H"
+#include "addPatchCellLayer.H"
 
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
@@ -1093,7 +1094,7 @@ Foam::List<Foam::labelPair> Foam::meshRefinement::freeStandingBaffles
             {
                 label edgeI = fEdges[fEdgeI];
 
-                if (nBafflesPerEdge[edgeI] == 2*baffleValue+2*1)
+                if (nBafflesPerEdge[edgeI] >= 2*baffleValue)
                 {
                     filteredCouples[filterI++] = couple;
                     break;
@@ -1113,7 +1114,7 @@ Foam::List<Foam::labelPair> Foam::meshRefinement::freeStandingBaffles
         << nl << endl;
 
 
-    if (nFiltered > 0)
+    if (nFiltered > 0 && meshType() != CASTELLATEDBUFFERLAYER2)
     {
         // Collect segments
         // ~~~~~~~~~~~~~~~~
@@ -1251,6 +1252,7 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::meshRefinement::mergeBaffles
         const labelList& faceOwner = mesh_.faceOwner();
         const faceZoneMesh& faceZones = mesh_.faceZones();
 
+        // Convert local boundary face pair into internal face
         forAll(couples, i)
         {
             label face0 = couples[i].first();
@@ -1329,7 +1331,7 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::meshRefinement::mergeBaffles
             const label faceI = iter.key();
             const label patchI = iter.val();
 
-            if (!mesh_.isInternalFace(faceI))
+            if (mesh_.isInternalFace(faceI))
             {
                 FatalErrorInFunction
                     << "problem: face:" << faceI
@@ -2664,6 +2666,326 @@ void Foam::meshRefinement::growCellZone
 }
 
 
+void Foam::meshRefinement::detectOutsideFaces
+(
+    const label zoneID,
+    const labelList& cellToZone,
+    const labelList& neiCellZone,
+    bitSet& isZoneFace,
+    bitSet& isFlipFace  // own or nei side
+) const
+{
+    // Return the outside of the specified cell zone as an
+    // indirectPrimitivePatch.
+    isZoneFace.resize(mesh_.nFaces());
+    isZoneFace = false;
+    isFlipFace.resize(mesh_.nFaces());
+    isFlipFace = false;
+
+    // Get both zones for each face and mark the outside faces of the
+    // specified zone
+    auto markZone = [&](const label facei, const label own, const label nei)
+    {
+        if (own == zoneID)
+        {
+            if (nei != zoneID)
+            {
+                // Own side so flip flag is already false
+                isZoneFace.set(facei);
+            }
+        }
+        else
+        {
+            if (nei == zoneID)
+            {
+                isZoneFace.set(facei);
+                isFlipFace.set(facei);
+            }
+        }
+    };
+
+    for (label facei = 0; facei < mesh_.nInternalFaces(); facei++)
+    {
+        const label ownZone = cellToZone[mesh_.faceOwner()[facei]];
+        const label neiZone = cellToZone[mesh_.faceNeighbour()[facei]];
+        markZone(facei, ownZone, neiZone);
+    }
+
+    for (label facei = mesh_.nInternalFaces(); facei < mesh_.nFaces(); facei++)
+    {
+        const label ownZone = cellToZone[mesh_.faceOwner()[facei]];
+        const label neiZone = neiCellZone[facei-mesh_.nInternalFaces()];
+        markZone(facei, ownZone, neiZone);
+    }
+}
+
+
+void Foam::meshRefinement::detectPinchedEdges
+(
+    const label backgroundZoneID,
+    labelList& unnamedSurfaceRegion1,
+    labelList& unnamedSurfaceRegion2,
+    labelList& namedSurfaceRegion,  // potentially zero size if no faceZones
+    labelList& cellToZone
+) const
+{
+    const labelList& faceOwner = mesh_.faceOwner();
+    const labelList& faceNeighbour = mesh_.faceNeighbour();
+    const globalIndex& globalFaces = mesh_.globalData().globalMeshFaceAddr();
+    const globalIndex& globalCells = mesh_.globalData().globalMeshCellAddr();
+
+    // Mark own side of processor patches. Used later on so they don't get
+    // double counted.
+    bitSet isOwnFace(mesh_.nFaces());
+    const auto& pbm = mesh_.boundaryMesh();
+    for (label patchi = pbm.nNonProcessor(); patchi < pbm.size(); patchi++)
+    {
+        if (refCast<const processorPolyPatch>(pbm[patchi]).owner())
+        {
+            isOwnFace.set(pbm[patchi].range());
+        }
+    }
+
+    const label maxZonei = gMax(cellToZone);
+    for (label zonei = 0; zonei <= maxZonei; zonei++)
+    {
+        // Get coupled neighbour cellRegion
+        labelList neiCellZone;
+        syncTools::swapBoundaryCellList(mesh_, cellToZone, neiCellZone);
+
+        // Get outside of zone
+        bitSet isZoneFace(mesh_.nFaces());
+        bitSet isFlipFace(mesh_.nFaces());
+        // // Get neighbouring zone for each cell. -1 for boundary faces.
+        // labelList nbrZone(mesh_.nCells(), -1);
+        detectOutsideFaces
+        (
+            zonei,
+            cellToZone,
+            neiCellZone,
+            isZoneFace,
+            isFlipFace
+        );
+        // Convert to primitivePatch addressing
+        const indirectPrimitivePatch pp
+        (
+            IndirectList<face>
+            (
+                mesh_.faces(),
+                isZoneFace.sortedToc()
+            ),
+            mesh_.points()
+        );
+        // Precalculate mesh edges for the primitive patch. Note that we could
+        // use edgeMap but addPatchCellLayer requires the explicit list of
+        // mesh edges anyway.
+        const labelList meshEdges
+        (
+            pp.meshEdges
+            (
+                mesh_.edges(),
+                mesh_.pointEdges()
+            )
+        );
+
+        // Set flipMap for all slave faces so these get ignored.
+        bitSet flipMap(pp.size());
+        forAll(pp, patchFacei)
+        {
+            if (!isOwnFace[pp.addressing()[patchFacei]])
+            {
+                flipMap.set(patchFacei);
+            }
+        }
+        // Determine edge-connected (mesh)faces. Make sure not to double
+        // count processor faces - ignore the flip side of processor faces.
+        const labelListList edgeGlobalFaces
+        (
+            addPatchCellLayer::globalEdgeFaces
+            (
+                mesh_,
+                globalFaces,
+                pp,
+                flipMap
+            )
+        );
+
+        // Count the number of zone faces per cell
+        labelList nPatchFaces(mesh_.nCells(), Zero);
+        {
+            for (const label facei : pp.addressing())
+            {
+                ++nPatchFaces[faceOwner[facei]];
+                if (mesh_.isInternalFace(facei))
+                {
+                    ++nPatchFaces[faceNeighbour[facei]];
+                }
+            }
+        }
+
+        // Detect edge with more than 2 faces and select the cell with the
+        // most patch faces to resolve the pinched edge. This might have to
+        // be a loop to erode layers of pinched edges. Very similar to
+        // eroding stand-alone baffles ...
+
+        labelHashSet edgeCells;
+        List<labelPair> edgeAndCells(pp.nEdges(), labelPair(-1, -1));
+        forAll(edgeGlobalFaces, patchEdgei)
+        {
+            if (edgeGlobalFaces[patchEdgei].size() > 2)
+            {
+                // Detected that edge has more than 2 faces. This indicates
+                // a pinched edge situation.
+                // Collect all cells connected to this edge - note: use
+                // local info only since the edgeGlobalFaces has excluded
+                // some processor faces.
+                const auto& eFaces = pp.edgeFaces()[patchEdgei];
+                labelPair& edgeAndCell = edgeAndCells[patchEdgei];
+
+                edgeCells.clear();
+                for (const label patchFacei : eFaces)
+                {
+                    const label facei = pp.addressing()[patchFacei];
+
+                    if (!isFlipFace[facei])
+                    {
+                        const label own = faceOwner[facei];
+                        edgeCells.insert(own);
+                        if (nPatchFaces[own] > edgeAndCell.second())
+                        {
+                            edgeAndCell.first() = globalCells.toGlobal(own);
+                            edgeAndCell.second() = nPatchFaces[own];
+                        }
+                    }
+                    else if (mesh_.isInternalFace(facei))
+                    {
+                        const label nei = faceNeighbour[facei];
+                        edgeCells.insert(nei);
+                        if (nPatchFaces[nei] > edgeAndCell.second())
+                        {
+                            edgeAndCell.first() = globalCells.toGlobal(nei);
+                            edgeAndCell.second() = nPatchFaces[nei];
+                        }
+                    }
+                }
+
+                // label selectedCelli = -1;
+                // label maxPatchFaces = -1;
+
+                // for (const label celli : edgeCells)
+                // {
+                //     if (nPatchFaces[celli] > maxPatchFaces)
+                //     {
+                //         selectedCelli = celli;
+                //         maxPatchFaces = nPatchFaces[celli];
+                //     }
+                // }
+
+                // Pout<< "Pinched patch edge " << patchEdgei
+                //     << " has " << edgeGlobalFaces[patchEdgei].size()
+                //     << " patch faces: " << edgeGlobalFaces[patchEdgei] << nl
+                //     << "    selected cell " << selectedCelli
+                //     << " at " << mesh_.cellCentres()[selectedCelli]
+                //     << " with " << maxPatchFaces << " patch faces" << nl;
+            }
+        }
+
+        syncTools::syncEdgeList
+        (
+            mesh_,
+            meshEdges,
+            edgeAndCells,
+            [](const auto& a, const auto& b)
+            {
+                if (a.second() >= b.second())
+                {
+                    return a;
+                }
+                else
+                {
+                    return b;
+                }
+            },
+            labelPair(-1, -1)
+        );
+        // Build pp face map
+        labelList meshToPatchFace(mesh_.nFaces(), -1);
+        forAll(pp.addressing(), i)
+        {
+            meshToPatchFace[pp.addressing()[i]] = i;
+        }
+        // Check local cell to be deleted and transport information
+        forAll(meshEdges, patchEdgei)
+        {
+            const auto& edgeAndCell = edgeAndCells[patchEdgei];
+            if (globalCells.isLocal(edgeAndCell.first()))
+            {
+                const label celli = globalCells.toLocal(edgeAndCell.first());
+                // Pout<< "** Pinched patch edge " << patchEdgei
+                //     << "    selected cell " << celli
+                //     << " at " << mesh_.cellCentres()[celli]
+                //     << " with " << edgeAndCell.second() << " patch faces" << nl;
+
+                // Cell to be eroded from zone:
+                // - find face-to-be-eroded
+                // - transport cell zone from other zone into this cell
+                // - transport face zone information to any remaining faces
+                //   (perhaps not neccesary since gets done later on when making
+                //    face zones consistent with the cell zones)
+                const auto& cFaces = mesh_.cells()[celli];
+                label seedFacei = -1;
+                label nbrZonei = -1;
+                for (const auto& facei : cFaces)
+                {
+                    if (meshToPatchFace[facei] != -1)
+                    {
+                        if (mesh_.isInternalFace(facei))
+                        {
+                            const label otherCelli
+                            (
+                                faceOwner[facei] == celli
+                              ? faceNeighbour[facei]
+                              : faceOwner[facei]
+                            );
+                            nbrZonei = cellToZone[otherCelli];
+                        }
+                        else
+                        {
+                            nbrZonei = neiCellZone[facei-mesh_.nInternalFaces()];
+                        }
+                        seedFacei = facei;
+                        break;
+                    }
+                }
+                if (seedFacei != -1)
+                {
+                    // Pout<< "    assigned cell zone: " << cellToZone[celli]
+                    //     << " from nbrZone:" << nbrZonei << " and seeding from:"
+                    //     << seedFacei
+                    //     << nl;
+                    cellToZone[celli] = nbrZonei;
+                    for (const auto facei : cFaces)
+                    {
+                        if (meshToPatchFace[facei] == -1)
+                        {
+                            unnamedSurfaceRegion1[facei] =
+                                unnamedSurfaceRegion1[seedFacei];
+                            unnamedSurfaceRegion2[facei] =
+                                unnamedSurfaceRegion2[seedFacei];
+                            if (namedSurfaceRegion.size())
+                            {
+                                namedSurfaceRegion[facei] =
+                                    namedSurfaceRegion[seedFacei];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
 void Foam::meshRefinement::makeConsistentFaceIndex
 (
     const labelList& surfaceMap,
@@ -3519,6 +3841,18 @@ void Foam::meshRefinement::zonify
                 namedSurfaceRegion,
                 cellToZone
             );
+
+            if (meshType_ == CASTELLATEDBUFFERLAYER2)
+            {
+                detectPinchedEdges
+                (
+                    backgroundZoneID,
+                    unnamedRegion1,
+                    unnamedRegion2,
+                    namedSurfaceRegion,  // potentially zero size if no faceZones
+                    cellToZone
+                );
+            }
         }
         else
         {
@@ -4852,28 +5186,125 @@ void Foam::meshRefinement::mergeFreeStandingBaffles
         << "---------------------------" << nl
         << endl;
 
+    // List of local/remote pairs of freestanding baffle faces.
+    DynamicList<labelPair> localBaffles;
+    DynamicList<labelPair> globalBaffles;
+    // Patch index (processorPatch) for each face in globalBaffles
+    Map<label> faceToPatch;
+    if (meshType_ == CASTELLATEDBUFFERLAYER2)
+    {
+        // Parallel detection of duplicate faces on boundary patches
+        const auto& pbm = mesh_.boundaryMesh();
 
-    // List of pairs of freestanding baffle faces.
-    List<labelPair> couples
-    (
-        freeStandingBaffles    // filter out freestanding baffles
+        DynamicList<label> boundaryFaces(mesh_.nBoundaryFaces());
+        forAll(pbm, patchI)
+        {
+            const polyPatch& pp = pbm[patchI];
+            if (!pp.coupled())
+            {
+                forAll(pp, i)
+                {
+                    boundaryFaces.append(pp.start()+i);
+                }
+            }
+        }
+
+        const indirectPrimitivePatch allPatch
+        (
+            IndirectList<face>(mesh_.faces(), boundaryFaces),
+            mesh_.points()
+        );
+        const globalIndex globalFaces(allPatch.size());
+
+        // TBD: samePatch detection
+        localPointRegion::findDuplicateFacePairs
+        (
+            mergeDistance_,
+            mesh_,
+            globalFaces,
+            allPatch,
+            localBaffles,   // incidices into boundaryFaces
+            globalBaffles   // indices in globalFaces
+        );
+        for (auto& localBaffle : localBaffles)
+        {
+            // Convert from indices into boundaryFaces to mesh face indices
+            localBaffle.first() = boundaryFaces[localBaffle.first()];
+            localBaffle.second() = boundaryFaces[localBaffle.second()];
+        }
+
+        faceToPatch.setCapacity(globalBaffles.size());
+        for (const auto& globalBaffle : globalBaffles)
+        {
+            const label f0 = globalBaffle.first();
+            const label f1 = globalBaffle.second();
+            if (globalFaces.isLocal(f0))
+            {
+                const label f1Proc = globalFaces.whichProcID(f1);
+                if (globalFaces.isLocal(f1))
+                {
+                    // Both faces local. Should not happen since should have been
+                    // picked up as local baffle pair. But just in case, do not
+                    // merge.
+                    continue;
+                }
+                const word patchName
+                (
+                    processorPolyPatch::newName(UPstream::myProcNo(), f1Proc)
+                );
+                const label patchi = pbm.findPatchID(patchName);
+                if (patchi != -1)
+                {
+                    const label local0 = globalFaces.toLocal(f0);
+                    faceToPatch.insert(boundaryFaces[local0], patchi);
+                }
+                else
+                {
+                    // No processor patch found (e.g. because of load-balancing).
+                    // Do nothing for now.
+                }
+            }
+            else if (globalFaces.isLocal(f1))
+            {
+                const label f0Proc = globalFaces.whichProcID(f0);
+                const word patchName
+                (
+                    processorPolyPatch::newName(UPstream::myProcNo(), f0Proc)
+                );
+                const label patchi = pbm.findPatchID(patchName);
+                if (patchi != -1)
+                {
+                    const label local1 = globalFaces.toLocal(f1);
+                    faceToPatch.insert(boundaryFaces[local1], patchi);
+                }
+                else
+                {
+                    // No processor patch found (e.g. because of load-balancing).
+                    // Do nothing for now.
+                }
+            }
+        }
+    }
+    else
+    {
+        localBaffles = freeStandingBaffles    // filter out freestanding baffles
         (
             localPointRegion::findDuplicateFacePairs(mesh_),
             planarAngle,
             samePatch
-        )
-    );
+        );
+    }
 
-    const label nCouples = returnReduce(couples.size(), sumOp<label>());
+    const label nCouples =
+        returnReduce(localBaffles.size()+faceToPatch.size(), sumOp<label>());
 
     Info<< "Detected free-standing baffles : " << nCouples << endl;
 
     if (nCouples > 0)
     {
-        // Actually merge baffles. Note: not exactly parallellized. Should
-        // convert baffle faces into processor faces if they resulted
-        // from them.
-        mergeBaffles(couples, Map<label>(0));
+        // Actually merge baffles. Converts free-standing baffles into
+        // processor patch faces if necessary
+        mergeBaffles(localBaffles, faceToPatch);
 
         // Detect any problem cells resulting from merging of baffles
         // and delete them
@@ -4922,6 +5353,198 @@ void Foam::meshRefinement::mergeFreeStandingBaffles
     Info<< "Merged free-standing baffles in = "
         << runTime.cpuTimeIncrement() << " s\n" << nl << endl;
 }
+
+
+//- merged into mergeFreeStandingBaffles above
+// void Foam::meshRefinement::mergeFreeStandingBaffles
+// (
+//     const bool samePatch,
+//     const snapParameters& snapParams,
+//     const bool useTopologicalSnapDetection,
+//     const bool removeEdgeConnectedCells,
+//     const scalarField& perpendicularAngle,
+//     const scalar planarAngle,
+//     const dictionary& motionDict,
+//     Time& runTime,
+//     const labelList& globalToMasterPatch,
+//     const labelList& globalToSlavePatch,
+//     const pointField& locationsInMesh,
+//     const pointField& locationsOutsideMesh
+// )
+// {
+//     // Merge baffles
+//     // ~~~~~~~~~~~~~
+
+//     Info<< nl
+//         << "Merge free-standing baffles" << nl
+//         << "---------------------------" << nl
+//         << endl;
+
+//     const auto& pbm = mesh_.boundaryMesh();
+
+
+//     // Get list of pairs of freestanding baffle faces
+//     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+//     DynamicList<label> boundaryFaces(mesh_.nBoundaryFaces());
+//     forAll(pbm, patchI)
+//     {
+//         const polyPatch& pp = pbm[patchI];
+//         if (!pp.coupled())
+//         {
+//             forAll(pp, i)
+//             {
+//                 boundaryFaces.append(pp.start()+i);
+//             }
+//         }
+//     }
+
+//     const indirectPrimitivePatch allPatch
+//     (
+//         IndirectList<face>(mesh_.faces(), boundaryFaces),
+//         mesh_.points()
+//     );
+//     const globalIndex globalFaces(allPatch.size());
+
+//     // TBD: samePatch detection
+//     DynamicList<labelPair> localBaffles;
+//     DynamicList<labelPair> globalBaffles;
+//     localPointRegion::findDuplicateFacePairs
+//     (
+//         mergeDistance_,
+//         mesh_,
+//         globalFaces,
+//         allPatch,
+//         localBaffles,   // incidices into boundaryFaces
+//         globalBaffles   // indices in globalFaces
+//     );
+//     for (auto& localBaffle : localBaffles)
+//     {
+//         // Convert from indices into boundaryFaces to mesh face indices
+//         localBaffle.first() = boundaryFaces[localBaffle.first()];
+//         localBaffle.second() = boundaryFaces[localBaffle.second()];
+//     }
+
+
+//     Map<label> faceToPatch(globalBaffles.size());
+//     for (const auto& globalBaffle : globalBaffles)
+//     {
+//         const label f0 = globalBaffle.first();
+//         const label f1 = globalBaffle.second();
+//         if (globalFaces.isLocal(f0))
+//         {
+//             const label f1Proc = globalFaces.whichProcID(f1);
+//             if (globalFaces.isLocal(f1))
+//             {
+//                 // Both faces local. Should not happen since should have been
+//                 // picked up as local baffle pair. But just in case, do not
+//                 // merge.
+//                 continue;
+//             }
+//             const word patchName
+//             (
+//                 processorPolyPatch::newName(UPstream::myProcNo(), f1Proc)
+//             );
+//             const label patchi = pbm.findPatchID(patchName);
+//             if (patchi != -1)
+//             {
+//                 const label local0 = globalFaces.toLocal(f0);
+//                 faceToPatch.insert(boundaryFaces[local0], patchi);
+//             }
+//             else
+//             {
+//                 // No processor patch found (e.g. because of load-balancing).
+//                 // Do nothing for now.
+//             }
+//         }
+//         else if (globalFaces.isLocal(f1))
+//         {
+//             const label f0Proc = globalFaces.whichProcID(f0);
+//             const word patchName
+//             (
+//                 processorPolyPatch::newName(UPstream::myProcNo(), f0Proc)
+//             );
+//             const label patchi = pbm.findPatchID(patchName);
+//             if (patchi != -1)
+//             {
+//                 const label local1 = globalFaces.toLocal(f1);
+//                 faceToPatch.insert(boundaryFaces[local1], patchi);
+//             }
+//             else
+//             {
+//                 // No processor patch found (e.g. because of load-balancing).
+//                 // Do nothing for now.
+//             }
+//         }
+//     }
+//     // (
+//     //     freeStandingBaffles    // filter out freestanding baffles
+//     //     (
+//     //         localPointRegion::findDuplicateFacePairs(mesh_),
+//     //         planarAngle,
+//     //         samePatch
+//     //     )
+//     // );
+
+//     const label nCouples =
+//         returnReduce(localBaffles.size()+faceToPatch.size(), sumOp<label>());
+
+//     Info<< "Detected free-standing baffles : " << nCouples << endl;
+
+//     if (nCouples > 0)
+//     {
+//         // Actually merge baffles. Note: not exactly parallellized. Should
+//         // convert baffle faces into processor faces if they resulted
+//         // from them.
+//         mergeBaffles(localBaffles, faceToPatch);
+
+//         // Detect any problem cells resulting from merging of baffles
+//         // and delete them
+//         handleSnapProblems
+//         (
+//             snapParams,
+//             useTopologicalSnapDetection,
+//             removeEdgeConnectedCells,
+//             perpendicularAngle,
+//             motionDict,
+//             runTime,
+//             globalToMasterPatch,
+//             globalToSlavePatch
+//         );
+
+//         // Very occasionally removing a problem cell might create a disconnected
+//         // region so re-check
+
+//         Info<< nl
+//             << "Remove unreachable sections of mesh" << nl
+//             << "-----------------------------------" << nl
+//             << endl;
+
+//         if (debug)
+//         {
+//             ++runTime;
+//         }
+
+//         splitMeshRegions
+//         (
+//             globalToMasterPatch,
+//             globalToSlavePatch,
+//             locationsInMesh,
+//             locationsOutsideMesh,
+//             true,   // Exit if any connection between inside and outside
+//             refPtr<coordSetWriter>(nullptr) // leakPathFormatter
+//         );
+
+
+//         if (debug)
+//         {
+//             // Debug:test all is still synced across proc patches
+//             checkData();
+//         }
+//     }
+//     Info<< "Merged free-standing baffles in = "
+//         << runTime.cpuTimeIncrement() << " s\n" << nl << endl;
+// }
 
 
 Foam::autoPtr<Foam::mapPolyMesh> Foam::meshRefinement::splitMesh

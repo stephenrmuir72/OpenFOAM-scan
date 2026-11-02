@@ -61,7 +61,9 @@ License
 #include "faceSet.H"
 #include "topoDistanceData.H"
 #include "FaceCellWave.H"
-
+#include "meshPointPatch.H"
+//#include "displacementMeshPointPatchVectorField.H"
+#include "meshPointPatchDisplacementVectorField.H"
 // Leak path
 #include "shortestPathSet.H"
 #include "meshSearch.H"
@@ -2175,49 +2177,76 @@ Foam::labelList Foam::meshRefinement::intersectedPoints() const
 Foam::autoPtr<Foam::indirectPrimitivePatch> Foam::meshRefinement::makePatch
 (
     const polyMesh& mesh,
-    const labelList& patchIDs
+    const pointField& points,
+    const labelList& patchIDs,
+    const labelList& zoneIDs
 )
 {
     const polyBoundaryMesh& patches = mesh.boundaryMesh();
 
-    // Count faces.
-    label nFaces = 0;
+    bitSet isPatchFace(mesh.nFaces());
 
-    forAll(patchIDs, i)
+    for (const label patchi : patchIDs)
     {
-        const polyPatch& pp = patches[patchIDs[i]];
-
-        nFaces += pp.size();
+        isPatchFace.set(patches[patchi].range());
     }
 
-    // Collect faces.
-    labelList addressing(nFaces);
-    nFaces = 0;
-
-    forAll(patchIDs, i)
+    const auto& fzs = mesh.faceZones();
+    for (const label zonei : zoneIDs)
     {
-        const polyPatch& pp = patches[patchIDs[i]];
-
-        label meshFacei = pp.start();
-
-        forAll(pp, i)
-        {
-            addressing[nFaces++] = meshFacei++;
-        }
+        isPatchFace.set(fzs[zonei].addressing());
     }
+
+    // // Count faces.
+    // label nFaces = 0;
+
+    // forAll(patchIDs, i)
+    // {
+    //     const polyPatch& pp = patches[patchIDs[i]];
+
+    //     nFaces += pp.size();
+    // }
+
+    // // Collect faces.
+    // labelList addressing(nFaces);
+    // nFaces = 0;
+
+    // forAll(patchIDs, i)
+    // {
+    //     const polyPatch& pp = patches[patchIDs[i]];
+
+    //     label meshFacei = pp.start();
+
+    //     forAll(pp, i)
+    //     {
+    //         addressing[nFaces++] = meshFacei++;
+    //     }
+    // }
 
     return autoPtr<indirectPrimitivePatch>::New
     (
-        IndirectList<face>(mesh.faces(), std::move(addressing)),
-        mesh.points()
+        IndirectList<face>(mesh.faces(), isPatchFace.sortedToc()),
+        points
     );
+}
+
+
+//- Create patch from set of patches
+Foam::autoPtr<Foam::indirectPrimitivePatch> Foam::meshRefinement::makePatch
+(
+    const polyMesh& mesh,
+    const labelList& patchIDs
+)
+{
+    return makePatch(mesh, mesh.points(), patchIDs, labelList::null());
 }
 
 
 Foam::tmp<Foam::pointVectorField> Foam::meshRefinement::makeDisplacementField
 (
     const pointMesh& pMesh,
-    const labelList& adaptPatchIDs
+    const labelList& adaptPatchIDs,
+    const word& adaptPatchType
 )
 {
     // Construct displacement field.
@@ -2234,11 +2263,19 @@ Foam::tmp<Foam::pointVectorField> Foam::meshRefinement::makeDisplacementField
         actualPatchTypes[patchi] = pointPatches[patchi].type();
     }
 
+
+    // Normally the meshed patches become fixedValue with the fixed value
+    // determined by shm. However with additional stand-alone pointPatches
+    // this becomes problematic since some points are in a polyPatch
+    // derived pointPatch and also in a stand-alone one. So we optionally
+    // provide 'zeroGradient' for the meshed patches and then the proper
+    // type (meshPointPatchDisplacementVectorField; allows slip according
+    // to pointconstraints) in the added meshPointPatch.
     forAll(adaptPatchIDs, i)
     {
-        patchFieldTypes[adaptPatchIDs[i]] =
-            fixedValuePointPatchVectorField::typeName;
+        patchFieldTypes[adaptPatchIDs[i]] = adaptPatchType;
     }
+
 
     forAll(pointPatches, patchi)
     {
@@ -2254,9 +2291,12 @@ Foam::tmp<Foam::pointVectorField> Foam::meshRefinement::makeDisplacementField
         {
             patchFieldTypes[patchi] = pointPatches[patchi].type();
         }
+        else if (isA<meshPointPatch>(pointPatches[patchi]))
+        {
+            patchFieldTypes[patchi] =
+                meshPointPatchDisplacementVectorField::typeName;
+        }
     }
-
-    const polyMesh& mesh = pMesh();
 
     // Note: time().timeName() instead of meshRefinement::timeName() since
     // postprocessable field.
@@ -2265,8 +2305,8 @@ Foam::tmp<Foam::pointVectorField> Foam::meshRefinement::makeDisplacementField
         IOobject
         (
             "pointDisplacement",
-            mesh.time().timeName(),
-            mesh,
+            pMesh.time().timeName(),
+            pMesh.thisDb(),
             IOobject::NO_READ,
             IOobject::AUTO_WRITE
         ),

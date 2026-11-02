@@ -27,6 +27,7 @@ License
 \*---------------------------------------------------------------------------*/
 
 #include "snappySnapDriver.H"
+#include "PatchTools.H"
 
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
@@ -61,6 +62,127 @@ Foam::labelList Foam::snappySnapDriver::getFacePoints
     }
 
     return findIndices(pointOnZone, true);
+}
+
+
+// Gather and merge patch data onto master processor, returning the
+// merged patch and maps:
+// - globalFaces : globalIndex from merged patch faces (on master proc only)
+//   to the input patch. Send information from merged to local with
+//   globalFaces.scatter
+// - points : since points can be duplicated is better done through a
+//            mapDistribute:
+// const pointField testFld(mergedPatch.localPoints());
+// pointMapPtr().distribute(testFld);
+// forAll(ppToMerged, patchPointi)
+// {
+//    Pout<< "local:" << pp.localPoints()[patchPointi]
+//        << " merged:" << testFld[ppToMerged[patchPointi]]
+// }
+template<class PatchType>
+Foam::autoPtr<Foam::PrimitivePatch<Foam::faceList, Foam::pointField>>
+Foam::snappySnapDriver::gatherAndMerge
+(
+    const polyMesh& mesh,
+    const PatchType& pp,
+
+    autoPtr<globalIndex>& globalFacesPtr,
+    autoPtr<mapDistribute>& pointMapPtr,
+    labelList& ppToMerged
+)
+{
+    // Collect merge information
+    labelList pointToGlobal;
+    labelList uniqueMeshPointLabels;
+    autoPtr<globalIndex> globalPointsPtr;
+    List<face> mergedFaces;
+    pointField mergedPoints;
+    PatchTools::gatherAndMerge
+    (
+        mesh,
+        pp.localFaces(),
+        pp.meshPoints(),
+        pp.meshPointMap(),
+
+        pointToGlobal,
+        uniqueMeshPointLabels,
+        globalPointsPtr,
+        globalFacesPtr,
+        mergedFaces,
+        mergedPoints
+    );
+
+    // Create merged patch
+    autoPtr<PrimitivePatch<faceList, pointField>> mergedPatchPtr
+    (
+        new PrimitivePatch<faceList, pointField>
+        (
+            std::move(mergedFaces),
+            std::move(mergedPoints)
+        )
+    );
+    const auto& mergedPatch = mergedPatchPtr();
+
+
+    // Addressing
+    // ~~~~~~~~~~
+
+    // Scatter the merged point indices (on master) back to the
+    // senders in global mergedPoints indices. Note that since the
+    // mergedPatch has faces only on proc0 we could avoid the 'toGlobal'...
+    const globalIndex globalMerged(mergedPatch.nPoints());
+    const labelList masterPts
+    (
+        globalPointsPtr->scatter
+        (
+            globalMerged.toGlobal(0, identity(mergedPatch.nPoints()))
+        )
+    );
+
+    // Re-work on the local processor back to my pp.localPoint
+    ppToMerged.resize_nocopy(pp.nPoints());
+    ppToMerged = -1;
+    forAll(uniqueMeshPointLabels, i)
+    {
+        const label meshPointi = uniqueMeshPointLabels[i];
+        const auto fnd = pp.meshPointMap().cfind(meshPointi);
+        if (fnd.good())
+        {
+            const label patchPointi = fnd.val();
+            ppToMerged[patchPointi] = masterPts[i];
+        }
+    }
+
+    // Now ppToMerged is still -1 for slave coupled points. Use the
+    // coupled points to sync for max
+    syncTools::syncPointList
+    (
+        mesh,
+        pp.meshPoints(),
+        ppToMerged,
+        maxEqOp<label>(),
+        -1
+    );
+
+    // Rework the global indices into a communication pattern
+    List<Map<label>> compactMap;
+    pointMapPtr.reset
+    (
+        new mapDistribute
+        (
+            globalMerged,
+            ppToMerged,
+            compactMap
+        )
+    );
+    if (UPstream::master())
+    {
+        // Fix map. See issue 3509. TBD.
+        pointMapPtr().subMap()[0] = identity(pp.nPoints());
+        pointMapPtr().constructMap()[0] = ppToMerged;
+    }
+
+    return mergedPatchPtr;
 }
 
 

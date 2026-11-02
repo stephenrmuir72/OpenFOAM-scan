@@ -33,6 +33,7 @@ License
 #include "globalIndex.H"
 #include "indirectPrimitivePatch.H"
 #include "dummyTransform.H"
+#include "mergePoints.H"
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -586,8 +587,8 @@ Foam::labelList Foam::localPointRegion::findDuplicateFaces
                 }
                 else if (isDuplicate(f, otherF, false))
                 {
-                    label meshFace0 = bFacei + mesh.nInternalFaces();
-                    label meshFace1 = otherFacei + mesh.nInternalFaces();
+                    const label meshFace0 = boundaryFaces[bFacei];
+                    const label meshFace1 = boundaryFaces[otherFacei];
 
                     if
                     (
@@ -679,6 +680,308 @@ Foam::List<Foam::labelPair> Foam::localPointRegion::findDuplicateFacePairs
     }
 
     return List<labelPair>(std::move(baffles));
+}
+
+
+// Are two lists identical either in forward or in reverse order.
+bool Foam::localPointRegion::isDuplicate
+(
+    const scalar mergeDist,
+    const pointList& f0,
+    const pointList& f1,
+    const bool forward
+)
+{
+    if (f0.size() != f1.size())
+    {
+        return false;
+    }
+
+    label fp1 = ListOps::find_if
+    (
+        f1,
+        [f0, mergeDist](const point& p)
+        {
+            return mag(p - f0[0]) < mergeDist;
+        }
+    );
+
+    if (fp1 == -1)
+    {
+        return false;
+    }
+
+    forAll(f0, fp0)
+    {
+        if (mag(f0[fp0] - f1[fp1]) >= mergeDist)
+        {
+            return false;
+        }
+
+        if (forward)
+        {
+            fp1 = f1.fcIndex(fp1);
+        }
+        else
+        {
+            fp1 = f1.rcIndex(fp1);
+        }
+    }
+    return true;
+}
+
+
+void Foam::localPointRegion::findDuplicateFacePairs
+(
+    const scalar mergeDist,
+    const polyMesh& mesh,
+    const globalIndex& globalFaces,
+    const indirectPrimitivePatch& allPatch,
+    DynamicList<labelPair>& localBaffles,   // incidices into allPatch
+    DynamicList<labelPair>& globalBaffles   // indices in globalFaces
+)
+{
+    // Return lists of face pairs sharing the same points:
+    // - localBaffles : indices into boundaryFaces
+    // - globalBaffles : indices in global face numbering
+
+    const labelList& boundaryFaces = allPatch.addressing();
+    if (globalFaces.localSize() != boundaryFaces.size())
+    {
+        FatalErrorInFunction
+            << "Size of globalFaces " << globalFaces.localSize()
+            << " does not match size of boundaryFaces " << boundaryFaces.size()
+            << abort(FatalError);
+    }
+    const auto& localFaces = allPatch.localFaces();
+
+    localBaffles.setCapacity(allPatch.size());
+    globalBaffles.setCapacity(allPatch.size());
+
+
+    // Find local duplicates
+    // ~~~~~~~~~~~~~~~~~~~~~
+
+    bitSet isLocalBaffle(allPatch.size());
+
+    // Find all duplicate faces.
+    forAll(localFaces, bFacei)
+    {
+        const face& f = localFaces[bFacei];
+
+        // Get faces connected to f[0].
+        // Check whether share all points with f.
+        const labelList& pFaces = allPatch.pointFaces()[f[0]];
+
+        forAll(pFaces, i)
+        {
+            label otherFacei = pFaces[i];
+
+            if (otherFacei > bFacei)
+            {
+                const face& otherF = allPatch.localFaces()[otherFacei];
+                if (isDuplicate(f, otherF, false))
+                {
+                    localBaffles.append(labelPair(bFacei, otherFacei));
+                    isLocalBaffle.set(bFacei);
+                    isLocalBaffle.set(otherFacei);
+                }
+            }
+        }
+    }
+
+
+    // Find remote duplicates
+    // ~~~~~~~~~~~~~~~~~~~~~~
+    // - compare all face centres
+    // - for faces within mergeDist: compare the points
+
+
+    // Geometric merging for face centres
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // (opposite boundary faces have opposite numbering but hopefully the same
+    //  face centre. Note: this is the same test as done by processor
+    //  face matching so should be robust enough)
+
+
+    // Gather all face centres in processor order
+    pointField allFaceCentres;
+    globalFaces.gather(allPatch.faceCentres(), allFaceCentres);
+
+    labelList allToMerged;
+    mergePoints
+    (
+        allFaceCentres,
+        mergeDist,
+        false,      //const bool verbose,
+        allToMerged
+    );
+
+    // Extract duplicate faces by inverting allToMerged to get number of
+    // duplicates per master face. This is similar to ListOps'
+    // invertOneToMany except it leaves out non-duplicates. Could probably
+    // be done with two lists instead since we're only interested in
+    // two faces at the same location.
+    labelList nDup(allFaceCentres.size(), 0);
+    forAll(allToMerged, globali)
+    {
+        const label master = allToMerged[globali];
+        if (nDup[master] >= 2)
+        {
+            FatalErrorInFunction
+                << "More than two faces at same location. This is not allowed."
+                << abort(FatalError);
+        }
+        nDup[master]++;
+    }
+
+    // Collect duplicate faces (same master face)
+    List<labelList> dupFaces(allFaceCentres.size());
+    forAll(nDup, globali)
+    {
+        if (nDup[globali] == 2)
+        {
+            dupFaces[globali].resize_nocopy(nDup[globali]);
+        }
+        nDup[globali] = 0;
+    }
+    forAll(dupFaces, globali)
+    {
+        const label master = allToMerged[globali];
+        if (dupFaces[master].size())
+        {
+            dupFaces[master][nDup[master]++] = globali;
+
+            // if (nDup[master] == 2)
+            // {
+            //     Pout<< "Found duplicate faces at global face:" << globali
+            //         << " globals:" << dupFaces[master]
+            //         << " p0:" << globalFaces.whichProcID(dupFaces[master][0])
+            //         << " p1:" << globalFaces.whichProcID(dupFaces[master][1])
+            //         << " with face centres:"
+            //         << UIndirectList<point>(allFaceCentres, dupFaces[master])
+            //         << endl;
+            // }
+        }
+    }
+
+    // At this point:
+    // - per master face (not same as global face index)
+    // - we have the list of global faces
+
+
+    // Get data from master in global face numbering i.e. expand using
+    // allToMerged. Note: this is a bit inefficient since we send the same
+    // face centre multiple times but should be ok since only for boundary
+    // faces and only for those that are duplicates.
+    List<labelList> allDupFaces
+    (
+        UIndirectList<labelList>(dupFaces, allToMerged)
+    );
+
+    // Send back to originating processor.
+    List<labelList> dupFacesScatter(allPatch.size());
+    globalFaces.scatter(allDupFaces, dupFacesScatter);
+
+    // Send back the vertices of the duplicate faces to master processor
+    List<pointList> faceCoords(dupFacesScatter.size());
+    forAll(dupFacesScatter, facei)
+    {
+        if (dupFacesScatter[facei].size())
+        {
+            const auto& faceIDs = dupFacesScatter[facei];
+            forAll(faceIDs, i)
+            {
+                if (globalFaces.isLocal(faceIDs[i]))
+                {
+                    const label localFacei = globalFaces.toLocal(faceIDs[i]);
+                    if (!isLocalBaffle[localFacei])
+                    {
+                        // Face is local so can get the points
+                        faceCoords[facei] =
+                            allPatch[localFacei].points(allPatch.points());
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    globalFaces.gatherInplace(faceCoords);
+
+    // Do comparison on master processor and mark dups
+    forAll(allToMerged, globali)
+    {
+        const auto& faceIDs = dupFaces[allToMerged[globali]];
+        for (label i = 0; i < faceIDs.size(); i++)
+        {
+            const auto& f0Verts = faceCoords[faceIDs[i]];
+            if (f0Verts.empty())
+            {
+                break;
+            }
+            for (label j = i+1; j < faceIDs.size(); j++)
+            {
+                const auto& f1Verts = faceCoords[faceIDs[j]];
+                if (f1Verts.empty())
+                {
+                    break;
+                }
+
+                if (isDuplicate(mergeDist, f0Verts, f1Verts, false))
+                {
+                    // Mark as duplicate of master
+                    // Pout<< "Global face0:" << faceIDs[i]
+                    //     << " has local points:" << f0Verts << nl
+                    //     << "Global face1:" << faceIDs[j]
+                    //     << " has local points:" << f1Verts
+                    //     << endl;
+                }
+                else
+                {
+                    // Unmark face as duplicate
+                    dupFaces[allToMerged[globali]].clear();
+                }
+            }
+        }
+    }
+
+    // Re-scatter the global face IDs to originating processors
+    // (since we've unmarked the non-duplicate ones)
+    allDupFaces = UIndirectList<labelList>(dupFaces, allToMerged);
+    globalFaces.scatter(allDupFaces, dupFacesScatter);
+
+    // Extract as face pairs
+    forAll(dupFacesScatter, facei)
+    {
+        const labelList& faceIDs = dupFacesScatter[facei];
+        if (faceIDs.size() == 2)
+        {
+            const label globFace0 = faceIDs[0];
+            const label globFace1 = faceIDs[1];
+            if (globalFaces.isLocal(globFace0))
+            {
+                globalBaffles.append(labelPair(globFace0, globFace1));
+            }
+            else if (globalFaces.isLocal(globFace1))
+            {
+                globalBaffles.append(labelPair(globFace1, globFace0));
+            }
+            else
+            {
+                // Should not happen since at least one should be local
+                FatalErrorInFunction << "Problem" << abort(FatalError);
+            }
+        }
+        else if (faceIDs.size())
+        {
+            // Should not happen since we only allow pairs
+            FatalErrorInFunction
+                << "More than two faces at same location. This is not allowed."
+                << abort(FatalError);
+        }
+    }
+    // Now both processors know the same pair of faces. Look up the
+    // one that is local and work out where the other one is.
 }
 
 

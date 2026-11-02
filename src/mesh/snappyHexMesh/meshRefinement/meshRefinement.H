@@ -61,6 +61,8 @@ SourceFiles
 #include "DynamicField.H"
 #include "coordSetWriter.H"
 #include "surfaceWriter.H"
+#include "fixedValuePointPatchFields.H"
+#include "zeroGradientPointPatchFields.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -892,6 +894,28 @@ private:
                 labelList& cellToZone
             ) const;
 
+            //- Detect faces that are on the outside of the given zone. Used
+            //- to create PrimitivePatch for analysis.
+            void detectOutsideFaces
+            (
+                const label zoneID,
+                const labelList& cellToZone,
+                const labelList& neiCellZone,
+                bitSet& isZoneFace,
+                bitSet& isFlipFace  // own or nei side
+            ) const;
+
+            //- Detect edges that are pinched between zones - would be
+            //- patch edge with 4 faces - cannot be snapped.
+            void detectPinchedEdges
+            (
+                const label backgroundZoneID,
+                labelList& unnamedSurfaceRegion1,
+                labelList& unnamedSurfaceRegion2,
+                labelList& namedSurfaceRegion,  // potentially zero size if no faceZones
+                labelList& cellToZone
+            ) const;
+
             //- Make namedSurfaceRegion consistent with cellToZone
             //  - clear out any blocked faces inbetween same cell zone.
             void makeConsistentFaceIndex
@@ -1146,7 +1170,17 @@ public:
             //- Get points on surfaces with intersection and boundary faces.
             labelList intersectedPoints() const;
 
-            //- Create patch from set of patches
+            //- Create patch from set of patches and externally provided
+            //- geometry
+            static autoPtr<indirectPrimitivePatch> makePatch
+            (
+                const polyMesh&,
+                const pointField& points,
+                const labelList& patchIDs,
+                const labelList& zoneIDs
+            );
+
+            //- Create patch from set of patches and mesh geometry
             static autoPtr<indirectPrimitivePatch> makePatch
             (
                 const polyMesh&,
@@ -1155,14 +1189,19 @@ public:
 
             //- Helper function to make a pointVectorField with correct
             //  bcs for mesh movement:
-            //  - adaptPatchIDs         : fixedValue
+            //  - adaptPatchIDs         : fixedValue (default)
+            //    (for pointMesh with fully supplied separate point patches
+            //     we can provide eg zeroGradient since values overwritten
+            //     by those)
             //  - processor             : calculated (so free to move)
             //  - cyclic/wedge/symmetry : slip
             //  - other                 : slip
             static tmp<pointVectorField> makeDisplacementField
             (
                 const pointMesh& pMesh,
-                const labelList& adaptPatchIDs
+                const labelList& adaptPatchIDs,
+                const word& adaptPatchType =
+                    fixedValuePointPatchVectorField::typeName
             );
 
             //- Helper function: check that face zones are synced

@@ -2584,8 +2584,6 @@ void Foam::snappySnapDriver::doSnap
 {
     if (meshRefiner_.meshType() == meshRefinement::CASTELLATEDBUFFERLAYER2)
     {
-        // Buffer-layer replacement for this routine
-
         doSnapBufferLayers
         (
             snapDict,
@@ -3247,6 +3245,7 @@ void Foam::snappySnapDriver::doSnap
                     makeMotionSolver
                     (
                         pMesh,
+                        ppPtr,
                         snapDict,
                         bufPatchIDs
                         //patchConstraints

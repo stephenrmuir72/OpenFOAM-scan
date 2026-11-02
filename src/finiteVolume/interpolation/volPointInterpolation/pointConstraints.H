@@ -193,7 +193,8 @@ public:
             void constrainDisplacement
             (
                 pointVectorField& displacement,
-                const bool overrideValue = false
+                const bool overrideValue = false,
+                const bool correctBCs = true
             ) const;
 };
 

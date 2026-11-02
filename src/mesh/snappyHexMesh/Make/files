@@ -3,6 +3,7 @@ snappyHexMeshDriver/snappyLayerDriverSinglePass.C
 snappyHexMeshDriver/snappySnapDriver.C
 snappyHexMeshDriver/snappySnapDriverFeature.C
 snappyHexMeshDriver/snappySnapDriverBufferLayers.C
+/* snappyHexMeshDriver/snappySnapDriverBufferLayersSplit.C */
 snappyHexMeshDriver/snappyRefineDriver.C
 snappyHexMeshDriver/snappyVoxelMeshDriver.C
 

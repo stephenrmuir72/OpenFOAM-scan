@@ -51,6 +51,8 @@ SourceFiles
 #include "faceList.H"
 #include "boolList.H"
 #include "labelPair.H"
+#include "pointList.H"
+#include "indirectPrimitivePatch.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -116,6 +118,15 @@ class localPointRegion
             const bool forward
         );
 
+        static bool isDuplicate
+        (
+            const scalar mergeDist,
+            const pointList& f0,
+            const pointList& f1,
+            const bool forward
+        );
+
+
 public:
 
     //- Runtime type information
@@ -163,6 +174,21 @@ public:
             //- Helper routine to find all baffles (two boundary faces
             //  using the same points but in reverse order)
             static labelPairList findDuplicateFacePairs(const polyMesh&);
+
+            //- Helper routine to find baffles. Either local baffles (both
+            //- faces local) or global baffles (one face local, one face
+            //- on another processor).
+            static void findDuplicateFacePairs
+            (
+                const scalar mergeDist,
+                const polyMesh& mesh,
+                const globalIndex& globalFaces,
+                // const labelList& boundaryFaces,
+                const indirectPrimitivePatch& allPatch,
+                DynamicList<labelPair>& localBaffles, // indices into allPatch
+                DynamicList<labelPair>& globalBaffles // indices in globalFaces
+            );
+
 
         // Access
 

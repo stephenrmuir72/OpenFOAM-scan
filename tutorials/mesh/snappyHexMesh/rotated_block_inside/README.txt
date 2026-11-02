@@ -1,0 +1,5 @@
+- rotated block inside regular blockMesh
+- castellation
+- feature walking + face splitting
+- single buffer layer
+- single invocation of motion solver to do snapping

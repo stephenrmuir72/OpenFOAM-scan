@@ -56,6 +56,7 @@ class pointConstraint;
 class layerParameters;
 class displacementMotionSolver;
 class addPatchCellLayer;
+class treeDataPoint;
 
 /*---------------------------------------------------------------------------*\
                            Class snappySnapDriver Declaration
@@ -80,10 +81,290 @@ class snappySnapDriver
 
     // Private Member Functions
 
+        //- Support for doSnapBufferLayers
+
+            static void updateMap(const labelUList& oldToNew, Map<label>& map);
+            void writeConstraints
+            (
+                const fileName& prefix,
+                const pointField& patchPoints,
+                const pointField& patchToNearest,
+                const List<pointConstraint>& patchConstraints
+            ) const;
+            void writeConstraints
+            (
+                const fileName& prefix,
+                const indirectPrimitivePatch& pp,
+                const pointField& patchPoints,
+                const pointField& patchToNearest,
+                const List<pointConstraint>& patchConstraints
+            ) const;
+            void pointPoints
+            (
+                const indirectPrimitivePatch& pp,
+                const bitSet& isCandidateFace,
+                const List<pointConstraint>& patchConstraints,
+                const label pointi,
+                DynamicList<label>& pointPoints,
+                DynamicList<label>& pointEdges, // pp edge or -1 for diagonal
+                DynamicList<label>& pointFaces
+            ) const;
+            point avgPoint
+            (
+                const indirectPrimitivePatch& pp,
+                const pointField& points,
+                const label pointi
+            ) const;
+            //- Helper: calculate patch-to-patch addressing across topo changes
+            static void mapPatchAddressing
+            (
+                const mapPolyMesh& morphMap,
+                // Old patch to mesh addresssing
+                const labelUList& oldMeshPoints,
+                const labelUList& oldMeshFaces,
+                // New patch to mesh addressing
+                const labelUList& newMeshPoints,
+                const labelUList& newMeshFaces,
+                // new-to-old point map
+                labelList& ppMap,
+                // old-to-new point map
+                labelList& ppReverseMap,
+                // new-to-old face map
+                labelList& ppFaceMap
+            );
+            void smoothAttraction
+            (
+                const indirectPrimitivePatch& pp,
+                const List<pointConstraint>& patchConstraints,
+                const label ppPointi,
+                const label maxConstraint,
+                const point& attractPt,
+                pointField& points
+            ) const;
+
+
+            // Matching routines
+
+                // Feature point
+
+                    void matchFeaturePoints
+                    (
+                        const indirectPrimitivePatch& pp,
+                        const pointField& ppLocalPoints,
+                        const indexedOctree<treeDataPoint>& ppPointTree,
+                        const labelList& patchFaceToSurfaceRegion,
+
+                        // Index of surface/feature-edge-mesh
+                        labelList& patchToFeature,
+                        // Index of feature point (or -1)
+                        labelList& patchToPoint,
+                        // Point on nearest surface
+                        vectorField& patchToNearest,
+                        // Normal on nearest surface
+                        vectorField& patchToNormal,
+                        // Region on nearest surface
+                        labelList& patchToRegion,
+                        // Constraints at surface (1=surface, 2=featedge,
+                        // 3=featpoint)
+                        List<pointConstraint>& patchConstraints
+                    ) const;
+
+                // Feature edges
+
+                    void determineCandidateFaces
+                    (
+                        const scalar featCosAngle,
+
+                        const indirectPrimitivePatch& pp,
+
+                        // Point on nearest surface
+                        const pointField& patchToNearest,
+                        // Normal on nearest surface
+                        const vectorField& patchToNormal,
+                        // Region on nearest surface
+                        const labelList& patchToRegion,
+                        // Constraints at surface (1=surface, 2=featedge,
+                        // 3=featpoint)
+                        const List<pointConstraint>& patchConstraints,
+
+                        bitSet& isCandidateFace
+                    ) const;
+
+                    pointIndexHit findNearestPointOnEdge
+                    (
+                        const point& pt,
+                        vector& edgeNormal
+                    ) const;
+
+                    void matchFeatureEdges
+                    (
+                        // Mesh faces to snap
+                        const indirectPrimitivePatch& pp,
+                        // Coordinates of pp points (updated during snapping)
+                        pointField& localPoints,
+
+                        // Whether pp face has different attraction
+                        const bitSet& isCandidateFace,
+
+                        // Starting patch feature point
+                        const label startPPointi,
+                        // Starting surface feature
+                        const label surfFeati,
+                        // Starting surface feature point
+                        const label surfFeatPointi,
+
+                        // Per patch face: diagonal cut
+                        Map<edge>& patchFaceToDiagonal,
+
+                        // Per patch point:
+
+                        // Index of surface edge
+                        labelList& patchToEdge,
+                        // Point on nearest surface
+                        vectorField& patchToNearest,
+                        // Normal on nearest surface
+                        vectorField& patchToNormal,
+                        // Constraints at surface (1=surface, 2=featedge,
+                        // 3=featpoint)
+                        List<pointConstraint>& patchConstraints
+                    ) const;
+
+                // Non-feature, nearest surface
+
+                    void matchSurfaces
+                    (
+                        // Mesh faces to snap
+                        const indirectPrimitivePatch& pp,
+                        // Coordinates of pp points
+                        pointField& localPoints,
+
+                        // // Surface to attract to
+                        // const triSurfaceMesh& surfMesh,
+
+                        //- Per patch point
+
+                        // Index of surface 'face' (or -1)
+                        labelList& patchToFace,
+                        // Region of surface 'face' (or -1)
+                        labelList& patchToRegion,
+                        // Point on nearest surface
+                        vectorField& patchToNearest,
+                        // Normal on nearest surface
+                        vectorField& patchToNormal,
+                        // Constraints at surface (1=surface, 2=featedge,
+                        // 3=featpoint)
+                        List<pointConstraint>& patchConstraints
+                    ) const;
+
+                // Top level matching routine
+                void matchToSurface
+                (
+                    const bool doFeatures,
+                    const scalar featCosAngle,
+
+                    const indirectPrimitivePatch& pp,   // addressing only
+                    pointField& ppLocalPoints,          // points (modified during
+                                                        // feature matching)
+                    const vectorField& ppPointNormals,  // normal
+                    // const indexedOctree<treeDataPoint>& ppPointTree,
+
+                    // Per string index a starting pp point
+                    Map<label>& surfFeatEdgeRegionToStart,
+
+
+                    //- Per patch face
+
+                    // Region on nearest surface
+                    labelList& patchFaceToSurfaceRegion,
+
+                    // Face to diagonal cut
+                    Map<edge>& patchFaceToDiagonal,
+
+                    //- Per patch point
+
+                    // Point on nearest surface
+                    pointField& patchToNearest,
+                    // Normal on nearest surface
+                    vectorField& patchToNormal,
+                    // Index of nearest surface
+                    labelList& patchToSurface,
+                    // Region on nearest surface
+                    labelList& patchToRegion,
+                    // Surface 'face' index
+                    labelList& patchToFace,
+                    // Surface 'edge' index
+                    labelList& patchToEdge,
+                    // Surface 'feature' index
+                    labelList& patchToFeature,
+                    // Surface feature point (if patch point is attracted)
+                    labelList& patchToPoint,
+                    // Constraints at surface (1=surface, 2=featedge, 3=featpoint)
+                    List<pointConstraint>& patchConstraints
+                ) const;
+
+                // Variant of matchToSurface for parallel operation
+                void matchToSurfaceMerged
+                (
+                    const bool doFeatures,
+                    const scalar featCosAngle,
+
+                    const indirectPrimitivePatch& pp,   // addressing only
+                    pointField& ppLocalPoints,          // points (modified during feat-edges)
+                    const vectorField& ppPointNormals,  // normal
+
+                    // Per string index a starting pp point
+                    Map<label>& surfFeatEdgeRegionToStart,
+
+                    // Region on nearest surface
+                    labelList& patchFaceToSurfaceRegion,
+
+                    // Face to diagonal cut
+                    Map<edge>& patchFaceToDiagonal,
+
+                    // Point on nearest surface
+                    pointField& patchToNearest,
+                    // Normal on nearest surface
+                    vectorField& patchToNormal,
+                    // Index of nearest surface
+                    labelList& patchToSurface,
+                    // Region on nearest surface
+                    labelList& patchToRegion,
+                    // Surface 'face' index
+                    labelList& patchToFace,
+                    // Surface 'edge' index
+                    labelList& patchToEdge,
+                    // Surface 'feature' index
+                    labelList& patchToFeature,
+                    // Surface feature point (if patch point is attracted)
+                    labelList& patchToPoint,
+                    // Constraints at surface (1 = surface, 2 = featedge, 3 = featpoint)
+                    List<pointConstraint>& patchConstraints
+                ) const;
+
+            void splitFace
+            (
+                const face& f,
+                const UList<label>& cuts,
+                DynamicList<face>& faces
+            ) const;
+
+            label findSplitFaceRegion
+            (
+                const bool useFaceRegion,
+                const indirectPrimitivePatch& pp,
+                const labelList& patchFaceToSurfaceRegion,
+                const List<pointConstraint>& patchConstraints,
+                const labelList& patchToRegion,
+                const label facei,
+                const label startFp,
+                const label endFp
+            ) const;
+
 
         // Snapping
 
-            //- Top-level: snap onto surface & features and add buffer layer
+            //- Top-level: snap onto surface & features, split faces
+            //  and add buffer layer. Single iteration of snapping.
             void doSnapBufferLayers
             (
                 const dictionary& snapDict,
@@ -93,6 +374,19 @@ class snappySnapDriver
                 const scalar planarAngle,
                 const snapParameters& snapParams
             );
+
+            // //- Top level: snap with buffer layers and split faces.
+            // //- Single iteration of snapping with buffer layers and face
+            // //- splitting
+            // void doSnapBufferLayersSplit
+            // (
+            //     const dictionary& snapDict,
+            //     const dictionary& motionDict,
+            //     const meshRefinement::FaceMergeType mergeType,
+            //     const scalar featureCos,
+            //     const scalar planarAngle,
+            //     const snapParameters& snapParams
+            // );
 
             //- Calculates (geometric) shared points
             //  Requires bitSet to be sized and initialised
@@ -132,6 +426,7 @@ class snappySnapDriver
             (
                 const polyMesh& mesh,
                 const indirectPrimitivePatch& pp,
+                const pointField& ppLocalPoints,
                 const List<labelPair>& baffles
             );
 
@@ -146,6 +441,8 @@ class snappySnapDriver
             (
                 const indirectPrimitivePatch& pp,
                 const pointConstraintList& pointConstraints,
+                const labelList& patchIDs,
+                const word& allSurfPatchName,
                 const word& allEdgePatchName,
                 const word& allPointPatchName
             ) const;
@@ -153,6 +450,7 @@ class snappySnapDriver
             autoPtr<displacementMotionSolver> makeMotionSolver
             (
                 const pointMesh& pMesh,
+                const autoPtr<indirectPrimitivePatch>& pp,
                 const dictionary& snapDict,
                 const labelList& adaptPatchIDs
             ) const;
@@ -241,6 +539,20 @@ class snappySnapDriver
             (
                 const indirectPrimitivePatch& pp,
                 const FaceList& faces
+            );
+
+            //- Gather and merge patch data onto master processor, returning the
+            //- merged patch and maps.
+            template<class PatchType>
+            static autoPtr<PrimitivePatch<faceList, pointField>>
+            gatherAndMerge
+            (
+                const polyMesh& mesh,
+                const PatchType& pp,
+
+                autoPtr<globalIndex>& globalFacesPtr,
+                autoPtr<mapDistribute>& pointMapPtr,
+                labelList& ppToMerged
             );
 
             //- Per patch point calculate point on nearest surface.

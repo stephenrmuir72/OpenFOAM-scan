@@ -395,13 +395,17 @@ bool Foam::pointConstraints::movePoints()
 void Foam::pointConstraints::constrainDisplacement
 (
     pointVectorField& pf,
-    const bool overrideFixedValue
+    const bool overrideFixedValue,
+    const bool correctBCs
 ) const
 {
     // Override constrained pointPatchField types with the constraint value.
     // This relies on only constrained pointPatchField implementing the evaluate
     // function
-    pf.correctBoundaryConditions();
+    if (correctBCs)
+    {
+        pf.correctBoundaryConditions();
+    }
 
     // Sync any dangling points
     syncUntransformedData
