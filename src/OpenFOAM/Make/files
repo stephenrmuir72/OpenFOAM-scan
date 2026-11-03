@@ -527,6 +527,7 @@ $(procFacesGAMGProcAgglomeration)/procFacesGAMGProcAgglomeration.C
 RugeStubenAMG = $(lduMatrix)/solvers/RugeStubenAMG
 $(RugeStubenAMG)/RugeStubenAMG.C
 $(RugeStubenAMG)/RugeStubenCoarsening.C
+$(RugeStubenAMG)/RugeStubenAMGPreconditioner.C
 
 meshes/ijkMesh/ijkMesh.C
 

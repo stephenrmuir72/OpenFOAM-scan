@@ -96,7 +96,7 @@ SourceFiles
 #include "lduPrimitiveMesh.H"
 #include "Tuple2.H"
 #include "autoPtr.H"
-#include "FieldField.H"
+#include "SubField.H"
 #include "lduInterfaceFieldPtrsList.H"
 #include "boolList.H"
 #include "globalIndex.H"
@@ -211,7 +211,9 @@ private:
             //- calcCoarseMatrixParallel()).
             PtrList<processorGAMGInterfaceField> coarseInterfaceFields_;
             lduInterfaceFieldPtrsList coarseInterfaces_;
-            FieldField<Field, scalar> coarseInterfaceBouCoeffs_;
+            scalarField coarseInterfaceBouCoeffsData_;
+            scalarField coarseInterfaceIntCoeffsData_;
+            labelList coarseInterfaceCoeffsOffsets_;
 
 
     // Private Member Functions
@@ -287,7 +289,8 @@ private:
         (
             const lduMatrix& matrix,
             const List<DynamicList<Tuple2<label, scalar>>>& rowAdjacency,
-            const FieldField<Field, scalar>& interfaceBouCoeffs,
+            const scalarField& interfaceBouCoeffsData,
+            const labelUList& coeffsOffsets,
             const lduInterfaceFieldPtrsList& interfaces
         );
 
@@ -302,7 +305,8 @@ private:
         void calcPointTypeParallel
         (
             const lduMatrix& matrix,
-            const FieldField<Field, scalar>& interfaceBouCoeffs,
+            const scalarField& interfaceBouCoeffsData,
+            const labelUList& coeffsOffsets,
             const lduInterfaceFieldPtrsList& interfaces,
             const label comm
         );
@@ -394,7 +398,8 @@ public:
         (
             const lduMatrix& matrix,
             const scalar strengthThreshold,
-            const FieldField<Field, scalar>& interfaceBouCoeffs,
+            const scalarField& interfaceBouCoeffsData,
+            const labelUList& coeffsOffsets,
             const lduInterfaceFieldPtrsList& interfaces,
             const label comm
         );
@@ -472,11 +477,23 @@ public:
             return coarseInterfaces_;
         }
 
-        //- Coupling coefficients for coarseInterfaces(), parallel to it
-        const FieldField<Field, scalar>& coarseInterfaceBouCoeffs()
+        //- Flat boundary coefficients for coarseInterfaces()
+        const scalarField& coarseInterfaceBouCoeffsData()
         const noexcept
         {
-            return coarseInterfaceBouCoeffs_;
+            return coarseInterfaceBouCoeffsData_;
+        }
+
+        //- Flat transpose-side coefficients for coarseInterfaces()
+        const scalarField& coarseInterfaceIntCoeffsData() const noexcept
+        {
+            return coarseInterfaceIntCoeffsData_;
+        }
+
+        //- Per-interface offsets, including the final end offset
+        const labelList& coarseInterfaceCoeffsOffsets() const noexcept
+        {
+            return coarseInterfaceCoeffsOffsets_;
         }
 
         //- Restrict a fine-level field to the coarse level using the

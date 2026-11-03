@@ -386,20 +386,39 @@ void Foam::GAMGSolver::agglomerateMatrixWeighted
         lduInterfaceFieldPtrsList& coarseInterfaces =
             interfaceLevels_[fineLevelIndex];
 
+        const labelList& nPatchFaces =
+            agglomeration_.nPatchFaces(fineLevelIndex);
+
+        interfaceLevelsOffsets_.set
+        (
+            fineLevelIndex,
+            new labelList(fineInterfaces.size() + 1, 0)
+        );
+        labelList& coeffsOffsets = interfaceLevelsOffsets_[fineLevelIndex];
+
+        forAll(nPatchFaces, inti)
+        {
+            coeffsOffsets[inti + 1] = coeffsOffsets[inti];
+            if (fineInterfaces.set(inti))
+            {
+                coeffsOffsets[inti + 1] += nPatchFaces[inti];
+            }
+        }
+
         interfaceLevelsBouCoeffs_.set
         (
             fineLevelIndex,
-            new FieldField<Field, scalar>(fineInterfaces.size())
+            new scalarField(coeffsOffsets.last(), Zero)
         );
-        FieldField<Field, scalar>& coarseInterfaceBouCoeffs =
+        scalarField& coarseInterfaceBouCoeffs =
             interfaceLevelsBouCoeffs_[fineLevelIndex];
 
         interfaceLevelsIntCoeffs_.set
         (
             fineLevelIndex,
-            new FieldField<Field, scalar>(fineInterfaces.size())
+            new scalarField(coeffsOffsets.last(), Zero)
         );
-        FieldField<Field, scalar>& coarseInterfaceIntCoeffs =
+        scalarField& coarseInterfaceIntCoeffs =
             interfaceLevelsIntCoeffs_[fineLevelIndex];
 
         agglomerateInterfaceCoefficients
@@ -409,7 +428,8 @@ void Foam::GAMGSolver::agglomerateMatrixWeighted
             coarsePrimInterfaces,
             coarseInterfaces,
             coarseInterfaceBouCoeffs,
-            coarseInterfaceIntCoeffs
+            coarseInterfaceIntCoeffs,
+            coeffsOffsets
         );
 
         // Weighted Galerkin (RAP) sparse triple-product coarse-matrix

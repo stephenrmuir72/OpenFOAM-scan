@@ -286,13 +286,14 @@ class GAMGSolver
         //  re-normalise, using weighted, possibly multi-parent
         //  interpolation addressing (see
         //  GAMGAgglomeration::hasInterpolation()) instead of the
-        //  single-parent restrictAddressing
+        //  single-parent restrictAddressing, with flat interface coefficients
         void interpolate
         (
             solveScalarField& psi,
             solveScalarField& Apsi,
             const lduMatrix& m,
-            const FieldField<Field, scalar>& interfaceBouCoeffs,
+            const scalarField& interfaceBouCoeffsData,
+            const labelUList& coeffsOffsets,
             const lduInterfaceFieldPtrsList& interfaces,
             const labelListList& interpolationAddr,
             const List<scalarField>& interpolationWeights,

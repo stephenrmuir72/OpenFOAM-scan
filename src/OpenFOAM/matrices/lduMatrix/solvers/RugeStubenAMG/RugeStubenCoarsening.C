@@ -840,7 +840,8 @@ void Foam::RugeStubenCoarsening::calcBoundaryStrength
 (
     const lduMatrix& matrix,
     const List<DynamicList<Tuple2<label, scalar>>>& rowAdjacency,
-    const FieldField<Field, scalar>& interfaceBouCoeffs,
+    const scalarField& interfaceBouCoeffsData,
+    const labelUList& coeffsOffsets,
     const lduInterfaceFieldPtrsList& interfaces
 )
 {
@@ -891,7 +892,12 @@ void Foam::RugeStubenCoarsening::calcBoundaryStrength
         }
 
         const labelUList& faceCells = interfaces[patchi].interface().faceCells();
-        const scalarField& bouCoeffs = interfaceBouCoeffs[patchi];
+        const SubField<scalar> bouCoeffs
+        (
+            interfaceBouCoeffsData,
+            coeffsOffsets[patchi + 1] - coeffsOffsets[patchi],
+            coeffsOffsets[patchi]
+        );
 
         forAll(faceCells, facei)
         {
@@ -923,7 +929,12 @@ void Foam::RugeStubenCoarsening::calcBoundaryStrength
         }
 
         const labelUList& faceCells = interfaces[patchi].interface().faceCells();
-        const scalarField& bouCoeffs = interfaceBouCoeffs[patchi];
+        const SubField<scalar> bouCoeffs
+        (
+            interfaceBouCoeffsData,
+            coeffsOffsets[patchi + 1] - coeffsOffsets[patchi],
+            coeffsOffsets[patchi]
+        );
 
         ownerStrong_[patchi].setSize(faceCells.size(), false);
         boundaryCoeff_[patchi].setSize(faceCells.size());
@@ -949,7 +960,8 @@ void Foam::RugeStubenCoarsening::calcBoundaryStrength
 void Foam::RugeStubenCoarsening::calcPointTypeParallel
 (
     const lduMatrix& matrix,
-    const FieldField<Field, scalar>& interfaceBouCoeffs,
+    const scalarField& interfaceBouCoeffsData,
+    const labelUList& coeffsOffsets,
     const lduInterfaceFieldPtrsList& interfaces,
     const label comm
 )
@@ -981,7 +993,8 @@ void Foam::RugeStubenCoarsening::calcPointTypeParallel
         (
             matrix,
             rowAdjacency,
-            interfaceBouCoeffs,
+            interfaceBouCoeffsData,
+            coeffsOffsets,
             interfaces
         );
     }
@@ -2481,11 +2494,13 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrixParallel
         }
 
         Map<List<scalar>> recvBufs;
+        // Consensus probes must not consume subsequent interface messages
+        // from ranks that have already completed the exchange.
         Pstream::exchangeConsensus<List<scalar>, scalar>
         (
             sendBufsFinal,
             recvBufs,
-            UPstream::msgType(),
+            UPstream::msgType() + 1,
             comm
         );
 
@@ -3400,7 +3415,22 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrixParallel
 
     coarseInterfaceFields_.setSize(nTotalIfaces);
     coarseInterfaces_.setSize(nTotalIfaces);
-    coarseInterfaceBouCoeffs_.setSize(nTotalIfaces);
+    coarseInterfaceCoeffsOffsets_.setSize(nTotalIfaces + 1, 0);
+    forAll(validPatchIs, vi)
+    {
+        coarseInterfaceCoeffsOffsets_[vi + 1] =
+            coarseInterfaceCoeffsOffsets_[vi]
+          + combinedCoupling[validPatchIs[vi]].size();
+    }
+    forAll(newRemoteProcs, ni)
+    {
+        const label vi = validPatchIs.size() + ni;
+        coarseInterfaceCoeffsOffsets_[vi + 1] =
+            coarseInterfaceCoeffsOffsets_[vi]
+          + newRemoteCoupling[newRemoteProcs[ni]].size();
+    }
+    coarseInterfaceBouCoeffsData_.setSize(coarseInterfaceCoeffsOffsets_.last());
+    coarseInterfaceIntCoeffsData_.setSize(coarseInterfaceCoeffsOffsets_.last());
 
     // The new processorGAMGInterface objects built below are handed to
     // coarseMeshPtr_->addInterfaces() further down, which makes the
@@ -3432,7 +3462,12 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrixParallel
         );
 
         labelList faceCells(entries.size());
-        scalarField coeffs(entries.size());
+        SubField<scalar> coeffs
+        (
+            coarseInterfaceBouCoeffsData_,
+            entries.size(),
+            coarseInterfaceCoeffsOffsets_[vi]
+        );
         forAll(entries, fi)
         {
             const label minKey = entries[fi].first.first;
@@ -3454,7 +3489,7 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrixParallel
             // calcPointTypeParallel()'s "coeff = -bouCoeffs[facei]").
             // That convention is correct for coarseDiag/coarseUpper
             // (genuine internal matrix entries, built from the same
-            // contrib just above), but coarseInterfaceBouCoeffs_ feeds
+            // contrib just above), but coarseInterfaceBouCoeffsData_ feeds
             // GaussSeidelSmoother/lduMatrix::residual()/Amul() via
             // processorGAMGInterfaceField::updateInterfaceMatrix(),
             // which expect the RAW bouCoeffs convention (the opposite
@@ -3491,7 +3526,6 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrixParallel
         );
 
         coarseInterfaces_.set(vi, &coarseInterfaceFields_[vi]);
-        coarseInterfaceBouCoeffs_.set(vi, new scalarField(std::move(coeffs)));
     }
 
     // Brand-new interfaces for genuine 2-hop "3rd rank" corner
@@ -3540,7 +3574,12 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrixParallel
             );
 
             labelList faceCells(entries.size());
-            scalarField coeffs(entries.size());
+            SubField<scalar> coeffs
+            (
+                coarseInterfaceBouCoeffsData_,
+                entries.size(),
+                coarseInterfaceCoeffsOffsets_[vi]
+            );
             forAll(entries, fi)
             {
                                 const label globalRow = entries[fi].first.first;
@@ -3585,9 +3624,52 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrixParallel
             );
 
             coarseInterfaces_.set(vi, &coarseInterfaceFields_[vi]);
-            coarseInterfaceBouCoeffs_.set(vi, new scalarField(std::move(coeffs)));
         }
     }
+
+    // Transpose-side coefficients are the remote row's boundary coefficients,
+    // not the finest-level coefficients or a copy of asymmetric local rows.
+    const label startRequests = UPstream::nRequests();
+    forAll(coarseInterfaces_, patchi)
+    {
+        const auto& proc = refCast<const processorLduInterface>
+        (
+            coarseInterfaces_[patchi].interface()
+        );
+        SubField<scalar> coeffs
+        (
+            coarseInterfaceIntCoeffsData_,
+            coarseInterfaceCoeffsOffsets_[patchi + 1]
+          - coarseInterfaceCoeffsOffsets_[patchi],
+            coarseInterfaceCoeffsOffsets_[patchi]
+        );
+        UIPstream::read
+        (
+            UPstream::commsTypes::nonBlocking,
+            proc.neighbProcNo(), coeffs, proc.tag(), proc.comm()
+        );
+    }
+    forAll(coarseInterfaces_, patchi)
+    {
+        const auto& proc = refCast<const processorLduInterface>
+        (
+            coarseInterfaces_[patchi].interface()
+        );
+        const SubField<scalar> coeffs
+        (
+            coarseInterfaceBouCoeffsData_,
+            coarseInterfaceCoeffsOffsets_[patchi + 1]
+          - coarseInterfaceCoeffsOffsets_[patchi],
+            coarseInterfaceCoeffsOffsets_[patchi]
+        );
+        const UList<scalar>& sendCoeffs = coeffs;
+        UOPstream::write
+        (
+            UPstream::commsTypes::nonBlocking,
+            proc.neighbProcNo(), sendCoeffs, proc.tag(), proc.comm()
+        );
+    }
+    UPstream::waitRequests(startRequests);
 
     // The coarse lduPrimitiveMesh above was built via the "components,
     // without interfaces" constructor (owner/neighbour/comm only) - its
@@ -3632,7 +3714,8 @@ Foam::RugeStubenCoarsening::RugeStubenCoarsening
     interpolationAddr_(),
     interpolationWeights_(),
     coarseMeshPtr_(),
-    coarseMatrixPtr_()
+    coarseMatrixPtr_(),
+    coarseInterfaceCoeffsOffsets_(1, 0)
 {
     const List<DynamicList<Tuple2<label, scalar>>> rowAdjacency
     (
@@ -3650,7 +3733,8 @@ Foam::RugeStubenCoarsening::RugeStubenCoarsening
 (
     const lduMatrix& matrix,
     const scalar strengthThreshold,
-    const FieldField<Field, scalar>& interfaceBouCoeffs,
+    const scalarField& interfaceBouCoeffsData,
+    const labelUList& coeffsOffsets,
     const lduInterfaceFieldPtrsList& interfaces,
     const label comm
 )
@@ -3663,7 +3747,8 @@ Foam::RugeStubenCoarsening::RugeStubenCoarsening
     interpolationAddr_(),
     interpolationWeights_(),
     coarseMeshPtr_(),
-    coarseMatrixPtr_()
+    coarseMatrixPtr_(),
+    coarseInterfaceCoeffsOffsets_(1, 0)
 {
     const List<DynamicList<Tuple2<label, scalar>>> rowAdjacency
     (
@@ -3694,7 +3779,10 @@ Foam::RugeStubenCoarsening::RugeStubenCoarsening
     }
 
     calcStrongNeighbours(matrix, rowAdjacency);
-    calcPointTypeParallel(matrix, interfaceBouCoeffs, interfaces, comm);
+    calcPointTypeParallel
+    (
+        matrix, interfaceBouCoeffsData, coeffsOffsets, interfaces, comm
+    );
     calcCoarseGlobalIndex(interfaces, comm);
     calcInterpolationParallel(matrix, rowAdjacency);
     calcCoarseMatrixParallel(matrix, rowAdjacency, interfaces, comm);

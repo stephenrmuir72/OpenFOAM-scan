@@ -270,7 +270,8 @@ void Foam::GAMGSolver::interpolate
     solveScalarField& psi,
     solveScalarField& Apsi,
     const lduMatrix& m,
-    const FieldField<Field, scalar>& interfaceBouCoeffs,
+    const scalarField& interfaceBouCoeffsData,
+    const labelUList& coeffsOffsets,
     const lduInterfaceFieldPtrsList& interfaces,
     const labelListList& interpolationAddr,
     const List<scalarField>& interpolationWeights,
@@ -283,7 +284,8 @@ void Foam::GAMGSolver::interpolate
         psi,
         Apsi,
         m,
-        interfaceBouCoeffs,
+        interfaceBouCoeffsData,
+        coeffsOffsets,
         interfaces,
         cmpt
     );

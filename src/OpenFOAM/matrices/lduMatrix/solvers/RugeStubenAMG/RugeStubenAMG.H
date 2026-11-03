@@ -53,6 +53,14 @@ Description
     level - no gather-to-master step remains. The coarsest level is
     solved with a distributed runtime-selected solver.
 
+    Interface coefficients use flat boundary/internal scalar fields with
+    per-interface offsets, including an end offset. Each coarse level owns
+    its flat coefficient storage; internal coefficients contain the remote
+    row's boundary coefficients, including for asymmetric matrices.
+
+    RugeStubenAMGPreconditioner reuses this hierarchy and V-cycle as a
+    runtime-selected preconditioner for symmetric and asymmetric matrices.
+
     Scope (prototype): no fvSolution-tuned defaults; intended to
     validate hierarchy/unit correctness rather than production
     performance. Distributed asymmetric RAP is supported, with the
@@ -115,7 +123,7 @@ class RugeStubenAMG
         //- interface-aware constructor at every level (including
         //- level 0), so each level's coarse interfaces/coefficients
         //- are available via levels_[i].coarseInterfaces()/
-        //- coarseInterfaceBouCoeffs() for use by level i+1.
+        //- coarseInterfaceBouCoeffsData() for use by level i+1.
         PtrDynList<RugeStubenCoarsening> levels_;
 
 
@@ -134,10 +142,16 @@ class RugeStubenAMG
 
         //- Return the interface boundary coefficients at the given
         //- level, parallel to interfacesLevel(leveli)
-        const FieldField<Field, scalar>& interfaceBouCoeffsLevel
+        const scalarField& interfaceBouCoeffsLevel
         (
             const label leveli
         ) const;
+
+        //- Return flat internal coefficients at the given level
+        const scalarField& interfaceIntCoeffsLevel(const label leveli) const;
+
+        //- Return offsets for the given level's flat coefficients
+        const labelUList& interfaceCoeffsOffsetsLevel(const label leveli) const;
 
         //- Smooth psi at the given level for nSweeps Gauss-Seidel sweeps
         void smoothLevel
@@ -145,7 +159,8 @@ class RugeStubenAMG
             const label leveli,
             scalarField& psi,
             const scalarField& source,
-            const label nSweeps
+            const label nSweeps,
+            const direction cmpt
         ) const;
 
         //- Calculate the residual at the given level
@@ -154,16 +169,22 @@ class RugeStubenAMG
             const label leveli,
             const scalarField& psi,
             const scalarField& source,
-            scalarField& res
+            scalarField& res,
+            const direction cmpt
         ) const;
+
+protected:
 
         //- Recursive V-cycle starting at the given level
         void Vcycle
         (
             const label leveli,
             scalarField& psi,
-            const scalarField& source
+            const scalarField& source,
+            const direction cmpt
         ) const;
+
+private:
 
         //- No copy construct
         RugeStubenAMG(const RugeStubenAMG&) = delete;
@@ -185,8 +206,9 @@ public:
         (
             const word& fieldName,
             const lduMatrix& matrix,
-            const FieldField<Field, scalar>& interfaceBouCoeffs,
-            const FieldField<Field, scalar>& interfaceIntCoeffs,
+            const scalarField& interfaceBouCoeffsData,
+            const scalarField& interfaceIntCoeffsData,
+            const labelUList& coeffsOffsets,
             const lduInterfaceFieldPtrsList& interfaces,
             const dictionary& solverControls
         );

@@ -49,8 +49,9 @@ Foam::RugeStubenAMG::RugeStubenAMG
 (
     const word& fieldName,
     const lduMatrix& matrix,
-    const FieldField<Field, scalar>& interfaceBouCoeffs,
-    const FieldField<Field, scalar>& interfaceIntCoeffs,
+    const scalarField& interfaceBouCoeffsData,
+    const scalarField& interfaceIntCoeffsData,
+    const labelUList& coeffsOffsets,
     const lduInterfaceFieldPtrsList& interfaces,
     const dictionary& solverControls
 )
@@ -59,8 +60,9 @@ Foam::RugeStubenAMG::RugeStubenAMG
     (
         fieldName,
         matrix,
-        interfaceBouCoeffs,
-        interfaceIntCoeffs,
+        interfaceBouCoeffsData,
+        interfaceIntCoeffsData,
+        coeffsOffsets,
         interfaces,
         solverControls
     ),
@@ -78,7 +80,7 @@ Foam::RugeStubenAMG::RugeStubenAMG
     // (including level 0) uses the interface-aware constructor, so
     // processor-boundary coupling is carried through to every coarser
     // level via the previous level's coarseInterfaces()/
-    // coarseInterfaceBouCoeffs(). The loop termination is based on the
+    // coarseInterfaceBouCoeffsData(). The loop termination is based on the
     // GLOBAL (all-rank) cell count so every rank builds the same
     // number of levels (required since coarse-level communication
     // needs a consistent hierarchy depth across ranks).
@@ -100,6 +102,7 @@ Foam::RugeStubenAMG::RugeStubenAMG
                 curMatrix,
                 strengthThreshold_,
                 interfaceBouCoeffsLevel(levels_.size()),
+                interfaceCoeffsOffsetsLevel(levels_.size()),
                 interfacesLevel(levels_.size()),
                 comm
             )
@@ -166,8 +169,10 @@ Foam::RugeStubenAMG::RugeStubenAMG
 
             const lduInterfaceFieldPtrsList& cInterfaces =
                 levelPtr().coarseInterfaces();
-            const FieldField<Field, scalar>& cBouCoeffs =
-                levelPtr().coarseInterfaceBouCoeffs();
+            const scalarField& cBouCoeffs =
+                levelPtr().coarseInterfaceBouCoeffsData();
+            const labelList& cOffsets =
+                levelPtr().coarseInterfaceCoeffsOffsets();
 
             forAll(cInterfaces, patchi)
             {
@@ -175,7 +180,12 @@ Foam::RugeStubenAMG::RugeStubenAMG
                 {
                     const labelUList& faceCells =
                         cInterfaces[patchi].interface().faceCells();
-                    const scalarField& bc = cBouCoeffs[patchi];
+                    const SubField<scalar> bc
+                    (
+                        cBouCoeffs,
+                        cOffsets[patchi + 1] - cOffsets[patchi],
+                        cOffsets[patchi]
+                    );
 
                     forAll(faceCells, facei)
                     {
@@ -231,7 +241,8 @@ Foam::RugeStubenAMG::RugeStubenAMG
             "coarsestLevelCorr",
             matrixLevel(levels_.size()),
             interfaceBouCoeffsLevel(levels_.size()),
-            interfaceIntCoeffs_,
+            interfaceIntCoeffsLevel(levels_.size()),
+            interfaceCoeffsOffsetsLevel(levels_.size()),
             interfacesLevel(levels_.size()),
             coarseEntry->dict()
         );
@@ -259,7 +270,8 @@ Foam::RugeStubenAMG::RugeStubenAMG
             "coarsestLevelCorr",
             matrixLevel(levels_.size()),
             interfaceBouCoeffsLevel(levels_.size()),
-            interfaceIntCoeffs_,
+            interfaceIntCoeffsLevel(levels_.size()),
+            interfaceCoeffsOffsetsLevel(levels_.size()),
             interfacesLevel(levels_.size()),
             coarseControls
         );
@@ -284,7 +296,7 @@ const Foam::lduInterfaceFieldPtrsList& Foam::RugeStubenAMG::interfacesLevel
 }
 
 
-const Foam::FieldField<Foam::Field, Foam::scalar>&
+const Foam::scalarField&
 Foam::RugeStubenAMG::interfaceBouCoeffsLevel
 (
     const label leveli
@@ -293,8 +305,35 @@ Foam::RugeStubenAMG::interfaceBouCoeffsLevel
     return
     (
         leveli == 0
-      ? interfaceBouCoeffs_
-      : levels_[leveli - 1].coarseInterfaceBouCoeffs()
+      ? interfaceBouCoeffsData_
+      : levels_[leveli - 1].coarseInterfaceBouCoeffsData()
+    );
+}
+
+const Foam::scalarField& Foam::RugeStubenAMG::interfaceIntCoeffsLevel
+(
+    const label leveli
+) const
+{
+    return
+    (
+        leveli == 0
+      ? interfaceIntCoeffsData_
+      : levels_[leveli - 1].coarseInterfaceIntCoeffsData()
+    );
+}
+
+
+const Foam::labelUList& Foam::RugeStubenAMG::interfaceCoeffsOffsetsLevel
+(
+    const label leveli
+) const
+{
+    return
+    (
+        leveli == 0
+      ? coeffsOffsets_
+      : levels_[leveli - 1].coarseInterfaceCoeffsOffsets()
     );
 }
 
@@ -304,7 +343,8 @@ void Foam::RugeStubenAMG::smoothLevel
     const label leveli,
     scalarField& psi,
     const scalarField& source,
-    const label nSweeps
+    const label nSweeps,
+    const direction cmpt
 ) const
 {
     const lduMatrix& A = matrixLevel(leveli);
@@ -314,12 +354,13 @@ void Foam::RugeStubenAMG::smoothLevel
         fieldName_,
         A,
         interfaceBouCoeffsLevel(leveli),
-        interfaceIntCoeffs_,
+        interfaceIntCoeffsLevel(leveli),
+        interfaceCoeffsOffsetsLevel(leveli),
         interfacesLevel(leveli),
         dictionary::null
     );
 
-    smoother.smooth(psi, source, 0, nSweeps);
+    smoother.smooth(psi, source, cmpt, nSweeps);
 }
 
 
@@ -328,7 +369,8 @@ void Foam::RugeStubenAMG::residualLevel
     const label leveli,
     const scalarField& psi,
     const scalarField& source,
-    scalarField& res
+    scalarField& res,
+    const direction cmpt
 ) const
 {
     const lduMatrix& A = matrixLevel(leveli);
@@ -336,7 +378,8 @@ void Foam::RugeStubenAMG::residualLevel
 
     A.residual
     (
-        res, psi, source, interfaceBouCoeffsLevel(leveli), interfacesLevel(leveli), 0
+        res, psi, source, interfaceBouCoeffsLevel(leveli),
+        interfaceCoeffsOffsetsLevel(leveli), interfacesLevel(leveli), cmpt
     );
 }
 
@@ -345,21 +388,22 @@ void Foam::RugeStubenAMG::Vcycle
 (
     const label leveli,
     scalarField& psi,
-    const scalarField& source
+    const scalarField& source,
+    const direction cmpt
 ) const
 {
     if (leveli == levels_.size())
     {
-        coarsestSolverPtr_->scalarSolve(psi, source);
+        coarsestSolverPtr_->scalarSolve(psi, source, cmpt);
         return;
     }
 
     // Pre-smoothing
-    smoothLevel(leveli, psi, source, nPreSweeps_);
+    smoothLevel(leveli, psi, source, nPreSweeps_, cmpt);
 
     // Fine-level residual
     scalarField res;
-    residualLevel(leveli, psi, source, res);
+    residualLevel(leveli, psi, source, res, cmpt);
 
     // Restrict residual to the coarse level
     const RugeStubenCoarsening& lvl = levels_[leveli];
@@ -370,7 +414,7 @@ void Foam::RugeStubenAMG::Vcycle
     scalarField coarseCorr(lvl.nCoarseCells(), Zero);
 
     // Recurse to the next coarser level
-    Vcycle(leveli + 1, coarseCorr, coarseSource);
+    Vcycle(leveli + 1, coarseCorr, coarseSource, cmpt);
 
     // Prolong and apply the coarse-grid correction
     scalarField fineCorr;
@@ -379,7 +423,7 @@ void Foam::RugeStubenAMG::Vcycle
     psi += fineCorr;
 
     // Post-smoothing
-    smoothLevel(leveli, psi, source, nPostSweeps_);
+    smoothLevel(leveli, psi, source, nPostSweeps_, cmpt);
 }
 
 
@@ -414,12 +458,19 @@ Foam::solverPerformance Foam::RugeStubenAMG::solve
     scalarField Apsi(psi.size());
     scalarField tmpField(psi.size());
 
-    matrix_.Amul(Apsi, psi, interfaceBouCoeffs_, interfaces_, cmpt);
+    matrix_.Amul
+    (
+        Apsi, psi, interfaceBouCoeffsData_, coeffsOffsets_, interfaces_, cmpt
+    );
 
     scalar normFactor = this->normFactor(psi, source, Apsi, tmpField);
 
     scalarField rA(psi.size());
-    matrix_.residual(rA, psi, source, interfaceBouCoeffs_, interfaces_, cmpt);
+    matrix_.residual
+    (
+        rA, psi, source,
+        interfaceBouCoeffsData_, coeffsOffsets_, interfaces_, cmpt
+    );
 
     solverPerf.initialResidual() = gSumMag(rA, matrix_.mesh().comm())/normFactor;
     solverPerf.finalResidual() = solverPerf.initialResidual();
@@ -432,11 +483,12 @@ Foam::solverPerformance Foam::RugeStubenAMG::solve
     {
         do
         {
-            Vcycle(0, psi, source);
+            Vcycle(0, psi, source, cmpt);
 
             matrix_.residual
             (
-                rA, psi, source, interfaceBouCoeffs_, interfaces_, cmpt
+                rA, psi, source,
+                interfaceBouCoeffsData_, coeffsOffsets_, interfaces_, cmpt
             );
 
             solverPerf.finalResidual() =
