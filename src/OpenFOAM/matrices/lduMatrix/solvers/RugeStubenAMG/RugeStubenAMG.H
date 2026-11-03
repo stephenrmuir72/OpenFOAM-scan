@@ -28,18 +28,19 @@ Group
     grpLduMatrixSolvers
 
 Description
-    Classical Ruge-Stuben algebraic multigrid solver (prototype).
+        Classical Ruge-Stuben algebraic multigrid solver (prototype).
 
     Characteristics:
-      - Requires a symmetric (SPD) matrix; asymmetric matrices are
-        rejected with a FatalError.
+            - Uses the same runtime-selected solver for symmetric and
+                asymmetric matrices. Matrix symmetry is detected automatically.
       - Coarsening: classical two-pass Ruge-Stuben C/F splitting with
         classical direct interpolation (see RugeStubenCoarsening).
-      - Coarse matrix creation: Galerkin (RAP) triple product.
+            - Coarse matrix creation: Galerkin (RAP) triple product, retaining
+                independent lower and upper coefficients for asymmetric matrices.
       - Smoother: Gauss-Seidel.
       - Type of cycle: V-cycle.
-      - Coarsest level approximated with additional Gauss-Seidel
-        sweeps (see Scope note below).
+            - Coarsest level solved with PCG or PBiCGStab by default, with
+                an optional coarsestSolver dictionary override.
 
     Parallel running: every coarsening level (including the finest)
     is built with the interface-aware RugeStubenCoarsening
@@ -50,18 +51,16 @@ Description
     needed. The whole V-cycle (smoothing, residual, restriction,
     prolongation) therefore runs genuinely distributed at every
     level - no gather-to-master step remains. The coarsest level is
-    solved with additional Gauss-Seidel sweeps (not a distributed
-    direct/Krylov solve) - see the Scope note below.
+    solved with a distributed runtime-selected solver.
 
     Scope (prototype): no fvSolution-tuned defaults; intended to
     validate hierarchy/unit correctness rather than production
-    performance. Rare multi-rank "corner" (2-hop) Galerkin
-    contributions are dropped (see RugeStubenCoarsening); this
+    performance. Distributed asymmetric RAP is supported, with the
+    documented rare multi-rank "corner" (2-hop) Galerkin contributions
+    dropped (see RugeStubenCoarsening); this
     affects convergence RATE only, not correctness, since smoothing
-    and residual evaluation always use the exact level matrix. The
-    coarsest level is solved with a fixed number of additional
-    Gauss-Seidel sweeps rather than a dedicated distributed direct or
-    Krylov solve. Coarsening-level rank imbalance (a rank reaching
+    and residual evaluation always use the exact level matrix.
+    Coarsening-level rank imbalance (a rank reaching
     zero local coarse cells while others still have many) is not
     specifically handled. See RugeStubenCoarsening for the
     coarsening/interpolation/Galerkin-assembly algorithm.
@@ -107,9 +106,8 @@ class RugeStubenAMG
         //- Number of post-smoothing sweeps
         label nPostSweeps_;
 
-        //- Number of Gauss-Seidel sweeps used to (approximately) solve
-        //- the coarsest level
-        label nCoarsestSweeps_;
+        //- Solver for the coarsest level
+        autoPtr<lduMatrix::solver> coarsestSolverPtr_;
 
         //- Hierarchy of coarsening levels. levels_[i] coarsens the
         //- level-i matrix (matrix_ if i==0, else

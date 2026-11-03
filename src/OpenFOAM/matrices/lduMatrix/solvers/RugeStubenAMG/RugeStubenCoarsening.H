@@ -25,8 +25,8 @@ Class
     Foam::RugeStubenCoarsening
 
 Description
-    Builds a single classical Ruge-Stuben AMG coarsening level from a
-    symmetric (SPD) lduMatrix:
+    Builds a single classical Ruge-Stuben AMG coarsening level from an
+    lduMatrix:
 
       -# Strength-of-connection graph (theta-scaled, per-row max
          opposite-sign-to-diagonal off-diagonal test - handles both the
@@ -59,9 +59,11 @@ Description
       -# Classical direct interpolation weights (Ruge-Stuben 1987),
          with separate scaling of the negative and positive
          off-diagonal parts, restricted to strong coarse neighbours.
-      -# Galerkin (RAP) coarse-matrix assembly, assembled from scratch
-         via a sparse row-triple-product (no existing OpenFOAM utility
-         performs this for weighted, non-injection interpolation).
+        -# Galerkin (RAP) coarse-matrix assembly, assembled from scratch
+            via a sparse row-triple-product (no existing OpenFOAM utility
+            performs this for weighted, non-injection interpolation). The
+            serial path retains ordered coarse entries for asymmetric
+            matrices.
 
     Scope (prototype):
       - The coarse-level lduPrimitiveMesh is constructed without
@@ -74,8 +76,9 @@ Description
         implemented, so the resulting coarse level does not (yet)
         capture cross-rank coarse coupling. This is a deliberate,
         documented scope limit rather than an oversight.
-      - Symmetric (SPD) matrices only; asymmetric matrices are
-        rejected with a FatalError.
+            - Asymmetric matrices are supported in both serial and
+                distributed RAP assembly. Rare multi-rank corner terms
+                remain a documented convergence-rate limitation.
       - Not optimised: the greedy C/F selection is a simple O(n^2)
         scan rather than a bucket-sorted priority queue. Adequate for
         validating hierarchy/unit correctness on small matrices, not
@@ -213,9 +216,10 @@ private:
 
     // Private Member Functions
 
-        //- Build, for every cell, the list of (neighbour cell,
-        //- off-diagonal coefficient) pairs from both ends of every
-        //- face (valid for symmetric matrices only)
+        //- Build, for every cell, the directed list of (neighbour cell,
+        //- off-diagonal coefficient) pairs from both ends of every face.
+        //- For asymmetric matrices, owner rows use upper() and neighbour
+        //- rows use lower().
         static List<DynamicList<Tuple2<label, scalar>>> buildRowAdjacency
         (
             const lduMatrix& matrix
@@ -369,7 +373,7 @@ public:
 
     // Constructors
 
-        //- Construct from a symmetric lduMatrix and strength threshold,
+        //- Construct from an lduMatrix and strength threshold,
         //- performing strength analysis, C/F splitting, interpolation
         //- weight calculation and Galerkin coarse-matrix assembly.
         RugeStubenCoarsening
@@ -379,7 +383,7 @@ public:
             const label comm
         );
 
-        //- Construct from a symmetric lduMatrix, strength threshold
+        //- Construct from an lduMatrix, strength threshold
         //- and processor-interface coupling data, performing a
         //- distributed CLJP-style parallel C/F splitting instead of
         //- the classical serial greedy algorithm above (see
@@ -475,7 +479,10 @@ public:
             return coarseInterfaceBouCoeffs_;
         }
 
-        //- Restrict a fine-level field to the coarse level using R = P^T
+        //- Restrict a fine-level field to the coarse level using the
+        //- explicitly defined initial asymmetric policy R = P^T. This
+        //- is a transpose of the interpolation operator, not a symmetry
+        //- assumption about the fine-level matrix.
         void restrictField
         (
             scalarField& coarseFld,

@@ -290,6 +290,10 @@ Foam::RugeStubenCoarsening::buildRowAdjacency(const lduMatrix& matrix)
     const labelUList& owner = addr.lowerAddr();
     const labelUList& neighbour = addr.upperAddr();
     const scalarField& upperCoeffs = matrix.upper();
+    const scalarField& lowerCoeffs =
+    (
+        matrix.hasLower() ? matrix.lower() : matrix.upper()
+    );
 
     List<DynamicList<Tuple2<label, scalar>>> rows(nCells);
 
@@ -297,10 +301,14 @@ Foam::RugeStubenCoarsening::buildRowAdjacency(const lduMatrix& matrix)
     {
         const label own = owner[facei];
         const label nei = neighbour[facei];
-        const scalar coeff = upperCoeffs[facei];
-
-        rows[own].append(Tuple2<label, scalar>(nei, coeff));
-        rows[nei].append(Tuple2<label, scalar>(own, coeff));
+        rows[own].append
+        (
+            Tuple2<label, scalar>(nei, upperCoeffs[facei])
+        );
+        rows[nei].append
+        (
+            Tuple2<label, scalar>(own, lowerCoeffs[facei])
+        );
     }
 
     return rows;
@@ -1765,6 +1773,7 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrix
     DynamicList<label> coarseOwner;
     DynamicList<label> coarseNeighbour;
     DynamicList<scalar> coarseUpper;
+    DynamicList<scalar> coarseLower;
 
     for (label k = 0; k < nCoarseCells_; ++k)
     {
@@ -1779,12 +1788,14 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrix
             }
             else if (l > k)
             {
-                // Only read the upper triangle - the (l, k) mirror
-                // entry (computed independently above) carries the
-                // same value by construction.
                 coarseOwner.append(k);
                 coarseNeighbour.append(l);
                 coarseUpper.append(val);
+
+                if (!matrix.symmetric())
+                {
+                    coarseLower.append(coarseRows[l][k]);
+                }
             }
         }
     }
@@ -1815,6 +1826,11 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrix
     // LUscalarMatrix::convert() call upper() unconditionally and
     // FatalError if neither upper nor lower is allocated at all.
     coarseMatrixPtr_->upper(coarseUpper.size()) = coarseUpper;
+
+    if (!matrix.symmetric())
+    {
+        coarseMatrixPtr_->lower(coarseLower.size()) = coarseLower;
+    }
 }
 
 
@@ -1984,14 +2000,12 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrixParallel
     DynamicList<label> pendingGA, pendingGB;
     DynamicList<scalar> pendingVal;
 
-    // Populated by Step C: genuine 2-hop "3rd rank" corner couplings,
-    // keyed by the OTHER (remote) rank owning the far side, each entry
-    // a canonical GLOBAL (lo, hi) coarse-index pair mapped to its
-    // accumulated coefficient. Declared here (rather than local to
-    // Step C) so it also remains visible further below when extending
-    // the coarse-level interface construction to include brand-new
-    // inter-rank interfaces for any remaining (previously unconnected)
-    // rank pairs.
+    // Populated by Step C: genuine 2-hop corner couplings, keyed by the
+    // OTHER rank owning the column. Each pair is ordered as
+    // (GLOBAL row, GLOBAL column), since opposite directions are
+    // independent for an asymmetric matrix. A zero-valued identity
+    // record may also be present so both sides create the same interface
+    // face; it does not add a matrix coefficient on that side.
     std::map<label, std::map<std::pair<label, label>, scalar>>
         newRemoteCoupling;
 
@@ -2414,12 +2428,17 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrixParallel
             const label procA = gi.whichProcID(ga);
             const label procB = gi.whichProcID(gb);
 
-            const label lo = min(ga, gb);
-            const label hi = max(ga, gb);
-
             if (procA == myProci)
             {
-                newRemoteCoupling[procB][std::make_pair(lo, hi)] += val;
+                if (procA == procB)
+                {
+                    coarseRows[gi.toLocal(ga)][gi.toLocal(gb)] += val;
+                }
+                else
+                {
+                    newRemoteCoupling[procB][std::make_pair(ga, gb)] +=
+                        val;
+                }
             }
             else
             {
@@ -2429,23 +2448,22 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrixParallel
                 buf.append(val);
             }
 
-            // Guard against telling the SAME rank twice when ga and gb
-            // are owned by the same remote rank (the Ghost x Ghost
-            // block's same-owner case) - the procA branch above (or
-            // the corresponding receive-side fold below) already
-            // covers that rank exactly once.
+            // Also send an identity record to the column owner. Its
+            // coefficient is zero because this rank needs the row-gb to
+            // column-ga interface face, not the row-ga contribution.
             if (procB != procA)
             {
                 if (procB == myProci)
                 {
-                    newRemoteCoupling[procA][std::make_pair(lo, hi)] += val;
+                    newRemoteCoupling[procA][std::make_pair(gb, ga)] +=
+                        scalar(0);
                 }
                 else
                 {
                     DynamicList<scalar>& buf = sendBufs(procB);
                     buf.append(scalar(ga));
                     buf.append(scalar(gb));
-                    buf.append(val);
+                    buf.append(Zero);
                 }
             }
         }
@@ -2487,44 +2505,37 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrixParallel
 
                 if (gaLocal && gbLocal)
                 {
-                    // Ghost x Ghost same-owner case: both endpoints
-                    // resolve local to me (I am ga's and gb's sole
-                    // owner) - fold directly into coarseRows, exactly
-                    // like a local x local RAP contribution.
-                    const label la = gi.toLocal(ga);
-                    const label lb = gi.toLocal(gb);
-                    const label lo = min(la, lb);
-                    const label hi = max(la, lb);
-
-                    coarseRows[lo][hi] += val;
+                    // Both endpoints resolve local to me: preserve the
+                    // ordered RAP entry rather than folding it into the
+                    // upper triangle.
+                    coarseRows[gi.toLocal(ga)][gi.toLocal(gb)] += val;
 
                     continue;
                 }
 
-                // Genuine corner: exactly one of ga, gb resolves local
-                // to me - route the coupling to the OTHER (remote)
-                // owner, exactly as before.
-                const label remoteProc =
-                (
-                    gaLocal ? gi.whichProcID(gb) : gi.whichProcID(ga)
-                );
-
-                const label lo = min(ga, gb);
-                const label hi = max(ga, gb);
-
-                newRemoteCoupling[remoteProc][std::make_pair(lo, hi)] += val;
+                // Exactly one endpoint is local. Store the entry in the
+                // local-row orientation; identity records arriving at
+                // the column owner therefore have zero value but still
+                // establish the matching interface face.
+                if (gaLocal)
+                {
+                    newRemoteCoupling[gi.whichProcID(gb)]
+                    [std::make_pair(ga, gb)] += val;
+                }
+                else if (gbLocal)
+                {
+                    newRemoteCoupling[gi.whichProcID(ga)]
+                    [std::make_pair(gb, ga)] += val;
+                }
             }
         }
     }
 
-    // Fold newRemoteCoupling entries whose remote rank already has an
-    // EXISTING fine-level interface directly into couplingPerInterface
-    // for that interface (converting the canonical GLOBAL (lo, hi) key
-    // into the (local k, global l) convention used elsewhere) - these
-    // then flow through the existing unionCoupling exchange/dedup
-    // logic below exactly like any other Step B contribution. Entries
-    // for remote ranks with NO existing interface are left as-is, to
-    // be turned into brand-new coarse-level interfaces further below.
+    // Fold entries whose remote rank already has an EXISTING fine-level
+    // interface directly into couplingPerInterface. The stored key is
+    // already (local coarse GLOBAL row, remote GLOBAL column), so retain
+    // that order. Entries for remote ranks with NO existing interface are
+    // left as-is, to be turned into brand-new coarse-level interfaces.
     for (const auto& rc : newRemoteCoupling)
     {
         const label remoteProc = rc.first;
@@ -2534,17 +2545,10 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrixParallel
 
         for (const auto& kv : rc.second)
         {
-            const label lo = kv.first.first;
-            const label hi = kv.first.second;
-            const scalar val = kv.second;
-
-            const label k =
-            (
-                gi.isLocal(lo) ? gi.toLocal(lo) : gi.toLocal(hi)
-            );
-            const label l = gi.isLocal(lo) ? hi : lo;
-
-            couplingPerInterface[patchi][std::make_pair(k, l)] += val;
+            couplingPerInterface[patchi]
+            [
+                std::make_pair(gi.toLocal(kv.first.first), kv.first.second)
+            ] += kv.second;
         }
     }
 
@@ -2557,6 +2561,7 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrixParallel
     DynamicList<label> coarseOwner;
     DynamicList<label> coarseNeighbour;
     DynamicList<scalar> coarseUpper;
+    DynamicList<scalar> coarseLower;
 
     for (label k = 0; k < nCoarseCells_; ++k)
     {
@@ -2574,6 +2579,11 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrixParallel
                 coarseOwner.append(k);
                 coarseNeighbour.append(l);
                 coarseUpper.append(val);
+
+                if (!matrix.symmetric())
+                {
+                    coarseLower.append(coarseRows[l][k]);
+                }
             }
         }
     }
@@ -2602,22 +2612,18 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrixParallel
 
     coarseMatrixPtr_->upper(coarseUpper.size()) = coarseUpper;
 
+    if (!matrix.symmetric())
+    {
+        coarseMatrixPtr_->lower(coarseLower.size()) = coarseLower;
+    }
+
     // ------------------------------------------------------------------
-    // Exchange each interface's coupling-pair set (canonicalised to
-    // GLOBAL (min, max) coarse-index keys) with the neighbour rank and
-    // take the UNION. Each rank's local Step B classification above can
-    // independently miss a pair (most notably the dropped 2-hop
-    // "corner" term documented above), so without this the two ranks
-    // sharing an interface could disagree on whether a coarse-level
-    // interface exists at all, or on its face count/order - causing a
-    // message-size mismatch (MPI_ERR_TRUNCATE) the first time that
-    // coarse level communicates. A set union is commutative, so both
-    // ranks compute the IDENTICAL union of (their own local set) and
-    // (the set received from the neighbour) - i.e. (localA union
-    // localB) on both sides - guaranteeing a symmetric decision and an
-    // identical face list/order (std::map's key ordering over
-    // std::pair<label,label> is exactly the (min, max) lexicographic
-    // order used for canonical sorting).
+    // Exchange each interface's coupling-pair set using canonical GLOBAL
+    // (min, max) keys only as shared face identities. The coefficient is
+    // directional: each rank must retain the value computed from its own
+    // local matrix rows. The neighbour's value for the same canonical pair
+    // is the opposite matrix direction and must not become this rank's
+    // interface coefficient.
     // ------------------------------------------------------------------
 
     typedef std::map<std::pair<label, label>, scalar> keyMap;
@@ -2658,8 +2664,13 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrixParallel
                 localFlatVals[patchi][pos] = kv.second;
                 ++pos;
 
-                unionCoupling[patchi][std::make_pair(minKey, maxKey)] =
-                    kv.second;
+                unionCoupling[patchi].insert
+                (
+                    std::make_pair
+                    (
+                        std::make_pair(minKey, maxKey), kv.second
+                    )
+                );
             }
         }
 
@@ -2724,21 +2735,23 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrixParallel
                  == unionCoupling[patchi].end()
                 )
                 {
-                    unionCoupling[patchi][key] = nbrFlatVals[patchi][e];
+                                        unionCoupling[patchi][key] =
+                                        (
+                                                matrix.symmetric()
+                                            ? nbrFlatVals[patchi][e]
+                                            : Zero
+                                        );
                 }
             }
         }
     }
 
     // ------------------------------------------------------------------
-    // Exchange and SUM (not de-duplicate) the diagonal local x ghost
-    // cross-term contributions (diagCrossPerInterface, built in Step A
-    // above). Unlike unionCoupling's face-based terms, both ranks do
-    // NOT compute the same value for a given key here - each rank's
-    // contribution comes from its OWN cells' diagonals and is
-    // independent of (additive to) whatever the neighbour rank
-    // contributes for the same coarse pair - so matching keys must be
-    // ADDED together, not de-duplicated.
+    // Exchange the diagonal local x ghost cross-term identities. Values
+    // are accumulated within each rank before this exchange, but the
+    // neighbour's value for the same canonical pair belongs to the
+    // opposite matrix direction and must not be added to this rank's
+    // interface coefficient.
     // ------------------------------------------------------------------
 
     List<keyMap> diagCrossFinal(interfaces.size());
@@ -2778,8 +2791,13 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrixParallel
                 localFlatVals[patchi][pos] = kv.second;
                 ++pos;
 
-                diagCrossFinal[patchi][std::make_pair(minKey, maxKey)] +=
-                    kv.second;
+                diagCrossFinal[patchi].insert
+                (
+                    std::make_pair
+                    (
+                        std::make_pair(minKey, maxKey), kv.second
+                    )
+                );
             }
         }
 
@@ -2838,7 +2856,22 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrixParallel
                 const label maxKey = nbrFlatKeys[patchi][2*e+1];
                 const auto key = std::make_pair(minKey, maxKey);
 
-                diagCrossFinal[patchi][key] += nbrFlatVals[patchi][e];
+                if
+                (
+                    diagCrossFinal[patchi].find(key)
+                 == diagCrossFinal[patchi].end()
+                )
+                {
+                    if (matrix.symmetric())
+                    {
+                        diagCrossFinal[patchi][key] =
+                            nbrFlatVals[patchi][e];
+                    }
+                    else
+                    {
+                        diagCrossFinal[patchi][key] = Zero;
+                    }
+                }
             }
         }
     }
@@ -3056,8 +3089,12 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrixParallel
 
             if (UPstream::master(comm))
             {
-                // ---- Build global fine A (symmetric, canonical
-                //      (min,max) off-diagonal map + diagonal array) ----
+                const bool matrixSymmetric = matrix.symmetric();
+
+                // ---- Build global fine A. Symmetric matrices use one
+                //      canonical entry per physical edge; asymmetric
+                //      matrices retain each ordered (row,column) entry.
+                //      The diagonal is shared by both representations. ----
                 label nFineGlobal = 0;
                 for (label p = 0; p < nProcs; ++p)
                 {
@@ -3084,17 +3121,25 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrixParallel
                     {
                         const label gi1 = allEdgeI[p][e];
                         const label gj1 = allEdgeJ[p][e];
-                        const label lo = min(gi1, gj1);
-                        const label hi = max(gi1, gj1);
-                        Aoff[std::make_pair(lo, hi)] = allEdgeVal[p][e];
+                                                const auto key =
+                                                (
+                                                        matrixSymmetric
+                                                    ? std::make_pair(min(gi1, gj1), max(gi1, gj1))
+                                                    : std::make_pair(gi1, gj1)
+                                                );
+                                                Aoff[key] = allEdgeVal[p][e];
                     }
                     forAll(allBndI[p], e)
                     {
                         const label gi1 = allBndI[p][e];
                         const label gj1 = allBndJ[p][e];
-                        const label lo = min(gi1, gj1);
-                        const label hi = max(gi1, gj1);
-                        Aoff[std::make_pair(lo, hi)] = allBndVal[p][e];
+                                                const auto key =
+                                                (
+                                                        matrixSymmetric
+                                                    ? std::make_pair(min(gi1, gj1), max(gi1, gj1))
+                                                    : std::make_pair(gi1, gj1)
+                                                );
+                                                Aoff[key] = allBndVal[p][e];
                     }
                 }
 
@@ -3160,36 +3205,44 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrixParallel
                             addRef(pk.first, pk.second, aij, pl.first, pl.second, "edge-fwd");
                         }
                     }
-                    for (const auto& pk : Prows[j])
+                    if (matrixSymmetric)
                     {
-                        for (const auto& pl : Prows[i])
+                        for (const auto& pk : Prows[j])
                         {
-                            addRef(pk.first, pk.second, aij, pl.first, pl.second, "edge-mirror");
+                            for (const auto& pl : Prows[i])
+                            {
+                                addRef
+                                (
+                                    pk.first, pk.second, aij,
+                                    pl.first, pl.second, "edge-mirror"
+                                );
+                            }
                         }
                     }
                 }
 
-
-                // Fold Cref to canonical (min,max) keys - it is exactly
-                // symmetric by construction (A symmetric), so each
-                // off-diagonal physical pair was independently filled
-                // TWICE above (once as (k,l), once as (l,k), both with
-                // the identical value) - halve after folding. Diagonal
-                // (k,k) entries were only ever filled once (the pure
-                // diagonal self-term double loop) - leave as-is.
-                std::map<std::pair<label, label>, scalar> CrefCanon;
-                for (const auto& kv : Cref)
+                // Symmetric diagnostics compare canonical physical edges;
+                // asymmetric diagnostics compare ordered matrix entries.
+                std::map<std::pair<label, label>, scalar> CrefExpected;
+                if (matrixSymmetric)
                 {
-                    const label lo = min(kv.first.first, kv.first.second);
-                    const label hi = max(kv.first.first, kv.first.second);
-                    CrefCanon[std::make_pair(lo, hi)] += kv.second;
-                }
-                for (auto& kv : CrefCanon)
-                {
-                    if (kv.first.first != kv.first.second)
+                    for (const auto& kv : Cref)
                     {
-                        kv.second *= 0.5;
+                        const label lo = min(kv.first.first, kv.first.second);
+                        const label hi = max(kv.first.first, kv.first.second);
+                        CrefExpected[std::make_pair(lo, hi)] += kv.second;
                     }
+                    for (auto& kv : CrefExpected)
+                    {
+                        if (kv.first.first != kv.first.second)
+                        {
+                            kv.second *= 0.5;
+                        }
+                    }
+                }
+                else
+                {
+                    CrefExpected = Cref;
                 }
 
                 // ---- Actual distributed result, gathered the same way.
@@ -3207,25 +3260,34 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrixParallel
                     {
                         const label k = allActK[p][e];
                         const label l = allActL[p][e];
-                        const label lo = min(k, l);
-                        const label hi = max(k, l);
-                        const auto key = std::make_pair(lo, hi);
-
-                        const auto it = Cact.find(key);
-                        if (it == Cact.end())
+                        if (matrixSymmetric)
                         {
-                            Cact[key] = allActVal[p][e];
+                            const label lo = min(k, l);
+                            const label hi = max(k, l);
+                            const auto key = std::make_pair(lo, hi);
+                            const auto it = Cact.find(key);
+                            if (it == Cact.end())
+                            {
+                                Cact[key] = allActVal[p][e];
+                            }
+                            else if
+                            (
+                                mag(it->second - allActVal[p][e]) > 1e-9
+                            )
+                            {
+                                ++nMismatchKey;
+                            }
                         }
-                        else if (mag(it->second - allActVal[p][e]) > 1e-9)
+                        else
                         {
-                            ++nMismatchKey;
+                            Cact[std::make_pair(k, l)] += allActVal[p][e];
                         }
                     }
                 }
 
                 Pout<< "RSDEBUG-GALERKINCHECK nFineGlobal=" << nFineGlobal
                     << " nCoarseGlobal=" << gi.size()
-                    << " nRankSymmetryMismatches=" << nMismatchKey
+                    << " nRankMismatches=" << nMismatchKey
                     << endl;
 
                 scalar maxAbsDiff = 0;
@@ -3235,15 +3297,15 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrixParallel
                 std::pair<label, label> worstKey(-1, -1);
 
                 std::map<std::pair<label, label>, scalar> allKeys;
-                for (const auto& kv : CrefCanon) allKeys[kv.first] = 0;
+                for (const auto& kv : CrefExpected) allKeys[kv.first] = 0;
                 for (const auto& kv : Cact) allKeys[kv.first] = 0;
 
                 for (const auto& kv : allKeys)
                 {
                     const scalar refVal =
                     (
-                        CrefCanon.count(kv.first)
-                      ? CrefCanon[kv.first] : scalar(0)
+                                                CrefExpected.count(kv.first)
+                                            ? CrefExpected[kv.first] : scalar(0)
                     );
                     const scalar actVal =
                     (
@@ -3272,7 +3334,7 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrixParallel
                     << " worstKey=(" << worstKey.first << ","
                     << worstKey.second << ")"
                     << " refVal="
-                    << (CrefCanon.count(worstKey) ? CrefCanon[worstKey] : 0)
+                    << (CrefExpected.count(worstKey) ? CrefExpected[worstKey] : 0)
                     << " actVal="
                     << (Cact.count(worstKey) ? Cact[worstKey] : 0)
                     << endl;
@@ -3286,8 +3348,8 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrixParallel
                 {
                     const scalar refVal =
                     (
-                        CrefCanon.count(kv.first)
-                      ? CrefCanon[kv.first] : scalar(0)
+                                                CrefExpected.count(kv.first)
+                                            ? CrefExpected[kv.first] : scalar(0)
                     );
                     const scalar actVal =
                     (
@@ -3360,11 +3422,9 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrixParallel
             interfaces[patchi].interface()
         );
 
-        // combinedCoupling is keyed by canonical (min, max) GLOBAL
-        // coarse index pairs, and std::map iterates keys in ascending
-        // (lexicographic) order - i.e. already exactly the desired
-        // (min, max) canonical face order, identically on both ranks.
-        // No additional sort is needed.
+        // combinedCoupling is keyed by canonical GLOBAL coarse index
+        // pairs for shared face identity. std::map provides the same
+        // deterministic face order on both ranks.
         std::vector<std::pair<std::pair<label, label>, scalar>> entries
         (
             combinedCoupling[patchi].begin(),
@@ -3379,10 +3439,8 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrixParallel
             const label maxKey = entries[fi].first.second;
 
             // Exactly one of {minKey, maxKey} is a coarse GLOBAL index
-            // owned by this rank (the other belongs to neighbProcNo) -
-            // recover this rank's LOCAL coarse cell index for the new
-            // interface's faceCells, regardless of whether this key
-            // was discovered locally or only via the neighbour.
+            // owned by this rank. Recover this rank's local coarse cell
+            // index for the interface face.
             faceCells[fi] =
             (
                 gi.isLocal(minKey)
@@ -3462,19 +3520,32 @@ void Foam::RugeStubenCoarsening::calcCoarseMatrixParallel
                 newRemoteCoupling[remoteProc].end()
             );
 
+            std::sort
+            (
+                entries.begin(), entries.end(),
+                [](const auto& a, const auto& b)
+                {
+                    const auto aKey = std::make_pair
+                    (
+                        min(a.first.first, a.first.second),
+                        max(a.first.first, a.first.second)
+                    );
+                    const auto bKey = std::make_pair
+                    (
+                        min(b.first.first, b.first.second),
+                        max(b.first.first, b.first.second)
+                    );
+                    return aKey < bKey;
+                }
+            );
+
             labelList faceCells(entries.size());
             scalarField coeffs(entries.size());
             forAll(entries, fi)
             {
-                const label minKey = entries[fi].first.first;
-                const label maxKey = entries[fi].first.second;
+                                const label globalRow = entries[fi].first.first;
 
-                faceCells[fi] =
-                (
-                    gi.isLocal(minKey)
-                  ? gi.toLocal(minKey)
-                  : gi.toLocal(maxKey)
-                );
+                                faceCells[fi] = gi.toLocal(globalRow);
 
                 // Same sign-convention negation as validPatchIs above.
                 coeffs[fi] = -entries[fi].second;
@@ -3563,14 +3634,6 @@ Foam::RugeStubenCoarsening::RugeStubenCoarsening
     coarseMeshPtr_(),
     coarseMatrixPtr_()
 {
-    if (!matrix.symmetric())
-    {
-        FatalErrorInFunction
-            << "RugeStubenCoarsening currently only supports symmetric"
-               " (SPD) matrices"
-            << exit(FatalError);
-    }
-
     const List<DynamicList<Tuple2<label, scalar>>> rowAdjacency
     (
         buildRowAdjacency(matrix)
@@ -3602,18 +3665,33 @@ Foam::RugeStubenCoarsening::RugeStubenCoarsening
     coarseMeshPtr_(),
     coarseMatrixPtr_()
 {
-    if (!matrix.symmetric())
-    {
-        FatalErrorInFunction
-            << "RugeStubenCoarsening currently only supports symmetric"
-               " (SPD) matrices"
-            << exit(FatalError);
-    }
-
     const List<DynamicList<Tuple2<label, scalar>>> rowAdjacency
     (
         buildRowAdjacency(matrix)
     );
+
+    bool hasProcessorInterfaces = false;
+    forAll(interfaces, patchi)
+    {
+        if
+        (
+            interfaces.set(patchi)
+         && isA<processorLduInterface>(interfaces[patchi].interface())
+        )
+        {
+            hasProcessorInterfaces = true;
+            break;
+        }
+    }
+
+    if (!hasProcessorInterfaces)
+    {
+        calcStrongNeighbours(matrix, rowAdjacency);
+        calcPointType();
+        calcInterpolation(matrix, rowAdjacency);
+        calcCoarseMatrix(matrix, rowAdjacency, comm);
+        return;
+    }
 
     calcStrongNeighbours(matrix, rowAdjacency);
     calcPointTypeParallel(matrix, interfaceBouCoeffs, interfaces, comm);

@@ -37,6 +37,9 @@ namespace Foam
 
     lduMatrix::solver::addsymMatrixConstructorToTable<RugeStubenAMG>
         addRugeStubenAMGSymMatrixConstructorToTable_;
+
+    lduMatrix::solver::addasymMatrixConstructorToTable<RugeStubenAMG>
+        addRugeStubenAMGAsymMatrixConstructorToTable_;
 }
 
 
@@ -65,18 +68,9 @@ Foam::RugeStubenAMG::RugeStubenAMG
     nCellsInCoarsestLevel_(1),
     nPreSweeps_(2),
     nPostSweeps_(2),
-    nCoarsestSweeps_(50),
     levels_()
 {
     readControls();
-
-    if (!matrix_.symmetric())
-    {
-        FatalErrorInFunction
-            << "RugeStubenAMG currently only supports symmetric (SPD)"
-               " matrices"
-            << exit(FatalError);
-    }
 
     const label comm = matrix_.mesh().comm();
 
@@ -149,6 +143,7 @@ Foam::RugeStubenAMG::RugeStubenAMG
         // convention coeff = -bouCoeffs) sums to (near) zero for the
         // newly-built coarse level, to see whether violations grow
         // with coarsening depth.
+        if (debug)
         {
             const lduMatrix& cm = levelPtr().coarseMatrix();
             const lduAddressing& cmAddr = levelPtr().coarseMesh().lduAddr();
@@ -156,13 +151,17 @@ Foam::RugeStubenAMG::RugeStubenAMG
             const labelUList& cNeighbour = cmAddr.upperAddr();
             const scalarField& cDiag = cm.diag();
             const scalarField& cUpper = cm.upper();
+            const scalarField& cLower =
+            (
+                cm.hasLower() ? cm.lower() : cm.upper()
+            );
 
             scalarField rowSum(cDiag);
 
             forAll(cOwner, facei)
             {
                 rowSum[cOwner[facei]] += cUpper[facei];
-                rowSum[cNeighbour[facei]] += cUpper[facei];
+                rowSum[cNeighbour[facei]] += cLower[facei];
             }
 
             const lduInterfaceFieldPtrsList& cInterfaces =
@@ -217,6 +216,53 @@ Foam::RugeStubenAMG::RugeStubenAMG
                " nCellsInCoarsestLevel (" << nCellsInCoarsestLevel_ << ")."
                " Choose another solver or reduce nCellsInCoarsestLevel."
             << exit(FatalError);
+    }
+
+    entry* coarseEntry = controlDict_.findEntry
+    (
+        "coarsestSolver",
+        keyType::LITERAL_RECURSIVE
+    );
+
+    if (coarseEntry && coarseEntry->isDict())
+    {
+        coarsestSolverPtr_ = lduMatrix::solver::New
+        (
+            "coarsestLevelCorr",
+            matrixLevel(levels_.size()),
+            interfaceBouCoeffsLevel(levels_.size()),
+            interfaceIntCoeffs_,
+            interfacesLevel(levels_.size()),
+            coarseEntry->dict()
+        );
+    }
+    else
+    {
+        dictionary coarseControls;
+        const bool asymmetric = matrixLevel(levels_.size()).asymmetric();
+
+        coarseControls.add
+        (
+            "solver",
+            word(asymmetric ? "PBiCGStab" : "PCG")
+        );
+        coarseControls.add
+        (
+            "preconditioner",
+            word(asymmetric ? "DILU" : "DIC")
+        );
+        coarseControls.add("tolerance", tolerance_);
+        coarseControls.add("relTol", relTol_);
+
+        coarsestSolverPtr_ = lduMatrix::solver::New
+        (
+            "coarsestLevelCorr",
+            matrixLevel(levels_.size()),
+            interfaceBouCoeffsLevel(levels_.size()),
+            interfaceIntCoeffs_,
+            interfacesLevel(levels_.size()),
+            coarseControls
+        );
     }
 }
 
@@ -304,10 +350,7 @@ void Foam::RugeStubenAMG::Vcycle
 {
     if (leveli == levels_.size())
     {
-        // Coarsest level: no dedicated distributed direct/Krylov
-        // solve (prototype scope limitation) - approximate with
-        // additional Gauss-Seidel sweeps instead.
-        smoothLevel(leveli, psi, source, nCoarsestSweeps_);
+        coarsestSolverPtr_->scalarSolve(psi, source);
         return;
     }
 
@@ -356,7 +399,6 @@ void Foam::RugeStubenAMG::readControls()
 
     nPreSweeps_ = controlDict_.getOrDefault<label>("nPreSweeps", 2);
     nPostSweeps_ = controlDict_.getOrDefault<label>("nPostSweeps", 2);
-    nCoarsestSweeps_ = controlDict_.getOrDefault<label>("nCoarsestSweeps", 50);
 }
 
 
