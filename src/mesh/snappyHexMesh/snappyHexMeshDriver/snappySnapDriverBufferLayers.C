@@ -70,8 +70,8 @@ Description
 Foam::tmp<Foam::pointField> Foam::snappySnapDriver::avg
 (
     const polyMesh& mesh,
-    const bitSet& isMasterPoint,
     const indirectPrimitivePatch& pp,
+    const bitSet& isPatchMasterEdge,
     const pointField& localPoints
 )
 {
@@ -85,16 +85,17 @@ Foam::tmp<Foam::pointField> Foam::snappySnapDriver::avg
         pTraits<weightedPosition>::zero
     );
 
-    // Calculate sum of all contributions (so not positions)
+    // weightedPosition::syncPoints(mesh, meshPoints, wps);
     forAll(pointEdges, verti)
     {
         weightedPosition& wp = wps[verti];
+
         for (const label edgei : pointEdges[verti])
         {
-            const label otherVerti = edges[edgei].otherVertex(verti);
-
-            if (isMasterPoint[meshPoints[otherVerti]])
+            if (isPatchMasterEdge[edgei])
             {
+                const label otherVerti = edges[edgei].otherVertex(verti);
+
                 wp.first() += 1.0;
                 wp.second() += localPoints[otherVerti];
             }
@@ -134,7 +135,18 @@ Foam::snappySnapDriver::smoothLambdaMuPatchDisplacement
     const List<labelPair>& baffles
 )
 {
-    const bitSet isMasterPoint(syncTools::getMasterPoints(mesh));
+    const labelList meshEdges
+    (
+        pp.meshEdges(mesh.edges(), mesh.pointEdges())
+    );
+    const bitSet isPatchMasterEdge
+    (
+        meshRefinement::getMasterEdges
+        (
+            mesh,
+            meshEdges
+        )
+    );
 
     pointField newLocalPoints(ppLocalPoints);
 
@@ -147,12 +159,12 @@ Foam::snappySnapDriver::smoothLambdaMuPatchDisplacement
         // Lambda
         newLocalPoints =
             (1 - lambda)*newLocalPoints
-          + lambda*avg(mesh, isMasterPoint, pp, newLocalPoints);
+          + lambda*avg(mesh, pp, isPatchMasterEdge, newLocalPoints);
 
         // Mu
         newLocalPoints =
             (1 + mu)*newLocalPoints
-          - mu*avg(mesh, isMasterPoint, pp, newLocalPoints);
+          - mu*avg(mesh, pp, isPatchMasterEdge, newLocalPoints);
     }
     return newLocalPoints-ppLocalPoints;
 }
@@ -4365,7 +4377,6 @@ void Foam::snappySnapDriver::doSnapBufferLayers
         )
     );
     ppLocalPoints += patchDisp;
-
 
     // Calculate current pointNormals
     const vectorField ppPointNormals

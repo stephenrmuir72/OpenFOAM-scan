@@ -42,7 +42,6 @@ Description
 #include "profiling.H"
 #include "addPatchCellLayer.H"
 #include "snappyLayerDriver.H"
-#include "weightedPosition.H"
 
 #include "pointConstraints.H"
 #include "displacementMotionSolver.H"

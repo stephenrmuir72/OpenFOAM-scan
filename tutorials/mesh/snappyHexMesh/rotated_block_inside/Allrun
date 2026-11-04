@@ -16,9 +16,9 @@ runApplication snappyHexMesh
 
 runApplication checkMesh -writeFields '(nonOrthoAngle)'
 
-# # Run parallel a bit as well
-# runApplication decomposePar
-# runParallel -s parallel snappyHexMesh
-# runParallel -s parallel checkMesh -writeFields '(nonOrthoAngle)'
+# Run parallel a bit as well
+runApplication decomposePar
+runParallel -s parallel snappyHexMesh
+runParallel -s parallel checkMesh -writeFields '(nonOrthoAngle)'
 
 #------------------------------------------------------------------------------

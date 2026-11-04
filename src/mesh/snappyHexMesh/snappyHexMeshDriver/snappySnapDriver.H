@@ -416,8 +416,8 @@ class snappySnapDriver
             static tmp<pointField> avg
             (
                 const polyMesh& mesh,
-                const bitSet& isMasterPoint,
                 const indirectPrimitivePatch&,
+                const bitSet& isPatchMasterEdge,
                 const pointField&
             );
 

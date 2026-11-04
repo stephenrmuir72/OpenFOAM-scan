@@ -27,6 +27,7 @@ License
 
 #include "laplacianPointSmoother.H"
 #include "addToRunTimeSelectionTable.H"
+#include "syncTools.H"
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -74,6 +75,9 @@ void Foam::pointSmoothers::laplacianPointSmoother::calculate
     // Number of points used in each average
     labelField counts(mesh().nPoints(), 0);
 
+    // Quick mark of points that have been moved
+    bitSet isMoved(mesh().nPoints());
+
     // Reset the displacements which are about to be calculated
     reset(facesToMove, counts, pointDisplacement);
 
@@ -95,9 +99,13 @@ void Foam::pointSmoothers::laplacianPointSmoother::calculate
                   - oldPoints[pointI];
 
                 ++ counts[pointI];
+                isMoved.set(pointI);
             }
         }
     }
+
+    // Synchronize boundary points across processors
+    syncTools::syncPointList(mesh(), isMoved, orEqOp<unsigned int>(), 0);
 
     // Sum the internal face displacements
     forAll(facesToMove, faceToMoveI)
@@ -112,7 +120,7 @@ void Foam::pointSmoothers::laplacianPointSmoother::calculate
             {
                 const label pointI(fPoints[fPointI]);
 
-                if (counts[pointI] == 0)
+                if (!isMoved[pointI] && counts[pointI] == 0)
                 {
                     const labelList& pCells(mesh().pointCells()[pointI]);
 
