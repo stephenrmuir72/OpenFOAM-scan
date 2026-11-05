@@ -225,6 +225,10 @@ private:
         //  set from snappyHexMeshDict.
         wordRes mergeAcrossPatchExceptions_;
 
+        //- Demand-driven mask for mergeAcrossPatchExceptions_.
+        //  Zero-sized until built.
+        mutable bitSet mergeAcrossPatchExceptionMask_;
+
         //- FaceZone to master patch name
         HashTable<word> faceZoneToMasterPatch_;
 
@@ -1002,10 +1006,9 @@ private:
             ) const;
 
 
-        //- Per-patch mask for mergeAcrossPatchExceptions_. Empty if no
-        //  current patch matches, so the merge loop can skip the test.
-        //  Otherwise indexed by patch id.
-        boolList mergeAcrossPatchExceptionMask() const;
+        //- Per-patch mask for mergeAcrossPatchExceptions_, indexed by
+        //  patch id. Built on first use.
+        const bitSet& mergeAcrossPatchExceptionMask() const;
 
 
         //- No copy construct
@@ -1585,6 +1588,7 @@ public:
             void setMergeAcrossPatchExceptions(const wordRes& patterns)
             {
                 mergeAcrossPatchExceptions_ = patterns;
+                mergeAcrossPatchExceptionMask_.clear();
             }
 
             //- Add/lookup faceZone and update information. Return index of

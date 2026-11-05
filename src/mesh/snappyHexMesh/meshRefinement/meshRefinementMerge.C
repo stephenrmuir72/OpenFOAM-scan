@@ -38,47 +38,46 @@ License
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
 
 // Patch-id mask for patches that mergeAcrossPatches must not cross.
-// Empty if nothing matches, so callers pass nullptr into the per-edge test.
-Foam::boolList Foam::meshRefinement::mergeAcrossPatchExceptionMask() const
+// Built once and cached.
+const Foam::bitSet& Foam::meshRefinement::mergeAcrossPatchExceptionMask() const
 {
     if (mergeAcrossPatchExceptions_.empty())
     {
-        return boolList();
+        return bitSet::null();
+    }
+
+    bitSet& mask = mergeAcrossPatchExceptionMask_;
+
+    if (!mask.empty())
+    {
+        return mask;
     }
 
     const polyBoundaryMesh& patches = mesh_.boundaryMesh();
 
-    boolList mask(patches.size(), false);
-    label nMatched = 0;
+    mask.resize(patches.size());
 
     forAll(patches, patchi)
     {
         if (mergeAcrossPatchExceptions_.match(patches[patchi].name()))
         {
-            mask[patchi] = true;
-            ++nMatched;
+            mask.set(patchi);
         }
     }
 
-    if (!nMatched)
+    if (mask.none())
     {
         Info<< "mergeAcrossPatchExceptions " << mergeAcrossPatchExceptions_
             << " matched no patches" << nl << endl;
-        return boolList();
+        return mask;
     }
 
-    wordList matched(nMatched);
-    nMatched = 0;
-    forAll(mask, patchi)
+    Info<< "Preserving patches from mergeAcrossPatches: (";
+    for (const label patchi : mask)
     {
-        if (mask[patchi])
-        {
-            matched[nMatched++] = patches[patchi].name();
-        }
+        Info<< ' ' << patches[patchi].name();
     }
-
-    Info<< "Preserving patches from mergeAcrossPatches: " << matched
-        << nl << endl;
+    Info<< " )" << nl << endl;
 
     return mask;
 }
@@ -119,18 +118,12 @@ Foam::label Foam::meshRefinement::mergePatchFaces
     const bool mergeAcrossPatches =
         (mergeType == FaceMergeType::IGNOREPATCH);
 
-    boolList exceptionMask;
-    const bool* exceptionPtr = nullptr;
-
-    if (mergeAcrossPatches)
-    {
-        exceptionMask = mergeAcrossPatchExceptionMask();
-
-        if (exceptionMask.size())
-        {
-            exceptionPtr = exceptionMask.cdata();
-        }
-    }
+    const bitSet& exceptionMask =
+    (
+        mergeAcrossPatches
+      ? mergeAcrossPatchExceptionMask()
+      : bitSet::null()
+    );
 
     // Get all sets of faces that can be merged
     labelListList mergeSets
@@ -141,7 +134,7 @@ Foam::label Foam::meshRefinement::mergePatchFaces
             concaveCos,
             boundaryCells,
             mergeAcrossPatches,
-            exceptionPtr
+            exceptionMask
         )
     );
 
@@ -356,18 +349,12 @@ Foam::label Foam::meshRefinement::mergePatchFacesUndo
     const bool mergeAcrossPatches =
         (mergeType == FaceMergeType::IGNOREPATCH);
 
-    boolList exceptionMask;
-    const bool* exceptionPtr = nullptr;
-
-    if (mergeAcrossPatches)
-    {
-        exceptionMask = mergeAcrossPatchExceptionMask();
-
-        if (exceptionMask.size())
-        {
-            exceptionPtr = exceptionMask.cdata();
-        }
-    }
+    const bitSet& exceptionMask =
+    (
+        mergeAcrossPatches
+      ? mergeAcrossPatchExceptionMask()
+      : bitSet::null()
+    );
 
     // Get all sets of faces that can be merged. Faces on different patches
     // merge only when mergeAcrossPatches is set, and never when either patch
@@ -382,7 +369,7 @@ Foam::label Foam::meshRefinement::mergePatchFacesUndo
             concaveCos,
             boundaryCells,
             mergeAcrossPatches,
-            exceptionPtr
+            exceptionMask
         )
     );
 

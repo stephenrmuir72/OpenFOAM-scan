@@ -128,7 +128,7 @@ void Foam::combineFaces::regioniseFaces
 (
     const scalar minCos,
     const bool mergeAcrossPatches,
-    const bool* const mergeAcrossPatchExceptions,
+    const bitSet& mergeAcrossPatchExceptions,
     const label celli,
     const labelList& cEdges,
     Map<label>& faceRegion
@@ -173,11 +173,8 @@ void Foam::combineFaces::regioniseFaces
                 // Direct lookup. The mask is built once per merge.
                 if
                 (
-                    mergeAcrossPatchExceptions
-                 && (
-                        mergeAcrossPatchExceptions[p0]
-                     || mergeAcrossPatchExceptions[p1]
-                    )
+                    mergeAcrossPatchExceptions.test(p0)
+                 || mergeAcrossPatchExceptions.test(p1)
                 )
                 {
                     continue;
@@ -317,7 +314,7 @@ Foam::labelListList Foam::combineFaces::getMergeSets
     const scalar minConcaveCos,
     const labelHashSet& boundaryCells,
     const bool mergeAcrossPatches,
-    const bool* const mergeAcrossPatchExceptions
+    const bitSet& mergeAcrossPatchExceptions
 ) const
 {
     // Lists of faces that can be merged.
@@ -435,7 +432,7 @@ Foam::labelListList Foam::combineFaces::getMergeSets
     const scalar featureCos,
     const scalar minConcaveCos,
     const bool mergeAcrossPatches,
-    const bool* const mergeAcrossPatchExceptions
+    const bitSet& mergeAcrossPatchExceptions
 ) const
 {
     const polyBoundaryMesh& patches = mesh_.boundaryMesh();
