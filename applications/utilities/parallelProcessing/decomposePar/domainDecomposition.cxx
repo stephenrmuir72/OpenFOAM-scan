@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2019-2025 OpenCFD Ltd.
+    Copyright (C) 2026 Timofey Mukha
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -115,6 +116,7 @@ Foam::domainDecomposition::domainDecomposition
         )
     ),
     distributed_(false),
+    procMeshBuildReady_(false),
     cellToProc_(nCells()),
     procPointAddressing_(nProcs_),
     procFaceAddressing_(nProcs_),
@@ -148,9 +150,19 @@ void Foam::domainDecomposition::updateParameters
 }
 
 
-bool Foam::domainDecomposition::writeDecomposition(const bool decomposeSets)
+// * * * * * * * * * * * * Processor mesh construction  * * * * * * * * * * //
+
+void Foam::domainDecomposition::buildProcMesh_init() const
 {
-    Info<< "\nConstructing processor meshes" << endl;
+    if (procMeshBuildReady_)
+    {
+        return;
+    }
+
+    // Full-mesh-size inverse lookups, allocated once and reset after each
+    // processor (only the touched entries)
+    pointLookup_.resize_fill(nPoints(), -1);
+    faceLookup_.resize_fill(nFaces(), -1);
 
     // Mark point/faces/cells that are in zones.
     // -1   : not in zone
@@ -161,95 +173,69 @@ bool Foam::domainDecomposition::writeDecomposition(const bool decomposeSets)
     // for the duplicate elements
 
     // Point zones
-    labelList pointToZone(points().size(), -1);
+    pointToZone_.resize_fill(points().size(), -1);
 
     forAll(pointZones(), zonei)
     {
-        mark(pointZones()[zonei], zonei, pointToZone);
+        mark(pointZones()[zonei], zonei, pointToZone_);
     }
 
     // Face zones
-    labelList faceToZone(faces().size(), -1);
+    faceToZone_.resize_fill(faces().size(), -1);
 
     forAll(faceZones(), zonei)
     {
-        mark(faceZones()[zonei], zonei, faceToZone);
+        mark(faceZones()[zonei], zonei, faceToZone_);
     }
 
     // Cell zones
-    labelList cellToZone(nCells(), -1);
+    cellToZone_.resize_fill(nCells(), -1);
 
     forAll(cellZones(), zonei)
     {
-        mark(cellZones()[zonei], zonei, cellToZone);
+        mark(cellZones()[zonei], zonei, cellToZone_);
     }
 
+    procMeshBuildReady_ = true;
+}
 
-    PtrDynList<const cellSet> cellSets;
-    PtrDynList<const faceSet> faceSets;
-    PtrDynList<const pointSet> pointSets;
-    if (decomposeSets)
+
+void Foam::domainDecomposition::buildProcMesh_reset(const label proci) const
+{
+    UIndirectList<label>(pointLookup_, procPointAddressing_[proci]) = -1;
+    for (const label facei : procFaceAddressing_[proci])
     {
-        // Read sets
-        IOobjectList objects(*this, facesInstance(), "polyMesh/sets");
-        for (const IOobject& io : objects.csorted<cellSet>())
-        {
-            cellSets.emplace_back(io);
-        }
-        for (const IOobject& io : objects.csorted<faceSet>())
-        {
-            faceSets.emplace_back(io);
-        }
-        for (const IOobject& io : objects.csorted<pointSet>())
-        {
-            pointSets.emplace_back(io);
-        }
+        faceLookup_[mag(facei) - 1] = -1;
     }
+}
 
 
-    // Load refinement data (if any)
-    hexRef8Data baseMeshData
-    (
-        IOobject
-        (
-            "dummy",
-            facesInstance(),
-            polyMesh::meshSubDir,
-            *this,
-            IOobjectOption::READ_IF_PRESENT,
-            IOobjectOption::NO_WRITE,
-            IOobjectOption::NO_REGISTER
-        )
-    );
+template<class MeshType>
+Foam::autoPtr<MeshType> Foam::domainDecomposition::buildProcMesh_impl
+(
+    const label proci,
+    const Time& processorDb
+) const
+{
+    buildProcMesh_init();
 
+    autoPtr<MeshType> procMeshPtr;
 
-    label maxProcCells = 0;
-    label maxProcFaces = 0;
-    label totProcFaces = 0;
-    label maxProcPatches = 0;
-    label totProcPatches = 0;
-
-    // Write out the meshes
-    for (label proci = 0; proci < nProcs_; proci++)
     {
         // Create processor points
         const labelList& curPointLabels = procPointAddressing_[proci];
 
         pointField procPoints(points(), curPointLabels);
 
-        labelList pointLookup(nPoints(), -1);
-
         forAll(curPointLabels, pointi)
         {
-            pointLookup[curPointLabels[pointi]] = pointi;
+            pointLookup_[curPointLabels[pointi]] = pointi;
         }
 
         // Create processor faces
         const labelList& curFaceLabels = procFaceAddressing_[proci];
 
         const faceList& meshFaces = faces();
-
-        labelList faceLookup(nFaces(), -1);
 
         faceList procFaces(curFaceLabels.size());
 
@@ -259,7 +245,7 @@ bool Foam::domainDecomposition::writeDecomposition(const bool decomposeSets)
             // Remember to decrement the index by one (turning index)
             label curF = mag(curFaceLabels[facei]) - 1;
 
-            faceLookup[curF] = facei;
+            faceLookup_[curF] = facei;
 
             // get the original face
             labelList origFaceLabels;
@@ -277,11 +263,11 @@ bool Foam::domainDecomposition::writeDecomposition(const bool decomposeSets)
             // translate face labels into local point list
             face& procFaceLabels = procFaces[facei];
 
-            procFaceLabels.setSize(origFaceLabels.size());
+            procFaceLabels.resize_nocopy(origFaceLabels.size());
 
             forAll(origFaceLabels, pointi)
             {
-                procFaceLabels[pointi] = pointLookup[origFaceLabels[pointi]];
+                procFaceLabels[pointi] = pointLookup_[origFaceLabels[pointi]];
             }
         }
 
@@ -298,26 +284,16 @@ bool Foam::domainDecomposition::writeDecomposition(const bool decomposeSets)
 
             cell& curCell = procCells[celli];
 
-            curCell.setSize(origCellLabels.size());
+            curCell.resize_nocopy(origCellLabels.size());
 
             forAll(origCellLabels, cellFacei)
             {
-                curCell[cellFacei] = faceLookup[origCellLabels[cellFacei]];
+                curCell[cellFacei] = faceLookup_[origCellLabels[cellFacei]];
             }
         }
 
         // Create processor mesh without a boundary
 
-        // create a database
-        Time processorDb
-        (
-            Time::controlDictName,
-            time().rootPath(),
-            time().caseName()/("processor" + Foam::name(proci)),
-            false,  // No function objects
-            false   // No extra controlDict libs
-        );
-        processorDb.setTime(time());
 
         // create the mesh. Two situations:
         // - points and faces come from the same time ('instance'). The mesh
@@ -329,8 +305,6 @@ bool Foam::domainDecomposition::writeDecomposition(const bool decomposeSets)
         //   Only at writing time will it additionally write the current
         //   points.
 
-        autoPtr<polyMesh> procMeshPtr;
-
         if (facesInstancePointsPtr_)
         {
             // Construct mesh from facesInstance.
@@ -340,15 +314,15 @@ bool Foam::domainDecomposition::writeDecomposition(const bool decomposeSets)
                 curPointLabels
             );
 
-            procMeshPtr = autoPtr<polyMesh>::New
+            procMeshPtr = autoPtr<MeshType>::New
             (
                 IOobject
                 (
                     this->polyMesh::name(), // region of undecomposed mesh
                     facesInstance(),
                     processorDb,
-                    IOobject::NO_READ,
-                    IOobject::AUTO_WRITE
+                    IOobjectOption::NO_READ,
+                    IOobjectOption::AUTO_WRITE
                 ),
                 std::move(facesInstancePoints),
                 std::move(procFaces),
@@ -357,7 +331,7 @@ bool Foam::domainDecomposition::writeDecomposition(const bool decomposeSets)
         }
         else
         {
-            procMeshPtr = autoPtr<polyMesh>::New
+            procMeshPtr = autoPtr<MeshType>::New
             (
                 IOobject
                 (
@@ -372,7 +346,7 @@ bool Foam::domainDecomposition::writeDecomposition(const bool decomposeSets)
                 std::move(procCells)
             );
         }
-        polyMesh& procMesh = procMeshPtr();
+        auto& procMesh = procMeshPtr();
 
 
         // Create processor boundary patches
@@ -509,7 +483,14 @@ bool Foam::domainDecomposition::writeDecomposition(const bool decomposeSets)
         }
 
         // Add boundary patches
-        procMesh.addPatches(procPatches);
+        if constexpr (std::is_same_v<MeshType, fvMesh>)
+        {
+            procMesh.addFvPatches(procPatches);
+        }
+        else
+        {
+            procMesh.addPatches(procPatches);
+        }
 
         // Create and add zones
 
@@ -528,13 +509,13 @@ bool Foam::domainDecomposition::writeDecomposition(const bool decomposeSets)
                 zonePoints[zonei].setCapacity(pz[zonei].size()/nProcs_);
             }
 
-            // Use the pointToZone map to find out the single zone (if any),
+            // Use the pointToZone_ map to find out the single zone (if any),
             // use slow search only for shared points.
             forAll(curPointLabels, pointi)
             {
                 label curPoint = curPointLabels[pointi];
 
-                label zonei = pointToZone[curPoint];
+                label zonei = pointToZone_[curPoint];
 
                 if (zonei >= 0)
                 {
@@ -607,7 +588,7 @@ bool Foam::domainDecomposition::writeDecomposition(const bool decomposeSets)
                 //
                 label curF = mag(curFaceLabels[facei]) - 1;
 
-                label zonei = faceToZone[curF];
+                label zonei = faceToZone_[curF];
 
                 if (zonei >= 0)
                 {
@@ -692,7 +673,7 @@ bool Foam::domainDecomposition::writeDecomposition(const bool decomposeSets)
             {
                 label curCelli = curCellLabels[celli];
 
-                label zonei = cellToZone[curCelli];
+                label zonei = cellToZone_[curCelli];
 
                 if (zonei >= 0)
                 {
@@ -735,6 +716,126 @@ bool Foam::domainDecomposition::writeDecomposition(const bool decomposeSets)
                 // Force writing on all processors
                 procMesh.cellZones().writeOpt(IOobject::AUTO_WRITE);
             }
+        }
+    }
+
+    return procMeshPtr;
+}
+
+
+Foam::autoPtr<Foam::fvMesh> Foam::domainDecomposition::processorFvMesh
+(
+    const label proci,
+    const Time& processorDb
+) const
+{
+    auto meshPtr = buildProcMesh_impl<fvMesh>(proci, processorDb);
+    buildProcMesh_reset(proci);
+    return meshPtr;
+}
+
+
+Foam::labelList Foam::domainDecomposition::procBoundaryAddressing
+(
+    label proci
+) const
+{
+    // Identity map for original patches, -1 for processor patches
+    // (same as written in writeDecomposition)
+    label nProcPatches = 0;
+    for (const labelList& ids : procProcessorPatchSubPatchIDs_[proci])
+    {
+        nProcPatches += ids.size();
+    }
+    const label nMeshPatches = procPatchSize_[proci].size();
+    labelList addr(Foam::identity(nMeshPatches));
+    addr.resize(nMeshPatches + nProcPatches, -1);
+    return addr;
+}
+
+
+bool Foam::domainDecomposition::writeDecomposition(const bool decomposeSets)
+{
+    Info<< "\nConstructing processor meshes" << endl;
+
+    buildProcMesh_init();
+
+    PtrDynList<const cellSet> cellSets;
+    PtrDynList<const faceSet> faceSets;
+    PtrDynList<const pointSet> pointSets;
+    if (decomposeSets)
+    {
+        // Read sets
+        IOobjectList objects(*this, facesInstance(), "polyMesh/sets");
+        for (const IOobject& io : objects.csorted<cellSet>())
+        {
+            cellSets.emplace_back(io);
+        }
+        for (const IOobject& io : objects.csorted<faceSet>())
+        {
+            faceSets.emplace_back(io);
+        }
+        for (const IOobject& io : objects.csorted<pointSet>())
+        {
+            pointSets.emplace_back(io);
+        }
+    }
+
+
+    // Load refinement data (if any)
+    hexRef8Data baseMeshData
+    (
+        IOobject
+        (
+            "dummy",
+            facesInstance(),
+            polyMesh::meshSubDir,
+            *this,
+            IOobjectOption::READ_IF_PRESENT,
+            IOobjectOption::NO_WRITE,
+            IOobjectOption::NO_REGISTER
+        )
+    );
+
+
+    label maxProcCells = 0;
+    label maxProcFaces = 0;
+    label totProcFaces = 0;
+    label maxProcPatches = 0;
+    label totProcPatches = 0;
+
+
+    // Write out the meshes
+    for (label proci = 0; proci < nProcs_; proci++)
+    {
+        // create a database
+        Time processorDb
+        (
+            Time::controlDictName,
+            time().rootPath(),
+            time().caseName()/("processor" + Foam::name(proci)),
+            false,  // No function objects
+            false   // No extra controlDict libs
+        );
+        processorDb.setTime(time());
+
+        // Construct the processor mesh (points, faces, cells, patches, zones)
+        autoPtr<polyMesh> procMeshPtr =
+            buildProcMesh_impl<polyMesh>(proci, processorDb);
+
+        auto& procMesh = procMeshPtr();
+
+        const labelList& curPointLabels = procPointAddressing_[proci];
+        const labelList& curFaceLabels = procFaceAddressing_[proci];
+        const labelList& curCellLabels = procCellAddressing_[proci];
+        const labelList& curPatchSizes = procPatchSize_[proci];
+        const labelList& pointLookup = pointLookup_;
+
+        // Points for writing at pointsInstance (moving mesh case)
+        pointField procPoints;
+        if (facesInstancePointsPtr_)
+        {
+            procPoints = pointField(points(), curPointLabels);
         }
 
         // More precision (for points data)
@@ -932,6 +1033,8 @@ bool Foam::domainDecomposition::writeDecomposition(const bool decomposeSets)
             procPointAddressing_[proci]
         ).write();
 
+
+        buildProcMesh_reset(proci);
 
         // Statistics
         Info<< nl << "Processor " << proci;
