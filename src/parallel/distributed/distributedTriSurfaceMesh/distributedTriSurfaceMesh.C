@@ -3816,6 +3816,33 @@ void Foam::distributedTriSurfaceMesh::flip()
 }
 
 
+void Foam::distributedTriSurfaceMesh::boundingSpheres
+(
+    pointField& centres,
+    scalarField& radiusSqr
+) const
+{
+    if (debug)
+    {
+        Pout<< "distributedTriSurfaceMesh::boundingSpheres :" << endl;
+    }
+
+    if
+    (
+        (distType_ == distributionType::NODEMASTER)
+     && (UPstream::parRun() && !UPstream::master(comm_))
+    )
+    {
+        // No surface on sub-ranks
+        centres.clear();
+        radiusSqr.clear();
+        return;
+    }
+
+    triSurfaceMesh::boundingSpheres(centres, radiusSqr);
+}
+
+
 //void Foam::distributedTriSurfaceMesh::findNearest
 //(
 //    const pointField& samples,

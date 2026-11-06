@@ -643,6 +643,14 @@ public:
             //- Flip triangles, outsideVolumeType and all cached inside/outside.
             virtual void flip();
 
+            //- Get bounding spheres (centre and radius squared),
+            //- one per element.
+            virtual void boundingSpheres
+            (
+                pointField& centres,
+                scalarField& radiusSqr
+            ) const;
+
             virtual void findNearest
             (
                 const pointField& sample,
