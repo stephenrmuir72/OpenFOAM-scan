@@ -8,6 +8,7 @@
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2015-2024 OpenCFD Ltd.
     Copyright (C) 2026 Keysight Technologies
+    Copyright (C) 2026 Mark Olesen
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -29,11 +30,12 @@ Class
     Foam::distributedTriSurfaceMesh
 
 Description
-    IOoject and searching on distributed triSurface. All processor hold
+    IOobject and searching on distributed triSurface. All processors hold
     (possibly overlapping) part of the overall surface. All queries are
     distributed to the processor that can answer it and the result sent back.
 
     Can work in different modes:
+    - frozen : no changes or updating
     - follow : makes sure each processor has all the triangles inside the
     externally provided bounding box (usually the mesh bounding box).
     Guarantees minimum amount of communication since mesh-local queries
@@ -43,9 +45,12 @@ Description
     decomposition. Guarantees best memory balance but at the expense of
     more communication.
     - distributed : has already been distributed and can be used as is.
-    - nodeMaster : only the node-local master has the surface and answers
+    - nodeMaster : the node-local master has the complete surface and answers
       queries. No communication between nodes.
-    - frozen : no change
+    - fullTree : this is like \em distributed/independent
+      with the surface kd-tree decomposed equally onto each rank.
+    - sparseTree : this is like \em distributed/independent
+      with the surface kd-tree decomposed across node masters
 
     Note: addressing used:
     distributedTriSurfaceMesh: none
@@ -71,6 +76,7 @@ Usage
     }
     \endverbatim
 
+    \verbatim
         // Mandatory (inherited) entries
         type            distributedTriSurfaceMesh;
 
@@ -83,8 +89,8 @@ Usage
         //- (i.e. do not duplicate triangles)
         decomposeUsingBbs       false;
 
-        //- In nodeMaster mode : override the number of cores per master
-        //  (default is all cores on the same node so one master per node)
+        //- For nodeMaster/sparseTree mode : override the number of ranks
+        //- per master (default: all ranks on the same node)
         nProcessorsPerMaster    4;
 
         //- Calculate bb that does not overlap any of the other bounding boxes.
@@ -96,6 +102,7 @@ Usage
         //- Override the closed state of the initial surface. Only used when
         //  reading.
         closed                  false;
+
         //- Override the outside volume type. Only used when reading.
         outsideVolumeType       outside;
     }
@@ -104,6 +111,7 @@ Usage
 SourceFiles
     distributedTriSurfaceMesh.cxx
     distributedTriSurfaceMesh.txx
+    distributedTriSurfaceMeshGeometry.cxx
 
 \*---------------------------------------------------------------------------*/
 
@@ -116,6 +124,7 @@ SourceFiles
 #include "Pair.H"
 #include "globalIndex.H"
 #include "DynamicField.H"
+#include "boundBoxTree.H"
 #include "triangleFwd.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -123,6 +132,7 @@ SourceFiles
 namespace Foam
 {
 
+// Forward Declarations
 class mapDistribute;
 class decompositionMethod;
 
@@ -140,25 +150,61 @@ class distributedTriSurfaceMesh
 {
 public:
 
-    // Static data
+    // Static Data
 
-        enum distributionType
+        //- The type of distribution style to use
+        enum distributionType : int8_t
         {
+            FROZEN = -1,   //!< placeholder type
             FOLLOW = 0,
-            INDEPENDENT = 1,
-            DISTRIBUTED = 2,
-            FROZEN = 3,
-            NODEMASTER = 4
+            TRANSPARENT,
+            INDEPENDENT,
+            DISTRIBUTED,
+            NODEMASTER,
+            FULLTREE,      //!< surface parts on each rank
+            SPARSETREE,    //!< surface parts on each node master
         };
 
         static const Enum<distributionType> distributionTypeNames_;
 
+        //- Order in which receives surfaces are processed by
+        //- internal routines (eg, exchangeSurfaces)
+        enum class receiveOrder
+        {
+            sequenced,   //!< In rank order. Receives are still all pre-posted
+            unsequenced  //!< As they complete. Must be order-independent
+        };
+
 private:
 
-    // Private member data
+    // Data Types
 
-        //- Merging distance
-        scalar mergeDist_;
+        //- Enumerated control or (advanced) tuning parameters
+        //- [normally used as part of a bit mask]
+        enum controlType : unsigned
+        {
+            //- Use direct send/recv instead of PstreamBuffers for
+            //- surface exchange
+            ctrlDirectExchange = 1,
+
+            //- Overlap communication and querying in node-master mode
+            ctrlOverlappingNodeMaster = 2,
+
+            //- Use polling (instead of PstreamBuffers) for
+            //- handling surface overlap calculations
+            ctrlPollingOverlaps = 4,
+
+            //- Default preferences (compile-time)
+            ctrlDefault =
+            (
+                ctrlDirectExchange
+              | ctrlOverlappingNodeMaster
+              | ctrlPollingOverlaps
+            )
+        };
+
+
+    // Private Member Data
 
         mutable autoPtr<IOdictionary> decomposeParDict_;
 
@@ -168,23 +214,15 @@ private:
         //- Bounding box settings
         localIOdictionary dict_;
 
-        //- Use bounding boxes (default) or unique decomposition of triangles
-        //- (i.e. do not duplicate triangles)
-        bool decomposeUsingBbs_;
-
-        //- Calculate bb that does not overlap any of the other bounding
-        //- boxes
-        bool doExclusionBb_;
-
-        //- Bounding boxes of all processors.
-        List<List<treeBoundBox>> procBb_;
+        //- Bounding boxes of all processors, with tree searching
+        boundBoxTree procBb_;
 
         //- if !decomposeUsingBbs_ (so no fill in but unique processor
         //  assignment) we can still have a local boundbox where we guarantee
         //  we have the interacting triangles. This is an optional filtering
         //  at start up. Is list over all processors - currently only
         //  a single bb per processor.
-        List<treeBoundBox> exclusionBb_;
+        boundBoxTree exclusionBb_;
 
         //- Global triangle numbering
         mutable autoPtr<globalIndex> globalTris_;
@@ -193,6 +231,14 @@ private:
         //- per-triangle 3 normals so we can interpolate and have features
         mutable autoPtr<List<FixedList<vector, 3>>> vertexNormals_;
 
+        //- Use bounding boxes (default) or unique decomposition of triangles
+        //- (i.e. do not duplicate triangles)
+        bool decomposeUsingBbs_;
+
+        //- Calculate bb that does not overlap any of the other bounding
+        //- boxes
+        bool doExclusionBb_;
+
         //- The (wanted) distribution type.
         distributionType distType_;
 
@@ -200,15 +246,51 @@ private:
         //  when starting from undecomposed surface.
         distributionType currentDistType_;
 
-        //- Optional communicator to send queries. Used in NODEMASTER mode.
-        label comm_;
+        //- Merging distance
+        scalar mergeDist_;
 
-        //- In nodeMaster mode : IDs of master processors (one per node, or
-        //  as specified by nProcessorsPerMaster)
+        //- Control/tuning parameters
+        unsigned control_;
+
+        //- Optional communicator to send queries. Used in NODEMASTER mode.
+        int comm_;
+
+        //- In nodeMaster mode : IDs of master processors
+        //- (one per node, or as specified by nProcessorsPerMaster)
         DynamicList<int> masterProcIDs_;
 
 
     // Private Member Functions
+
+        //- Running in "transparent mode" (passes straight to triSurfaceMesh)
+        //- * for non-parallel
+        //- * if flagged internally as "transparent"
+        //- * running NODEMASTER, but with 1 rank per master (COMM_SELF)
+        //- .
+        bool runningTransparent() const noexcept
+        {
+            return
+            (
+                !UPstream::parRun() ||
+                distType_ == distributionType::TRANSPARENT ||
+                (
+                    distType_ == distributionType::NODEMASTER
+                 && comm_ == UPstream::commSelf()
+                )
+            );
+        }
+
+        //- Frees the comm_ communicator and reset to -1.
+        //- Does not attempt to free any persistent communicators
+        void freeCommunicator()
+        {
+            UPstream::freeLocalCommunicator(comm_);
+            comm_ = -1;
+        }
+
+        //- Adapt to changes in dictionary syntax between versions
+        static void upgradeDictionary(dictionary& dict);
+
 
         // Read
 
@@ -218,7 +300,19 @@ private:
 
             //- Read my additional data from dictionary. Additional flag to
             //- say whether we can use master-only geometric tests.
-            bool readSettings(const bool isUndecomposed);
+            bool readSettings(bool isUndecomposed);
+
+            //- [FUTURE] Adjust decomposition settings according to
+            //- a given heuristic.
+            bool optimizeStrategy();
+
+            //- Define/redefine the masterProcIDs_ and adjust the
+            //- the communicator (comm_)
+            void setNodeMasters
+            (
+                int nProcessorsPerMaster,
+                bool needsCommunicator
+            );
 
             //- Construction helper: generate vertex normals upon reading
             //- undecomposed surface
@@ -231,25 +325,8 @@ private:
 
         // Line intersection
 
-            //- Is segment contained inside the supplied bbs
-            static bool contains
-            (
-                const List<treeBoundBox>& myBbs,
-                const point& start,
-                const point& end
-            );
-
-            //- Return index of bb that fully contains segment. -1
-            //- if none found.
-            static label findBb
-            (
-                const List<treeBoundBox>& myBbs,
-                const point& start,
-                const point& end
-            );
-
-            //- 'subtract' bounding box b from a such that max volume
-            //- remains
+            //- 'subtract' bounding box \p b from \p a such that
+            //- max volume remains
             static treeBoundBox subtract
             (
                 const treeBoundBox& a,
@@ -313,64 +390,23 @@ private:
 
         // Triangle index
 
-
-            //- Helper: convert local triangle indices to global ones
-            void convertTriIndices(List<pointIndexHit>& info) const;
+            //- Helper: inplace convert local triangle indices to global ones
+            void convertTriIndices
+            (
+                UList<pointIndexHit>& info
+            ) const;
 
             //- Obtains global indices from pointIndexHit and swaps them back
-            //  to their original processor. Used to calculate local region
-            //  and normal.
+            //- to their original processor.
+            //- Used to calculate local region and normal.
             autoPtr<mapDistribute> calcLocalQueries
             (
-                const List<pointIndexHit>&,
+                const UList<pointIndexHit>&,
                 labelList& triangleIndex
             ) const;
 
 
         // Nearest
-
-            //- Is location inside any of the bounding boxes
-            static bool contains
-            (
-                const List<treeBoundBox>& bbs,
-                const point& sample
-            );
-
-            //- Is sphere (centre+radius) inside bb
-            static bool contains
-            (
-                const treeBoundBox& bb,
-                const point& centre,
-                const scalar radius
-            );
-
-            //- Return index of bb that fully contains sphere. -1
-            //- if none found.
-            static label findBb
-            (
-                const List<treeBoundBox>& myBbs,
-                const point& centre,
-                const scalar radius
-            );
-
-            //- Is location inside any of the processors bb or if not
-            //  does it overlap
-            Tuple2<label, scalar> findBestProcs
-            (
-                const point& centre,
-                const scalar radiusSqr,
-                bitSet& procContains,
-                bitSet& procOverlaps,
-                label& minProci,
-                label& excludeProci
-            ) const;
-
-            label calcOverlappingProcs
-            (
-                const point& centre,
-                const scalar radiusSqr,
-                bitSet& overlaps
-            ) const;
 
             //- Calculate map to send centres+radius to processors
             autoPtr<mapDistribute> calcLocalQueries
@@ -387,25 +423,8 @@ private:
 
         // Side
 
-            //- Side of nearest point w.r.t. edge between face0 and face1
-            volumeType edgeSide
-            (
-                const point& sample,
-                const point& nearestPoint,
-                const label face0,
-                const label face1
-            ) const;
-
-            //- Find edge-connected face
-            label findOtherFace
-            (
-                const labelListList& pointFaces,
-                const label nearFacei,
-                const label nearLabel
-            ) const;
-
-            //- Side of nearest point on faces w.r.t. samples. Handles nearest
-            //  on edge/point
+            //- Side of nearest point on faces w.r.t. samples.
+            //- Handles nearest on edge/point
             void surfaceSide
             (
                 const pointField& samples,
@@ -422,6 +441,16 @@ private:
                 const indexedOctree<treeDataTriSurface>& tree,
                 const label nodei,
                 const triPointRef& tri,
+                PackedList<2>& nodeTypes
+            ) const;
+
+            //- Set node type on any node containing triangles from
+            //- the surface
+            void markMixed
+            (
+                const indexedOctree<treeDataTriSurface>& tree,
+                const label nodei,
+                const triSurface& surf,
                 PackedList<2>& nodeTypes
             ) const;
 
@@ -462,89 +491,53 @@ private:
 
         // Surface redistribution
 
-            //- Calculate face-faces
-            static void calcFaceFaces
-            (
-                const triSurface& s,
-                const labelListList& pointFaces,
-                labelListList& faceFaces
-            );
-
             //- Helper: get decompositionMethod
             const decompositionMethod& decomposer() const;
 
             //- Finds new bounds based on an independent decomposition.
-            void independentlyDistributedBbs
+            void calcDistribution
             (
                 const triSurface& s,
-                labelList& distribution,
-                List<List<treeBoundBox>>& bbs
+                //! [out] the decomposition (depending on distributionType)
+                labelList& distribution
             ) const;
 
-            //- Any part overlaps with bounding box
-            using triSurfaceMesh::overlaps;
-
-            //- Does any part of triangle overlap bb.
-            static bool overlaps
-            (
-                const List<treeBoundBox>& bb,
-                const triPointRef& tri
-            );
-
-            //- Find points used in subset
-            static void subsetMeshMap
-            (
-                const triSurface& s,
-                const boolList& include,
-                const label nIncluded,
-                labelList& newToOldPoints,
-                labelList& oldToNewPoints,
-                labelList& newToOldFaces
-            );
-
-            //- Construct subsetted surface
-            static triSurface subsetMesh
-            (
-                const triSurface& s,
-                const labelList& newToOldPoints,
-                const labelList& oldToNewPoints,
-                const labelList& newToOldFaces
-            );
-
-            //- Subset given marked faces
-            static triSurface subsetMesh
-            (
-                const triSurface& s,
-                const boolList& include,
-                labelList& newToOldPoints,
-                labelList& newToOldFaces
-            );
-
-            //- Subset given marked faces
-            static triSurface subsetMesh
-            (
-                const triSurface& s,
-                const labelList& newToOldFaces,
-                labelList& newToOldPoints
-            );
-
-            //- Find triangle otherF in allFaces.
+            //- Find triangle \p f in allFaces. Returns -1 if not found
             static label findTriangle
             (
-                const List<labelledTri>& allFaces,
-                const labelListList& allPointFaces,
-                const labelledTri& otherF
+                //! The faces to search (haystack)
+                const UList<labelledTri>& allFaces,
+
+                //! The point to face connectivity information
+                const UList<labelList>& allPointFaces,
+
+                //! The face to find (needle)
+                const labelledTri& f
+            );
+
+            //- Find triangle \p f in allFaces. Returns -1 if not found
+            static label findTriangle
+            (
+                //! The faces to search (haystack)
+                const UList<labelledTri>& allFaces,
+
+                //! The point to face connectivity information
+                //! indexed by lowest vertex point
+                const Map<DynamicList<label>>& allPointFaces,
+
+                //! The face to find (needle)
+                const labelledTri& f
             );
 
             //- Merge triSurface (subTris, subPoints) into allTris, allPoints.
             static void merge
             (
                 const scalar mergeDist,
-                const List<labelledTri>& subTris,
-                const pointField& subPoints,
+                const UList<labelledTri>& subTris,
+                const UList<point>& subPoints,
 
-                List<labelledTri>& allTris,
-                pointField& allPoints,
+                DynamicList<labelledTri>& allTris,
+                DynamicList<point>& allPoints,
 
                 labelList& faceConstructMap,
                 labelList& pointConstructMap
@@ -555,22 +548,36 @@ private:
             void distributeFields(const mapDistribute& map);
 
             //- Calculate the distribution of triangles based on the
-            //  distribution type. Gets passed in mesh bounding boxes
-            //  (if in 'follow' mode)
-            void getDistribution
+            //- distribution type.
+            //  Gets passed in mesh bounding boxes (if in 'follow' mode)
+            //
+            //  \returns true if the \p distribution is in use.
+            bool getDistribution
             (
                 const distributionType distType,
-                const List<treeBoundBox>& bbs,
+                // The bounding box to follow (for FOLLOW mode)
+                const UList<treeBoundBox>& followBb,
+                //! [out] the decomposition (depending on distributionType)
                 labelList& distribution,
-                // Per processor the bounding box of all (destination) triangles
-                List<List<treeBoundBox>>& newProcBb
+                //! [out] the proc bounding box of all (destination) triangles
+                List<treeBoundBox>& newProcBb
             ) const;
 
             //- Do actual sending and receiving of triangles and points.
-            void distribute
+            void distributeGeometry
             (
                 labelListList&& faceSendMap,
-                labelListList&& pointSendMap,
+                autoPtr<mapDistribute>& faceMap,
+                autoPtr<mapDistribute>& pointMap,
+                List<labelledTri>& allTris,
+                pointField& allPoints
+            ) const;
+
+            //- Do actual sending and receiving of triangles and points.
+            //- Using PstreamBuffers for the exchange
+            void distributeGeometry_buffered
+            (
+                labelListList&& faceSendMap,
                 autoPtr<mapDistribute>& faceMap,
                 autoPtr<mapDistribute>& pointMap,
                 List<labelledTri>& allTris,
@@ -578,14 +585,124 @@ private:
             ) const;
 
 
+        // Low-level communication
+
+            //- What type of data exchange is needed?
+            enum class sendStyles : int
+            {
+                mode_general,   //!< multiple ranks send
+                mode_decompose, //!< only master sends
+                mode_broadcast, //!< master sends identical content
+                mode_identity   //!< special case of broadcast (no-subset)
+            };
+
+            //- Determine which type of exchange is needed based on
+            //- the face send maps
+            static sendStyles analyzeSendMaps
+            (
+                const triSurface& surf,
+                const UList<labelList>& faceSendMap,
+                int communicator
+            );
+
+            //- Send surface primitives (default: non-blocking)
+            static void sendSurfaceGeometry
+            (
+                int toProcNo,           //!< Send to this rank
+                const UList<point>& points,
+                const UList<labelledTri>& faces,
+                int baseMessageTag,     //!< The base message tag
+                int communicator,
+                UPstream::commsTypes ctype = UPstream::commsTypes::nonBlocking
+            );
+
+            //- Send surface primitives (default: non-blocking)
+            static void sendSurfaceGeometry
+            (
+                int toProcNo,           //!< Send to this rank
+                const triSurface& s,
+                int baseMessageTag,     //!< The base message tag
+                int communicator,
+                UPstream::commsTypes ctype = UPstream::commsTypes::nonBlocking
+            )
+            {
+                sendSurfaceGeometry
+                (
+                    toProcNo,
+                    s.points(),
+                    s.surfFaces(),
+                    baseMessageTag,
+                    communicator,
+                    ctype
+                );
+            }
+
+            //- Receive surface primitives (default: non-blocking)
+            static void recvSurfaceGeometry
+            (
+                int fromProcNo,         //!< Receive from this rank
+                List<point>& points,
+                List<labelledTri>& faces,
+                int baseMessageTag,     //!< The base message tag
+                int communicator,
+                UPstream::commsTypes ctype = UPstream::commsTypes::nonBlocking
+            );
+
+            //- Receive surface primitives (default: non-blocking)
+            static void recvSurfaceGeometry
+            (
+                int fromProcNo,         //!< Receive from this rank
+                triSurface& s,
+                int baseMessageTag,     //!< The base message tag
+                int communicator,
+                UPstream::commsTypes ctype = UPstream::commsTypes::nonBlocking
+            )
+            {
+                recvSurfaceGeometry
+                (
+                    fromProcNo,
+                    s.storedPoints(),
+                    s.storedFaces(),
+                    baseMessageTag,
+                    communicator,
+                    ctype
+                );
+            }
+
+            //- Sparse point-to-point surface exchange using the default
+            //- sendSurfaceGeometry/recvSurfaceGeometry (non-blocking).
+            //  Wrapper for the more granular exchangeSurfaces helper
+            //  (see distributedTriSurfaceMesh.C).
+            //  - sendOp(proci)  -> autoPtr<triSurface> (null: nothing sent)
+            //  - procOp(proci, triSurface&) consumes a completed receive
+            //  - preRecvOp(const UList<labelPair>&) optional, called with the
+            //    per-rank receive sizes (nPoints, nFaces) before receiving
+            template
+            <
+                class SendOp,
+                class ProcessOp,
+                class PreRecvOp = Foam::identityOp
+            >
+            static void exchangeSurfaces
+            (
+                const int communicator,
+                const receiveOrder recvOrder,
+                const int baseMessageTag,
+                SendOp&& sendOp,
+                ProcessOp&& procOp,
+                PreRecvOp&& preRecvOp = PreRecvOp()
+            );
+
+public:
+
+    // Generated Methods
+
         //- No copy construct
         distributedTriSurfaceMesh(const distributedTriSurfaceMesh&) = delete;
 
         //- No copy assignment
         void operator=(const distributedTriSurfaceMesh&) = delete;
 
-
-public:
 
     //- Runtime type information
     TypeName("distributedTriSurfaceMesh");
@@ -633,7 +750,7 @@ public:
         const globalIndex& globalTris() const;
 
 
-        // searchableSurface implementation
+        // Methods for searchableSurface
 
             //- Range of global indices that can be returned.
             virtual label globalSize() const
@@ -643,6 +760,25 @@ public:
 
             //- Flip triangles, outsideVolumeType and all cached inside/outside.
             virtual void flip();
+
+            // Other interface bits:
+            //
+            // regions()
+            // hasVolumeType()
+            // outsideVolumeType()
+            // size()
+            // nPoints()
+            // coordinates()
+            // points()
+            // overlaps(const boundBox& bb)
+
+            //- Get bounding spheres (centre and radius squared),
+            //- one per element.
+            virtual void boundingSpheres
+            (
+                pointField& centres,
+                scalarField& radiusSqr
+            ) const;
 
             virtual void findNearest
             (
@@ -701,8 +837,8 @@ public:
             //  cannot be determined (e.g. non-manifold surface)
             virtual void getVolumeType
             (
-                const pointField&,
-                List<volumeType>&
+                const pointField& points,
+                List<volumeType>& volType
             ) const;
 
             //- Set bounds of surface. Bounds currently set as list of
@@ -718,7 +854,7 @@ public:
             //  same amount as work as actual distribution.
             virtual void distribute
             (
-                const List<treeBoundBox>&,
+                const List<treeBoundBox>& followBb,
                 const bool keepNonLocal,
                 autoPtr<mapDistribute>& faceMap,
                 autoPtr<mapDistribute>& pointMap
@@ -727,41 +863,42 @@ public:
 
         // Other
 
-            //- WIP. From a set of hits (points and
-            //  indices) get the specified field. Misses do not get set.
+            //- WIP. From a set of hits (points and indices)
+            //- get the specified field. Misses do not get set.
             virtual void getField(const List<pointIndexHit>&, labelList&) const;
 
-            //- Calculate the triangles that are overlapping bounds.
-            static void overlappingSurface
+            //- WIP.
+            //- Query for surface information.
+            //- \returns the number of surface elements queried.
+            //- \returns 0 for an empty surface or if all query parameters
+            //- were nullptr.
+            virtual label measure
             (
-                const triSurface&,
-                const List<treeBoundBox>&,
-                boolList& includedFace
-            );
-
-            //- Subset the part of surface that is overlapping bounds.
-            static triSurface overlappingSurface
-            (
-                const triSurface&,
-                const List<treeBoundBox>&,
-                labelList& subPointMap,
-                labelList& subFaceMap
-            );
-
+                //- [out] surface element centres
+                List<vector>* centres,
+                //- [out] surface element bounding sphere radius(squared)
+                List<scalar>* boundingRadiusSqr,
+                //- [out] surface element region ids
+                List<label>* regions,
+                //- [out] surface element unit normals
+                List<vector>* normals
+            ) const;
 
             //- Obtains global indices from pointIndexHit and swaps them back
             //  to their original processor. Used to calculate local region
             //  and normal.
             virtual autoPtr<mapDistribute> localQueries
             (
-                const List<pointIndexHit>&,
+                const UList<pointIndexHit>& info,
                 labelList& triangleIndex
             ) const;
 
-
-            //- Print some stats. Parallel aware version of
-            //  triSurface::writeStats.
+            //- Print some stats.
+            //- Parallel aware version of triSurface::writeStats.
             void writeStats(Ostream& os) const;
+
+            //- Print some information about triangles and bounds.
+            void printBounds() const;
 
 
         // regIOobject implementation
