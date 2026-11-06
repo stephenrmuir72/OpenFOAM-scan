@@ -32,6 +32,11 @@ Group
 Description
     multiBandAbsorption radiation transmissivity for solids.
 
+    The optional faceZoneOverrides entry sets per-band absorptivity and
+    emissivity on the faces of faceZones. Each zone list must have the same
+    number of bands as the base lists. For a face, the last zone in dictionary
+    order that sets a property wins. Values are fixed at construction.
+
 Usage
     \verbatim
 
@@ -40,6 +45,18 @@ Usage
             type            multiBandAbsorption;
             absorptivity    (0.3 0.7);
             emissivity      (0.3 0.7);
+
+            faceZoneOverrides
+            {
+                zoneA
+                {
+                    absorptivity    (0.5 0.5);
+                }
+                zoneB
+                {
+                    emissivity      (0.1 0.9);
+                }
+            }
         };
 
     \endverbatim
@@ -53,6 +70,8 @@ SourceFiles
 #define Foam_radiation_multiBandAbsorption_H
 
 #include "wallAbsorptionEmissionModel.H"
+#include "labelList.H"
+#include "scalarList.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -92,6 +111,23 @@ private:
 
         //- Bands
         label nBands_;
+
+        //- Number of patch faces
+        label nFaces_;
+
+        //- Patch-local index of the last faceZone overriding absorptivity,
+        //  or -1. Empty if no zone overrides absorptivity
+        labelList aZone_;
+
+        //- Absorptivity per band for each faceZone override
+        List<scalarList> aZoneCoeffs_;
+
+        //- Patch-local index of the last faceZone overriding emissivity,
+        //  or -1. Empty if no zone overrides emissivity
+        labelList eZone_;
+
+        //- Emissivity per band for each faceZone override
+        List<scalarList> eZoneCoeffs_;
 
 
 public:

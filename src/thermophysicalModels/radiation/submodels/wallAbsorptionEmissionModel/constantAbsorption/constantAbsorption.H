@@ -32,6 +32,33 @@ Group
 Description
     Constant radiation transmissivity coefficient
 
+    The absorptivity and emissivity are Function1 functions of temperature.
+    Optional faceZoneOverrides blocks replace them on the faces of a
+    faceZone, with their own Function1 functions of temperature. For a face,
+    the last zone in dictionary order that sets a property wins.
+
+Usage
+    \verbatim
+        <patchName>
+        {
+            type            transparent;
+            wallAbsorptionEmissionModel
+            {
+                type            constantAbsorption;
+                absorptivity    0.1;
+                emissivity      0.1;
+
+                faceZoneOverrides
+                {
+                    <faceZoneName>
+                    {
+                        emissivity  0.8;
+                    }
+                }
+            }
+        }
+    \endverbatim
+
 SourceFiles
     constantAbsorption.C
 
@@ -42,6 +69,8 @@ SourceFiles
 
 #include "wallAbsorptionEmissionModel.H"
 #include "Function1.H"
+#include "PtrList.H"
+#include "labelList.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -69,6 +98,18 @@ class constantAbsorption
 
         //- Emissivity coefficient
         autoPtr<Function1<scalar>> e_;
+
+        //- Patch-face index into aZones_, or -1 (empty if no zones)
+        labelList aZone_;
+
+        //- Absorptivity functions of the faceZone overrides
+        PtrList<Function1<scalar>> aZones_;
+
+        //- Patch-face index into eZones_, or -1 (empty if no zones)
+        labelList eZone_;
+
+        //- Emissivity functions of the faceZone overrides
+        PtrList<Function1<scalar>> eZones_;
 
 
 public:

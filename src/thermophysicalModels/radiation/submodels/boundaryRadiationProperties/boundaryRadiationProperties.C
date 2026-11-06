@@ -27,6 +27,7 @@ License
 
 #include "boundaryRadiationProperties.H"
 #include "radiationModel.H"
+#include "faceZoneOverrides.H"
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -107,9 +108,9 @@ Foam::radiation::boundaryRadiationProperties::boundaryRadiationProperties
                     {
                         FatalErrorInFunction
                             << "Radiation bands : " <<  nBands << nl
-                            << "Bands on patch : " << patchi << " is "
+                            << "Patch " << pp.name() << " has "
                             << radBoundaryPropertiesPtrList_[patchi].nBands()
-                            << abort(FatalError);
+                            << " bands" << abort(FatalError);
                     }
                 }
             }
@@ -143,6 +144,15 @@ Foam::radiation::boundaryRadiationProperties::boundaryRadiationProperties
 
                     if (eptr && eptr->isDict())
                     {
+                        if (faceZoneOverrides::present(eptr->dict()))
+                        {
+                            FatalErrorInFunction
+                                << "faceZoneOverrides is not allowed in the "
+                                << "radiation properties entry for faceZone '"
+                                << fz.name() << "'. Place it in the patch "
+                                << "entry instead." << abort(FatalError);
+                        }
+
                         radZonePropertiesPtrList_.set
                         (
                             zonei,
@@ -163,11 +173,8 @@ Foam::radiation::boundaryRadiationProperties::boundaryRadiationProperties
                         {
                             FatalErrorInFunction
                                 << "Radiation bands : " <<  nBands << nl
-                                << "Bands on zone : " << zonei << " is "
-                                <<  radBoundaryPropertiesPtrList_
-                                    [
-                                        zonei
-                                    ].nBands()
+                                << "Bands on zone '" << fz.name() << "' is "
+                                << radZonePropertiesPtrList_[zonei].nBands()
                                 << abort(FatalError);
                         }
                     }
@@ -371,6 +378,10 @@ Foam::radiation::boundaryRadiationProperties::zoneTransmissivity
     {
         auto tfld = tmp<scalarField>::New(faceIDs.size());
         auto& fld = tfld.ref();
+        // TODO: Zone entries receive global mesh face IDs, but zone models are
+        // built on patch 0 and index per-face data locally. Map to zone-local
+        // indices before adding a zone model that returns per-face values.
+        // Until then, zone models must return the same value for every face.
         forAll(fld, i)
         {
             fld[i] = radZonePropertiesPtrList_[zonei].t

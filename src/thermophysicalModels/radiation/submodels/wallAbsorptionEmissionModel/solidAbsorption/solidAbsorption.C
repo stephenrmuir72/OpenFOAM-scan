@@ -30,6 +30,7 @@ License
 #include "mappedPatchBase.H"
 #include "radiationModel.H"
 #include "absorptionEmissionModel.H"
+#include "faceZoneOverrides.H"
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -75,6 +76,13 @@ Foam::radiation::solidAbsorption::solidAbsorption
 :
     wallAbsorptionEmissionModel(dict, pp)
 {
+    if (faceZoneOverrides::present(dict))
+    {
+        FatalErrorInFunction
+            << "faceZoneOverrides is not supported by solidAbsorption"
+            << " for patch " << pp.name() << abort(FatalError);
+    }
+
     if (!isA<mappedPatchBase>(pp))
     {
         FatalErrorInFunction
