@@ -72,8 +72,8 @@ using cutPointSource = labelPair;
 
 
 //- Detail of a cell cut, beyond the pieces themselves. The supporting plane is
-//  reported by cutCellByTriangles, which determines it, and the source lists by
-//  both it and cutCellPolyhedron::split. Everything is left empty unless the
+//  reported by the plane of the cut, which determines it, and the source lists
+//  by both it and cutCellPolyhedron::split. Everything is left empty unless the
 //  cut was accepted.
 struct cutCellDetail
 {

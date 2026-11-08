@@ -233,30 +233,9 @@ private:
         //- pairs. Zero disables the guard.
         scalar maxSnapMoveFraction_ = 0.05;
 
-        //- Which cut to use: "plane" arranges the facet planes, "loop" traces
-        //- where the surface meets the cell's boundary and takes the pieces as
-        //- the regions that separates. Both produce the same cutCellResult; the
-        //- loop is linear in the facets a cell meets where the arrangement is
-        //- cubic in them and its regions degenerate for a doubly-curved surface.
-        //-
-        //- **Decided 26-Sep-2026: the loop is the intended default and the only
-        //- cutter under development; the arrangement is frozen** and is kept as
-        //- the regression's oracle, because comparing against it is how every
-        //- loop defect so far has been found. The default moves to "loop" and
-        //- this key leaves the case dictionaries once B.3's acceptance list
-        //- passes: 06_oblique_box cut, the interface exact at 320 and at 1280
-        //- triangles, 07_sphere_cut passing at the tool's own collapse setting,
-        //- no checkMesh failure the arrangement does not also have, and the
-        //- loop's cost measured. "plane" is the default until then, so that a
-        //- user who reads nothing gets the cutter that fails nothing: the loop
-        //- today refuses 4 cells of 06_oblique_box where the arrangement cuts
-        //- all 120, and loses 17.5% of the interface on a finely tessellated
-        //- curved surface.
-        word cutMethod_ = "plane";
-
-        //- True when the loop is cutting, in which case a piece is identified
-        //- by containment rather than by its sign against each plane
-        bool loopCut_ = false;
+        //- Each cell is cut by cutCellByLoop, which traces where the surface
+        //- meets the cell's boundary and takes the pieces as the regions it
+        //- separates
 
         //- Dump this one cell and the triangles crossing it, for replay
         label dumpCell_ = -1;
@@ -467,13 +446,6 @@ public:
         void maxSnapMoveFraction(const scalar f)
         {
             maxSnapMoveFraction_ = f;
-        }
-
-        //- Set which cut to use, "plane" or "loop"
-        void cutMethod(const word& m)
-        {
-            cutMethod_ = m;
-            loopCut_ = (m == "loop");
         }
 
         //- Set the cell to dump for replay, or -1 for none

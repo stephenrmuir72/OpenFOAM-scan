@@ -37,11 +37,10 @@ Description
     no baffles. Converting the faceZone into paired patches is left to
     createBaffles, and splitting into per-region meshes to splitMeshRegions.
 
-    This is the first slice: it handles cells that one plane of the surface
-    passes through. Cells crossed by more than one plane, which happens where a
-    surface edge or corner passes through a cell, are reported with their index
-    and left untouched. The mesh is still written, and the utility exits
-    non-zero so that the gap cannot pass unnoticed.
+    Each cell the surface crosses is cut along the loop where the surface meets
+    its boundary. A cell the cutter cannot divide is reported with its index and
+    left untouched. The mesh is still written, and the utility exits non-zero so
+    that the gap cannot pass unnoticed.
 
     The dictionary is cutCellMeshDict, the same one cutCellCartesian reads, so
     the geometry is specified once.
@@ -68,7 +67,7 @@ int main(int argc, char* argv[])
 {
     argList::addNote
     (
-        "Cut a mesh by a surface, one plane per cell, in one topology change"
+        "Cut a mesh by a surface along each cell's boundary loop"
     );
 
     argList::addOption("dict", "file", "Alternative cutCellMeshDict");
@@ -327,20 +326,24 @@ int main(int argc, char* argv[])
         maxSnapMoveFraction = min(max(maxSnapMoveFraction, 0.0), 0.5);
     }
 
-    //- Which cut: "plane", the arrangement of the facet planes, or "loop",
-    //- which traces where the surface meets the cell's boundary. The loop is
-    //- the one that does not degenerate on a doubly-curved surface. Selected by
-    //- the dictionary so that both can be run on one case and compared.
-    const word cutMethod(meshDict.getOrDefault<word>("cutMethod", "plane"));
+    //- The cut is cutCellByLoop, which traces where the surface meets the
+    //- cell's boundary. It is the only cut, so cutMethod is not a choice: loop
+    //- is accepted and changes nothing, and plane is refused.
+    const word cutMethod(meshDict.getOrDefault<word>("cutMethod", "loop"));
 
-    if (cutMethod != "plane" && cutMethod != "loop")
+    if (cutMethod == "plane")
     {
         FatalErrorInFunction
-            << "cutMethod '" << cutMethod << "' is not one of plane or loop"
-            << exit(FatalError);
+            << "cutMethod plane has been removed, because the loop is the only"
+            << " cut. Use cutMethod loop, or remove the keyword, in "
+            << meshDict.name() << exit(FatalError);
     }
 
-    mesher.cutMethod(cutMethod);
+    if (cutMethod != "loop")
+    {
+        FatalErrorInFunction
+            << "cutMethod '" << cutMethod << "' is not loop" << exit(FatalError);
+    }
 
     if (meshDict.getOrDefault<bool>("cutCellLoopDebug", false))
     {

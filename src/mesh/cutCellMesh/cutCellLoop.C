@@ -728,6 +728,8 @@ cutState cutCellByLoop
     const bool dump
 )
 {
+    result = cutCellResult();
+
     const boundBox bb(cell.points(), false);
     const pointField& cPts = cell.points();
 
@@ -2527,7 +2529,6 @@ cutState cutCellByLoop
         inside /= scalar(max(nR, 1));
 
         result.pieces[piecei].poly = polyhedronFrom(polys, inside, tol);
-        result.pieces[piecei].side.setSize(planes.size(), 0);
     }
 
     //- 6. The interface faces. Every part of a facet plane inside the cell
