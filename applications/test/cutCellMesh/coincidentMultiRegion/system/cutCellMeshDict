@@ -1,0 +1,32 @@
+FoamFile
+{
+    version 2.0;
+    format ascii;
+    class dictionary;
+    object cutCellMeshDict;
+}
+
+castellatedMeshControls
+{
+}
+
+geometry
+{
+    cube
+    {
+        type triSurfaceMesh;
+        file cube.stl;
+    }
+}
+
+materialRegions
+{
+    inside
+    {
+        inside (cube);
+    }
+    outside
+    {
+        outside (cube);
+    }
+}

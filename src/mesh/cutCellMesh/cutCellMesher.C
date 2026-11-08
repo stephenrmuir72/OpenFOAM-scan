@@ -628,6 +628,195 @@ void Foam::cutCellMesher::snapPoints()
 }
 
 
+void Foam::cutCellMesher::findCoincidentFaces()
+{
+    coincidentSurface_.setSize(mesh_.nFaces(), -1);
+    coincidentRegion_.setSize(mesh_.nFaces(), -1);
+
+    const pointField& pts = mesh_.points();
+    const faceList& fcs = mesh_.faces();
+    const scalar tolC = 1e-6*mag(mesh_.bounds().span());
+
+    for (label facei = 0; facei < mesh_.nInternalFaces(); ++facei)
+    {
+        const label own = mesh_.faceOwner()[facei];
+        const label nei = mesh_.faceNeighbour()[facei];
+
+        const face& f = fcs[facei];
+        const vector fn = f.unitNormal(pts);
+
+        //- Vertices, edge midpoints and centre, all of which must lie on the
+        //- surface. The midpoints catch a surface edge crossing the face
+        //- between two vertices that do lie on it.
+        const point fc = f.centre(pts);
+        pointField samples(2*f.size() + 1);
+
+        forAll(f, i)
+        {
+            samples[i] = pts[f[i]];
+            samples[f.size() + i] =
+                0.5*(pts[f[i]] + pts[f[f.fcIndex(i)]]);
+        }
+
+        samples.last() = fc;
+
+        for (label surfi = 0; surfi < surfaces_.size(); ++surfi)
+        {
+            if (cellSurfaceInside_[own][surfi] == cellSurfaceInside_[nei][surfi])
+            {
+                continue;
+            }
+
+            const cutCellSurface& surf = surfaces_[surfi];
+
+            List<pointIndexHit> hits;
+
+            surf.search().findNearest
+            (
+                samples,
+                scalarField(samples.size(), sqr(tolC)),
+                hits
+            );
+
+            //- A sample on a cube edge or corner also meets triangles of the
+            //- perpendicular faces, so it is enough that a triangle in the
+            //- face plane lies within tolC of it. A surface crossing the face
+            //- has no such triangle at the sample and is refused. A degenerate
+            //- triangle has no normal and is not counted. Returns the triangle
+            //- found, or -1.
+            auto parallelNear = [&](const point& x) -> label
+            {
+                const vector r(tolC*vector(1, 1, 1));
+                const labelList near =
+                    surf.search().tree().findBox(treeBoundBox(x - r, x + r));
+
+                forAll(near, i)
+                {
+                    const pointField t(surf.triangle(near[i]));
+                    const vector tn = (t[1] - t[0]) ^ (t[2] - t[0]);
+                    const scalar magTn = mag(tn);
+
+                    if
+                    (
+                        magTn > VSMALL
+                     && mag((tn/magTn) & fn) >= 1 - 1e-6
+                     && mag((t[0] - fc) & fn) <= tolC
+                    )
+                    {
+                        return near[i];
+                    }
+                }
+
+                return -1;
+            };
+
+            labelList tris(samples.size(), -1);
+            bool onSurface = true;
+
+            forAll(hits, i)
+            {
+                tris[i] = (hits[i].hit() ? parallelNear(samples[i]) : -1);
+
+                if (tris[i] < 0)
+                {
+                    onSurface = false;
+                    break;
+                }
+            }
+
+            if (!onSurface)
+            {
+                continue;
+            }
+
+            const label tri = tris.last();
+
+            coincidentSurface_[facei] = surfi;
+            coincidentRegion_[facei] =
+                (surf.regionOf().empty() ? 0 : surf.regionOf()[tri]);
+            info_.nCoincidentFaces++;
+
+            break;
+        }
+    }
+}
+
+
+bool Foam::cutCellMesher::coincidentOnly
+(
+    const label celli,
+    const List<pointField>& tris
+) const
+{
+    const pointField& pts = mesh_.points();
+    const faceList& fcs = mesh_.faces();
+    const scalar tolC = 1e-6*mag(mesh_.bounds().span());
+
+    //- A triangle in the plane of a face of a convex cell cannot pass through
+    //- the cell's interior. It is acceptable when that face is an interface,
+    //- or when the two cells across it are on the same side of every surface
+    //- so the triangle only touches the cell at its boundary.
+    forAll(tris, ti)
+    {
+        bool inPlane = false;
+
+        for (const label facei : mesh_.cells()[celli])
+        {
+            if (!mesh_.isInternalFace(facei))
+            {
+                continue;
+            }
+
+            const label own = mesh_.faceOwner()[facei];
+            const label nei = mesh_.faceNeighbour()[facei];
+
+            bool sameSide = true;
+
+            forAll(surfaces_, surfi)
+            {
+                if (cellSurfaceInside_[own][surfi] != cellSurfaceInside_[nei][surfi])
+                {
+                    sameSide = false;
+                    break;
+                }
+            }
+
+            if (coincidentSurface_[facei] < 0 && !sameSide)
+            {
+                continue;
+            }
+
+            const face& f = fcs[facei];
+            const point fc = f.centre(pts);
+            const vector fn = f.unitNormal(pts);
+
+            inPlane = true;
+
+            forAll(tris[ti], pi)
+            {
+                if (mag((tris[ti][pi] - fc) & fn) > tolC)
+                {
+                    inPlane = false;
+                    break;
+                }
+            }
+
+            if (inPlane)
+            {
+                break;
+            }
+        }
+
+        if (!inPlane)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+
 void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
 {
     if (surfaces_.empty())
@@ -803,6 +992,8 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
         }
     }
 
+    findCoincidentFaces();
+
     DynamicList<cellCut> found(cuts.size());
 
     label maxPlanes = 0;
@@ -823,6 +1014,94 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
                 treeBoundBox(bb.min(), bb.max())
             );
             nTriangles += candidates[surfi].size();
+        }
+
+        //- A triangle in the plane of a face of a convex cell cannot divide the
+        //- cell. Where the cell is also crossed by other triangles, these are
+        //- left out, as a surface lying on a grid face of a cut cell gives the
+        //- cutter planes it cannot place. The interface on that face is set
+        //- when the cut faces are assembled.
+        if (nTriangles)
+        {
+            const pointField& cpts = cell.points();
+            const faceList& cfs = cell.faces();
+            const scalar tolPlane = 1e-6*mag(mesh_.bounds().span());
+
+            List<point> fCentre(cfs.size());
+            List<vector> fNormal(cfs.size());
+
+            forAll(cfs, fi)
+            {
+                fCentre[fi] = cfs[fi].centre(cpts);
+                fNormal[fi] = cfs[fi].unitNormal(cpts);
+            }
+
+            auto inFacePlane = [&](const pointField& t) -> bool
+            {
+                forAll(cfs, fi)
+                {
+                    bool on = true;
+
+                    forAll(t, k)
+                    {
+                        if (mag((t[k] - fCentre[fi]) & fNormal[fi]) > tolPlane)
+                        {
+                            on = false;
+                            break;
+                        }
+                    }
+
+                    if (on)
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            };
+
+            label nCrossing = 0;
+
+            forAll(surfaces_, surfi)
+            {
+                forAll(candidates[surfi], i)
+                {
+                    if
+                    (
+                        !inFacePlane
+                        (
+                            surfaces_[surfi].triangle(candidates[surfi][i])
+                        )
+                    )
+                    {
+                        nCrossing++;
+                    }
+                }
+            }
+
+            if (nCrossing)
+            {
+                nTriangles = 0;
+
+                forAll(surfaces_, surfi)
+                {
+                    const labelList& all = candidates[surfi];
+                    labelList keep(all.size());
+                    label nKeep = 0;
+
+                    forAll(all, i)
+                    {
+                        if (!inFacePlane(surfaces_[surfi].triangle(all[i])))
+                        {
+                            keep[nKeep++] = all[i];
+                        }
+                    }
+
+                    keep.setSize(nKeep);
+                    candidates[surfi] = keep;
+                    nTriangles += nKeep;
+                }
+            }
         }
 
         if (!nTriangles)
@@ -933,6 +1212,12 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
                         " to divide"
                     );
                 }
+                else if (coincidentOnly(celli, tris))
+                {
+                    //- The surface lies only on faces of this cell that are
+                    //- already the interface, so nothing of the cell is divided
+                    info_.nCoincidentCells++;
+                }
                 else
                 {
                     info_.nUnsupported++;
@@ -1034,6 +1319,17 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
         cellCut c;
         c.celli = celli;
         c.planes = result.planes;
+        c.planeSurface.setSize(result.planeTri.size());
+
+        forAll(result.planeTri, pli)
+        {
+            const label tri = result.planeTri[pli];
+
+            c.planeSurface[pli] =
+            (
+                tri >= 0 && tri < surfaceOf.size() ? surfaceOf[tri] : -1
+            );
+        }
         c.faceRegions = result.faceRegions;
         c.faceRegionPiece = result.faceRegionPiece;
         c.pieces = result.pieces;
@@ -1338,7 +1634,9 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
         info_.byPlanes[found[ci].planes.size()]++;
     }
 
-    info_.nCandidate = info_.nCut + info_.nUnsupported + info_.nDegenerate;
+    info_.nCandidate =
+        info_.nCut + info_.nUnsupported + info_.nDegenerate
+      + info_.nCoincidentCells;
 
     cuts.clear();
 
@@ -1395,6 +1693,14 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                 {
                     maxRegion = max(maxRegion, shared.patch);
                 }
+            }
+        }
+
+        forAll(coincidentSurface_, facei)
+        {
+            if (coincidentSurface_[facei] == surfi)
+            {
+                maxRegion = max(maxRegion, coincidentRegion_[facei]);
             }
         }
 
@@ -1515,7 +1821,32 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                 << exit(FatalError);
         }
 
-        if (interfaceZoneOf_[sourceSurface].size() != 1)
+        const labelList& zones = interfaceZoneOf_[sourceSurface];
+        label interfaceZone = -1;
+
+        if (coincidentSurface_[facei] == sourceSurface)
+        {
+            const label regioni = coincidentRegion_[facei];
+
+            if (zones.size() == 1)
+            {
+                interfaceZone = zones[0];
+            }
+            else if (regioni >= 0 && regioni < zones.size())
+            {
+                interfaceZone = zones[regioni];
+            }
+            else
+            {
+                FatalErrorInFunction
+                    << "Coincident material-zone boundary on face " << facei
+                    << " has region " << regioni << " for surface '"
+                    << surfaces_[sourceSurface].name()
+                    << "', but the region has no interface faceZone."
+                    << exit(FatalError);
+            }
+        }
+        else if (zones.size() != 1)
         {
             FatalErrorInFunction
                 << "Material-zone boundary on face " << facei << " belongs to "
@@ -1525,11 +1856,14 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                 << "or keep this interface inside cut cells."
                 << exit(FatalError);
         }
+        else
+        {
+            interfaceZone = zones[0];
+        }
 
         zoneFlip = !cellSurfaceInside_[own][sourceSurface];
 
         const label existingZone = mesh_.faceZones().whichZone(facei);
-        const label interfaceZone = interfaceZoneOf_[sourceSurface][0];
 
         if (existingZone >= 0 && existingZone != interfaceZone)
         {
@@ -1758,6 +2092,51 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
         return pointAt(pa + w*(pb - pa));
     };
 
+    //- Whether a plane crossing lies on its searchableBox footprint. A
+    //- triangulated surface uses its full supporting planes for conformity.
+    auto onSurface = [&](const point& x, const label surfi) -> bool
+    {
+        auto hitsSurface = [&](const cutCellSurface& surface) -> bool
+        {
+            List<pointIndexHit> hits(1);
+
+            surface.search().findNearest
+            (
+                pointField(1, x),
+                scalarField(1, sqr(tol_)),
+                hits
+            );
+
+            return hits[0].hit();
+        };
+
+        if (surfi >= 0 && surfi < surfaces_.size())
+        {
+            return
+                !surfaces_[surfi].isSearchableBox()
+             || hitsSurface(surfaces_[surfi]);
+        }
+
+        bool hasSearchableBox = false;
+
+        forAll(surfaces_, si)
+        {
+            if (!surfaces_[si].isSearchableBox())
+            {
+                continue;
+            }
+
+            hasSearchableBox = true;
+
+            if (hitsSurface(surfaces_[si]))
+            {
+                return true;
+            }
+        }
+
+        return !hasSearchableBox;
+    };
+
     //- Split a face polygon by a plane, in mesh point labels. False when the
     //- face is not split, that is when all of its points lie on one side of the
     //- plane or on the plane itself.
@@ -1766,6 +2145,8 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
         face& f,
         const vector& n,
         const point& refPoint,
+        const label surfi,
+        const bool filterFootprint,
         face& minusPoly,
         face& plusPoly
     ) -> bool
@@ -1775,6 +2156,33 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
 
         bool hasMinus = false;
         bool hasPlus = false;
+        bool offSurface = false;
+
+        forAll(f, i)
+        {
+            const label a = f[i];
+            const label b = f[f.fcIndex(i)];
+
+            const scalar da = planeDist(n, refPoint, coordOf(a));
+            const scalar db = planeDist(n, refPoint, coordOf(b));
+
+            if
+            (
+                (da > tol_ && db < -tol_)
+             || (da < -tol_ && db > tol_)
+            )
+            {
+                const point x
+                (
+                    coordOf(a) + (da/(da - db))*(coordOf(b) - coordOf(a))
+                );
+
+                if (filterFootprint && !onSurface(x, surfi))
+                {
+                    offSurface = true;
+                }
+            }
+        }
 
         forAll(f, i)
         {
@@ -1810,10 +2218,13 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
              || (da < -tol_ && db > tol_)
             )
             {
-                const label x = newPoint(a, b, n, refPoint);
+                if (!offSurface)
+                {
+                    const label xi = newPoint(a, b, n, refPoint);
 
-                m.append(x);
-                p.append(x);
+                    m.append(xi);
+                    p.append(xi);
+                }
             }
         }
 
@@ -1846,7 +2257,7 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
         const bool minusDegenerate = polygonDegenerate(mCoords, tol_);
         const bool plusDegenerate = polygonDegenerate(pCoords, tol_);
 
-        if (minusDegenerate || plusDegenerate)
+        if (minusDegenerate || plusDegenerate || offSurface)
         {
             //- The split is too thin to keep as two faces, but its crossings
             //- still subdivide the unsplit face's boundary. Keep those points
@@ -1869,7 +2280,15 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                  || (da < -tol_ && db > tol_)
                 )
                 {
-                    boundary.append(newPoint(a, b, n, refPoint));
+                    const point x
+                    (
+                        coordOf(a) + (da/(da - db))*(coordOf(b) - coordOf(a))
+                    );
+
+                    if (!filterFootprint || onSurface(x, surfi))
+                    {
+                        boundary.append(newPoint(a, b, n, refPoint));
+                    }
                 }
             }
 
@@ -1926,6 +2345,9 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
     {
         //- Which cuts meet each face
         Map<DynamicList<label>> faceCuts(2*cuts.size());
+        //- Keep exact footprints for cases with a coincident interface. Without
+        //- one, support planes must subdivide their full faces for conformity.
+        const bool filterFootprint = (info_.nCoincidentFaces > 0);
 
         forAll(cuts, ci)
         {
@@ -1947,11 +2369,14 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
             //- The union of their planes, since every cell on the face has to
             //- see a face split by all of them
             DynamicList<plane> facePlanes(4);
+            DynamicList<label> faceSurfs(4);
 
             for (const label ci : iter())
             {
-                for (const plane& pln : cuts[ci].planes)
+                forAll(cuts[ci].planes, pli)
                 {
+                    const plane& pln = cuts[ci].planes[pli];
+
                     bool known = false;
 
                     forAll(facePlanes, pi)
@@ -1975,18 +2400,34 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                     if (!known)
                     {
                         facePlanes.append(pln);
+                        faceSurfs.append(cuts[ci].planeSurface[pli]);
                     }
                 }
             }
 
-            std::sort(facePlanes.begin(), facePlanes.end(), planeLess);
+            labelList order(facePlanes.size());
+            forAll(order, i)
+            {
+                order[i] = i;
+            }
+
+            std::sort
+            (
+                order.begin(),
+                order.end(),
+                [&](const label a, const label b)
+                {
+                    return planeLess(facePlanes[a], facePlanes[b]);
+                }
+            );
 
             //- Clip the face by each plane in turn
             DynamicList<face> frontier(2);
             frontier.append(fcs[facei]);
 
-            forAll(facePlanes, pi)
+            forAll(order, oi)
             {
+                const label pi = order[oi];
                 DynamicList<face> next(frontier.size() + 1);
 
                 forAll(frontier, fi)
@@ -2000,6 +2441,8 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                             frontier[fi],
                             facePlanes[pi].normal(),
                             facePlanes[pi].refPoint(),
+                            faceSurfs[pi],
+                            filterFootprint,
                             m, p
                         )
                     )
@@ -2074,6 +2517,7 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
 
                 //- The planes of every cut cell containing this edge
                 DynamicList<plane> edgePlanes(4);
+                DynamicList<label> edgeSurfs(4);
 
                 for (const label celli : mesh_.edgeCells()[edgei])
                 {
@@ -2082,8 +2526,10 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                         continue;
                     }
 
-                    for (const plane& pln : cuts[cutOf[celli]].planes)
+                    forAll(cuts[cutOf[celli]].planes, pli)
                     {
+                        const plane& pln = cuts[cutOf[celli]].planes[pli];
+
                         bool known = false;
 
                         forAll(edgePlanes, pi)
@@ -2107,6 +2553,7 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                         if (!known)
                         {
                             edgePlanes.append(pln);
+                            edgeSurfs.append(cuts[cutOf[celli]].planeSurface[pli]);
                         }
                     }
                 }
@@ -2135,6 +2582,15 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                     const scalar t = d0/(d0 - d1);
 
                     if (t <= 0 || t >= 1)
+                    {
+                        continue;
+                    }
+
+                    if
+                    (
+                        filterFootprint
+                     && !onSurface(q0 + t*d, edgeSurfs[pi])
+                    )
                     {
                         continue;
                     }
@@ -3204,7 +3660,7 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
             const label patchi = mesh_.boundaryMesh().whichPatch(facei);
 
             //- Keep whatever faceZone the face was in
-            const label zonei = mesh_.faceZones().whichZone(facei);
+            label zonei = mesh_.faceZones().whichZone(facei);
 
             bool zoneFlip = false;
 
@@ -3212,6 +3668,17 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
             {
                 const faceZone& fz = mesh_.faceZones()[zonei];
                 zoneFlip = fz.flipMap()[fz.whichFace(facei)];
+            }
+            else if (coincidentSurface_[facei] >= 0)
+            {
+                //- A face the surface lies on is the interface, and its
+                //- sub-faces are the interface too
+                const label surfi = coincidentSurface_[facei];
+                const labelList& zones = interfaceZoneOf_[surfi];
+
+                zonei =
+                    zones[zones.size() == 1 ? 0 : coincidentRegion_[facei]];
+                zoneFlip = !cellSurfaceInside_[own][surfi];
             }
 
             //- On the loop path the face's sub-faces ARE the regions the cutter
@@ -3526,6 +3993,13 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                                 continue;
                             }
 
+                            //- zoneFlip is relative to the mesh owner, but pieceA
+                            //- is the anchor's piece. When the anchor is the
+                            //- neighbour (cutA < 0) pieceA is on the far side of
+                            //- the face, so the flip must be inverted.
+                            const bool subZoneFlip =
+                                (cutA < 0 ? !zoneFlip : zoneFlip);
+
                             setFace
                             (
                                 sub,
@@ -3534,7 +4008,7 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                                 pieceB,
                                 patchi,
                                 zonei,
-                                zoneFlip,
+                                subZoneFlip,
                                 cc.celli,
                                 "loop-sub"
                             );
@@ -3817,6 +4291,7 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
     {
         label nGrownEmitted = 0;
         label nGrownInternal = 0;
+        label nGrownCoincident = 0;
 
         forAllConstIters(splitOf, iter)
         {
@@ -3861,6 +4336,18 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                 }
             }
 
+            //- A grown face the surface lies on is the interface too
+            if (zonei < 0 && coincidentSurface_[facei] >= 0)
+            {
+                const label surfi = coincidentSurface_[facei];
+                const labelList& zones = interfaceZoneOf_[surfi];
+
+                zonei =
+                    zones[zones.size() == 1 ? 0 : coincidentRegion_[facei]];
+                zoneFlip = !cellSurfaceInside_[own][surfi];
+                nGrownCoincident++;
+            }
+
             const faceSplit& split = splits[iter()];
 
             forAll(split.subFaces, sfi)
@@ -3888,7 +4375,8 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
         }
 
         Info<< "  grown faces emitted: " << nGrownEmitted
-            << " (internal " << nGrownInternal << ")" << endl;
+            << " (internal " << nGrownInternal
+            << ", coincident " << nGrownCoincident << ")" << endl;
     }
 
     //- A surface aligned with an untouched background face does not create a
@@ -3925,6 +4413,53 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                 );
             }
         }
+    }
+
+    //- A face the surface lies on, between an inside and an outside cell, is
+    //- the interface itself. Its cells are untouched, so the face is kept and
+    //- only its zone is set. A face of a cut cell is placed by that cell's
+    //- pieces and is not handled here.
+    {
+        label nZoned = 0;
+
+        for (label facei = 0; facei < mesh_.nInternalFaces(); ++facei)
+        {
+            const label surfi = coincidentSurface_[facei];
+
+            if
+            (
+                surfi < 0
+             || doneFaces.found(facei)
+             || splitOf.found(facei)
+             || emittedFaces.found(facei)
+            )
+            {
+                continue;
+            }
+
+            const label own = mesh_.faceOwner()[facei];
+            const label nei = mesh_.faceNeighbour()[facei];
+            const labelList& zones = interfaceZoneOf_[surfi];
+            const label zonei =
+                zones[zones.size() == 1 ? 0 : coincidentRegion_[facei]];
+
+            setFace
+            (
+                fcs[facei],
+                facei,
+                own,
+                nei,
+                -1,
+                zonei,
+                !cellSurfaceInside_[own][surfi],
+                own,
+                "coincident-interface"
+            );
+
+            nZoned++;
+        }
+
+        Info<< "  coincident faces zoned: " << nZoned << endl;
     }
 
 
@@ -4328,6 +4863,126 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
             << " mesh edges, " << nFacesChanged << " faces refined, "
             << nLabelsInserted << " labels inserted" << endl;
 
+        //- Insert every emitted vertex that lies strictly inside an edge of
+        //- another emitted face. The union above only covers background
+        //- edges, so a segment on a cut-plane line inside a background face
+        //- stays unsplit on one side and gives a hanging vertex on the other.
+        {
+            labelHashSet vertexSet(4*pendingFaces.size());
+
+            forAll(pendingFaces, pfi)
+            {
+                forAll(pendingFaces[pfi].polygon, i)
+                {
+                    vertexSet.insert(pendingFaces[pfi].polygon[i]);
+                }
+            }
+
+            const labelList vertices = vertexSet.toc();
+
+            auto interiorParameter =
+            [&](const label a, const label b, const label pointi, scalar& t)
+            -> bool
+            {
+                const point p0 = coordOf(a);
+                const vector d(coordOf(b) - p0);
+                const scalar d2(d & d);
+
+                if (d2 <= VSMALL)
+                {
+                    return false;
+                }
+
+                const scalar tTol = pointTol/sqrt(d2);
+                const point x = coordOf(pointi);
+                t = ((x - p0) & d)/d2;
+
+                if (t <= tTol || t >= 1 - tTol)
+                {
+                    return false;
+                }
+
+                return mag(x - (p0 + t*d)) <= pointTol;
+            };
+
+            label nFacesInserted = 0;
+            label nVerticesInserted = 0;
+
+            forAll(pendingFaces, pfi)
+            {
+                pendingFace& emission = pendingFaces[pfi];
+                DynamicList<label> grown(emission.polygon.size() + 4);
+
+                forAll(emission.polygon, i)
+                {
+                    const label a = emission.polygon[i];
+                    const label b =
+                        emission.polygon[emission.polygon.fcIndex(i)];
+                    DynamicList<Tuple2<scalar, label>> inside;
+
+                    forAll(vertices, j)
+                    {
+                        const label pointi = vertices[j];
+                        scalar t = 0;
+
+                        if
+                        (
+                            pointi == a
+                         || pointi == b
+                         || emission.polygon.found(pointi)
+                         || !interiorParameter(a, b, pointi, t)
+                        )
+                        {
+                            continue;
+                        }
+
+                        inside.append(Tuple2<scalar, label>(t, pointi));
+                    }
+
+                    std::sort
+                    (
+                        inside.begin(),
+                        inside.end(),
+                        [](const Tuple2<scalar, label>& x,
+                           const Tuple2<scalar, label>& y)
+                        {
+                            if (x.first() == y.first())
+                            {
+                                return x.second() < y.second();
+                            }
+
+                            return x.first() < y.first();
+                        }
+                    );
+
+                    grown.append(a);
+
+                    forAll(inside, k)
+                    {
+                        grown.append(inside[k].second());
+                        nVerticesInserted++;
+                    }
+                }
+
+                if (grown.size() != emission.polygon.size())
+                {
+                    face refined(grown.size());
+
+                    forAll(grown, i)
+                    {
+                        refined[i] = grown[i];
+                    }
+
+                    emission.polygon = refined;
+                    nFacesInserted++;
+                }
+            }
+
+            Info<< "  face vertex insertion: " << nFacesInserted
+                << " faces refined, " << nVerticesInserted
+                << " vertices inserted" << endl;
+        }
+
         forAll(pendingFaces, pfi)
         {
             const pendingFace& emission = pendingFaces[pfi];
@@ -4566,6 +5221,8 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::cut()
         << "  of those, face has a hole  : " << info_.nRefusedFaceWithHole << nl
         << "  of those, face orientation inconsistent: "
         << info_.nRefusedInconsistentFaces << nl
+        << "Coincident faces (interface)  : " << info_.nCoincidentFaces << nl
+        << "Cells on coincident faces only: " << info_.nCoincidentCells << nl
         << "Cells reported, left as is   : " << info_.nUnsupported << endl;
 
     forAll(info_.degenerate, i)
@@ -4580,7 +5237,7 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::cut()
             << info_.unsupportedReason[i] << endl;
     }
 
-    if (cuts.empty() && materialRegionRules_.empty())
+    if (cuts.empty() && materialRegionRules_.empty() && !info_.nCoincidentFaces)
     {
         Info<< "Nothing to cut" << endl;
         return autoPtr<mapPolyMesh>();

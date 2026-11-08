@@ -77,6 +77,9 @@ class cutCellSurface
         //- Name of the entry in the geometry dictionary
         word name_;
 
+        //- Geometry type from the dictionary
+        word type_;
+
         //- Triangulation, outward oriented
         triSurface surface_;
 
@@ -171,6 +174,12 @@ public:
         const word& name() const noexcept
         {
             return name_;
+        }
+
+        //- True when the geometry is a searchableBox
+        bool isSearchableBox() const noexcept
+        {
+            return type_ == "searchableBox";
         }
 
         //- Triangulation
