@@ -474,14 +474,14 @@ int main()
         //- must be one of the two - which is what catches the index sort
         //- permuting one list and not the other.
         List<pointField> twoTris(2);
-        twoTris[0] = pointField({P(0.5,-1,0), P(0.5,2,0), P(0.5,-1,2)});
-        twoTris[1] = pointField({P(-1,0.5,0), P(2,0.5,0), P(-1,0.5,2)});
+        twoTris[0] = pointField({P(0.5,-1,-1), P(0.5,3,-1), P(0.5,-1,3)});
+        twoTris[1] = pointField({P(-1,0.5,-1), P(3,0.5,-1), P(-1,0.5,3)});
 
         const labelList patchOf({5, 7});
 
         cutCellResult res;
 
-        const cutState st = cutCellByTriangles(hex, twoTris, patchOf, 1e-9, res);
+        const cutState st = cutCellByLoop(hex, twoTris, patchOf, 1e-9, res);
 
         checkTrue(st == cutState::cut, "two planes with regions cut the cell");
 
@@ -508,13 +508,13 @@ int main()
         //- One plane, one region: every face carries it. This is the case the
         //- existing single-patch surfaces take, so it must be unambiguous.
         List<pointField> oneTri(1);
-        oneTri[0] = pointField({P(0.5,-1,0), P(0.5,2,0), P(0.5,-1,2)});
+        oneTri[0] = pointField({P(0.5,-1,-1), P(0.5,3,-1), P(0.5,-1,3)});
 
         const labelList onePatch({3});
 
         cutCellResult oneRes;
 
-        const cutState oneSt = cutCellByTriangles(hex, oneTri, onePatch, 1e-9, oneRes);
+        const cutState oneSt = cutCellByLoop(hex, oneTri, onePatch, 1e-9, oneRes);
 
         checkTrue(oneSt == cutState::cut, "one plane with a region cuts the cell");
 
@@ -523,11 +523,11 @@ int main()
             checkLabel(oneRes.sharedFaces[i].patch, 3, "one region on every face");
         }
 
-        //- No regions supplied: the four-argument form leaves -1, so a caller
-        //- that has no surface cannot be given a misleading region.
+        //- A region of -1 is no claim, so a caller that has no surface
+        //- cannot be given a misleading region.
         cutCellResult noneRes;
 
-        cutCellByTriangles(hex, oneTri, 1e-9, noneRes);
+        cutCellByLoop(hex, oneTri, labelList(1, -1), 1e-9, noneRes);
 
         forAll(noneRes.sharedFaces, i)
         {
@@ -574,10 +574,11 @@ int main()
 
     cutCellResult result;
 
-    cutState state = cutCellByTriangles
+    cutState state = cutCellByLoop
     (
         hex,
         List<pointField>(1, spanTri),
+        labelList(1, 0),
         1e-9,
         result
     );
@@ -592,24 +593,25 @@ int main()
     checkClose(sharedArea(result), 1.0, "interface area");
     checkClose(mag(result.planes[0].normal()), 1.0, "plane normal is a unit vector");
 
-    //- A triangle in the same plane covering only part of the cross-section. The
-    //- cut is the same, because the plane is the same: cutting is the arrangement
-    //- of the planes, and a piece is not a region, so what the interface is, is
-    //- decided by classifying the pieces, not here. A partial facet is no longer
-    //- refused, which is what lets a surface edge cross a cell.
+    //- A triangle covering only part of the cross-section. Its edges lie inside
+    //- the cell, so it does not separate it: there is no closed curve where it
+    //- meets the boundary, and the loop does not cut. The arrangement cut the
+    //- whole plane here, which is wrong for an open sheet.
     const pointField partTri({P(0.5,0,0), P(0.5,0.5,0), P(0.5,0,0.5)});
 
-    state = cutCellByTriangles
+    cutCellResult partRes;
+
+    state = cutCellByLoop
     (
         hex,
         List<pointField>(1, partTri),
+        labelList(1, 0),
         1e-9,
-        result
+        partRes
     );
 
-    checkTrue(state == cutState::cut, "partial triangle cuts the plane it lies on");
-    checkLabel(result.pieces.size(), 2, "two pieces, whatever the triangle covers");
-    checkClose(sharedArea(result), 1.0, "the shared face is the whole cross-section");
+    checkTrue(state != cutState::cut, "an open partial sheet does not cut the cell");
+    checkLabel(partRes.pieces.size(), 0, "and it gives no pieces");
 
     //- Two triangles in perpendicular planes, as where a surface edge crosses a
     //- cell. Their arrangement inside the cell is four pieces.
@@ -617,7 +619,7 @@ int main()
     twoPlanes[0] = spanTri;
     twoPlanes[1] = pointField({P(-1,0.5,-1), P(3,0.5,-1), P(-1,0.5,3)});
 
-    state = cutCellByTriangles(hex, twoPlanes, 1e-9, result);
+    state = cutCellByLoop(hex, twoPlanes, labelList(2, 0), 1e-9, result);
 
     checkTrue(state == cutState::cut, "two planes cut the hex");
     checkLabel(result.planes.size(), 2, "two planes");
@@ -748,10 +750,11 @@ int main()
     //- A triangle that misses the cell
     const pointField farTri({P(5,0,0), P(5,1,0), P(5,0,1)});
 
-    state = cutCellByTriangles
+    state = cutCellByLoop
     (
         hex,
         List<pointField>(1, farTri),
+        labelList(1, 0),
         1e-9,
         result
     );
@@ -763,21 +766,28 @@ int main()
     //- triangle has to reach y + z = 4 to cover it
     const pointField transTri({P(1,-1,-1), P(1,5,-1), P(1,-1,5)});
 
-    state = cutCellByTriangles
+    state = cutCellByLoop
     (
         trans,
         List<pointField>(1, transTri),
+        labelList(1, 0),
         1e-9,
         result
     );
 
     checkTrue(state == cutState::cut, "spanning triangle cuts the transition cell");
     checkLabel(result.pieces.size(), 2, "two pieces");
-    checkClose(result.pieces[0].poly.volume(), 4.0, "minus volume");
-    checkClose(result.pieces[1].poly.volume(), 4.0, "plus volume");
-    checkTrue(result.pieces[0].poly.closed(), "minus closed");
-    checkTrue(result.pieces[1].poly.closed(), "plus closed");
-    checkClose(sharedArea(result), 4.0, "interface area");
+
+    //- Only inspect the pieces when there are two. Otherwise the checks above
+    //- already report the failure and the indexing would be out of range.
+    if (result.pieces.size() == 2)
+    {
+        checkClose(result.pieces[0].poly.volume(), 4.0, "minus volume");
+        checkClose(result.pieces[1].poly.volume(), 4.0, "plus volume");
+        checkTrue(result.pieces[0].poly.closed(), "minus closed");
+        checkTrue(result.pieces[1].poly.closed(), "plus closed");
+        checkClose(sharedArea(result), 4.0, "interface area");
+    }
 
 
     //  Thin cells, and cells far from the origin
@@ -839,26 +849,30 @@ int main()
 
     checkClose(small.volume(), 1e-9, "small cell volume");
 
-    //- A triangle in the mid plane covering a quarter of the cross-section
+    //- A triangle in the mid plane covering a quarter of the cross-section. It
+    //- does not separate the cell, so the loop refuses it at this scale too
     const pointField smallPart
     ({
         P(5e-4, 0, 0), P(5e-4, 5e-4, 0), P(5e-4, 0, 5e-4)
     });
 
-    cutState smallState = cutCellByTriangles
+    cutCellResult smallPartRes;
+
+    cutState smallState = cutCellByLoop
     (
         small,
         List<pointField>(1, smallPart),
+        labelList(1, 0),
         1e-9,
-        result
+        smallPartRes
     );
 
     checkTrue
     (
-        smallState == cutState::cut,
-        "a partial triangle on a small cell still cuts the plane"
+        smallState != cutState::cut,
+        "a partial triangle on a small cell does not cut it"
     );
-    checkLabel(result.pieces.size(), 2, "two pieces on a small cell");
+    checkLabel(smallPartRes.pieces.size(), 0, "and it gives no pieces");
 
     //- The same cell cut properly, as a positive control
     const pointField smallSpan
@@ -866,10 +880,11 @@ int main()
         P(5e-4, -1, -1), P(5e-4, 3, -1), P(5e-4, -1, 3)
     });
 
-    smallState = cutCellByTriangles
+    smallState = cutCellByLoop
     (
         small,
         List<pointField>(1, smallSpan),
+        labelList(1, 0),
         1e-9,
         result
     );
@@ -995,9 +1010,9 @@ int main()
 
         cutCellResult result;
 
-        const cutState state = cutCellByTriangles
+        const cutState state = cutCellByLoop
         (
-            hex, List<pointField>(1, spanning), 1e-9, result
+            hex, List<pointField>(1, spanning), labelList(1, 0), 1e-9, result
         );
 
         checkTrue(state == cutState::cut, "the result reports a cut");
@@ -1017,9 +1032,9 @@ int main()
             P(2, 0, 0), P(3, 0, 0), P(3, 1, 0)
         });
 
-        const cutState missState = cutCellByTriangles
+        const cutState missState = cutCellByLoop
         (
-            hex, List<pointField>(1, missing), 1e-9, result
+            hex, List<pointField>(1, missing), labelList(1, 0), 1e-9, result
         );
 
         checkTrue(missState == cutState::untouched, "missing triangle is untouched");
@@ -1043,9 +1058,9 @@ int main()
 
         cutCellResult result;
 
-        const cutState state = cutCellByTriangles
+        const cutState state = cutCellByLoop
         (
-            hex, threePlanes, 1e-9, result
+            hex, threePlanes, labelList(3, 0), 1e-9, result
         );
 
         checkTrue(state == cutState::cut, "three planes cut the hex");
@@ -1061,13 +1076,30 @@ int main()
 
         checkClose(total, 1.0, "the eight pieces sum to the cell volume");
 
-        //- Ordered negative first against the planes, so the first piece is the
-        //- one on the negative side of every plane and the last on the positive
-        //- side of every one
-        checkLabel(result.pieces.first().side[0], -1, "first piece sides negative");
-        checkLabel(result.pieces.last().side[0], 1, "last piece sides positive");
-        checkLabel(result.pieces.first().side[2], -1, "first piece sides negative in z");
-        checkLabel(result.pieces.last().side[2], 1, "last piece sides positive in z");
+        //- Each piece lies wholly on one side of every plane, and the eight
+        //- pieces take eight different sign patterns, so none is repeated
+        labelHashSet patterns;
+
+        forAll(result.pieces, pi)
+        {
+            label code = 0;
+
+            forAll(result.planes, k)
+            {
+                const scalar d = result.planes[k].signedDistance
+                (
+                    result.pieces[pi].poly.centre()
+                );
+
+                checkTrue(mag(d) > 1e-9, "a piece does not straddle a plane");
+
+                code = 2*code + (d > 0 ? 1 : 0);
+            }
+
+            patterns.insert(code);
+        }
+
+        checkLabel(patterns.size(), 8, "each piece has its own side of the three planes");
 
         //- Every internal face is between two pieces, and the three plane
         //- cross-sections add up to three unit squares
@@ -1081,9 +1113,9 @@ int main()
 
         cutCellResult result;
 
-        const cutState state = cutCellByTriangles
+        const cutState state = cutCellByLoop
         (
-            hex, List<pointField>(1, onFace), 1e-9, result
+            hex, List<pointField>(1, onFace), labelList(1, 0), 1e-9, result
         );
 
         checkTrue
@@ -1099,16 +1131,18 @@ int main()
     //- It is a sliver, which is S3's business, not a degeneracy, so the
     //- threshold must not catch it.
     {
+        //- The plane x + z = 1 + 1e-6 runs just off the diagonal edges of the
+        //- cell, and the triangle covers its whole section
         const pointField thinCut
         ({
-            P(1.5,-1,-0.499999), P(1.5,3,-0.499999), P(0.5,-1,0.500001)
+            P(-1,-1,2 + 1e-6), P(3,-1,-2 + 1e-6), P(-1,3,2 + 1e-6)
         });
 
         cutCellResult result;
 
-        const cutState state = cutCellByTriangles
+        const cutState state = cutCellByLoop
         (
-            hex, List<pointField>(1, thinCut), 1e-9, result
+            hex, List<pointField>(1, thinCut), labelList(1, 0), 1e-9, result
         );
 
         checkTrue
@@ -1248,7 +1282,7 @@ int main()
 
         cutCellResult result;
 
-        cutCellByTriangles(hex, threePlanes, 1e-9, result);
+        cutCellByLoop(hex, threePlanes, labelList(3, 0), 1e-9, result);
 
         labelList zone(result.pieces.size());
 

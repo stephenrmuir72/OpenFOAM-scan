@@ -87,11 +87,6 @@ struct cutCellPiece
 {
     //- Geometry, in the coordinates of the cell that was cut
     cutCellPolyhedron poly;
-
-    //- Side of each of the cell's planes, +1 or -1. The pieces are ordered by
-    //- this vector, negative first, so a cell always cuts the same way and the
-    //- first piece is the one inside a single plane.
-    labelList side;
 };
 
 
@@ -246,38 +241,6 @@ labelList groupPieces
     const label nPieces,
     const List<cutCellPieceFace>& sharedFaces,
     const labelList& pieceZone
-);
-
-
-//- Cut a cell by the surface triangles that cross it, into the arrangement of
-//  their distinct planes inside the cell.
-//
-//  The plane normals are those of the surface polygons, so for an outward
-//  oriented surface the positive side of a plane is the outside of the
-//  surface. The pieces come out ordered by their side against the planes,
-//  negative first, so the first piece of a cell cut by one plane is the piece
-//  inside the surface.
-//
-//  'result' is left empty unless the state is cut.
-cutState cutCellByTriangles
-(
-    const cutCellPolyhedron& cell,
-    const List<pointField>& tris,
-    const scalar tol,
-    cutCellResult& result
-);
-
-
-//- As above, with the surface region of each triangle, so a face a facet
-//- produces inherits the region of the triangle it came from. Boundary
-//- association by inheritance: the caller resolves the triangle label.
-cutState cutCellByTriangles
-(
-    const cutCellPolyhedron& cell,
-    const List<pointField>& tris,
-    const labelList& patchOf,
-    const scalar tol,
-    cutCellResult& result
 );
 
 

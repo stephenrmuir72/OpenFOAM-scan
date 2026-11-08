@@ -1151,9 +1151,7 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
 
         const cutState state
         (
-            cutMethod_ == "loop"
-          ? cutCellByLoop(cell, tris, patchOf, tol_, result, celli == dumpCell_)
-          : cutCellByTriangles(cell, tris, patchOf, tol_, result)
+            cutCellByLoop(cell, tris, patchOf, tol_, result, celli == dumpCell_)
         );
 
         forAll(result.sharedFaces, si)
@@ -1168,19 +1166,6 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
 
         if (state == cutState::untouched)
         {
-            if (loopCut_)
-            {
-                static label nUntouched = 0;
-
-                if (nUntouched < 6)
-                {
-                    nUntouched++;
-
-                    Info<< "LOOPCELL " << celli << " untouched, polygons "
-                        << result.nPolygons << endl;
-                }
-            }
-
             if (result.nPolygons > 0)
             {
                 //- Triangles cross the cell, but no plane of theirs divides it.
@@ -1284,19 +1269,6 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
 
         if (result.pieces.size() < 2)
         {
-            if (loopCut_)
-            {
-                static label nLoopWhole = 0;
-
-                if (nLoopWhole < 6)
-                {
-                    nLoopWhole++;
-
-                    Info<< "LOOPCELL " << celli << " left whole ("
-                        << result.pieces.size() << " pieces)" << endl;
-                }
-            }
-
             info_.nUnsupported++;
             info_.unsupported.append(celli);
             info_.unsupportedReason.append
@@ -1592,19 +1564,6 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
         info_.nCut++;
 
         info_.maxPieces = max(info_.maxPieces, result.pieces.size());
-
-        if (loopCut_)
-        {
-            static label nLoopReported = 0;
-
-            if (nLoopReported < 6)
-            {
-                nLoopReported++;
-
-                Info<< "LOOPCELL " << celli << " pieces "
-                    << result.pieces.size() << endl;
-            }
-        }
 
         if (result.pieces.size() > 2)
         {
@@ -3214,7 +3173,6 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
         //- combinations of half-spaces, so a sign against each plane does not
         //- identify one: a piece can straddle a plane. Containment does, and
         //- needs no convexity of the piece to be asked.
-        if (loopCut_)
         {
             //- What the lookup saw, to be printed if it finds nothing
             scalar bestPlane = GREAT;
@@ -3303,40 +3261,6 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                     << " nearest face " << bestFace << " region " << bestRegion
                     << " plane distance " << bestPlane
                     << " area " << bestArea << endl;
-            }
-        }
-
-        forAll(c.pieces, pi)
-        {
-            bool match = true;
-
-            forAll(c.planes, k)
-            {
-                const scalar d = planeDist
-                (
-                    c.planes[k].normal(), c.planes[k].refPoint(), x
-                );
-
-                //- A query within tolerance of a plane lies on it, so it does
-                //- not decide which piece it belongs to. A collapsed cut passes
-                //- through a mesh point, and a query at that point has to match
-                //- the piece on either side rather than a side chosen by the
-                //- sign of a distance that is zero.
-                if (mag(d) <= tol_)
-                {
-                    continue;
-                }
-
-                if ((d > 0 ? 1 : -1) != c.pieces[pi].side[k])
-                {
-                    match = false;
-                    break;
-                }
-            }
-
-            if (match)
-            {
-                return c.pieceCell[pi];
             }
         }
 
@@ -3506,7 +3430,7 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
         emittedFaces.insert(targetFace);
 
         //- Probe: for one cell, name every new face and the path that made it.
-        if (loopCut_ && targetFace < 0 && dumpCell_ >= 0
+        if (targetFace < 0 && dumpCell_ >= 0
             && (own == dumpCell_ || nei == dumpCell_))
         {
             Info<< "PROBEFACE " << tag << " own " << own << " nei " << nei
@@ -3518,10 +3442,8 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
             Info<< endl;
         }
 
-        if (loopCut_)
-        {
-            pendingFaces.append
-            (
+        pendingFaces.append
+        (
             pendingFace
             (
                 f,
@@ -3534,12 +3456,7 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
                 sourceCell,
                 tag
             )
-            );
-        }
-        else
-        {
-            emitFace(f, targetFace, own, nei, patchi, zonei, zoneFlip);
-        }
+        );
     };
 
 
@@ -3689,7 +3606,6 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
             //- region boundary and its centre lands outside every region - "no
             //- region: plane distance 0", which is a point in the plane and
             //- outside the polygon.
-            if (loopCut_)
             {
                 const label cutA = (cutOf.found(own) ? own : -1);
                 const label cutB = ((nei >= 0 && cutOf.found(nei)) ? nei : -1);
@@ -4163,7 +4079,7 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
 
         //- Probe: how many times does section 4 reach the cell, and with how
         //- many shared faces each time?
-        if (loopCut_ && dumpCell_ >= 0 && c.celli == dumpCell_)
+        if (dumpCell_ >= 0 && c.celli == dumpCell_)
         {
             Info<< "PROBECUT ci " << ci << " cell " << c.celli
                 << " sharedFaces " << c.sharedFaces.size()
@@ -4176,7 +4092,7 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
         {
             const cutCellPieceFace& shared = c.sharedFaces[si];
 
-            if (loopCut_ && dumpCell_ >= 0 && c.celli == dumpCell_)
+            if (dumpCell_ >= 0 && c.celli == dumpCell_)
             {
                 const face& pf = c.pieces[shared.pieceA].poly.faces()
                     [shared.faceInA];
@@ -4498,7 +4414,6 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
             << ", cut-cell faces with no regions " << nNoRegions << endl;
     }
 
-    if (loopCut_)
     {
         Map<DynamicList<Tuple2<scalar, label>>> edgePoints;
         Map<DynamicList<label>> sourceEdgeCache;
