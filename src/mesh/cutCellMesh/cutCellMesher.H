@@ -133,6 +133,14 @@ public:
         //- Why each of them was refused
         wordList degenerateReason;
 
+        //- Cells the surface touches only along faces it coincides with. Those
+        //- faces are the interface, so the cells are neither cut nor reported
+        label nCoincidentCells = 0;
+
+        //- Internal faces that lie on a surface, with the cells on their two
+        //- sides on opposite sides of it
+        label nCoincidentFaces = 0;
+
         //- Cells reported and left untouched
         label nUnsupported = 0;
 
@@ -298,6 +306,11 @@ private:
         //- Inside/outside state of every background cell, by surface
         List<boolList> cellSurfaceInside_;
 
+        //- Surface index and region of every internal face that lies on a
+        //- surface, or -1 for a face that does not
+        labelList coincidentSurface_;
+        labelList coincidentRegion_;
+
 
     // Private Data Types
 
@@ -313,6 +326,9 @@ private:
 
             //- Distinct planes of all surfaces inside it, in cutter order
             List<plane> planes;
+
+            //- Surface each plane came from, parallel to planes
+            labelList planeSurface;
 
             //- The pieces, ordered negative first against those planes
             List<cutCellPiece> pieces;
@@ -359,6 +375,20 @@ private:
         //- Find the cells the surface crosses, cut them into pieces by the
         //- planes of every facet that crosses them, and classify each piece
         void findCutCells(List<cellCut>& cuts);
+
+        //- Find the internal faces that lie on a surface, with inside and
+        //- outside on either side of it
+        void findCoincidentFaces();
+
+        //- True when every triangle in tris lies in the plane of a face of
+        //- celli that is either on a surface or has both cells on the same side
+        //- of every surface. Such a triangle touches the cell only at its
+        //- boundary, so the cell is not divided by it.
+        bool coincidentOnly
+        (
+            const label celli,
+            const List<pointField>& tris
+        ) const;
 
         //- Polyhedron of one mesh cell, faces outward oriented
         static cutCellPolyhedron cellPolyhedron

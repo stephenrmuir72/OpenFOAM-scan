@@ -1,0 +1,16 @@
+#!/bin/sh
+cd "${0%/*}" || exit
+. ${WM_PROJECT_DIR:?}/bin/tools/RunFunctions
+
+runApplication blockMesh
+runApplication cutMeshWithSurface
+
+for region in xMin xMax yMin yMax zMin zMax
+do
+    if ! grep -A4 -x -F "$region" 0/polyMesh/faceZones \
+        | grep -Eq 'faceLabels[[:space:]]+List<label>[[:space:]]+[1-9]'
+    then
+        echo "Missing or empty coincident interface faceZone: $region" >&2
+        exit 1
+    fi
+done

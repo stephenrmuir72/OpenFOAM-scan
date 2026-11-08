@@ -423,6 +423,7 @@ Foam::cutCellSurface::cutCellSurface
 )
 :
     name_(name),
+    type_(dict.lookup("type")),
     surface_(makeSurface(name, dict, runTime)),
     search_(surface_)
 {
