@@ -122,8 +122,6 @@ public:
         label nDegenerate = 0;
 
         //- Of those refusals, how many were each site. See cutRefusal.
-        label nRefusedMalformed = 0;
-        label nRefusedDegenerateFace = 0;
         label nRefusedFaceWithHole = 0;
         label nRefusedInconsistentFaces = 0;
 

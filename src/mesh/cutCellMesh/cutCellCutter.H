@@ -63,17 +63,14 @@ enum class cutState
 };
 
 
-//- Why a cut was refused. The sites are different defects: one is the
-//- arrangement's own split producing a malformed piece, another is two pieces
-//- meeting over a face of no area, and the third is a face the surface crosses
-//- in a closed loop, whose far side cannot be a polyMesh face. They are counted
-//- apart because a fix for one is not a fix for another, and which one
-//- dominates decides what to build.
+//- Why a cut was refused. The sites are different defects: one is a face the
+//- surface crosses in a closed loop, whose far side cannot be a polyMesh face,
+//- and the other is a piece whose faces cannot be oriented consistently. They
+//- are counted apart because a fix for one is not a fix for another, and which
+//- one dominates decides what to build.
 enum class cutRefusal
 {
     none,                  //- not refused
-    malformedPiece,        //- a piece has a face with two coincident vertices
-    degenerateSharedFace,  //- two pieces would share a face of no area
     faceWithHole,          //- a face is crossed by a closed loop, so the far
                            //- side of that face would be an annulus, which a
                            //- polyMesh face cannot be
@@ -157,6 +154,17 @@ pointField clipPolygon
     const pointField& poly,
     const plane& pln,
     const scalar tol
+);
+
+
+//- The parts of the convex polygons qs that lie outside the convex polygon r,
+//  as disjoint convex polygons whose union is that outside part. All polygons
+//  are in the plane of normal n, with their vertices in order about n.
+List<pointField> outsideConvex
+(
+    const List<pointField>& qs,
+    const pointField& r,
+    const vector& n
 );
 
 

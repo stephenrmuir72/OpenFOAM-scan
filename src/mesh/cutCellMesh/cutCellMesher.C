@@ -417,6 +417,10 @@ void Foam::cutCellMesher::deduplicateMatingFacets()
             label bestSurf = -1;
             label bestTri = -1;
 
+            //- Disjoint pieces of the triangle already covered by a master, so
+            //- that two masters over the same part do not count it twice
+            List<pointField> covering;
+
             //- Only earlier surfaces are masters, and only triangles that are
             //- not duplicates themselves, so the chain ends on a live triangle
             for (label surfr = 0; surfr < surfi; ++surfr)
@@ -491,7 +495,18 @@ void Foam::cutCellMesher::deduplicateMatingFacets()
 
                     if (overArea > 0)
                     {
-                        covered += overArea;
+                        List<pointField> fresh(1, over);
+
+                        forAll(covering, ri)
+                        {
+                            fresh = outsideConvex(fresh, covering[ri], n);
+                        }
+
+                        forAll(fresh, fi)
+                        {
+                            covered += polygonArea(fresh[fi]);
+                            covering.append(fresh[fi]);
+                        }
 
                         if (overArea > bestArea)
                         {
@@ -971,6 +986,10 @@ void Foam::cutCellMesher::findCoincidentFaces()
             coincidentRegion_[facei] =
                 (surf.regionOf().empty() ? 0 : surf.regionOf()[tri]);
             info_.nCoincidentFaces++;
+
+            //- A coincident face is an interface face in the assembled mesh
+            //- (see the faceZone assignment), so its whole area is contact
+            info_.interfaceArea += f.mag(pts);
 
             break;
         }
@@ -1466,24 +1485,7 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
             info_.nDegenerate++;
             info_.degenerate.append(celli);
 
-            if (result.refusal == cutRefusal::malformedPiece)
-            {
-                info_.nRefusedMalformed++;
-                info_.degenerateReason.append
-                (
-                    "its pieces are malformed, so no face of one is a face of"
-                    " the other"
-                );
-            }
-            else if (result.refusal == cutRefusal::degenerateSharedFace)
-            {
-                info_.nRefusedDegenerateFace++;
-                info_.degenerateReason.append
-                (
-                    "the face between its pieces has no area"
-                );
-            }
-            else if (result.refusal == cutRefusal::faceWithHole)
+            if (result.refusal == cutRefusal::faceWithHole)
             {
                 info_.nRefusedFaceWithHole++;
                 info_.degenerateReason.append
@@ -5392,15 +5394,13 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::cut()
     Info<< "Cells crossed by the surface : " << info_.nCandidate << nl
         << "Cells cut                    : " << info_.nCut << nl
         << "Cells refused as degenerate  : " << info_.nDegenerate << nl
-        << "  of those, piece malformed   : " << info_.nRefusedMalformed << nl
-        << "  of those, face has no area  : " << info_.nRefusedDegenerateFace << nl
         << "  of those, face has a hole  : " << info_.nRefusedFaceWithHole << nl
         << "  of those, face orientation inconsistent: "
         << info_.nRefusedInconsistentFaces << nl
         << "Coincident faces (interface)  : " << info_.nCoincidentFaces << nl
         << "Mating duplicate facets       : " << info_.nMatingFacets << nl
         << "Cells on coincident faces only: " << info_.nCoincidentCells << nl
-        << "Cells reported, left as is   : " << info_.nUnsupported << endl;
+        << "Open sheets, crossed not cut : " << info_.nUnsupported << endl;
 
     forAll(info_.degenerate, i)
     {
@@ -5797,6 +5797,49 @@ void Foam::cutCellMesher::mergeSlivers()
         return true;
     };
 
+    //- The merged cell's centre moves, so a face between it and a neighbour can
+    //- turn misoriented or more than 70 degrees non-orthogonal. True if the
+    //- merge of celli and nb (across facei) would leave such a face.
+    const scalar cosMaxNonOrtho =
+        Foam::cos(70.0*constant::mathematical::pi/180.0);
+
+    auto mergeBreaksFace = [&](const label celli, const label nb,
+                               const label facei, const point& ref) -> bool
+    {
+        for (label side = 0; side < 2; ++side)
+        {
+            const label cell = (side == 0 ? celli : nb);
+
+            forAll(mesh_.cells()[cell], k)
+            {
+                const label fi = mesh_.cells()[cell][k];
+
+                if (fi == facei || !mesh_.isInternalFace(fi))
+                {
+                    continue;
+                }
+
+                const label other = (own[fi] == cell ? nei[fi] : own[fi]);
+
+                if (other == celli || other == nb)
+                {
+                    continue;
+                }
+
+                const vector nOut =
+                    (own[fi] == cell ? 1 : -1)*mesh_.faceAreas()[fi];
+                const vector d = C[other] - ref;
+
+                if ((nOut & d) < cosMaxNonOrtho*mag(nOut)*mag(d))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    };
+
     //- Parents' volume of each cell, so eligibility means the same thing for a
     //- cell that has already been merged
     scalarField parentVolume(V.size(), 0);
@@ -5821,6 +5864,7 @@ void Foam::cutCellMesher::mergeSlivers()
     label cntMultiShared = 0;
     label cntEdgeRefused = 0;
     label cntInvalid = 0;
+    label cntBreaksFace = 0;
     label cntNoCandidate = 0;
     label cntRankingDiffers = 0;
     label cntOnlyRef2 = 0;
@@ -5922,6 +5966,12 @@ void Foam::cutCellMesher::mergeSlivers()
                 continue;
             }
 
+            if (mergeBreaksFace(celli, nb, facei, ref))
+            {
+                ++cntBreaksFace;
+                continue;
+            }
+
             const scalar area = mag(mesh_.faceAreas()[facei]);
 
             //- REF-2 ranks by the largest shared face area with a healthy
@@ -5994,6 +6044,8 @@ void Foam::cutCellMesher::mergeSlivers()
         << "    rejected, edge has under three faces: " << cntEdgeRefused
         << "   <- a removeFaces requirement" << nl
         << "    rejected, merged cell invalid      : " << cntInvalid << nl
+        << "    rejected, leaves a misoriented or non-orthogonal face: "
+        << cntBreaksFace << nl
         << "    (the last two reasons disappear with polyTopoChange)" << endl;
 
     if (pierced.empty())
@@ -6204,6 +6256,121 @@ void Foam::cutCellMesher::mergeSlivers()
 
     Info<< "Sliver merge growth          : " << nGrown << " cell(s) absorbed"
         << ", " << nShort << " group(s) still short of the target" << endl;
+
+    //- The final cells are the groups, and a group's centre moves as it grows,
+    //- so a face between two final cells can turn misoriented or more than 70
+    //- degrees non-orthogonal even when each candidate looked fine. Cut cells
+    //- alone have no such face, so a group with one goes back to its cut cells.
+    //- Repeat, since returning a group moves the centres of its neighbours.
+    label nReverted = 0;
+
+    {
+        const scalar cosMaxNonOrtho =
+            Foam::cos(70.0*constant::mathematical::pi/180.0);
+
+        bool changed = true;
+
+        while (changed)
+        {
+            changed = false;
+
+            labelList rootOf(mesh_.nCells());
+            labelList rootSize(mesh_.nCells(), 0);
+            vectorField rootMoment(mesh_.nCells(), Zero);
+            scalarField rootVolume(mesh_.nCells(), 0);
+
+            forAll(rootOf, c)
+            {
+                rootOf[c] = groupRoot(c);
+                ++rootSize[rootOf[c]];
+                rootMoment[rootOf[c]] += C[c]*V[c];
+                rootVolume[rootOf[c]] += V[c];
+            }
+
+            vectorField centre(mesh_.nCells());
+
+            forAll(centre, c)
+            {
+                const label r = rootOf[c];
+
+                centre[c] =
+                (
+                    rootSize[r] > 1 ? rootMoment[r]/rootVolume[r] : C[c]
+                );
+            }
+
+            boolList revertRoot(mesh_.nCells(), false);
+
+            forAll(nei, f)
+            {
+                const label ro = rootOf[own[f]];
+                const label rn = rootOf[nei[f]];
+
+                if (ro == rn || (rootSize[ro] < 2 && rootSize[rn] < 2))
+                {
+                    continue;
+                }
+
+                const vector Sf = mesh_.faceAreas()[f];
+                const vector d = centre[nei[f]] - centre[own[f]];
+
+                if ((Sf & d) < cosMaxNonOrtho*mag(Sf)*mag(d))
+                {
+                    if (rootSize[ro] > 1 && rootSize[rn] > 1)
+                    {
+                        revertRoot[rootSize[ro] <= rootSize[rn] ? ro : rn] = true;
+                    }
+                    else if (rootSize[ro] > 1)
+                    {
+                        revertRoot[ro] = true;
+                    }
+                    else if (rootSize[rn] > 1)
+                    {
+                        revertRoot[rn] = true;
+                    }
+                }
+            }
+
+            forAll(rootOf, c)
+            {
+                if (revertRoot[rootOf[c]])
+                {
+                    group[c] = c;
+                    changed = true;
+                }
+            }
+
+            forAll(revertRoot, r)
+            {
+                if (revertRoot[r])
+                {
+                    ++nReverted;
+                }
+            }
+        }
+    }
+
+    if (nReverted)
+    {
+        labelList finalSize(mesh_.nCells(), 0);
+
+        forAll(group, c)
+        {
+            ++finalSize[groupRoot(c)];
+        }
+
+        forAll(group, c)
+        {
+            cellRegion[c] =
+            (
+                finalSize[groupRoot(c)] > 1 ? groupRoot(c) : -1
+            );
+        }
+    }
+
+    Info<< "Sliver merge geometry check  : " << nReverted
+        << " group(s) returned to cut cells (misoriented or non-orthogonal"
+        << " face between final cells)" << endl;
 
     //- Parents of every region, its master's first so that entry zero stays
     //- the primary parent
