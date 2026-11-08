@@ -190,6 +190,19 @@ cutState cutCellByLoop
 );
 
 
+//- The part of a triangle inside a cell, empty if there is none. The triangle
+//  is clipped against the half-space of each cell face, so the polygon follows
+//  the actual faces of the cell rather than its bounding box. The cell must be
+//  convex for this to be exact; for a mildly non-convex snapped cell it is a
+//  conservative superset.
+pointField triangleCellPolygon
+(
+    const pointField& tri,
+    const cutCellPolyhedron& cell,
+    const scalar tol
+);
+
+
 //- The part of a triangle inside an axis-aligned box, empty if there is none.
 //  This is REF-1 section 2.2 A: the triangle is clipped against the six planes
 //  of the cell box, which both tests the intersection and yields the per-cell

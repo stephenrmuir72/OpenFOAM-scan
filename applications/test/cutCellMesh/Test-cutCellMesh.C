@@ -322,6 +322,61 @@ int main()
     checkClose(hex.centre().x(), 0.5, "hex centroid x");
 
 
+    //  Clipping a triangle against the actual faces of a cell
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    Info<< nl << "triangle clipped to a cell" << endl;
+
+    //  The unit hexahedron at z = 0.5 gives the unit square, so a triangle
+    //  covering it clips to area 1
+    const pointField bigTri
+    ({
+        P(-1, -1, 0.5), P(5, -1, 0.5), P(-1, 5, 0.5)
+    });
+
+    checkClose
+    (
+        polygonArea(triangleCellPolygon(bigTri, hex, 1e-9)), 1.0,
+        "triangle over a unit hex clips to the unit square"
+    );
+
+    //  A cell whose sides lean: the cross-section at z = 0.5 is the
+    //  parallelogram x in [0.25, 1.25], y in [0, 1], area 1. Its bounding box
+    //  would give 1.5, so this checks the clip follows the faces, not the box
+    const cutCellPolyhedron leaning
+    (
+        makePolyhedron
+        (
+            {
+                {P(0,0,0), P(1,0,0), P(1,1,0), P(0,1,0)},
+                {P(0.5,0,1), P(1.5,0,1), P(1.5,1,1), P(0.5,1,1)},
+                {P(0,0,0), P(1,0,0), P(1.5,0,1), P(0.5,0,1)},
+                {P(0,1,0), P(1,1,0), P(1.5,1,1), P(0.5,1,1)},
+                {P(0,0,0), P(0,1,0), P(0.5,1,1), P(0.5,0,1)},
+                {P(1,0,0), P(1,1,0), P(1.5,1,1), P(1.5,0,1)}
+            },
+            P(0.75, 0.5, 0.5)
+        )
+    );
+
+    checkClose
+    (
+        polygonArea(triangleCellPolygon(bigTri, leaning, 1e-9)), 1.0,
+        "leaning cell clips to its own cross-section, not the box"
+    );
+
+    const pointField outsideTri
+    ({
+        P(3, 0, 0.5), P(4, 0, 0.5), P(3, 1, 0.5)
+    });
+
+    checkTrue
+    (
+        triangleCellPolygon(outsideTri, hex, 1e-9).empty(),
+        "triangle outside the cell gives an empty polygon"
+    );
+
+
     //  Axis-aligned split at the centre
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

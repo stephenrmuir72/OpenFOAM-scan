@@ -141,6 +141,10 @@ public:
         //- sides on opposite sides of it
         label nCoincidentFaces = 0;
 
+        //- Triangles of a later surface that duplicate an earlier surface's
+        //- contact face, and so are left out of the cut and the snapping
+        label nMatingFacets = 0;
+
         //- Cells reported and left untouched
         label nUnsupported = 0;
 
@@ -290,6 +294,16 @@ private:
         labelList coincidentSurface_;
         labelList coincidentRegion_;
 
+        //- Per surface and triangle, the surface holding the master triangle
+        //- that it duplicates, or -1 when it is not a mating duplicate. A
+        //- master is always on a lower-numbered surface and is not itself a
+        //- duplicate, so the surface on which a coincident face is found first
+        //- is the one whose region it takes.
+        labelListList matingSurface_;
+
+        //- Per surface and triangle, the master triangle, or -1
+        labelListList matingTriangle_;
+
 
     // Private Data Types
 
@@ -354,6 +368,19 @@ private:
         //- Find the cells the surface crosses, cut them into pieces by the
         //- planes of every facet that crosses them, and classify each piece
         void findCutCells(List<cellCut>& cuts);
+
+        //- Find the triangles that lie flush on a triangle of an earlier surface
+        //- with the opposite normal, such as the contact face of two touching
+        //- solids. Those are marked as mating duplicates, so the plane is cut
+        //- and snapped once and not once per surface.
+        void deduplicateMatingFacets();
+
+        //- The candidates that are not mating duplicates
+        labelList withoutMatingDuplicates
+        (
+            const label surfi,
+            const labelList& candidates
+        ) const;
 
         //- Find the internal faces that lie on a surface, with inside and
         //- outside on either side of it
