@@ -366,7 +366,10 @@ cutCellPolyhedron polyhedronFrom
     {
         const pointField& p = polys[pi];
 
-        face f(p.size());
+        //- A point repeated in a row, or closing the polygon, is no edge. A
+        //- region that meets a chord at its end can list that point twice, and
+        //- the zero-length edge it leaves is not a face of the piece
+        DynamicList<label> idx(p.size());
 
         forAll(p, i)
         {
@@ -387,8 +390,18 @@ cutCellPolyhedron polyhedronFrom
                 pts.append(p[i]);
             }
 
-            f[i] = found;
+            if (idx.empty() || idx.last() != found)
+            {
+                idx.append(found);
+            }
         }
+
+        if (idx.size() > 1 && idx.first() == idx.last())
+        {
+            idx.remove();
+        }
+
+        face f(idx);
 
         //- Outward orientation, tested against a point known to be inside
         const point& p0 = pts[f[0]];
@@ -730,7 +743,6 @@ cutState cutCellByLoop
 {
     result = cutCellResult();
 
-    const boundBox bb(cell.points(), false);
     const pointField& cPts = cell.points();
 
     //- 1. Clip every facet to the cell, keeping each one, and group them by
@@ -745,7 +757,7 @@ cutState cutCellByLoop
 
     forAll(tris, ti)
     {
-        pointField p(triangleBoxPolygon(tris[ti], bb, tol));
+        pointField p(triangleCellPolygon(tris[ti], cell, tol));
 
         if (p.size() < 3)
         {
@@ -2167,6 +2179,80 @@ cutState cutCellByLoop
         return i;
     };
 
+    //- The chord through a point, or -1. A chord along a seam between two cell
+    //- faces is also a cell edge, so regions either side of it share an edge
+    //- on a cell edge. The chord is the cut there, and those regions are not
+    //- joined across it when they lie on opposite sides of the cut facet
+    auto chordAt = [&](const point& p) -> label
+    {
+        forAll(chords, ci)
+        {
+            const point& c0 = chords[ci][0];
+            const vector cd(chords[ci][1] - c0);
+            const scalar cl2 = cd & cd;
+
+            if (cl2 <= VSMALL)
+            {
+                continue;
+            }
+
+            const scalar t = max(0, min(1, ((p - c0) & cd)/cl2));
+
+            if (mag(p - (c0 + t*cd)) <= 10*tol)
+            {
+                return ci;
+            }
+        }
+
+        return -1;
+    };
+
+    //- True when regions ra and rb lie on opposite sides of the facet of
+    //- chord ci, measured from the point p on the chord
+    auto separatedBy = [&](const label ci, const pointField& ra,
+                           const pointField& rb, const point& p) -> bool
+    {
+        const pointField& f = facet[chordFacet[ci]];
+
+        vector n(Zero);
+
+        forAll(f, k)
+        {
+            n += f[k] ^ f[f.fcIndex(k)];
+        }
+
+        const scalar nMag = mag(n);
+
+        if (nMag <= VSMALL)
+        {
+            return false;
+        }
+
+        n /= nMag;
+
+        auto side = [&](const pointField& r) -> scalar
+        {
+            scalar s = 0;
+
+            forAll(r, k)
+            {
+                const scalar sk = (r[k] - p) & n;
+
+                if (mag(sk) > mag(s))
+                {
+                    s = sk;
+                }
+            }
+
+            return s;
+        };
+
+        const scalar sa = side(ra);
+        const scalar sb = side(rb);
+
+        return (sa > tol && sb < -tol) || (sa < -tol && sb > tol);
+    };
+
     forAll(allRegions, i)
     {
         const pointField& a = allRegions[i];
@@ -2265,8 +2351,14 @@ cutState cutCellByLoop
 
                     if (hi - lo > 1e-14)
                     {
-                        joined = true;
-                        break;
+                        const point mid(ce0 + 0.5*(lo + hi)*ced);
+                        const label ci = chordAt(mid);
+
+                        if (ci < 0 || !separatedBy(ci, a, b, mid))
+                        {
+                            joined = true;
+                            break;
+                        }
                     }
                 }
 

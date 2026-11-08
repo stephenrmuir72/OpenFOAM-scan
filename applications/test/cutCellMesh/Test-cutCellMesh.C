@@ -376,6 +376,45 @@ int main()
         "triangle outside the cell gives an empty polygon"
     );
 
+    //  The unit hex with its top face bent by one corner, which rises by
+    //  d, far above 10 tol. A triangle in the plane z = 1 + d/2 crosses the
+    //  bulge. The top face's plane is pushed out to contain the raised corner,
+    //  so the clip keeps a real area of the tilted tip. A flat-plane clip
+    //  leaves only a degenerate sliver with no area.
+    {
+        const scalar d = 0.01;
+
+        const cutCellPolyhedron bulged
+        (
+            makePolyhedron
+            (
+                {
+                    {P(0,0,0), P(1,0,0), P(1,1,0), P(0,1,0)},
+                    {P(0,0,1), P(1,0,1), P(1,1,1+d), P(0,1,1)},
+                    {P(0,0,0), P(1,0,0), P(1,0,1), P(0,0,1)},
+                    {P(0,1,0), P(1,1,0), P(1,1,1+d), P(0,1,1)},
+                    {P(0,0,0), P(0,1,0), P(0,1,1), P(0,0,1)},
+                    {P(1,0,0), P(1,1,0), P(1,1,1+d), P(1,0,1)}
+                },
+                P(0.5, 0.5, 0.5)
+            )
+        );
+
+        const pointField tip
+        ({
+            P(-1, -1, 1 + d/2), P(3, -1, 1 + d/2), P(-1, 3, 1 + d/2)
+        });
+
+        const scalar kept = polygonArea(triangleCellPolygon(tip, bulged, 1e-9));
+
+        //  A flat-plane clip keeps 0.125 here and the shifted plane keeps 0.5
+        checkTrue
+        (
+            kept > 0.25,
+            "a bulge above 10 tol is kept by the per-face shift"
+        );
+    }
+
 
     //  Axis-aligned split at the centre
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -665,7 +704,12 @@ int main()
         partRes
     );
 
-    checkTrue(state != cutState::cut, "an open partial sheet does not cut the cell");
+    checkTrue
+    (
+        state == cutState::untouched,
+        "an open partial sheet does not cut the cell"
+    );
+    checkLabel(partRes.nPolygons, 1, "but the sheet still crosses it, so it is reported");
     checkLabel(partRes.pieces.size(), 0, "and it gives no pieces");
 
     //- Two triangles in perpendicular planes, as where a surface edge crosses a
@@ -1207,6 +1251,81 @@ int main()
         );
         checkLabel(result.pieces.size(), 2, "into two pieces");
         checkLabel(result.sharedFaces.size(), 1, "sharing one thin face");
+
+        //- The answer must not depend on where the triangle's list starts
+        for (label rot = 1; rot < 3; rot++)
+        {
+            const pointField rotated
+            ({
+                thinCut[rot], thinCut[(rot + 1) % 3], thinCut[(rot + 2) % 3]
+            });
+
+            cutCellResult rotResult;
+
+            const cutState rotState = cutCellByLoop
+            (
+                hex, List<pointField>(1, rotated), labelList(1, 0), 1e-9,
+                rotResult
+            );
+
+            checkTrue
+            (
+                rotState == cutState::cut && rotResult.pieces.size() == 2,
+                "a thin cut gives two pieces whatever the start vertex"
+            );
+        }
+    }
+
+
+    //  Mating facets: the part of a triangle that two masters cover
+    //  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    Info<< nl << "the part of a polygon outside another" << endl;
+
+    {
+        const vector nz(0, 0, 1);
+
+        const pointField a({P(0,0,0), P(1,0,0), P(1,1,0), P(0,1,0)});
+        const pointField overlapping
+        ({
+            P(0.5,0.5,0), P(1.5,0.5,0), P(1.5,1.5,0), P(0.5,1.5,0)
+        });
+        const pointField far({P(5,5,0), P(6,5,0), P(6,6,0), P(5,6,0)});
+
+        auto areaOf = [](const List<pointField>& polys)
+        {
+            scalar s = 0;
+
+            forAll(polys, i)
+            {
+                s += polygonArea(polys[i]);
+            }
+
+            return s;
+        };
+
+        //- Overlapping by a quarter: a unit square less a quarter square, so
+        //- the overlap is counted once when the two masters are added together
+        checkClose
+        (
+            areaOf(outsideConvex(List<pointField>(1, overlapping), a, nz)),
+            0.75,
+            "a second master overlapping by a quarter adds three quarters"
+        );
+
+        checkClose
+        (
+            areaOf(outsideConvex(List<pointField>(1, a), a, nz)),
+            0,
+            "a master covering the whole polygon leaves nothing outside"
+        );
+
+        checkClose
+        (
+            areaOf(outsideConvex(List<pointField>(1, far), a, nz)),
+            1,
+            "a master that misses the polygon leaves all of it outside"
+        );
     }
 
 

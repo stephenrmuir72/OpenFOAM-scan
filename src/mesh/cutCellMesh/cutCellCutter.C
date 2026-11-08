@@ -141,6 +141,47 @@ pointField clipPolygon
 }
 
 
+List<pointField> outsideConvex
+(
+    const List<pointField>& qs,
+    const pointField& r,
+    const vector& n
+)
+{
+    List<pointField> out;
+
+    forAll(qs, qi)
+    {
+        pointField rest(qs[qi]);
+
+        for (label k = 0; k < r.size() && rest.size() >= 3; ++k)
+        {
+            const point& p0 = r[k];
+            const vector m(n ^ (r[(k + 1) % r.size()] - p0));
+            const scalar magM = mag(m);
+
+            if (magM <= VSMALL)
+            {
+                continue;
+            }
+
+            const vector mh = m/magM;
+
+            const pointField outside(clipPolygon(rest, plane(p0, mh), 0));
+
+            if (outside.size() >= 3)
+            {
+                out.append(outside);
+            }
+
+            rest = clipPolygon(rest, plane(p0, -mh), 0);
+        }
+    }
+
+    return out;
+}
+
+
 pointField triangleCellPolygon
 (
     const pointField& tri,
@@ -166,18 +207,21 @@ pointField triangleCellPolygon
         const vector n(fn/mag(fn));
         const point fc(f.centre(cPts));
 
-        //- The outward deviation of the cell beyond this face's plane. A
-        //- snapped cell can be slightly non-planar, so the half-space is
-        //- pushed out to contain every vertex.
-        scalar maxDev = 0;
+        //- The outward deviation of the cell beyond this face's plane. A snapped
+        //- cell can be slightly non-planar, so a face bent by more than 10 tol
+        //- is pushed out to contain every vertex. Smaller deviations are noise,
+        //- and the face stays exact.
+        scalar dev = 0;
 
         forAll(cPts, pi)
         {
-            maxDev = max(maxDev, (cPts[pi] - fc) & n);
+            dev = max(dev, (cPts[pi] - fc) & n);
         }
 
+        const scalar shift = dev > 10*tol ? dev : 0;
+
         //- Keep the part on the inner side of the face's plane
-        poly = clipPolygon(poly, plane(fc + maxDev*n, n), tol);
+        poly = clipPolygon(poly, plane(fc + shift*n, n), tol);
 
         if (poly.size() < 3)
         {

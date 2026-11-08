@@ -1,0 +1,9 @@
+#!/bin/sh
+cd "${0%/*}" || exit
+. ${WM_PROJECT_DIR:?}/bin/tools/CleanFunctions
+
+cleanCase
+
+#- The cut mesh lives in time 0, which cleanCase keeps. This case has no initial
+#- fields, so 0 holds only the cut mesh.
+rm -rf 0

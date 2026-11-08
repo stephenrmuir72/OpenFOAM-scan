@@ -1,0 +1,45 @@
+#!/bin/sh
+cd "${0%/*}" || exit
+. ${WM_PROJECT_DIR:?}/bin/tools/RunFunctions
+
+#- RunFunctions skips an application whose log file exists, and the cut mesh in
+#- time 0 would be read as the background on a re-run. Start from a clean case.
+./Allclean
+
+runApplication blockMesh
+runApplication cutMeshWithSurface
+runApplication checkMesh -allGeometry
+
+#- Regression: the sliver merge must not leave a misoriented internal face. A
+#- merged group whose internal faces are misoriented is returned to cut cells, so
+#- checkMesh reports no wrongly oriented faces.
+if grep -q 'incorrect orientation' log.checkMesh
+then
+    echo "Sliver merge left misoriented internal faces" >&2
+    exit 1
+fi
+
+#- Regression: no merged internal face may be steeper than 70 degrees between
+#- its cell centres. checkMesh reports the largest such non-orthogonality.
+maxNonOrtho=$(sed -n 's/.*Mesh non-orthogonality Max: \([0-9.]*\).*/\1/p' \
+    log.checkMesh)
+
+if [ -z "$maxNonOrtho" ]
+then
+    echo "checkMesh reported no non-orthogonality" >&2
+    exit 1
+fi
+
+if awk -v m="$maxNonOrtho" 'BEGIN { exit !(m >= 70) }'
+then
+    echo "Max non-orthogonality $maxNonOrtho deg is 70 deg or more" >&2
+    exit 1
+fi
+
+#- Sanity: the merge ran and absorbed sliver cells.
+if ! grep -Eq 'Sliver merge growth[[:space:]]*:[[:space:]]*[1-9][0-9]* cell' \
+    log.cutMeshWithSurface
+then
+    echo "Sliver merge absorbed no cells" >&2
+    exit 1
+fi
