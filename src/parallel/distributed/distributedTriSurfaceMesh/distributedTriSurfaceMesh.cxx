@@ -80,6 +80,7 @@ Notes
 #include "matchPoints.H"
 #include "globalIndex.H"
 #include "Time.H"
+#include "DynamicField.H"
 
 #include "IFstream.H"
 #include "vectorList.H"
@@ -153,6 +154,21 @@ void check_debug(const Foam::dictionary& dict)
         Foam::distributedTriSurfaceMesh::debug = flag;
     }
 }
+
+
+// Dynamic (pre-reservable) equivalent of an input container:
+// Field -> DynamicField, everything else (List, UList, ...) -> DynamicList.
+//
+// Simpler (more fragile?) to just check
+// std::is_base_of_v<Foam::refCount, T>
+
+template<class T>
+using dynamic_input_t = std::conditional_t
+<
+    stdFoam::is_template_base_of_v<Foam::Field, T>,
+    Foam::DynamicField<typename T::value_type>,
+    Foam::DynamicList<typename T::value_type>
+>;
 
 
 // Node-master query: sub-ranks send their inputs to the (node-local)
@@ -230,12 +246,30 @@ void nodeMasterQuery
 
     if (UPstream::master(communicator))
     {
+        // Double buffering when receiving from sub-ranks.
+        // - the dynamic_input_t helper maps inputs (Field, List,..) to their
+        //   dynamic equivalent. Avoids allocation thrashing in loops.
+
+        std::tuple<dynamic_input_t<Inputs>...> recvBuffers[2];
+        // non-dynamic: std::tuple<Inputs...> recvBuffers[2];
+
+        // The max receive size, per double-buffer slot
+        label maxRecvSize[2] = {0, 0};
+
+        // The first/last range of recv requests, per double-buffer slot
+        int req_first[2] = {0, 0};
+        int req_last[2] = {0, 0};
+
         // Sub-ranks with data to process
         DynamicList<int> procs(numProc);
+
         for (int proci : UPstream::subProcs(communicator))
         {
-            if (gi.localSize(proci) > 0)
+            if (label recvSize = gi.localSize(proci); recvSize > 0)
             {
+                const int slot = (procs.size() % 2);  // buffer slot (0,1)
+                maxRecvSize[slot] = std::max(maxRecvSize[slot], recvSize);
+
                 procs.push_back(proci);
             }
         }
@@ -249,15 +283,20 @@ void nodeMasterQuery
             charBuffers.resize(numProc);
         }
 
-        // Double buffering when receiving from sub-ranks
-        std::tuple<Inputs...> recvBuffers[2];
+        // Pre-reserve the receive buffers
+        for (int slot = 0; slot < 2; ++slot)
+        {
+            std::apply
+            (
+                [&](auto&... buf) { (buf.reserve(maxRecvSize[slot]), ...); },
+                recvBuffers[slot]
+            );
+        }
 
-        int req_first[2] = {0, 0};
-        int req_last[2] = {0, 0};
-
+        // Action for posting a receive for given item in the procs sequence
         auto postReceive = [&](const label seq)
         {
-            const int slot = (seq % 2);  // double buffer slot (0,1)
+            const int slot = (seq % 2);  // buffer slot (0,1)
             const int proci = procs[seq];
             auto& bufs = recvBuffers[slot];
 
@@ -305,9 +344,10 @@ void nodeMasterQuery
             output.clear();
         }
 
+        // Process the input sequence
         for (label seq = 0; seq < procs.size(); ++seq)
         {
-            const int slot = (seq % 2);  // double buffer slot (0,1)
+            const int slot = (seq % 2);  // buffer slot (0,1)
             const int proci = procs[seq];
 
             // Post the next receive
@@ -5420,6 +5460,31 @@ void Foam::distributedTriSurfaceMesh::getVolumeType
 }
 
 
+Foam::label Foam::distributedTriSurfaceMesh::getField(labelList& values) const
+{
+    if
+    (
+        (distType_ == distributionType::NODEMASTER)
+     && (!runningTransparent() && !UPstream::master(comm_))
+    )
+    {
+        // This is wildly inconsistent!
+        // triSurfaceMesh treats a missing field as "ignore"
+        // (does not touch the values).
+        // But if the field does exist and either surface or field are
+        // zero length, it will clear the values.
+
+        // So for now pretend that this sub-rank has a field
+        // but that it has 0 values (and obviously also has 0 faces)
+
+        values.clear();
+        return 0;
+    }
+
+    return triSurfaceMesh::getField(values);
+}
+
+
 void Foam::distributedTriSurfaceMesh::getField
 (
     const List<pointIndexHit>& info,
@@ -5573,7 +5638,6 @@ void Foam::distributedTriSurfaceMesh::getField
             << info.size() << " triangles" << endl;
     }
 }
-
 
 
 // Exchanges indices to the processor they come from.

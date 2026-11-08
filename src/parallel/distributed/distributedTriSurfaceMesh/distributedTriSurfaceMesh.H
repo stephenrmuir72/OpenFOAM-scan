@@ -868,6 +868,10 @@ public:
             virtual void getField(const List<pointIndexHit>&, labelList&) const;
 
             //- WIP.
+            //- Retrieve the "values" field entries (if it exists)
+            virtual label getField(labelList& values) const;
+
+            //- WIP.
             //- Query for surface information.
             //- \returns the number of surface elements queried.
             //- \returns 0 for an empty surface or if all query parameters
