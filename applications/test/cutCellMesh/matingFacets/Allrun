@@ -1,0 +1,22 @@
+#!/bin/sh
+cd "${0%/*}" || exit
+. ${WM_PROJECT_DIR:?}/bin/tools/RunFunctions
+
+runApplication blockMesh
+runApplication cutMeshWithSurface
+
+if ! grep -Eq 'Mating duplicate facets[[:space:]]*:[[:space:]]*2' \
+    log.cutMeshWithSurface
+then
+    echo "Expected 2 mating duplicate facets between cubeA and boxB" >&2
+    exit 1
+fi
+
+#- The contact plane x = 1 is the master cubeA's xMax face, so it must be
+#- zoned there and hold exactly one face.
+if ! grep -A4 -x -F "xMax" 0/polyMesh/faceZones \
+    | grep -Eq 'faceLabels[[:space:]]+List<label>[[:space:]]+1\(43\)'
+then
+    echo "Mating contact face missing from faceZone xMax" >&2
+    exit 1
+fi

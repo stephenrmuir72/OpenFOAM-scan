@@ -141,6 +141,54 @@ pointField clipPolygon
 }
 
 
+pointField triangleCellPolygon
+(
+    const pointField& tri,
+    const cutCellPolyhedron& cell,
+    const scalar tol
+)
+{
+    pointField poly(tri);
+
+    const pointField& cPts = cell.points();
+
+    forAll(cell.faces(), fi)
+    {
+        const face& f = cell.faces()[fi];
+
+        const vector fn(f.normal(cPts));
+
+        if (mag(fn) <= VSMALL)
+        {
+            continue;
+        }
+
+        const vector n(fn/mag(fn));
+        const point fc(f.centre(cPts));
+
+        //- The outward deviation of the cell beyond this face's plane. A
+        //- snapped cell can be slightly non-planar, so the half-space is
+        //- pushed out to contain every vertex.
+        scalar maxDev = 0;
+
+        forAll(cPts, pi)
+        {
+            maxDev = max(maxDev, (cPts[pi] - fc) & n);
+        }
+
+        //- Keep the part on the inner side of the face's plane
+        poly = clipPolygon(poly, plane(fc + maxDev*n, n), tol);
+
+        if (poly.size() < 3)
+        {
+            return pointField();
+        }
+    }
+
+    return poly;
+}
+
+
 pointField triangleBoxPolygon
 (
     const pointField& tri,

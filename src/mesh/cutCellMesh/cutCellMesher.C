@@ -301,6 +301,239 @@ Foam::cutCellPolyhedron Foam::cutCellMesher::cellPolyhedron
 }
 
 
+//- Signed volume of the pyramid from a cell centre to one of its faces, with
+//- point pointi placed at P. Positive when the face points out of the cell.
+static scalar facePyramidVolume
+(
+    const polyMesh& mesh,
+    const label facei,
+    const label celli,
+    const label pointi,
+    const point& P
+)
+{
+    const face& f = mesh.faces()[facei];
+    const pointField& pts = mesh.points();
+
+    pointField fp(f.size());
+    point fc(Zero);
+
+    forAll(f, k)
+    {
+        fp[k] = (f[k] == pointi ? P : pts[f[k]]);
+        fc += fp[k];
+    }
+
+    fc /= scalar(f.size());
+
+    vector area(Zero);
+
+    for (label k = 1; k + 1 < f.size(); k++)
+    {
+        area += 0.5*((fp[k] - fp[0]) ^ (fp[k + 1] - fp[0]));
+    }
+
+    const scalar sign = (mesh.faceOwner()[facei] == celli ? 1 : -1);
+
+    return sign*((fc - mesh.cellCentres()[celli]) & area);
+}
+
+
+//- Whether moving pointi to P keeps every face of its cells outward from the
+//- cell centre. A face that is already inverted is not held against the move.
+static bool pyramidsStayPositive
+(
+    const polyMesh& mesh,
+    const label pointi,
+    const point& P
+)
+{
+    const labelList& pCells = mesh.pointCells()[pointi];
+
+    forAll(pCells, pci)
+    {
+        const label celli = pCells[pci];
+
+        forAll(mesh.cells()[celli], cfi)
+        {
+            const label facei = mesh.cells()[celli][cfi];
+
+            if (findIndex(mesh.faces()[facei], pointi) == -1)
+            {
+                continue;
+            }
+
+            if
+            (
+                facePyramidVolume(mesh, facei, celli, pointi, P) <= 0
+             && facePyramidVolume(mesh, facei, celli, pointi, mesh.points()[pointi]) > 0
+            )
+            {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+
+void Foam::cutCellMesher::deduplicateMatingFacets()
+{
+    const scalar tolC = 1e-6*mag(mesh_.bounds().span());
+    const vector r(tolC*vector::one);
+
+    matingSurface_.setSize(surfaces_.size());
+    matingTriangle_.setSize(surfaces_.size());
+
+    forAll(surfaces_, surfi)
+    {
+        matingSurface_[surfi].setSize(surfaces_[surfi].size(), -1);
+        matingTriangle_[surfi].setSize(surfaces_[surfi].size(), -1);
+    }
+
+    forAll(surfaces_, surfi)
+    {
+        const cutCellSurface& surf = surfaces_[surfi];
+
+        for (label tri = 0; tri < surf.size(); ++tri)
+        {
+            const pointField t(surf.triangle(tri));
+            const vector nRaw = (t[1] - t[0]) ^ (t[2] - t[0]);
+            const scalar magN = mag(nRaw);
+
+            if (magN <= VSMALL)
+            {
+                continue;
+            }
+
+            const vector n = nRaw/magN;
+            const scalar area = 0.5*magN;
+
+            const boundBox bb(t, false);
+
+            scalar covered = 0;
+            scalar bestArea = 0;
+            label bestSurf = -1;
+            label bestTri = -1;
+
+            //- Only earlier surfaces are masters, and only triangles that are
+            //- not duplicates themselves, so the chain ends on a live triangle
+            for (label surfr = 0; surfr < surfi; ++surfr)
+            {
+                const cutCellSurface& master = surfaces_[surfr];
+
+                const labelList cand
+                (
+                    master.search().tree().findBox
+                    (
+                        treeBoundBox(bb.min() - r, bb.max() + r)
+                    )
+                );
+
+                forAll(cand, i)
+                {
+                    const label mtri = cand[i];
+
+                    if (matingSurface_[surfr][mtri] >= 0)
+                    {
+                        continue;
+                    }
+
+                    const pointField a(master.triangle(mtri));
+                    const vector nAraw = (a[1] - a[0]) ^ (a[2] - a[0]);
+                    const scalar magA = mag(nAraw);
+
+                    if (magA <= VSMALL)
+                    {
+                        continue;
+                    }
+
+                    const vector nA = nAraw/magA;
+
+                    //- Opposite normals, which is what a flush contact between
+                    //- two solids has
+                    if ((nA & n) > -1 + 1e-6)
+                    {
+                        continue;
+                    }
+
+                    bool coplanar = true;
+
+                    forAll(t, k)
+                    {
+                        if (mag((t[k] - a[0]) & nA) > tolC)
+                        {
+                            coplanar = false;
+                            break;
+                        }
+                    }
+
+                    if (!coplanar)
+                    {
+                        continue;
+                    }
+
+                    //- The part of the triangle over the master: clip it by the
+                    //- three edges of the master, keeping the side on the left
+                    //- of each edge as seen from the master's normal
+                    pointField over(t);
+
+                    forAll(a, k)
+                    {
+                        const point& p0 = a[k];
+                        const vector m(nA ^ (a[(k + 1) % 3] - p0));
+
+                        over = clipPolygon(over, plane(p0, -m/mag(m)), 0);
+                    }
+
+                    const scalar overArea = polygonArea(over);
+
+                    if (overArea > 0)
+                    {
+                        covered += overArea;
+
+                        if (overArea > bestArea)
+                        {
+                            bestArea = overArea;
+                            bestSurf = surfr;
+                            bestTri = mtri;
+                        }
+                    }
+                }
+            }
+
+            if (bestSurf >= 0 && covered >= (1 - 1e-4)*area)
+            {
+                matingSurface_[surfi][tri] = bestSurf;
+                matingTriangle_[surfi][tri] = bestTri;
+                info_.nMatingFacets++;
+            }
+        }
+    }
+}
+
+
+Foam::labelList Foam::cutCellMesher::withoutMatingDuplicates
+(
+    const label surfi,
+    const labelList& candidates
+) const
+{
+    DynamicList<label> keep(candidates.size());
+
+    forAll(candidates, i)
+    {
+        if (matingSurface_[surfi][candidates[i]] < 0)
+        {
+            keep.append(candidates[i]);
+        }
+    }
+
+    return keep;
+}
+
+
 void Foam::cutCellMesher::snapPoints()
 {
     snapDelta_.setSize(mesh_.points().size(), Zero);
@@ -391,9 +624,13 @@ void Foam::cutCellMesher::snapPoints()
 
             const labelList cand
             (
-                surf.search().tree().findBox
+                withoutMatingDuplicates
                 (
-                    treeBoundBox(bb.min(), bb.max())
+                    surfi,
+                    surf.search().tree().findBox
+                    (
+                        treeBoundBox(bb.min(), bb.max())
+                    )
                 )
             );
 
@@ -411,7 +648,7 @@ void Foam::cutCellMesher::snapPoints()
             const vector n = nRaw/mag(nRaw);
             const point ref = tri[0];
 
-            const pointField poly(triangleBoxPolygon(tri, bb, tol_));
+            const pointField poly(triangleCellPolygon(tri, cell, tol_));
 
             if (poly.size() < 3)
             {
@@ -528,50 +765,43 @@ void Foam::cutCellMesher::snapPoints()
         }
         else
         {
-            //- The smallest move that best satisfies all of them: for two
-            //- planes the closest point on their line, for three their corner.
-            //- A small multiple of the identity keeps the solve well posed when
-            //- they have no common point, and leaves the answer within
-            //- round-off of the exact one when they have.
+            //- The smallest move that best satisfies all of them. With
+            //- A = sum(n n) and g = sum(d n), where d is each plane's signed
+            //- distance from P, the move solves A dx = g in the least-squares
+            //- sense. Its eigendecomposition exposes the rank: a direction whose
+            //- eigenvalue is below sigmaRel of the largest is not constrained by
+            //- the planes, so the point does not move along it. That gives rank
+            //- 1 for a smooth tessellation (onto the dominant plane), rank 2 for
+            //- a crease (onto its line) and rank 3 for a corner (onto its point).
+            //- Unlike a determinant test, the truncation leaves no division by a
+            //- near-zero value, so a nearly parallel pair is not rejected.
             symmTensor A = Zero;
-            vector b = Zero;
+            vector g = Zero;
 
             forAll(normals, i)
             {
                 A += sqr(normals[i]);
-                b += normals[i]*(normals[i] & refs[i]);
+                g += normals[i]*(normals[i] & (refs[i] - P));
             }
 
-            const scalar eps = 1e-12;
+            const vector lambda(eigenValues(A));
+            const tensor E(eigenVectors(A, lambda));
 
-            const tensor M
-            (
-                A.xx() + eps, A.xy(), A.xz(),
-                A.xy(), A.yy() + eps, A.yz(),
-                A.xz(), A.yz(), A.zz() + eps
-            );
+            const scalar sigmaRel = 1e-3*lambda.z();
 
-            //- The solve is a division by that determinant, and it is the
-            //- division that can trap: two pulls a fraction of a degree
-            //- apart give a determinant at the scale of the formula's own
-            //- rounding, and dividing by it raised SIGFPE and aborted a run
-            //- whose geometry is sound. Measured: `07_sphere_cut`'s 63
-            //- solves bottom out at 1.4e-14, a pair about seven degrees
-            //- apart, while `10_box_regions` gave 1.0e-17 and then exactly 0
-            //- for a pair a fifth of a degree apart. The normals are unit
-            //- vectors, so those determinants are scale free and one
-            //- threshold fits every mesh; it sits at about 1.8 degrees. An
-            //- ill-conditioned pair leaves the point where it is, which is
-            //- what the move bound does with the runaway answer it would
-            //- otherwise produce, and what the collapse's policy already
-            //- says: the sliver stays and is reported.
-            if (mag(det(M)) <= 1e-15)
+            const vector e[3] = {E.x(), E.y(), E.z()};
+
+            vector delta(Zero);
+
+            for (direction k = 0; k < 3; k++)
             {
-                info_.nSnapRejected++;
-                continue;
+                if (lambda[k] >= sigmaRel && lambda[k] > SMALL)
+                {
+                    delta += ((e[k] & g)/lambda[k])*e[k];
+                }
             }
 
-            target = inv(M) & (b + eps*P);
+            target = P + delta;
         }
 
         const vector delta(target - P);
@@ -610,6 +840,12 @@ void Foam::cutCellMesher::snapPoints()
                 info_.nSnapRejected++;
                 continue;
             }
+        }
+
+        if (!pyramidsStayPositive(mesh_, pointi, target))
+        {
+            info_.nSnapRejected++;
+            continue;
         }
 
         if (mag(delta) > SMALL)
@@ -1009,9 +1245,13 @@ void Foam::cutCellMesher::findCutCells(List<cellCut>& cuts)
 
         forAll(surfaces_, surfi)
         {
-            candidates[surfi] = surfaces_[surfi].search().tree().findBox
+            candidates[surfi] = withoutMatingDuplicates
             (
-                treeBoundBox(bb.min(), bb.max())
+                surfi,
+                surfaces_[surfi].search().tree().findBox
+                (
+                    treeBoundBox(bb.min(), bb.max())
+                )
             );
             nTriangles += candidates[surfi].size();
         }
@@ -1757,17 +1997,34 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::assemble
         label sourceSurface = -1;
         label nChangedSurfaces = 0;
 
+        //- A surface that is flush with the one lying on this face, as a mating
+        //- duplicate is, changes state across the same interface. It is not a
+        //- second source, so the face keeps the zone of the surface on it.
+        const label contact = coincidentSurface_[facei];
+
         forAll(surfaces_, surfi)
         {
             if
             (
                 cellSurfaceInside_[own][surfi]
-             != cellSurfaceInside_[nei][surfi]
+             == cellSurfaceInside_[nei][surfi]
             )
             {
-                sourceSurface = surfi;
-                ++nChangedSurfaces;
+                continue;
             }
+
+            if
+            (
+                contact >= 0
+             && surfi != contact
+             && findIndex(matingSurface_[surfi], contact) >= 0
+            )
+            {
+                continue;
+            }
+
+            sourceSurface = surfi;
+            ++nChangedSurfaces;
         }
 
         if (nChangedSurfaces != 1)
@@ -4990,6 +5247,10 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::cut()
     info_ = report();
     info_.nCells = mesh_.nCells();
 
+    //- Triangles that lie flush on an earlier surface's contact face are left
+    //- out of the cut and the snapping, so that the shared plane is cut once
+    deduplicateMatingFacets();
+
     //- Collapse the cut crossings that fall too close to a mesh point, which
     //- moves those points. This has to happen before anything reads the mesh
     //- geometry, so that the cut and every query about it see one set of
@@ -5137,6 +5398,7 @@ Foam::autoPtr<Foam::mapPolyMesh> Foam::cutCellMesher::cut()
         << "  of those, face orientation inconsistent: "
         << info_.nRefusedInconsistentFaces << nl
         << "Coincident faces (interface)  : " << info_.nCoincidentFaces << nl
+        << "Mating duplicate facets       : " << info_.nMatingFacets << nl
         << "Cells on coincident faces only: " << info_.nCoincidentCells << nl
         << "Cells reported, left as is   : " << info_.nUnsupported << endl;
 
