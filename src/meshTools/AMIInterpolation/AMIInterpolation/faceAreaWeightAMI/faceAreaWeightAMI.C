@@ -126,9 +126,6 @@ void Foam::faceAreaWeightAMI::calcAddressing
     // Reset starting seed
     label startSeedi = 0;
 
-    // Should all faces be matched?
-    const bool mustMatch = mustMatchFaces();
-
     bool continueWalk = true;
     DynamicList<label> nonOverlapFaces;
 
@@ -168,8 +165,7 @@ void Foam::faceAreaWeightAMI::calcAddressing
             tgtFacei,
             mapFlag,
             seedFaces,
-            visitedFaces,
-            mustMatch
+            visitedFaces
             // pass in nonOverlapFaces for failed tree search?
         );
     } while (continueWalk);
@@ -258,8 +254,7 @@ bool Foam::faceAreaWeightAMI::setNextFaces
     label& tgtFacei,
     const bitSet& mapFlag,
     labelList& seedFaces,
-    const labelUList& visitedFaces,
-    const bool errorOnNotFound
+    const labelUList& visitedFaces
 ) const
 {
     addProfiling(ami, "faceAreaWeightAMI::setNextFaces");
@@ -348,7 +343,11 @@ bool Foam::faceAreaWeightAMI::setNextFaces
     while (facei != -1)
     {
         srcFacei = facei;
-        tgtFacei = findTargetFace(srcFacei, visitedFaces);
+
+        // Target faces already visited by this walk may still overlap
+        // srcFacei, so they are not excluded
+        DynamicList<label> rejectedFaces;
+        tgtFacei = findOverlappingTargetFace(srcFacei, rejectedFaces);
 
         if (tgtFacei >= 0)
         {
@@ -358,15 +357,67 @@ bool Foam::faceAreaWeightAMI::setNextFaces
         facei = mapFlag.find_next(facei);
     }
 
-    if (errorOnNotFound)
+    // Unmapped faces are reported after the walk (see calculate)
+    return false;
+}
+
+
+bool Foam::faceAreaWeightAMI::findInitialSeed
+(
+    label& srcFacei,
+    label& tgtFacei
+) const
+{
+    const auto& srcPatch = this->srcPatch();
+
+    forAll(srcPatch, facei)
     {
-        FatalErrorInFunction
-            << "Unable to set target face for source face " << srcFacei
-            << " with centre: " << srcPatch.faceCentres()[srcFacei]
-            << abort(FatalError);
+        DynamicList<label> rejectedFaces;
+        const label tgtFacej = findOverlappingTargetFace(facei, rejectedFaces);
+
+        if (tgtFacej >= 0)
+        {
+            srcFacei = facei;
+            tgtFacei = tgtFacej;
+            return true;
+        }
     }
 
     return false;
+}
+
+
+Foam::label Foam::faceAreaWeightAMI::findOverlappingTargetFace
+(
+    const label srcFacei,
+    DynamicList<label>& rejectedFaces
+) const
+{
+    label tgtFacei = findTargetFace(srcFacei, rejectedFaces);
+
+    // Each rejection grows rejectedFaces, so the loop terminates
+    while (tgtFacei >= 0 && !overlapsTarget(srcFacei, tgtFacei))
+    {
+        rejectedFaces.append(tgtFacei);
+        tgtFacei = findTargetFace(srcFacei, rejectedFaces);
+    }
+
+    return tgtFacei;
+}
+
+
+bool Foam::faceAreaWeightAMI::overlapsTarget
+(
+    const label srcFacei,
+    const label tgtFacei
+) const
+{
+    scalar interArea = 0;
+    vector interCentroid(Zero);
+    calcInterArea(srcFacei, tgtFacei, interArea, interCentroid);
+
+    // Same criterion as processSourceFace
+    return interArea/srcMagSf_[srcFacei] > faceAreaIntersect::tolerance();
 }
 
 
@@ -649,7 +700,23 @@ bool Foam::faceAreaWeightAMI::calculate
     label srcFacei = 0;
     label tgtFacei = 0;
 
+    // Prepare the target tree and check the patch sizes
     bool ok = initialiseWalk(srcFacei, tgtFacei);
+
+    // The seed must overlap, otherwise the walk maps nothing from it
+    const bool seedMissing = ok && !findInitialSeed(srcFacei, tgtFacei);
+    ok = ok && !seedMissing;
+
+    if
+    (
+        requireMatch_
+     && (comm() == -1 ? seedMissing : returnReduceOr(seedMissing, comm()))
+    )
+    {
+        FatalErrorInFunction
+            << "Unable to find an initial target face overlapping a source face"
+            << abort(FatalError);
+    }
 
     srcCentroids_.setSize(srcAddress_.size());
 
@@ -694,6 +761,52 @@ bool Foam::faceAreaWeightAMI::calculate
                 tgtAddr,
                 tgtWght
             );
+        }
+    }
+
+    // Without restart, every source face must receive a contribution.
+    // Checked on all ranks so that the error is raised collectively.
+    if (requireMatch_ && !restartUncoveredSourceFace_)
+    {
+        label nUnmapped = 0;
+        label firstUnmapped = labelMax;
+
+        forAll(srcAddr, facei)
+        {
+            if (srcAddr[facei].empty())
+            {
+                ++nUnmapped;
+                firstUnmapped = min(firstUnmapped, facei);
+            }
+        }
+
+        if (comm() != -1)
+        {
+            nUnmapped = returnReduce
+            (
+                nUnmapped,
+                sumOp<label>(),
+                UPstream::msgType(),
+                comm()
+            );
+            firstUnmapped = returnReduce
+            (
+                firstUnmapped,
+                minOp<label>(),
+                UPstream::msgType(),
+                comm()
+            );
+        }
+
+        if (nUnmapped)
+        {
+            FatalErrorInFunction
+                << nUnmapped << " source faces have no overlapping target face"
+                << " (requireMatch is true and restartUncoveredSourceFace is"
+                << " false). Lowest local index of an unmapped source face"
+                << " (minimum over all ranks): "
+                << firstUnmapped
+                << abort(FatalError);
         }
     }
 

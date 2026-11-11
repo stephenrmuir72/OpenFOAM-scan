@@ -118,8 +118,30 @@ protected:
                 label& tgtFacei,
                 const bitSet& mapFlag,
                 labelList& seedFaces,
-                const labelUList& visitedFaces,
-                const bool errorOnNotFound = true
+                const labelUList& visitedFaces
+            ) const;
+
+            //- Find the first source face with an overlapping target face
+            bool findInitialSeed
+            (
+                label& srcFacei,
+                label& tgtFacei
+            ) const;
+
+            //- Find a target face overlapping srcFacei, skipping rejectedFaces.
+            //  Candidates that do not overlap are appended to rejectedFaces.
+            label findOverlappingTargetFace
+            (
+                const label srcFacei,
+                DynamicList<label>& rejectedFaces
+            ) const;
+
+            //- True if the source and target faces overlap above the
+            //  tolerance used by processSourceFace
+            bool overlapsTarget
+            (
+                const label srcFacei,
+                const label tgtFacei
             ) const;
 
 

@@ -290,7 +290,7 @@ defect; it does not mean the defect is acceptable.
 | T02 | Cached midpoint fraction; expects the current C0 assertion failures |
 | T03 | 90-degree topology-created face area; expects the current C0 frame failure |
 | T04 | Rotational low-weight fallback; checks every face for U (vector), S (scalar control), T (tensor) and ST (symmTensor): receiver-side defaults stay unrotated, donor-valued faces match each side's `forwardT` (S06 fix; passes on the fixed build, fails pre-fix for U, T and ST) |
-| T05 | Seed/restart reproduction; expects the current C0 coverage failures |
+| T05 | Seed/restart: source islands with no restart must reach full coverage, and every face ordering (`as-built`, `src-reversed`, `tgt-reversed`, `both-reversed`) must give the same physical mapping; serial runs also check the mapping by stable face ID; `T05-unmatched-source-*` checks that a required unmatched source face fails on all ranks (serial and 2-rank) |
 | T06 | Fully covered `2.5e-7` fine face; expects the current C0 cutoff failures |
 | T07 | Two-rank normal-gap discovery reproduction; expects current C0 coverage failures |
 | T08-T09 | Explicitly not run in S02; full topology, state, FV, and GAMG matrices are scheduled for S03 |
@@ -300,11 +300,18 @@ defect; it does not mean the defect is acceptable.
 | T13 | Piecewise-constant area-average control |
 | T14-T19 | `pureZoneMixture` dictionaries, material properties, cell-zone coverage, analytical references, and static meshes validated; `solidFoam` is not run until S03 |
 
+The T05 case checks the no-restart seed search: each source island must be
+seeded from a target face it overlaps, and the four face orderings of the
+two-island fixture (`-t05-order`) must give the same mapping. Two-rank variants
+omit the serial-only stable-ID mapping check (`T05_PHYSICAL_MAPPING`). The
+negative case (`-unmatched-source`) uses `requireMatch true` with restart off
+and one source face with no overlap; it must fail on every rank.
+
 The T07 case is the targeted C0 serial/MPI defect reproduction. It does not
 replace the broader all-pairs discovery oracle and rank-topology matrix in the
 approved plan. This is the targeted S02 baseline gate, not the full test matrix
 in every S02 substep. T02 currently checks the midpoint fraction; T05 checks
-the no-restart seed reproduction; T06 checks the fully covered fine face; T04
+the no-restart seed search; T06 checks the fully covered fine face; T04
 checks vector fallback values; and T12 checks an empty target. Their remaining
 fraction, ordering, cutoff, field-type, and invalid-input variants are not
 counted as passed. Likewise, T13 checks piecewise-constant area averaging. It

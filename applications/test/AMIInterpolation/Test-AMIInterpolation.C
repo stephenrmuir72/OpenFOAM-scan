@@ -370,6 +370,17 @@ void appendQuad
 }
 
 
+void reverseFaces(DynamicList<face>& faces)
+{
+    DynamicList<face> reversed(faces.size());
+    for (label i = faces.size() - 1; i >= 0; --i)
+    {
+        reversed.append(faces[i]);
+    }
+    faces.swap(reversed);
+}
+
+
 void makeGeometry
 (
     const word& test,
@@ -379,6 +390,7 @@ void makeGeometry
     const scalar scale,
     const scalar offset,
     const bool swap,
+    const bool unmatchedSource,
     DynamicList<point>& srcPts,
     DynamicList<face>& srcFaces,
     DynamicList<point>& tgtPts,
@@ -396,6 +408,12 @@ void makeGeometry
         {
             appendQuad(srcPts, srcFaces, 0, 1, 0, 1, 0, false);
             appendQuad(srcPts, srcFaces, 2, 3, 0, 1, 0, false);
+
+            // Source face with no target overlap (requireMatch negative)
+            if (unmatchedSource)
+            {
+                appendQuad(srcPts, srcFaces, 10, 11, 0, 1, 0, false);
+            }
         }
         else
         {
@@ -652,11 +670,32 @@ void runGeometryTest
         scale,
         offset,
         args.found("swap"),
+        args.found("unmatched-source"),
         srcPts,
         srcFaces,
         tgtPts,
         tgtFaces
     );
+
+    if (test == "T05")
+    {
+        const word order = args.getOrDefault<word>("t05-order", "as-built");
+        if (order == "src-reversed" || order == "both-reversed")
+        {
+            reverseFaces(srcFaces);
+        }
+        if (order == "tgt-reversed" || order == "both-reversed")
+        {
+            reverseFaces(tgtFaces);
+        }
+        if (!(order == "as-built" || order == "src-reversed"
+           || order == "tgt-reversed" || order == "both-reversed"))
+        {
+            FatalErrorInFunction
+                << "Unknown -t05-order " << order << nl
+                << exit(FatalError);
+        }
+    }
 
     const pointField srcPoints(srcPts);
     const pointField tgtPoints(tgtPts);
@@ -869,7 +908,7 @@ void runGeometryTest
         (
             test,
             "T05_SOURCE_COVERAGE",
-            min(srcCoverage),
+            returnReduce(min(srcCoverage), minOp<scalar>()),
             1,
             transferTol,
             1,
@@ -879,12 +918,49 @@ void runGeometryTest
         (
             test,
             "T05_TARGET_COVERAGE",
-            min(tgtCoverage),
+            returnReduce(min(tgtCoverage), minOp<scalar>()),
             1,
             transferTol,
             1,
             nFailures
         );
+
+        // Each source face must map to exactly one target face with the
+        // same x-y footprint. Stable geometric identity is used because
+        // face indices change with the ordering variant. Serial only: remote
+        // target indices are not resolvable on the source rank in parallel.
+        if (!UPstream::parRun())
+        {
+            const pointField srcCtr(src.faceCentres());
+            const pointField tgtCtr(tgt.faceCentres());
+            const labelListList& addr = ami.srcAddress();
+            const scalarListList& wght = ami.srcWeights();
+
+            bool physical = true;
+            forAll(addr, facei)
+            {
+                label nMatched = 0;
+                forAll(addr[facei], j)
+                {
+                    if (wght[facei][j] > transferTol)
+                    {
+                        ++nMatched;
+                        const point& s = srcCtr[facei];
+                        const point& t = tgtCtr[addr[facei][j]];
+                        if (mag(s.x() - t.x()) > transferTol
+                         || mag(s.y() - t.y()) > transferTol)
+                        {
+                            physical = false;
+                        }
+                    }
+                }
+                if (nMatched != 1)
+                {
+                    physical = false;
+                }
+            }
+            reportBool(test, "T05_PHYSICAL_MAPPING", physical, true, nFailures);
+        }
         return;
     }
 
@@ -1102,6 +1178,7 @@ void runStateTransitionTest(label& nFailures)
             1,
             offsets[state],
             false,
+            false,
             srcPts,
             srcFaces,
             tgtPts,
@@ -1188,6 +1265,7 @@ void runCacheTest
         0,
         1,
         0,
+        false,
         false,
         srcPts,
         srcFaces,
@@ -1545,6 +1623,7 @@ void runCacheFractionDirection
         1,
         0,
         !toSource,
+        false,
         srcPts,
         srcFaces,
         tgtPts,
@@ -2346,9 +2425,16 @@ int main(int argc, char *argv[])
     argList::addOption("tgt-rank", "rank");
     argList::addOption("maxDistance2", "squared-distance");
     argList::addOption("benchmark-iterations", "count");
+    argList::addOption
+    (
+        "t05-order",
+        "order",
+        "T05 face order: as-built | src-reversed | tgt-reversed | both-reversed"
+    );
     argList::addBoolOption("timing");
     argList::addBoolOption("no-restart");
     argList::addBoolOption("swap");
+    argList::addBoolOption("unmatched-source");
     argList::addBoolOption("topology-test");
     argList::addBoolOption("state-cycle");
     argList::addBoolOption("s04-fractions");

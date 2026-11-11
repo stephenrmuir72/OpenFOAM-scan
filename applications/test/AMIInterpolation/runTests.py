@@ -119,10 +119,7 @@ TEST_SPECS = {
             "T05_CALCULATED",
             "T05_SOURCE_COVERAGE",
             "T05_TARGET_COVERAGE",
-        },
-        "expected_failures": {
-            "T05_SOURCE_COVERAGE",
-            "T05_TARGET_COVERAGE",
+            "T05_PHYSICAL_MAPPING",
         },
     },
     "T06": {
@@ -541,6 +538,45 @@ S06_SCENARIOS = {
     "T08": topology_scenarios(),
     "T09": state_transition_scenarios(),
 }
+
+T05_S07_ORDERINGS = ("as-built", "src-reversed", "tgt-reversed", "both-reversed")
+
+
+def t05_s07_scenarios() -> list[dict]:
+    base_assertions = {
+        "T05_CALCULATED",
+        "T05_SOURCE_COVERAGE",
+        "T05_TARGET_COVERAGE",
+    }
+    scenarios = []
+    for order in T05_S07_ORDERINGS:
+        if order != "as-built":
+            scenarios.append(
+                {
+                    "variant": f"{order}-serial",
+                    "assertions": base_assertions | {"T05_PHYSICAL_MAPPING"},
+                    "arguments": [
+                        "-test", "T05",
+                        "-no-restart",
+                        "-t05-order", order,
+                    ],
+                }
+            )
+        scenarios.append(
+            {
+                "variant": f"{order}-two-rank-distributed",
+                "ranks": 2,
+                "assertions": set(base_assertions),
+                "arguments": [
+                    "-parallel",
+                    "-test", "T05",
+                    "-no-restart",
+                    "-t05-order", order,
+                ],
+            }
+        )
+    return scenarios
+
 
 S04_REQUIRED_TESTS = {"T01", "T02", "T08", "T09", "T13"}
 
@@ -1377,6 +1413,64 @@ def run_cache_topology_rejection(
             ""
             if rejected
             else "unsupported combination did not produce the expected explicit rejection"
+        ),
+    }
+
+
+def run_t05_unmatched_rejection(
+    run_root: Path,
+    run_id: str,
+    env: dict[str, str],
+    timeout: float,
+    binary: Path,
+    ranks: int,
+) -> dict:
+    layout = "two-rank-distributed" if ranks > 1 else "serial"
+    record_id = f"T05-unmatched-source-{layout}"
+    run_dir = run_root / run_id / record_id
+    run_dir.mkdir(parents=True, exist_ok=False)
+    case_dir = prepare_case("analytical", run_dir)
+
+    command = [str(binary.resolve())]
+    if ranks > 1:
+        mpirun = shutil.which("mpirun", path=env.get("PATH"))
+        if not mpirun:
+            raise ValueError("mpirun is not available in the selected target")
+        command = [mpirun, "-np", str(ranks), *command]
+    command.extend(["-case", str(case_dir)])
+    if ranks > 1:
+        command.append("-parallel")
+    command.extend(["-test", "T05", "-no-restart", "-unmatched-source"])
+
+    result = run_process(command, run_dir, env, timeout)
+    log_path = run_dir / "log.test"
+    write_log(log_path, result)
+    expected_message = "source faces have no overlapping target face"
+    rejected = (
+        result["return_code"] != 0
+        and not result["timed_out"]
+        and expected_message in result["output"]
+    )
+
+    return {
+        "id": record_id,
+        "test_id": "T05",
+        "name": "unmatched source face with required match and no restart",
+        "variant": "explicit-fatal-required-match",
+        "case": "analytical",
+        "rank_count": ranks,
+        "status": "pass" if rejected else "failure",
+        "expected_behavior": expected_message,
+        "observed_rejection": rejected,
+        "command": command,
+        "return_code": result["return_code"],
+        "timed_out": result["timed_out"],
+        "duration_seconds": result["duration_seconds"],
+        "log": str(log_path),
+        "reason": (
+            ""
+            if rejected
+            else "unmatched source face did not produce the expected collective fatal"
         ),
     }
 
@@ -2354,6 +2448,35 @@ def main() -> int:
                     args.performance_iterations,
                 )
             )
+            if test_id == "T05" and args.stage == "S02":
+                for scenario in t05_s07_scenarios():
+                    spec = {**TEST_SPECS[test_id], **scenario}
+                    run_records.append(
+                        run_test(
+                            test_id,
+                            spec,
+                            binary,
+                            run_root,
+                            run_id,
+                            env,
+                            args.timeout,
+                            args.observation_mode,
+                            args.measure_performance,
+                            args.performance_iterations,
+                            scenario_id=f"T05-{scenario['variant']}",
+                        )
+                    )
+                for ranks in (1, 2):
+                    run_records.append(
+                        run_t05_unmatched_rejection(
+                            run_root,
+                            run_id,
+                            env,
+                            args.timeout,
+                            binary,
+                            ranks,
+                        )
+                    )
 
     s04_integration_record = None
     if args.stage == "S04":
