@@ -56,11 +56,6 @@ TEST_SPECS = {
             "T02_CACHE_FRACTION",
             "T02_CACHE_MIDPOINT",
         },
-        "expected_failures": {
-            "T02_CACHE_WEIGHT_TYPE",
-            "T02_CACHE_FRACTION",
-            "T02_CACHE_MIDPOINT",
-        },
     },
     "T03": {
         "name": "rotational area vector after topology update",
@@ -82,7 +77,6 @@ TEST_SPECS = {
             "T03_CELL_CLOSURE",
             "T03_AMI_DISTRIBUTED",
         },
-        "expected_failures": {"T03_NEIGHBOUR_AREA_FRAME"},
     },
     "T04": {
         "name": "rotational low-weight default frame",
