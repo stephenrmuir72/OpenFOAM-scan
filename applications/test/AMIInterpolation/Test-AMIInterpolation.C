@@ -1808,6 +1808,149 @@ vector rotateOracle
 }
 
 
+//- Check each receiver face of a cyclicAMI neighbour field against the
+//  low-weight oracle. Faces below lowWeightCorrection (strict '<', as in
+//  AMIInterpolation::weightedSum) must hold the receiver default; all other
+//  faces must hold the rotated donor value.
+template<class Type>
+void checkLowWeightFaces
+(
+    const word& test,
+    const word& patchTag,
+    const cyclicAMIFvPatch& amiPatch,
+    const tmp<Field<Type>>& tNeighbour,
+    const Type& expectedDefault,
+    const Type& expectedDonor,
+    label& nFailures
+)
+{
+    const cyclicAMIPolyPatch& cpp = amiPatch.cyclicAMIPatch();
+    const scalarField& weightsSum = cpp.weightsSum();
+    const scalar lowWeight =
+    (
+        cpp.owner()
+      ? cpp.AMI().lowWeightCorrection()
+      : cpp.neighbPatch().AMI().lowWeightCorrection()
+    );
+    const Field<Type>& neighbour = tNeighbour();
+
+    scalar maxDeviation = 0;
+    label nLow = 0;
+    label nDonor = 0;
+
+    if (neighbour.size() == weightsSum.size())
+    {
+        forAll(neighbour, facei)
+        {
+            const bool low = weightsSum[facei] < lowWeight;
+            const Type& expected = low ? expectedDefault : expectedDonor;
+            maxDeviation =
+                max(maxDeviation, mag(neighbour[facei] - expected));
+            if (low)
+            {
+                ++nLow;
+            }
+            else
+            {
+                ++nDonor;
+            }
+        }
+    }
+    else
+    {
+        maxDeviation = std::numeric_limits<scalar>::max();
+    }
+
+    reduce(maxDeviation, maxOp<scalar>());
+    reduce(nLow, sumOp<label>());
+    reduce(nDonor, sumOp<label>());
+    label nFaces = neighbour.size();
+    reduce(nFaces, sumOp<label>());
+
+    reportScalar
+    (
+        test,
+        "T04_FACE_FRAME_" + patchTag,
+        maxDeviation,
+        0,
+        identityTol,
+        1,
+        nFailures
+    );
+    reportBool
+    (
+        test,
+        "T04_FACES_CHECKED_" + patchTag,
+        nFaces > 0 && nLow + nDonor == nFaces,
+        true,
+        nFailures
+    );
+}
+
+
+//- Rotated donor oracle, written out explicitly (R & T & R.T()) so the test
+//  does not reuse the transform code under test.
+inline vector rotatedDonor(const tensor& R, const vector& v)
+{
+    return R & v;
+}
+
+inline scalar rotatedDonor(const tensor&, const scalar s)
+{
+    return s;
+}
+
+inline tensor rotatedDonor(const tensor& R, const tensor& T)
+{
+    return R & T & R.T();
+}
+
+inline symmTensor rotatedDonor(const tensor& R, const symmTensor& T)
+{
+    return symm(R & tensor(T) & R.T());
+}
+
+template<class Type>
+void checkLowWeightField
+(
+    const word& test,
+    const word& fieldName,
+    GeometricField<Type, fvPatchField, volMesh>& field,
+    const label patchA,
+    const label patchB,
+    const cyclicAMIFvPatch& amiPatchA,
+    const cyclicAMIFvPatch& amiPatchB,
+    const Type& value,
+    label& nFailures
+)
+{
+    // Receiver-side low-weight defaults stay at the unrotated value. Each
+    // side's donor expectation uses that patch's own forwardT, because the
+    // two sides' calcTransforms may choose opposite rotation signs.
+    checkLowWeightFaces
+    (
+        test,
+        fieldName + "_AMI1",
+        amiPatchA,
+        field.boundaryField()[patchA].patchNeighbourField(),
+        value,
+        rotatedDonor(amiPatchA.cyclicAMIPatch().forwardT()[0], value),
+        nFailures
+    );
+
+    checkLowWeightFaces
+    (
+        test,
+        fieldName + "_AMI2",
+        amiPatchB,
+        field.boundaryField()[patchB].patchNeighbourField(),
+        value,
+        rotatedDonor(amiPatchB.cyclicAMIPatch().forwardT()[0], value),
+        nFailures
+    );
+}
+
+
 void runMeshTest
 (
     const word& test,
@@ -2142,53 +2285,51 @@ void runMeshTest
         return;
     }
 
-    const vector expected(1, 2, 3);
-    const tmp<vectorField> tNeighbour
+    // Internal and donor values are uniform, so faces with a low weight
+    // (defaults) and faces with a donor value can be told apart. The scalar
+    // field is a control: the rotational transform is the identity, so it
+    // cannot expose the frame defect.
+    checkLowWeightField<vector>
     (
-        U.boundaryField()[patchA].patchNeighbourField()
+        test, "U", U, patchA, patchB, amiPatchA, amiPatchB,
+        vector(1, 2, 3), nFailures
     );
-    const vectorField& neighbour = tNeighbour();
 
-    reportBool
+    volScalarField S
     (
-        test,
-        "T04_LOW_WEIGHT_FACE_PRESENT",
-        !neighbour.empty(),
-        true,
-        nFailures
+        IOobject("S", runTime.timeName(), mesh, IOobject::MUST_READ),
+        mesh
     );
-    if (!neighbour.empty())
-    {
-        reportScalar
-        (
-            test,
-            "T04_DEFAULT_FRAME_AMI1",
-            mag(neighbour[0] - expected),
-            0,
-            identityTol,
-            1,
-            nFailures
-        );
-    }
+    S.correctBoundaryConditions();
+    checkLowWeightField<scalar>
+    (
+        test, "S", S, patchA, patchB, amiPatchA, amiPatchB,
+        scalar(1), nFailures
+    );
 
-    const tmp<vectorField> tNeighbourB
+    volTensorField tField
     (
-        U.boundaryField()[patchB].patchNeighbourField()
+        IOobject("T", runTime.timeName(), mesh, IOobject::MUST_READ),
+        mesh
     );
-    const vectorField& neighbourB = tNeighbourB();
-    if (!neighbourB.empty())
-    {
-        reportScalar
-        (
-            test,
-            "T04_DEFAULT_FRAME_AMI2",
-            mag(neighbourB[0] - expected),
-            0,
-            identityTol,
-            1,
-            nFailures
-        );
-    }
+    tField.correctBoundaryConditions();
+    checkLowWeightField<tensor>
+    (
+        test, "T", tField, patchA, patchB, amiPatchA, amiPatchB,
+        tensor(1, 2, 3, 4, 5, 6, 7, 8, 9), nFailures
+    );
+
+    volSymmTensorField stField
+    (
+        IOobject("ST", runTime.timeName(), mesh, IOobject::MUST_READ),
+        mesh
+    );
+    stField.correctBoundaryConditions();
+    checkLowWeightField<symmTensor>
+    (
+        test, "ST", stField, patchA, patchB, amiPatchA, amiPatchB,
+        symmTensor(1, 2, 3, 4, 5, 6), nFailures
+    );
 }
 
 } // End namespace

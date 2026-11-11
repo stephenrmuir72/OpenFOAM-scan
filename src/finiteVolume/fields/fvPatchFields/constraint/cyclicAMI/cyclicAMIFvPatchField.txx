@@ -304,6 +304,11 @@ Foam::cyclicAMIFvPatchField<Type>::getNeighbourField
     const labelUList& nbrFaceCells = neighbPatch.faceCells();
 
     Field<Type> pnf(internalData, nbrFaceCells);
+
+    // Transform donor values only. Low-weight defaults are receiver-side
+    // values and must not be rotated.
+    transformCoupleField(pnf);
+
     Field<Type> defaultValues;
 
     if (cyclicAMIPatch_.applyLowWeightCorrection())
@@ -311,14 +316,7 @@ Foam::cyclicAMIFvPatchField<Type>::getNeighbourField
         defaultValues = Field<Type>(internalData, cyclicAMIPatch_.faceCells());
     }
 
-    tmp<Field<Type>> tpnf = cyclicAMIPatch_.interpolate(pnf, defaultValues);
-
-    if (doTransform())
-    {
-        transform(tpnf.ref(), forwardT(), tpnf());
-    }
-
-    return tpnf;
+    return cyclicAMIPatch_.interpolate(pnf, defaultValues);
 }
 
 
@@ -501,7 +499,10 @@ void Foam::cyclicAMIFvPatchField<Type>::initEvaluate
         // - use cyclicACMIFvPatch::neighbPatch() virtual instead
         const cyclicAMIFvPatch& neighbPatch = cyclicAMIPatch_.neighbPatch();
         const labelUList& nbrFaceCells = neighbPatch.faceCells();
-        const Field<Type> pnf(this->primitiveField(), nbrFaceCells);
+        Field<Type> pnf(this->primitiveField(), nbrFaceCells);
+
+        // Transform according to the transformation tensors
+        transformCoupleField(pnf);
 
         const cyclicAMIPolyPatch& cpp = cyclicAMIPatch_.cyclicAMIPatch();
 
@@ -592,13 +593,6 @@ void Foam::cyclicAMIFvPatchField<Type>::evaluate
         // Receive requests all handled by last function call
         recvRequests_.clear();
         recvRequests1_.clear();
-
-        if (doTransform())
-        {
-            // In-place transform
-            auto& pnf = *patchNeighbourFieldPtr_;
-            transform(pnf, forwardT(), pnf);
-        }
     }
 
     // Use patchNeighbourField() and patchInternalField() to obtain face value

@@ -245,6 +245,35 @@ as an unexpected pass. This is inferred from the code and was not run. S02
 remains the pre-fix record. The runner refuses S02 with
 an external library root, so this combination is blocked.
 
+## S06 post-fix low-weight frame gate
+
+S06 verifies that low-weight default values stay in the receiver frame on
+rotational cyclicAMI faces. It builds the test application from the current
+source and runs T04 (serial and two-rank distributed, with pass-only
+expectations), T08, and T09 with the cache-plus-face-creation rejection. The
+two-rank T04 case is decomposed by the runner with the rotation fixture's
+`system/decomposeParDict` (two subdomains, `simple`, `(2 1 1)`), and only
+`controlDict` is copied into each `processor*/system` directory.
+
+Run from the C0 repository root in a fresh shell after sourcing C0:
+
+```sh
+source /home/pc/gitRepos/OpenFOAM/openfoam/etc/bashrc
+AMI_ROOT=/home/pc/OpenFOAM/OF2312/tests/my_work/03_KTM/14_AMI_improvements
+python3 applications/test/AMIInterpolation/runTests.py \
+  --stage S06 --target-id C0 --project-dir "$WM_PROJECT_DIR" \
+  --build-root "$AMI_ROOT/06_build/current-fixed/S06-final" \
+  --run-root "$AMI_ROOT/04_runs/current-fixed/S06-final" \
+  --results-dir "$AMI_ROOT/05_results/S06" --build --timeout 900
+```
+
+The S06 gate requires 21 passing scenarios: 2 T04 variants (serial and two
+ranks), 13 T08 topology scenarios, 5 T09 state-transition scenarios, and the
+cache-plus-face-creation rejection. The four-rank T04 run is not in the
+runner. It was run by hand with a four-subdomain `decomposeParDict` and
+passed; the evidence is in `05_results/S06-T04-extension/`. The S06 stage
+has no expected failures.
+
 ## Result interpretation
 
 The C0 defect tests must fail their named assertions. The runner records these
@@ -260,7 +289,7 @@ defect; it does not mean the defect is acceptable.
 | T01 | Planar nonmatching transfer control and weighted-adjoint check |
 | T02 | Cached midpoint fraction; expects the current C0 assertion failures |
 | T03 | 90-degree topology-created face area; expects the current C0 frame failure |
-| T04 | Rotational low-weight fallback; expects the current C0 frame failures |
+| T04 | Rotational low-weight fallback; checks every face for U (vector), S (scalar control), T (tensor) and ST (symmTensor): receiver-side defaults stay unrotated, donor-valued faces match each side's `forwardT` (S06 fix; passes on the fixed build, fails pre-fix for U, T and ST) |
 | T05 | Seed/restart reproduction; expects the current C0 coverage failures |
 | T06 | Fully covered `2.5e-7` fine face; expects the current C0 cutoff failures |
 | T07 | Two-rank normal-gap discovery reproduction; expects current C0 coverage failures |

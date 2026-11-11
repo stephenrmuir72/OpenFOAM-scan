@@ -1,0 +1,27 @@
+FoamFile
+{
+    version 2.0;
+    format ascii;
+    class volTensorField;
+    object T;
+}
+
+dimensions [0 0 0 0 0 0 0];
+internalField uniform (1 2 3 4 5 6 7 8 9);
+boundaryField
+{
+    AMI1
+    {
+        type cyclicAMI;
+        value uniform (1 2 3 4 5 6 7 8 9);
+    }
+    AMI2
+    {
+        type cyclicAMI;
+        value uniform (1 2 3 4 5 6 7 8 9);
+    }
+    walls
+    {
+        type zeroGradient;
+    }
+}

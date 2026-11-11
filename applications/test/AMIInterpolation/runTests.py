@@ -92,13 +92,22 @@ TEST_SPECS = {
         "arguments": ["-test", "T04"],
         "assertions": {
             "T04_AMI_PATCHES_PRESENT",
-            "T04_LOW_WEIGHT_FACE_PRESENT",
-            "T04_DEFAULT_FRAME_AMI1",
-            "T04_DEFAULT_FRAME_AMI2",
-        },
-        "expected_failures": {
-            "T04_DEFAULT_FRAME_AMI1",
-            "T04_DEFAULT_FRAME_AMI2",
+            "T04_FACE_FRAME_U_AMI1",
+            "T04_FACE_FRAME_U_AMI2",
+            "T04_FACES_CHECKED_U_AMI1",
+            "T04_FACES_CHECKED_U_AMI2",
+            "T04_FACE_FRAME_S_AMI1",
+            "T04_FACE_FRAME_S_AMI2",
+            "T04_FACES_CHECKED_S_AMI1",
+            "T04_FACES_CHECKED_S_AMI2",
+            "T04_FACE_FRAME_T_AMI1",
+            "T04_FACE_FRAME_T_AMI2",
+            "T04_FACES_CHECKED_T_AMI1",
+            "T04_FACES_CHECKED_T_AMI2",
+            "T04_FACE_FRAME_ST_AMI1",
+            "T04_FACE_FRAME_ST_AMI2",
+            "T04_FACES_CHECKED_ST_AMI1",
+            "T04_FACES_CHECKED_ST_AMI2",
         },
     },
     "T05": {
@@ -509,6 +518,26 @@ def t03_s05_scenarios() -> list[dict]:
 
 S05_SCENARIOS = {
     "T03": t03_s05_scenarios(),
+    "T08": topology_scenarios(),
+    "T09": state_transition_scenarios(),
+}
+
+T04_S06_SCENARIOS = [
+    {
+        "variant": "low-weight-rotation-serial",
+        "arguments": ["-test", "T04"],
+    },
+    {
+        "variant": "low-weight-rotation-two-rank-distributed",
+        "ranks": 2,
+        "decompose": True,
+        "rank_system_files": ("controlDict",),
+        "arguments": ["-parallel", "-test", "T04"],
+    },
+]
+
+S06_SCENARIOS = {
+    "T04": T04_S06_SCENARIOS,
     "T08": topology_scenarios(),
     "T09": state_transition_scenarios(),
 }
@@ -1154,7 +1183,7 @@ def run_test(
             }
         for rank_dir in sorted(case_dir.glob("processor*")):
             (rank_dir / "system").mkdir(exist_ok=True)
-            for name in ("t03Variant", "controlDict"):
+            for name in spec.get("rank_system_files", ("t03Variant", "controlDict")):
                 shutil.copy2(
                     case_dir / "system" / name,
                     rank_dir / "system" / name,
@@ -1972,7 +2001,7 @@ def write_input_manifest(
 def load_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--stage", choices=("S02", "S03", "S04", "S05"), default="S02"
+        "--stage", choices=("S02", "S03", "S04", "S05", "S06"), default="S02"
     )
     parser.add_argument("--target-id", choices=("B0", "C0"), default="C0")
     parser.add_argument(
@@ -2014,6 +2043,8 @@ def load_args() -> argparse.Namespace:
             args.tests = ["T01", "T02", "T08", "T09", "T13"]
         elif args.stage == "S05":
             args.tests = ["T03", "T08", "T09"]
+        elif args.stage == "S06":
+            args.tests = ["T04", "T08", "T09"]
     return args
 
 
@@ -2091,6 +2122,10 @@ def main() -> int:
         args.target_id != "C0" or args.observation_mode
     ):
         raise ValueError("S05 supports only C0 post-fix mode")
+    if args.stage == "S06" and (
+        args.target_id != "C0" or args.observation_mode
+    ):
+        raise ValueError("S06 supports only C0 post-fix mode")
     if args.stage == "S04":
         if not args.library_root or not args.solid_foam:
             raise ValueError(
@@ -2264,12 +2299,13 @@ def main() -> int:
             S03_SCENARIOS if args.stage == "S03"
             else S04_SCENARIOS if args.stage == "S04"
             else S05_SCENARIOS if args.stage == "S05"
+            else S06_SCENARIOS if args.stage == "S06"
             else {}
         )
         if test_id in scenario_matrix:
             for scenario in scenario_matrix[test_id]:
                 spec = {**TEST_SPECS[test_id], **scenario}
-                if args.stage == "S05":
+                if args.stage in {"S05", "S06"}:
                     spec["expected_failures"] = set()
                 if args.stage == "S04" and test_id == "T02":
                     spec["assertions"] = T02_S04_ASSERTIONS
@@ -2296,7 +2332,7 @@ def main() -> int:
                     env,
                     args.timeout,
                 )
-                if args.stage in {"S04", "S05"}:
+                if args.stage in {"S04", "S05", "S06"}:
                     rejection_record["status"] = (
                         "pass"
                         if rejection_record["status"] == "observed_pass"
@@ -2434,6 +2470,27 @@ def main() -> int:
             gate_pass
             and all(record["status"] == "pass" for record in run_records)
         )
+    elif args.stage == "S06":
+        required_record_ids = {
+            f"{test_id}-{scenario['variant']}"
+            for test_id, scenarios in S06_SCENARIOS.items()
+            for scenario in scenarios
+        }
+        required_record_ids.add("T09-cache-plus-face-creation")
+        records_by_id = {record["id"]: record for record in run_records}
+        gate_pass = (
+            required_record_ids <= records_by_id.keys()
+            and all(
+                records_by_id[record_id]["status"] == "pass"
+                for record_id in required_record_ids
+            )
+            and timeout_record["status"] == "pass"
+            and reference_test_record["status"] == "pass"
+        )
+        suite_pass = (
+            gate_pass
+            and all(record["status"] == "pass" for record in run_records)
+        )
     else:
         required_record_ids = {"T01", "T13", "T09-cache-plus-face-creation"}
         required_record_ids |= {
@@ -2476,6 +2533,7 @@ def main() -> int:
             2 if args.stage == "S02"
             else 3 if args.stage == "S03"
             else 5 if args.stage == "S05"
+            else 6 if args.stage == "S06"
             else 4
         ),
         "stage": args.stage,
@@ -2505,9 +2563,12 @@ def main() -> int:
         "s05_exit_gate": (
             "pass" if gate_pass else "failure"
         ) if args.stage == "S05" else "not_applicable",
+        "s06_exit_gate": (
+            "pass" if gate_pass else "failure"
+        ) if args.stage == "S06" else "not_applicable",
         "suite_status": (
             "pass" if suite_pass else "failure"
-        ) if args.stage in {"S02", "S04", "S05"} else (
+        ) if args.stage in {"S02", "S04", "S05", "S06"} else (
             "ami_observation_complete" if suite_pass else "failure"
         ),
     }
@@ -2531,6 +2592,9 @@ def main() -> int:
         )
     if args.stage == "S05":
         print(f"S05 exit gate: {report['s05_exit_gate']}")
+        return 0 if report["suite_status"] == "pass" else 1
+    if args.stage == "S06":
+        print(f"S06 exit gate: {report['s06_exit_gate']}")
         return 0 if report["suite_status"] == "pass" else 1
     print(f"S04 exit gate: {report['s04_exit_gate']}")
     return 0 if report["suite_status"] == "pass" else 1
