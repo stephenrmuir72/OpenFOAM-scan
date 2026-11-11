@@ -6,7 +6,8 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2017-2018 OpenFOAM Foundation
-    Copyright (C) 2019-2026 OpenCFD Ltd.
+    Copyright (C) 2019-2025 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -38,7 +39,6 @@ License
 #include "decomposedBlockData.H"
 #include "registerSwitch.H"
 #include "dummyISstream.H"
-#include "SubList.H"
 
 /* * * * * * * * * * * * * * * Static Member Data  * * * * * * * * * * * * * */
 
@@ -402,10 +402,18 @@ Foam::fileOperations::masterUncollatedFileOperation::localObjectPath
 }
 
 
-void Foam::fileOperations::masterUncollatedFileOperation::readAndSend
+//
+// Local Functions
+//
+namespace Foam
+{
+
+// Read file contents and send to processors.
+// Handles compressed or uncompressed files
+static void readAndSend
 (
     const fileName& filePath,
-    const labelUList& recvProcs,
+    const UList<int>& recvProcs,
     PstreamBuffers& pBufs
 )
 {
@@ -423,7 +431,7 @@ void Foam::fileOperations::masterUncollatedFileOperation::readAndSend
     // Read file contents (compressed or uncompressed) into a character buffer
     DynamicList<char> buf(IFstream::readContents(ifs));
 
-    if (debug)
+    if (fileOperations::masterUncollatedFileOperation::debug)
     {
         Info<< "masterUncollatedFileOperation::readAndSend :"
             << filePath
@@ -431,19 +439,21 @@ void Foam::fileOperations::masterUncollatedFileOperation::readAndSend
             << buf.size() << " bytes" << endl;
     }
 
-    for (const label proci : recvProcs)
+    for (auto proci : recvProcs)
     {
         UOPstream os(proci, pBufs);
-        os.write(buf.cdata_bytes(), buf.size_bytes());
+        os.write(buf.data(), buf.size());
     }
 }
+
+} // End namespace Foam
 
 
 Foam::autoPtr<Foam::ISstream>
 Foam::fileOperations::masterUncollatedFileOperation::read
 (
     IOobject& io,
-    const label comm,
+    const int comm,
     const bool uniform,             // on comms master only
     const fileNameList& filePaths,  // on comms master and sub-ranks
     const boolUList& readOnProcs    // on comms master and sub-ranks
@@ -473,7 +483,7 @@ Foam::fileOperations::masterUncollatedFileOperation::read
                 // Read on master and send to all processors
                 // (including master for simplicity)
 
-                DynamicList<label> recvProcs(UPstream::nProcs(comm));
+                DynamicList<int> recvProcs(UPstream::nProcs(comm));
                 for (const int proci : UPstream::allProcs(comm))
                 {
                     if (readOnProcs[proci])
@@ -501,7 +511,7 @@ Foam::fileOperations::masterUncollatedFileOperation::read
             }
 
             // Read and send individual sub-rank files
-            labelList recvProcs(1);
+            List<int> recvProcs(1);
             for (const int proci : UPstream::subProcs(comm))
             {
                 const auto& fPath = filePaths[proci];
@@ -539,10 +549,16 @@ Foam::fileOperations::masterUncollatedFileOperation::read
     if (!isPtr)
     {
         // This processor returns something
-        List<char> buf(pBufs.recvDataCount(UPstream::masterNo()));
+        List<char> buf;
 
-        if (!buf.empty())
+        if
+        (
+            const auto count0 = pBufs.recvDataCount(UPstream::masterNo());
+            (count0 > 0)
+        )
         {
+            buf.resize(count0);
+
             UIPstream is(UPstream::masterNo(), pBufs);
             is.read(buf.data(), buf.size());
         }
@@ -553,7 +569,7 @@ Foam::fileOperations::masterUncollatedFileOperation::read
                 << " Done reading " << buf.size() << " bytes" << endl;
         }
 
-        // A local character buffer copy of the Pstream contents.
+        // A local character buffer copy.
         // Construct with same parameters (ASCII, current version)
         // as the IFstream so that it has the same characteristics.
 
@@ -2401,7 +2417,15 @@ Foam::fileOperations::masterUncollatedFileOperation::NewIFstream
 {
     autoPtr<ISstream> isPtr;
 
-    if (Pstream::parRun())
+    if (!UPstream::parRun())
+    {
+        // Non-parallel, just read myself
+        isPtr.reset(new IFstream(filePath));
+        return isPtr;
+    }
+
+    // Parallel
+
     {
         // Insert logic of filePath. We assume that if a file is absolute
         // on the master it is absolute also on the sub-ranks etc.
@@ -2426,14 +2450,16 @@ Foam::fileOperations::masterUncollatedFileOperation::NewIFstream
                 }
 
                 // Read and send to sub-ranks
-                labelList recvProcs(identity(UPstream::nProcs(comm_)-1, 1));
+
+                List<int> recvProcs(UPstream::nProcs(comm_)-1);
+                Foam::identity(recvProcs, 1);
 
                 readAndSend(filePath, recvProcs, pBufs);
             }
             else
             {
                 // Read individual sub-rank files
-                labelList recvProcs(1);
+                List<int> recvProcs(1);
                 for (const int proci : Pstream::subProcs(comm_))
                 {
                     const fileName& fPath = filePaths[proci];
@@ -2468,11 +2494,17 @@ Foam::fileOperations::masterUncollatedFileOperation::NewIFstream
                     << " from processor " << Pstream::masterNo() << endl;
             }
 
-            List<char> buf(pBufs.recvDataCount(Pstream::masterNo()));
+            List<char> buf;
 
-            if (!buf.empty())
+            if
+            (
+                const auto count0 = pBufs.recvDataCount(UPstream::masterNo());
+                (count0 > 0)
+            )
             {
-                UIPstream is(Pstream::masterNo(), pBufs);
+                buf.resize(count0);
+
+                UIPstream is(UPstream::masterNo(), pBufs);
                 is.read(buf.data(), buf.size());
             }
 
@@ -2482,7 +2514,7 @@ Foam::fileOperations::masterUncollatedFileOperation::NewIFstream
                     << " Done reading " << buf.size() << " bytes" << endl;
             }
 
-            // A local character buffer copy of the Pstream contents.
+            // A local character buffer copy.
             // Construct with same parameters (ASCII, current version)
             // as the IFstream so that it has the same characteristics.
 
@@ -2491,11 +2523,6 @@ Foam::fileOperations::masterUncollatedFileOperation::NewIFstream
             // With the proper file name
             isPtr->name() = filePath;
         }
-    }
-    else
-    {
-        // Read myself
-        isPtr.reset(new IFstream(filePath));
     }
 
     return isPtr;

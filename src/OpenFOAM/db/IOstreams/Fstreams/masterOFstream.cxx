@@ -78,12 +78,17 @@ void Foam::masterOFstream::checkWrite
 void Foam::masterOFstream::commit()
 {
     // Take ownership of serialized content
-    DynamicList<char> charData(OCharStream::release());
+    // (DynamicList or std::vector)
+
+    auto charData(OCharStream::release());
+
+    const auto myProci = UPstream::myProcNo(comm_);
+    const auto numProc = UPstream::nProcs(comm_);
 
     if (!UPstream::parRun())
     {
         // Write (non-empty) data
-        checkWrite(pathName_, charData);
+        checkWrite(pathName_, charData.data(), charData.size());
     }
     else
     {
@@ -93,8 +98,8 @@ void Foam::masterOFstream::commit()
             charData.clear();
         }
 
-        List<fileName> filePaths(UPstream::nProcs(comm_));
-        filePaths[UPstream::myProcNo(comm_)] = pathName_;
+        List<fileName> filePaths(numProc);
+        filePaths[myProci] = pathName_;
         Pstream::gatherList(filePaths, UPstream::msgType(), comm_);
 
         // Test for identical output paths
@@ -111,7 +116,7 @@ void Foam::masterOFstream::commit()
             // Identical file paths - write on master
             if (UPstream::master(comm_) && writeOnProc_)
             {
-                checkWrite(pathName_, charData);
+                checkWrite(pathName_, charData.data(), charData.size());
             }
             return;
         }
@@ -126,40 +131,34 @@ void Foam::masterOFstream::commit()
         // Could also consider double buffering + write to reduce
         // memory overhead.
 
-        // Or int64_t
-        const label dataSize =
+        const int64_t dataSize =
         (
             (UPstream::is_subrank(comm_) && writeOnProc_)
-          ? charData.size()
-          : 0
+          ? int64_t(charData.size())
+          : int64_t(0)
         );
 
-        const labelList recvSizes
+        const List<int64_t> recvSizes
         (
-            UPstream::listGatherValues<label>(dataSize, comm_)
+            UPstream::listGatherValues<int64_t>(dataSize, comm_)
         );
 
-        // Receive from these procs
-        DynamicList<int> recvProcs;
+        const int64_t maxRecvSize =
+        (
+            (recvSizes.size() > 1)
+          ? *(std::max_element(recvSizes.begin()+1, recvSizes.end()))
+          : int64_t(0)
+        );
 
-        if (UPstream::master(comm_))
+        if (!pTraits<int32_t>::can_narrow(maxRecvSize))
         {
-            // Sorted by message size
-            labelList order(Foam::sortedOrder(recvSizes));
-            recvProcs.reserve_exact(order.size());
-
-            // Want to receive large messages first. Ignore empty slots
-            forAllReverse(order, i)
-            {
-                const label proci = order[i];
-
-                // Ignore empty slots
-                if (recvSizes[proci] > 0)
-                {
-                    recvProcs.push_back(proci);
-                }
-            }
+            FatalErrorInFunction
+                << "The max send size: " << (maxRecvSize/1024)
+                << " kB exceeds the MPI element count."
+                   " Need to adjust this code (www.openfoam.com)"
+                << Foam::exit(FatalError);
         }
+
 
         // Non-blocking communication
         const auto startOfRequests = UPstream::nRequests();
@@ -167,37 +166,44 @@ void Foam::masterOFstream::commit()
         // Some unique tag for this read/write grouping (extra precaution)
         const int messageTag = (UPstream::msgType() + 256);
 
-        if (UPstream::is_subrank(comm_) && dataSize > 0)
+        if (UPstream::master(comm_))
         {
-            // Send to content to master
-            UOPstream::write
-            (
-                UPstream::commsTypes::nonBlocking,
-                UPstream::masterNo(),
-                charData.cdata_bytes(),
-                charData.size_bytes(),
-                messageTag,
-                comm_
-            );
-        }
-        else if (UPstream::master(comm_))
-        {
-            // The receive slots
-            List<List<char>> recvBuffers(UPstream::nProcs(comm_));
+            // The receive procs, large messages first
+            DynamicList<int> recvProcs(recvSizes.size());
 
-            // Receive from these procs (non-empty slots)
+            forAll(recvSizes, proci)
+            {
+                // Ignore empty slots and rank=0 [self]
+                if (recvSizes[proci] > 0 && proci != UPstream::masterNo())
+                {
+                    recvProcs.push_back(proci);
+                }
+            }
+
+            // Reverse ordered
+            std::stable_sort
+            (
+                recvProcs.begin(), recvProcs.end(),
+                [&](int a, int b){ return (recvSizes[b] < recvSizes[a]); }
+            );
+
+
+            // The receive slots
+            List<List<char>> recvBuffers(numProc);
+
+            // Start the receives
             for (const int proci : recvProcs)
             {
                 auto& slot = recvBuffers[proci];
-                slot.resize_nocopy(recvSizes[proci]);
 
-                // Receive content
+                slot.resize(recvSizes[proci]);
+
                 UIPstream::read
                 (
                     UPstream::commsTypes::nonBlocking,
                     proci,
-                    slot.data_bytes(),
-                    slot.size_bytes(),
+                    slot.data(),
+                    slot.size(),
                     messageTag,
                     comm_
                 );
@@ -206,7 +212,7 @@ void Foam::masterOFstream::commit()
             if (writeOnProc_)
             {
                 // Write non-empty master data
-                checkWrite(pathName_, charData);
+                checkWrite(pathName_, charData.data(), charData.size());
                 charData.clear();
             }
 
@@ -228,12 +234,26 @@ void Foam::masterOFstream::commit()
                     auto& slot = recvBuffers[proci];
 
                     // Write non-empty sub-proc data
-                    checkWrite(filePaths[proci], slot);
+                    checkWrite(filePaths[proci], slot.data(), slot.size());
 
                     // Eager cleanup
                     slot.clear();
+                    // slot.shrink_to_fit();
                 }
             }
+        }
+        else if (UPstream::is_subrank(comm_) && dataSize > 0)
+        {
+            // Send to content to master
+            UOPstream::write
+            (
+                UPstream::commsTypes::nonBlocking,
+                UPstream::masterNo(),
+                charData.data(),
+                charData.size(),
+                messageTag,
+                comm_
+            );
         }
 
         UPstream::waitRequests(startOfRequests);
