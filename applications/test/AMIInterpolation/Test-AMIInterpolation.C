@@ -385,6 +385,7 @@ void appendGrid
 (
     const label n,
     const scalar shift,
+    const scalar z,
     DynamicList<point>& points,
     DynamicList<face>& faces,
     const bool reverse
@@ -403,7 +404,7 @@ void appendGrid
                 (i + 1)*h + shift,
                 j*h + shift,
                 (j + 1)*h + shift,
-                0,
+                z,
                 reverse
             );
         }
@@ -425,7 +426,7 @@ void appendSliverGrid
 )
 {
     const scalar h = 1/scalar(n);
-    appendGrid(n, 0, srcPoints, srcFaces, false);
+    appendGrid(n, 0, 0, srcPoints, srcFaces, false);
 
     // Target faces share point indices so the target patch is connected;
     // the advancing front can only reach a sliver through its neighbours
@@ -477,7 +478,7 @@ void appendSmallCentreGrid
 )
 {
     const scalar h = 1/scalar(n);
-    appendGrid(n, 0, srcPoints, srcFaces, false);
+    appendGrid(n, 0, 0, srcPoints, srcFaces, false);
 
     // Global lattice with 3n+1 points per direction, shared between cells
     const scalar off[3] = {0, 0.5 - 0.5*s, 0.5 + 0.5*s};
@@ -810,6 +811,83 @@ void reportScaleMetrics
 }
 
 
+// Brute-force reference pair set for the axis-aligned split grid. A pair is
+// admissible when the xy-overlap has positive area and the squared normal
+// distance is below maxDistance2. All normals are parallel in this family, so
+// the cosine test is not evaluated. Source faces are local to this rank and
+// the target faces are the full global list, so the AMI addresses must be
+// global target IDs.
+label splitGridPairMismatches
+(
+    const labelListList& amiSrcAddress,
+    const scalarListList& amiSrcWeights,
+    const pointField& srcPoints,
+    const UList<face>& srcFaces,
+    const pointField& tgtPoints,
+    const UList<face>& tgtFaces,
+    const scalar maxDistance2,
+    label& nOraclePairs,
+    label& nAmiPairs
+)
+{
+    const scalar tol = 1e-9;
+
+    label nMismatch = 0;
+    nOraclePairs = 0;
+    nAmiPairs = 0;
+
+    forAll(srcFaces, sfi)
+    {
+        const boundBox sbb(srcFaces[sfi].points(srcPoints), false);
+        const point sc = srcFaces[sfi].centre(srcPoints);
+        const vector sn = srcFaces[sfi].unitNormal(srcPoints);
+
+        boolList amiPair(tgtFaces.size(), false);
+        forAll(amiSrcAddress[sfi], k)
+        {
+            if (amiSrcWeights[sfi][k] > tol)
+            {
+                const label tgti = amiSrcAddress[sfi][k];
+                if (tgti < 0 || tgti >= tgtFaces.size())
+                {
+                    ++nMismatch;
+                }
+                else
+                {
+                    amiPair[tgti] = true;
+                }
+            }
+        }
+
+        forAll(tgtFaces, tfi)
+        {
+            const boundBox tbb(tgtFaces[tfi].points(tgtPoints), false);
+            const scalar ox =
+                min(sbb.max().x(), tbb.max().x())
+              - max(sbb.min().x(), tbb.min().x());
+            const scalar oy =
+                min(sbb.max().y(), tbb.max().y())
+              - max(sbb.min().y(), tbb.min().y());
+            const scalar dn =
+                (tgtFaces[tfi].centre(tgtPoints) - sc) & sn;
+
+            const bool oracle =
+                ox > tol && oy > tol
+             && (maxDistance2 <= 0 || sqr(dn) < maxDistance2);
+
+            nOraclePairs += oracle;
+            nAmiPairs += amiPair[tfi];
+            if (oracle != amiPair[tfi])
+            {
+                ++nMismatch;
+            }
+        }
+    }
+
+    return nMismatch;
+}
+
+
 void runGeometryTest
 (
     const word& test,
@@ -837,6 +915,18 @@ void runGeometryTest
             << exit(FatalError);
     }
 
+    if (args.found("split-grid") && test != "T07")
+    {
+        FatalErrorInFunction
+            << "-split-grid requires -test T07" << exit(FatalError);
+    }
+
+    if (args.found("split-grid") && args.found("tilt"))
+    {
+        FatalErrorInFunction
+            << "-split-grid cannot be combined with -tilt" << exit(FatalError);
+    }
+
     if (args.found("grid-sliver") && !args.found("grid"))
     {
         FatalErrorInFunction
@@ -845,6 +935,10 @@ void runGeometryTest
 
     DynamicList<point> srcPts, tgtPts;
     DynamicList<face> srcFaces, tgtFaces;
+
+    // Full target grid, used by every rank as the reference for the oracle
+    DynamicList<point> refTgtPts;
+    DynamicList<face> refTgtFaces;
     if (args.found("grid-small"))
     {
         appendSmallCentreGrid
@@ -873,8 +967,38 @@ void runGeometryTest
     {
         // Uniform source grid with a half-cell shifted target grid
         const label n = args.get<label>("grid");
-        appendGrid(n, 0, srcPts, srcFaces, false);
-        appendGrid(n, 0.5/scalar(n), tgtPts, tgtFaces, true);
+        appendGrid(n, 0, 0, srcPts, srcFaces, false);
+        appendGrid(n, 0.5/scalar(n), 0, tgtPts, tgtFaces, true);
+    }
+    else if (args.found("split-grid"))
+    {
+        // Same stencil as -grid, but the target sits at height gap and the
+        // source faces are split into contiguous blocks, one per rank. Every
+        // rank builds the full grids so that the oracle has the global target
+        // list. The target patch is kept on tgtRank only.
+        const label n = args.get<label>("split-grid");
+        DynamicList<point> fullSrcPts;
+        DynamicList<face> fullSrcFaces;
+        appendGrid(n, 0, 0, fullSrcPts, fullSrcFaces, false);
+        appendGrid(n, 0.5/scalar(n), gap, refTgtPts, refTgtFaces, true);
+
+        const label nProcs = UPstream::parRun() ? UPstream::nProcs() : 1;
+        const label procNo = UPstream::parRun() ? UPstream::myProcNo() : 0;
+        const label nSrc = fullSrcFaces.size();
+        const label srcStart = procNo*nSrc/nProcs;
+        const label srcEnd = (procNo + 1)*nSrc/nProcs;
+
+        srcPts = fullSrcPts;
+        for (label facei = srcStart; facei < srcEnd; ++facei)
+        {
+            srcFaces.append(fullSrcFaces[facei]);
+        }
+
+        if (!UPstream::parRun() || procNo == tgtRank)
+        {
+            tgtPts = refTgtPts;
+            tgtFaces = refTgtFaces;
+        }
     }
     else
     {
@@ -895,6 +1019,27 @@ void runGeometryTest
             tgtPts,
             tgtFaces
         );
+    }
+
+    if (test == "T07" && args.found("tilt"))
+    {
+        // Rotate the target about the y-axis through its nominal centre so
+        // that source and target normals are oblique
+        const scalar theta =
+            args.get<scalar>("tilt")*constant::mathematical::pi/180.0;
+        const point centre =
+            scale*point(0.5, 0.5, gap) + point::uniform(offset);
+        for (point& p : tgtPts)
+        {
+            const vector d = p - centre;
+            p = centre
+              + vector
+                (
+                    d.x()*std::cos(theta) + d.z()*std::sin(theta),
+                    d.y(),
+                    -d.x()*std::sin(theta) + d.z()*std::cos(theta)
+                );
+        }
     }
 
     if (test == "T05")
@@ -950,6 +1095,11 @@ void runGeometryTest
         amiDict.add("maxDistance2", args.get<scalar>("maxDistance2"));
     }
 
+    if (args.found("minCosAngle"))
+    {
+        amiDict.add("minCosAngle", args.get<scalar>("minCosAngle"));
+    }
+
     faceAreaWeightAMI ami(amiDict);
     const bool calculated = ami.calculate(src, tgt);
 
@@ -964,6 +1114,63 @@ void runGeometryTest
     }
 
     reportBool(test, test + "_CALCULATED", calculated, true, nFailures);
+
+    if (args.found("split-grid"))
+    {
+        const scalar maxDistance2 =
+            args.getOrDefault<scalar>("maxDistance2", 0.01);
+
+        label nOraclePairs = 0;
+        label nAmiPairs = 0;
+        const label nLocalMismatch = splitGridPairMismatches
+        (
+            ami.srcAddress(),
+            ami.srcWeights(),
+            srcPoints,
+            srcFaces,
+            pointField(refTgtPts),
+            refTgtFaces,
+            maxDistance2,
+            nOraclePairs,
+            nAmiPairs
+        );
+
+        const scalar nMismatch =
+            returnReduce(scalar(nLocalMismatch), sumOp<scalar>());
+        const scalar nOracleTotal =
+            returnReduce(scalar(nOraclePairs), sumOp<scalar>());
+        const scalar nAmiTotal =
+            returnReduce(scalar(nAmiPairs), sumOp<scalar>());
+
+        Info<< "AMI_SPLIT_GRID test=" << test
+            << " n=" << args.get<label>("split-grid")
+            << " srcFacesLocal=" << srcFaces.size()
+            << " oraclePairs=" << nOracleTotal
+            << " amiPairs=" << nAmiTotal
+            << endl;
+
+        reportScalar
+        (
+            test,
+            "T07_PAIR_MISMATCH",
+            nMismatch,
+            0,
+            0,
+            1,
+            nFailures
+        );
+        reportScalar
+        (
+            test,
+            "T07_PAIR_COUNT",
+            nAmiTotal,
+            nOracleTotal,
+            0,
+            1,
+            nFailures
+        );
+        return;
+    }
 
     const scalarField srcCoverage(ami.srcWeightsSum());
     const scalarField tgtCoverage(ami.tgtWeightsSum());
@@ -1320,11 +1527,23 @@ void runGeometryTest
 
     if (test == "T10")
     {
+        // Each face is owned by one rank, so a rank without it contributes
+        // -GREAT and the maximum selects the owning value.
+        scalar srcCoverage0 =
+            srcCoverage.size() > 0 ? srcCoverage[0] : -GREAT;
+        scalar tgtCoverage0 =
+            tgtCoverage.size() > 0 ? tgtCoverage[0] : -GREAT;
+        scalar tgtCoverage1 =
+            tgtCoverage.size() > 1 ? tgtCoverage[1] : -GREAT;
+        reduce(srcCoverage0, maxOp<scalar>());
+        reduce(tgtCoverage0, maxOp<scalar>());
+        reduce(tgtCoverage1, maxOp<scalar>());
+
         reportScalar
         (
             test,
             "T10_SOURCE_COVERAGE",
-            srcCoverage[0],
+            srcCoverage0,
             0.9,
             transferTol,
             1,
@@ -1334,7 +1553,7 @@ void runGeometryTest
         (
             test,
             "T10_TARGET_COVERAGE_0",
-            tgtCoverage[0],
+            tgtCoverage0,
             1,
             transferTol,
             1,
@@ -1344,7 +1563,7 @@ void runGeometryTest
         (
             test,
             "T10_TARGET_COVERAGE_1",
-            tgtCoverage[1],
+            tgtCoverage1,
             0.8,
             transferTol,
             1,
@@ -1482,6 +1701,9 @@ void runGeometryTest
         targetIntegral +=
             tgtAreas[i]*mappedToTarget[i]*targetValues[i];
     }
+
+    reduce(sourceIntegral, sumOp<scalar>());
+    reduce(targetIntegral, sumOp<scalar>());
 
     reportScalar
     (
@@ -2784,6 +3006,8 @@ int main(int argc, char *argv[])
     argList::addOption("src-rank", "rank");
     argList::addOption("tgt-rank", "rank");
     argList::addOption("maxDistance2", "squared-distance");
+    argList::addOption("minCosAngle", "cosine");
+    argList::addOption("tilt", "degrees", "T07 target rotation about y");
     argList::addOption("benchmark-iterations", "count");
     argList::addOption
     (
@@ -2811,6 +3035,14 @@ int main(int argc, char *argv[])
         "grid-small",
         "s",
         "T01 with -grid (default 1): split each cell 3x3 with centre side s"
+    );
+    argList::addOption
+    (
+        "split-grid",
+        "cells",
+        "T07 N x N grid with the target at height -gap and the source split "
+        "into contiguous blocks across ranks; checked against an all-pairs "
+        "reference"
     );
     argList::addOption
     (

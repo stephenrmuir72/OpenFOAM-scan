@@ -308,14 +308,50 @@ Foam::autoPtr<Foam::mapDistribute> Foam::advancingFrontAMI::calcProcMap
         // Work array - whether processor bb overlaps the face bounds
         boolList procBbOverlaps(Pstream::nProcs(comm()));
 
+        // A target face t is accepted with a source face s only if
+        // |(c_t - c_s).n_s| < d (isCandidate, d = sqrt(maxDistance2)) and t
+        // overlaps s when projected along m, where |m.n_s| >= kappa
+        // (kappa = sqrt((1 + minCosAngle)/2)). Hence dist(c_t, s) is bounded
+        // by R_t + (d + R_t)/kappa, with R_t the largest distance from c_t to
+        // a vertex of t. Without both limits there is no finite bound.
+        const bool boundedDistance = (maxDistance2_ > 0) && (minCosAngle_ > -1);
+        const scalar d = boundedDistance ? sqrt(maxDistance2_) : 0;
+        const scalar kappa = boundedDistance ? sqrt(0.5*(1 + minCosAngle_)) : 0;
+
+        const vectorField& faceCentres = tgtPatch.faceCentres();
+
         forAll(faces, facei)
         {
             if (faces[facei].size())
             {
-                treeBoundBox faceBb(points, faces[facei]);
+                if (boundedDistance)
+                {
+                    const point& c = faceCentres[facei];
 
-                // Find the processor this face overlaps
-                calcOverlappingProcs(procBb, faceBb, procBbOverlaps);
+                    scalar R = 0;
+                    for (const label pointi : faces[facei])
+                    {
+                        R = max(R, mag(points[pointi] - c));
+                    }
+
+                    const scalar D = R + (d + R)/kappa;
+                    const treeBoundBox faceBb
+                    (
+                        c - vector(D, D, D),
+                        c + vector(D, D, D)
+                    );
+
+                    calcOverlappingProcs(procBb, faceBb, procBbOverlaps);
+                }
+                else
+                {
+                    // No finite bound on accepted pairs: send to every
+                    // processor holding source faces
+                    forAll(procBbOverlaps, proci)
+                    {
+                        procBbOverlaps[proci] = !procBb[proci].empty();
+                    }
+                }
 
                 forAll(procBbOverlaps, proci)
                 {

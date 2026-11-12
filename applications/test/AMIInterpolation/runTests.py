@@ -142,15 +142,13 @@ TEST_SPECS = {
             "-maxDistance2",
             "0.01",
         ],
-        # With restart on and requireMatch true, the empty target box on one
-        # rank (C0 discovery defect) aborts in faceAreaWeightAMI::calculate()
-        # before any T07 assertion is reported. Every rank must print the
-        # fatal.
-        "assertions": set(),
-        "expected_fatal": (
-            "1 source faces have no overlapping target face"
-            " (requireMatch is true)"
-        ),
+        # The 0.03 normal gap is admitted by maxDistance2 0.01. MPI discovery
+        # must keep the target face on every rank, so coverage is complete.
+        "assertions": {
+            "T07_CALCULATED",
+            "T07_SOURCE_COVERAGE",
+            "T07_TARGET_COVERAGE",
+        },
     },
     "T08": {
         "name": "MPI topology and local communicator matrix",
@@ -442,7 +440,67 @@ def scale_offset_scenarios() -> list[dict]:
     return scenarios
 
 
+# Split-grid runs compare against the all-pairs oracle instead of the
+# coverage check, which does not apply to a half-cell shifted target grid.
+SPLIT_T07_ASSERTIONS = {
+    "T07_CALCULATED",
+    "T07_PAIR_MISMATCH",
+    "T07_PAIR_COUNT",
+}
+
+
+def t07_scenarios() -> list[dict]:
+    # maxDistance2 0.01 admits the 0.03 normal gap. The bounded variant also
+    # sets minCosAngle, which enables the finite broad-phase bound. The
+    # fallback variant leaves minCosAngle unset and sends every target face to
+    # every processor. Both must keep the target face on every rank.
+    common = [
+        "-parallel",
+        "-test", "T07",
+        "-gap", "0.03",
+        "-maxDistance2", "0.01",
+    ]
+    scenarios = []
+    for ranks in (2, 4):
+        scenarios.append(
+            {
+                "variant": f"fallback-{ranks}-rank",
+                "ranks": ranks,
+                "arguments": common,
+            }
+        )
+        scenarios.append(
+            {
+                "variant": f"bounded-{ranks}-rank",
+                "ranks": ranks,
+                "arguments": common + ["-minCosAngle", "0.5"],
+            }
+        )
+        # Source patch split across ranks, checked against the all-pairs
+        # oracle. 4 ranks is a known pre-existing limit (see README), so only
+        # 2 ranks is gated here.
+        if ranks == 2:
+            scenarios.append(
+                {
+                    "variant": f"split-fallback-{ranks}-rank",
+                    "ranks": ranks,
+                    "arguments": common + ["-split-grid", "20"],
+                    "assertions": SPLIT_T07_ASSERTIONS,
+                }
+            )
+            scenarios.append(
+                {
+                    "variant": f"split-bounded-{ranks}-rank",
+                    "ranks": ranks,
+                    "arguments": common + ["-split-grid", "20", "-minCosAngle", "0.5"],
+                    "assertions": SPLIT_T07_ASSERTIONS,
+                }
+            )
+    return scenarios
+
+
 S03_SCENARIOS = {
+    "T07": t07_scenarios(),
     "T08": topology_scenarios(),
     "T09": state_transition_scenarios(),
     "T11": scale_offset_scenarios(),

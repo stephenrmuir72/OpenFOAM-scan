@@ -292,7 +292,7 @@ defect; it does not mean the defect is acceptable.
 | T04 | Rotational low-weight fallback; checks every face for U (vector), S (scalar control), T (tensor) and ST (symmTensor): receiver-side defaults stay unrotated, donor-valued faces match each side's `forwardT` (S06 fix; passes on the fixed build, fails pre-fix for U, T and ST) |
 | T05 | Seed selection with and without restart: every face ordering (`as-built`, `src-reversed`, `tgt-reversed`, `both-reversed`) must give the same physical mapping, serial and 2-rank, with restart on and off; 2-rank runs also swap rank ownership; a multi-target fixture (`-t05-multi`) covers one target face overlapping two source faces; `T05-unmatched-source-*` checks that a required unmatched source face fails on all ranks, with restart on and off |
 | T06 | Fully covered `2.5e-7` fine face in both ownership directions; no target face left uncovered |
-| T07 | Two-rank normal-gap discovery reproduction; expects the C0 required-match fatal (`1 source faces have no overlapping target face`) on both ranks |
+| T07 | Normal-gap discovery (gap 0.03, `maxDistance2 0.01`): coverage and pair-set equality on 2 and 4 ranks; split-grid pair-set oracle on 2 ranks (4 ranks deferred) |
 | T08-T09 | Explicitly not run in S02; full topology, state, FV, and GAMG matrices are scheduled for S03 |
 | T10 | Partial-coverage diagnostics |
 | T11 | Scale/offset matrix scheduled for S03 and hardening in S10 |
@@ -317,15 +317,28 @@ With restart on, an unmapped required face is a collective fatal after the
 restart pass. This is the S07 behaviour (decision D1). Previously, with restart
 on, the face stayed unmapped without error.
 
-The T07 case is the targeted C0 serial/MPI defect reproduction. Its expected
-outcome is the required-match fatal, not coverage assertions. Under D1 the
-fatal fires before any T07 assertion is reported. The runner requires the
-message `1 source faces have no overlapping target face (requireMatch is true)`
-to appear once per rank. The root cause is an empty target bounding box on one
-rank (`1 source faces but no target faces` in `advancingFrontAMI`). S07 does
-not fix that defect. The T07 contract was changed from the coverage assertions
-to this fatal (S07 decision), and the coverage assertions are no longer reached.
-It does not replace the broader all-pairs discovery oracle and rank-topology
+The T07 case checks normal-gap discovery (gap `0.03`, `-maxDistance2 0.01`,
+`requireMatch true`). The S09 contract is that a pair accepted by the serial
+walk is also accepted under MPI. The broad phase in `calcProcMap()` enlarges
+the target-face box by the normal-distance bound `d = sqrt(maxDistance2)` when
+both `maxDistance2 > 0` and `minCosAngle > -1` are set. Otherwise it falls back
+to sending every non-empty target face to every source processor. The T07
+assertions are coverage (`T07_CALCULATED`), pair-set equality against the
+all-pairs oracle (`T07_PAIR_MISMATCH`), and pair count (`T07_PAIR_COUNT`).
+Options: `-tilt <deg>` tilts the target plane, `-minCosAngle <cos>` sets the
+normal-cosine limit, and `-split-grid N` splits an `N x N` source patch across
+ranks (T07 only).
+
+Gated cases: fallback and bounded modes on 2 and 4 ranks (coverage cases), and
+split-grid fallback and bounded modes on 2 ranks. Split-grid on 4 ranks is not
+gated. It shows 1560 per-face mismatches on receive-only ranks. The original
+AABB `calcProcMap()` shows the same defect, so it is pre-existing and not
+caused by the S09 change. It is deferred with a follow-up. Traffic (send-map
+entries, 100x100 split grid, gap 0.03): fallback 20000 (2 ranks) and 40000
+(4 ranks); bounded 12700 and 18100.
+
+The bound is derived from the kernel test, not proven for oblique source
+normals. The fallback covers any case the bound does not. It does not replace the broader all-pairs discovery oracle and rank-topology
 matrix in the approved plan. This is the targeted S02 baseline gate, not the
 full test matrix in every S02 substep. T02 currently checks the midpoint
 fraction; T05 checks seed selection with and without restart; T06 checks the fully covered fine face; T04
