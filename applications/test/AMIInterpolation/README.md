@@ -318,11 +318,10 @@ restart pass. This is the S07 behaviour (decision D1). Previously, with restart
 on, the face stayed unmapped without error.
 
 The T07 case checks normal-gap discovery (gap `0.03`, `-maxDistance2 0.01`,
-`requireMatch true`). The S09 contract is that a pair accepted by the serial
-walk is also accepted under MPI. The broad phase in `calcProcMap()` enlarges
-the target-face box by the normal-distance bound `d = sqrt(maxDistance2)` when
-both `maxDistance2 > 0` and `minCosAngle > -1` are set. Otherwise it falls back
-to sending every non-empty target face to every source processor. The T07
+`requireMatch true`). A pair accepted by the serial walk must also be accepted
+under MPI. The broad phase in `calcProcMap()` enlarges the target-face box by a
+distance bound derived from `maxDistance2` and `minCosAngle` when both are set.
+Otherwise it sends every non-empty target face to every source processor. The T07
 assertions are coverage (`T07_CALCULATED`), pair-set equality against the
 all-pairs oracle (`T07_PAIR_MISMATCH`), and pair count (`T07_PAIR_COUNT`).
 Options: `-tilt <deg>` tilts the target plane, `-minCosAngle <cos>` sets the
@@ -333,7 +332,7 @@ Gated cases: fallback and bounded modes on 2 and 4 ranks (coverage cases), and
 split-grid fallback and bounded modes on 2 ranks. Split-grid on 4 ranks is not
 gated. It shows 1560 per-face mismatches on receive-only ranks. The original
 AABB `calcProcMap()` shows the same defect, so it is pre-existing and not
-caused by the S09 change. It is deferred with a follow-up. Traffic (send-map
+caused by the bound change. It is deferred with a follow-up. Traffic (send-map
 entries, 100x100 split grid, gap 0.03): fallback 20000 (2 ranks) and 40000
 (4 ranks); bounded 12700 and 18100.
 
