@@ -970,6 +970,16 @@ def expected_status(
 
     if result["timed_out"] or unexpected_ids:
         return "failure"
+    expected_fatal = spec.get("expected_fatal")
+    if expected_fatal:
+        if (
+            result["return_code"] != 0
+            and not assertions
+            and result["output"].count(expected_fatal)
+            >= (spec.get("ranks") or 1)
+        ):
+            return "observed_failure" if observation_mode else "expected_failure"
+        return "failure"
     if observation_mode:
         if (
             result["return_code"] == 0
@@ -991,17 +1001,6 @@ def expected_status(
             )
         ):
             return "observed_failure"
-        return "failure"
-    expected_fatal = spec.get("expected_fatal")
-    if expected_fatal:
-        if (
-            result["return_code"] != 0
-            and not result["timed_out"]
-            and not assertions
-            and result["output"].count(expected_fatal)
-            >= (spec.get("ranks") or 1)
-        ):
-            return "expected_failure"
         return "failure"
     if observed_ids != expected_ids:
         return "failure"
