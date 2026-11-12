@@ -125,10 +125,7 @@ TEST_SPECS = {
             "T06_CALCULATED",
             "T06_SOURCE_COVERAGE",
             "T06_FINE_FACE_COVERAGE",
-        },
-        "expected_failures": {
-            "T06_SOURCE_COVERAGE",
-            "T06_FINE_FACE_COVERAGE",
+            "T06_TARGET_UNCOVERED_COUNT",
         },
     },
     "T07": {
@@ -242,6 +239,17 @@ TEST_SPECS = {
         "assertions": {
             "T13_CALCULATED",
             "T13_AREA_AVERAGE",
+        },
+    },
+    "T20": {
+        "name": "symmetric overlap retention negative control (S08)",
+        "variant": "sliver-1.25e-6-below-threshold",
+        "case": "analytical",
+        "arguments": ["-test", "T20", "-sliver-width", "1.25e-6"],
+        "assertions": {
+            "T20_CALCULATED",
+            "T20_UNIT_FACE_COVERAGE",
+            "T20_SLIVER_COVERAGE",
         },
     },
 }

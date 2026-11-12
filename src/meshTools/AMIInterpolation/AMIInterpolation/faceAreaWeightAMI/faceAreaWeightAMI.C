@@ -220,8 +220,8 @@ bool Foam::faceAreaWeightAMI::processSourceFace
         vector interCentroid(Zero);
         calcInterArea(srcFacei, tgtFacei, interArea, interCentroid);
 
-        // store when intersection fractional area > tolerance
-        if (interArea/srcMagSf_[srcFacei] > faceAreaIntersect::tolerance())
+        // store when intersection area > retention threshold
+        if (interArea > overlapThreshold(srcFacei, tgtFacei))
         {
             srcAddr[srcFacei].append(tgtFacei);
             srcWght[srcFacei].append(interArea);
@@ -279,8 +279,7 @@ bool Foam::faceAreaWeightAMI::setNextFaces
         {
             for (label faceT : visitedFaces)
             {
-                const scalar threshold =
-                    srcMagSf_[faceS]*faceAreaIntersect::tolerance();
+                const scalar threshold = overlapThreshold(faceS, faceT);
 
                 // Store when intersection fractional area > threshold
                 if (overlaps(faceS, faceT, threshold))
@@ -406,6 +405,18 @@ Foam::label Foam::faceAreaWeightAMI::findOverlappingTargetFace
 }
 
 
+Foam::scalar Foam::faceAreaWeightAMI::overlapThreshold
+(
+    const label srcFacei,
+    const label tgtFacei
+) const
+{
+    return
+        faceAreaIntersect::retentionTolerance()
+       *min(srcMagSf_[srcFacei], tgtMagSf_[tgtFacei]);
+}
+
+
 bool Foam::faceAreaWeightAMI::overlapsTarget
 (
     const label srcFacei,
@@ -417,7 +428,7 @@ bool Foam::faceAreaWeightAMI::overlapsTarget
     calcInterArea(srcFacei, tgtFacei, interArea, interCentroid);
 
     // Same criterion as processSourceFace
-    return interArea/srcMagSf_[srcFacei] > faceAreaIntersect::tolerance();
+    return interArea > overlapThreshold(srcFacei, tgtFacei);
 }
 
 

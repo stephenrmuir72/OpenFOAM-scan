@@ -115,6 +115,12 @@ Foam::scalar& Foam::faceAreaIntersect::tolerance()
 }
 
 
+Foam::scalar& Foam::faceAreaIntersect::retentionTolerance()
+{
+    return retentionTol;
+}
+
+
 bool Foam::faceAreaIntersect::cacheTriangulation() const
 {
     return cacheTriangulation_;

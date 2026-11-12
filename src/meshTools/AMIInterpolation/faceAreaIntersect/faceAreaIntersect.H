@@ -101,6 +101,11 @@ private:
         //- Tolerance
         static scalar tol;
 
+        //- Minimum fraction of the smaller of two faces that an overlap
+        //  must cover to be retained (kept separate from tol, which is
+        //  used for intersection clipping)
+        static scalar retentionTol;
+
 
     // Private Member Functions
 
@@ -174,6 +179,10 @@ public:
 
         //- Fraction of local length scale to use as intersection tolerance
         inline static scalar& tolerance();
+
+        //- Fraction of the smaller face area an overlap must exceed
+        //  to be retained
+        inline static scalar& retentionTolerance();
 
         //- Triangulate a face using the given triangulation mode
         static void triangulate

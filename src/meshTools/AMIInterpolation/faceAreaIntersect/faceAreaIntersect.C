@@ -42,6 +42,8 @@ Foam::faceAreaIntersect::triangulationModeNames_
 
 Foam::scalar Foam::faceAreaIntersect::tol = 1e-6;
 
+Foam::scalar Foam::faceAreaIntersect::retentionTol = 1e-6;
+
 // * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * * //
 
 void Foam::faceAreaIntersect::triSliceWithPlane

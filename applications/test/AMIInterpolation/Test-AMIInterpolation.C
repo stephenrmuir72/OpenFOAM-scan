@@ -381,6 +381,36 @@ void reverseFaces(DynamicList<face>& faces)
 }
 
 
+void appendGrid
+(
+    const label n,
+    const scalar shift,
+    DynamicList<point>& points,
+    DynamicList<face>& faces,
+    const bool reverse
+)
+{
+    const scalar h = 1/scalar(n);
+    for (label i = 0; i < n; ++i)
+    {
+        for (label j = 0; j < n; ++j)
+        {
+            appendQuad
+            (
+                points,
+                faces,
+                i*h + shift,
+                (i + 1)*h + shift,
+                j*h + shift,
+                (j + 1)*h + shift,
+                0,
+                reverse
+            );
+        }
+    }
+}
+
+
 void makeGeometry
 (
     const word& test,
@@ -392,6 +422,7 @@ void makeGeometry
     const bool swap,
     const bool unmatchedSource,
     const bool multiTarget,
+    const scalar sliverWidth,
     DynamicList<point>& srcPts,
     DynamicList<face>& srcFaces,
     DynamicList<point>& tgtPts,
@@ -459,6 +490,22 @@ void makeGeometry
         else if (test == "T12")
         {
             // The empty target patch is the invalid/empty-input fixture.
+        }
+        else if (test == "T20")
+        {
+            // Target sliver of width sliverWidth overlapping the unit
+            // source face over a strip of length 0.5
+            appendQuad
+            (
+                tgtPts,
+                tgtFaces,
+                1 - sliverWidth,
+                1 - sliverWidth + 1.5,
+                0,
+                0.5,
+                gap,
+                true
+            );
         }
         else
         {
@@ -671,25 +718,44 @@ void runGeometryTest
     const scalar offset = args.getOrDefault<scalar>("offset", 0);
     const label srcRank = args.getOrDefault<label>("src-rank", 0);
     const label tgtRank = args.getOrDefault<label>("tgt-rank", 1);
+    const scalar sliverWidth =
+        args.getOrDefault<scalar>("sliver-width", 1.25e-6);
+
+    if (args.found("grid") && test != "T01")
+    {
+        FatalErrorInFunction
+            << "-grid requires -test T01" << exit(FatalError);
+    }
 
     DynamicList<point> srcPts, tgtPts;
     DynamicList<face> srcFaces, tgtFaces;
-    makeGeometry
-    (
-        test,
-        srcRank,
-        tgtRank,
-        gap,
-        scale,
-        offset,
-        args.found("swap"),
-        args.found("unmatched-source"),
-        args.found("t05-multi"),
-        srcPts,
-        srcFaces,
-        tgtPts,
-        tgtFaces
-    );
+    if (args.found("grid"))
+    {
+        // Uniform source grid with a half-cell shifted target grid
+        const label n = args.get<label>("grid");
+        appendGrid(n, 0, srcPts, srcFaces, false);
+        appendGrid(n, 0.5/scalar(n), tgtPts, tgtFaces, true);
+    }
+    else
+    {
+        makeGeometry
+        (
+            test,
+            srcRank,
+            tgtRank,
+            gap,
+            scale,
+            offset,
+            args.found("swap"),
+            args.found("unmatched-source"),
+            args.found("t05-multi"),
+            sliverWidth,
+            srcPts,
+            srcFaces,
+            tgtPts,
+            tgtFaces
+        );
+    }
 
     if (test == "T05")
     {
@@ -717,7 +783,7 @@ void runGeometryTest
     primitivePatch tgt(SubList<face>(tgtFaces), tgtPoints);
 
     dictionary amiDict;
-    amiDict.add("requireMatch", test != "T12");
+    amiDict.add("requireMatch", test != "T12" && test != "T20");
     amiDict.add
     (
         "restartUncoveredSourceFace",
@@ -761,6 +827,30 @@ void runGeometryTest
 
     const scalarField srcCoverage(ami.srcWeightsSum());
     const scalarField tgtCoverage(ami.tgtWeightsSum());
+
+    if (args.found("grid"))
+    {
+        label nSrcLinks = 0;
+        for (const labelList& addr : ami.srcAddress())
+        {
+            nSrcLinks += addr.size();
+        }
+        label nTgtLinks = 0;
+        for (const labelList& addr : ami.tgtAddress())
+        {
+            nTgtLinks += addr.size();
+        }
+
+        Info<< "AMI_STENCIL test=T01"
+            << " grid=" << args.get<label>("grid")
+            << " srcFaces=" << ami.srcAddress().size()
+            << " tgtFaces=" << ami.tgtAddress().size()
+            << " srcLinks=" << nSrcLinks
+            << " tgtLinks=" << nTgtLinks
+            << endl;
+
+        return;
+    }
 
     if (test == "T08")
     {
@@ -891,6 +981,43 @@ void runGeometryTest
         return;
     }
 
+    if (test == "T20")
+    {
+        // Sliver overlap strip: width sliverWidth, length 0.5, so
+        // overlap = 0.5*sliverWidth. Unit face area 1; sliver area 0.75.
+        // Retention threshold is retentionTolerance() * min(area), with
+        // the default 1e-6 (mirrors faceAreaIntersect::retentionTolerance).
+        const scalar overlap = 0.5*sliverWidth;
+        const bool retained = overlap > 1e-6*min(1, 0.75);
+
+        const scalar unitCoverage =
+            sum(args.found("swap") ? tgtCoverage : srcCoverage);
+        const scalar sliverCoverage =
+            sum(args.found("swap") ? srcCoverage : tgtCoverage);
+
+        reportScalar
+        (
+            test,
+            "T20_UNIT_FACE_COVERAGE",
+            unitCoverage,
+            retained ? overlap : 0,
+            1e-3,
+            1e-6,
+            nFailures
+        );
+        reportScalar
+        (
+            test,
+            "T20_SLIVER_COVERAGE",
+            sliverCoverage,
+            retained ? overlap/0.75 : 0,
+            1e-3,
+            1e-6,
+            nFailures
+        );
+        return;
+    }
+
     if (test == "T06")
     {
         reportScalar
@@ -903,13 +1030,33 @@ void runGeometryTest
             1,
             nFailures
         );
+        // The fine face is on the source side when ownership is swapped
         reportScalar
         (
             test,
             "T06_FINE_FACE_COVERAGE",
-            tgtCoverage[0],
+            args.found("swap") ? srcCoverage[0] : tgtCoverage[0],
             1,
             transferTol,
+            1,
+            nFailures
+        );
+        label nTgtUncovered = 0;
+        forAll(tgtCoverage, i)
+        {
+            if (tgtCoverage[i] < transferTol)
+            {
+                ++nTgtUncovered;
+            }
+        }
+
+        reportScalar
+        (
+            test,
+            "T06_TARGET_UNCOVERED_COUNT",
+            nTgtUncovered,
+            0,
+            0,
             1,
             nFailures
         );
@@ -1214,6 +1361,7 @@ void runStateTransitionTest(label& nFailures)
             false,
             false,
             false,
+            0,
             srcPts,
             srcFaces,
             tgtPts,
@@ -1303,6 +1451,7 @@ void runCacheTest
         false,
         false,
         false,
+        0,
         srcPts,
         srcFaces,
         tgtPts,
@@ -1661,6 +1810,7 @@ void runCacheFractionDirection
         !toSource,
         false,
         false,
+        0,
         srcPts,
         srcFaces,
         tgtPts,
@@ -2476,6 +2626,13 @@ int main(int argc, char *argv[])
     argList::addBoolOption("topology-test");
     argList::addBoolOption("state-cycle");
     argList::addBoolOption("s04-fractions");
+    argList::addOption("grid", "cells", "T01 uniform N x N grid stencil case");
+    argList::addOption
+    (
+        "sliver-width",
+        "width",
+        "T20 sliver strip width (default 1.25e-6)"
+    );
 
     argList args(argc, argv);
     Time runTime(Time::controlDictName, args);
@@ -2499,7 +2656,7 @@ int main(int argc, char *argv[])
 
     if (test == "T01" || test == "T05" || test == "T06" || test == "T08"
      || test == "T07" || test == "T10" || test == "T11"
-     || test == "T12" || test == "T13")
+     || test == "T12" || test == "T13" || test == "T20")
     {
         runGeometryTest(test, args, runTime, nFailures);
     }

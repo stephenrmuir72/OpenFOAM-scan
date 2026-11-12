@@ -291,7 +291,7 @@ defect; it does not mean the defect is acceptable.
 | T03 | 90-degree topology-created face area; expects the current C0 frame failure |
 | T04 | Rotational low-weight fallback; checks every face for U (vector), S (scalar control), T (tensor) and ST (symmTensor): receiver-side defaults stay unrotated, donor-valued faces match each side's `forwardT` (S06 fix; passes on the fixed build, fails pre-fix for U, T and ST) |
 | T05 | Seed selection with and without restart: every face ordering (`as-built`, `src-reversed`, `tgt-reversed`, `both-reversed`) must give the same physical mapping, serial and 2-rank, with restart on and off; 2-rank runs also swap rank ownership; a multi-target fixture (`-t05-multi`) covers one target face overlapping two source faces; `T05-unmatched-source-*` checks that a required unmatched source face fails on all ranks, with restart on and off |
-| T06 | Fully covered `2.5e-7` fine face; expects the current C0 cutoff failures |
+| T06 | Fully covered `2.5e-7` fine face in both ownership directions; no target face left uncovered |
 | T07 | Two-rank normal-gap discovery reproduction; expects the C0 required-match fatal (`1 source faces have no overlapping target face`) on both ranks |
 | T08-T09 | Explicitly not run in S02; full topology, state, FV, and GAMG matrices are scheduled for S03 |
 | T10 | Partial-coverage diagnostics |
@@ -333,6 +333,18 @@ checks vector fallback values; and T12 checks an empty target. Their remaining
 fraction, ordering, cutoff, field-type, and invalid-input variants are not
 counted as passed. Likewise, T13 checks piecewise-constant area averaging. It
 does not claim second-order accuracy.
+
+T20 is the S08 symmetric overlap-retention negative control. A unit source face
+and a target face of area 0.75 overlap in a strip of width `w` and length 0.5,
+so the overlap is `0.5w`. The retention threshold is `1e-6 * min(area)` = `7.5e-7`.
+With `-sliver-width 1.25e-6` (overlap `6.25e-7`) the overlap must be rejected in
+both ownership directions (`-swap`), so both coverages are zero. With
+`-sliver-width 2e-6` (overlap `1e-6`) it must be retained, and the unit and
+sliver coverages are checked against their expected values. T20 is run only
+with `--tests T20`; it is not part of the S02 gate. `-grid N` (T01 only) builds
+a uniform N x N grid for stencil-size and mapping-timing comparison; it
+returns after printing the stencil counts and does not run the generic T01
+coverage checks.
 
 ## Solid fixture contract
 

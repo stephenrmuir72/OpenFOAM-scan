@@ -136,6 +136,15 @@ protected:
                 DynamicList<label>& rejectedFaces
             ) const;
 
+            //- Minimum intersection area for srcFacei and tgtFacei to be
+            //  retained: retentionTolerance times the smaller of the two
+            //  face areas (symmetric in source and target)
+            scalar overlapThreshold
+            (
+                const label srcFacei,
+                const label tgtFacei
+            ) const;
+
             //- True if the source and target faces overlap above the
             //  tolerance used by processSourceFace
             bool overlapsTarget
