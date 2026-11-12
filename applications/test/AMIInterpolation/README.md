@@ -290,9 +290,9 @@ defect; it does not mean the defect is acceptable.
 | T02 | Cached midpoint fraction; expects the current C0 assertion failures |
 | T03 | 90-degree topology-created face area; expects the current C0 frame failure |
 | T04 | Rotational low-weight fallback; checks every face for U (vector), S (scalar control), T (tensor) and ST (symmTensor): receiver-side defaults stay unrotated, donor-valued faces match each side's `forwardT` (S06 fix; passes on the fixed build, fails pre-fix for U, T and ST) |
-| T05 | Seed/restart: source islands with no restart must reach full coverage, and every face ordering (`as-built`, `src-reversed`, `tgt-reversed`, `both-reversed`) must give the same physical mapping; serial runs also check the mapping by stable face ID; `T05-unmatched-source-*` checks that a required unmatched source face fails on all ranks (serial and 2-rank) |
+| T05 | Seed selection with and without restart: every face ordering (`as-built`, `src-reversed`, `tgt-reversed`, `both-reversed`) must give the same physical mapping, serial and 2-rank, with restart on and off; 2-rank runs also swap rank ownership; a multi-target fixture (`-t05-multi`) covers one target face overlapping two source faces; `T05-unmatched-source-*` checks that a required unmatched source face fails on all ranks, with restart on and off |
 | T06 | Fully covered `2.5e-7` fine face; expects the current C0 cutoff failures |
-| T07 | Two-rank normal-gap discovery reproduction; expects current C0 coverage failures |
+| T07 | Two-rank normal-gap discovery reproduction; expects the C0 required-match fatal (`1 source faces have no overlapping target face`) on both ranks |
 | T08-T09 | Explicitly not run in S02; full topology, state, FV, and GAMG matrices are scheduled for S03 |
 | T10 | Partial-coverage diagnostics |
 | T11 | Scale/offset matrix scheduled for S03 and hardening in S10 |
@@ -300,18 +300,35 @@ defect; it does not mean the defect is acceptable.
 | T13 | Piecewise-constant area-average control |
 | T14-T19 | `pureZoneMixture` dictionaries, material properties, cell-zone coverage, analytical references, and static meshes validated; `solidFoam` is not run until S03 |
 
-The T05 case checks the no-restart seed search: each source island must be
-seeded from a target face it overlaps, and the four face orderings of the
-two-island fixture (`-t05-order`) must give the same mapping. Two-rank variants
-omit the serial-only stable-ID mapping check (`T05_PHYSICAL_MAPPING`). The
-negative case (`-unmatched-source`) uses `requireMatch true` with restart off
-and one source face with no overlap; it must fail on every rank.
+The T05 case checks seed selection on the two-island fixture (`-t05-order`).
+Each source island must be seeded from a target face it overlaps, and the four
+face orderings must give the same physical mapping (`T05_PHYSICAL_MAPPING`).
+That check uses stable face IDs and runs serially and under MPI: each rank
+reports its local source-face weights, and the result is reduced over ranks.
+The records run with restart off (`-no-restart`, the S02 baseline), with restart
+on (serial, 2-rank distributed, and 2-rank swapped ownership), and on a
+multi-target fixture (`-t05-multi`). Restart on the two-island fixture does not
+exercise restart recovery, because every face is already fully covered; the
+restart-recovery cases are T01-T04, T06-T08, T10, T11, and T13.
 
-The T07 case is the targeted C0 serial/MPI defect reproduction. It does not
-replace the broader all-pairs discovery oracle and rank-topology matrix in the
-approved plan. This is the targeted S02 baseline gate, not the full test matrix
-in every S02 substep. T02 currently checks the midpoint fraction; T05 checks
-the no-restart seed search; T06 checks the fully covered fine face; T04
+The negative case (`-unmatched-source`) uses `requireMatch true` with one source
+face that has no overlap. It must fail on every rank, with restart on and off.
+With restart on, an unmapped required face is a collective fatal after the
+restart pass. This is the S07 behaviour (decision D1). Previously, with restart
+on, the face stayed unmapped without error.
+
+The T07 case is the targeted C0 serial/MPI defect reproduction. Its expected
+outcome is the required-match fatal, not coverage assertions. Under D1 the
+fatal fires before any T07 assertion is reported. The runner requires the
+message `1 source faces have no overlapping target face (requireMatch is true)`
+to appear once per rank. The root cause is an empty target bounding box on one
+rank (`1 source faces but no target faces` in `advancingFrontAMI`). S07 does
+not fix that defect. The T07 contract was changed from the coverage assertions
+to this fatal (S07 decision), and the coverage assertions are no longer reached.
+It does not replace the broader all-pairs discovery oracle and rank-topology
+matrix in the approved plan. This is the targeted S02 baseline gate, not the
+full test matrix in every S02 substep. T02 currently checks the midpoint
+fraction; T05 checks seed selection with and without restart; T06 checks the fully covered fine face; T04
 checks vector fallback values; and T12 checks an empty target. Their remaining
 fraction, ordering, cutoff, field-type, and invalid-input variants are not
 counted as passed. Likewise, T13 checks piecewise-constant area averaging. It

@@ -145,15 +145,15 @@ TEST_SPECS = {
             "-maxDistance2",
             "0.01",
         ],
-        "assertions": {
-            "T07_CALCULATED",
-            "T07_SOURCE_COVERAGE",
-            "T07_TARGET_COVERAGE",
-        },
-        "expected_failures": {
-            "T07_SOURCE_COVERAGE",
-            "T07_TARGET_COVERAGE",
-        },
+        # With restart on and requireMatch true, the empty target box on one
+        # rank (C0 discovery defect) aborts in faceAreaWeightAMI::calculate()
+        # before any T07 assertion is reported. Every rank must print the
+        # fatal.
+        "assertions": set(),
+        "expected_fatal": (
+            "1 source faces have no overlapping target face"
+            " (requireMatch is true)"
+        ),
     },
     "T08": {
         "name": "MPI topology and local communicator matrix",
@@ -992,6 +992,17 @@ def expected_status(
         ):
             return "observed_failure"
         return "failure"
+    expected_fatal = spec.get("expected_fatal")
+    if expected_fatal:
+        if (
+            result["return_code"] != 0
+            and not result["timed_out"]
+            and not assertions
+            and result["output"].count(expected_fatal)
+            >= (spec.get("ranks") or 1)
+        ):
+            return "expected_failure"
+        return "failure"
     if observed_ids != expected_ids:
         return "failure"
     if expected_failures:
@@ -1376,6 +1387,8 @@ def run_test(
         ),
         "log": str(log_path),
     }
+    if spec.get("expected_fatal"):
+        record["expected_fatal"] = spec["expected_fatal"]
     if measure_performance:
         record["performance"] = result["performance"]
         if test_id in TIMING_PHASES:
