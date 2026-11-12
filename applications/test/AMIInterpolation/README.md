@@ -344,7 +344,13 @@ sliver coverages are checked against their expected values. T20 is run only
 with `--tests T20`; it is not part of the S02 gate. `-grid N` (T01 only) builds
 a uniform N x N grid for stencil-size and mapping-timing comparison; it
 returns after printing the stencil counts and does not run the generic T01
-coverage checks.
+coverage checks. `-grid-small s` (with `-grid N`, T01 only) splits each cell
+3x3 with centre faces of side `s` relative to the cell, giving target faces
+far smaller than their source faces. `-grid-sliver w` (with `-grid N`, T01
+only) adds thin target strips of relative width `w`. Both print an
+`AMI_STENCIL` line with link counts and uncovered source and target faces.
+Slivers below about `1e-6` of the cell size are removed by the clipping snap
+in `faceAreaIntersect`, so `-grid-sliver` cannot test narrower slivers.
 
 ## Solid fixture contract
 
