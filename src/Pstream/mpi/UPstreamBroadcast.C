@@ -68,21 +68,13 @@ bool Foam::UPstream::mpi_broadcast
         return false;
     }
 
-    const bool withTopo =
-    (
-        (root == 0)  // Can only use node topology if root == master
-     && UPstream::usingTopoControl(UPstream::topoControls::broadcast)
-     && UPstream::usingNodeComms(communicator)
-    );
-
     if (FOAM_UNLIKELY(UPstream::debug))
     {
         Perr<< "[mpi_broadcast] :"
             << " type:" << int(dataTypeId)
             << " count:" << int64_t(count)
             << " comm:" << communicator
-            << " root:" << root
-            << " topo:" << withTopo << Foam::endl;
+            << " root:" << root << Foam::endl;
     }
 
     if (root < 0)
@@ -95,43 +87,6 @@ bool Foam::UPstream::mpi_broadcast
 
     profilingPstream::beginTiming();
 
-    if (withTopo)
-    {
-        // Topological broadcast
-
-        for
-        (
-            const int subComm :
-            // std::initializer_list<int>
-            {
-                UPstream::commInterNode_,   // Stage 1: between nodes
-                UPstream::commLocalNode_    // Stage 2: within a node
-            }
-        )
-        {
-            if (UPstream::is_parallel(subComm))
-            {
-                if (FOAM_UNLIKELY(UPstream::debug))
-                {
-                    Perr<< "[mpi_broadcast] :"
-                        << " type:" << int(dataTypeId)
-                        << " count:" << int64_t(count)
-                        << " comm:" << subComm
-                        << " substage" << Foam::endl;
-                }
-
-                returnCode = MPI_Bcast
-                (
-                    buf,
-                    count,
-                    datatype,
-                    0,  // (root rank) == UPstream::masterNo()
-                    PstreamGlobals::MPICommunicators_[subComm]
-                );
-            }
-        }
-    }
-    else
     {
         // Regular broadcast
         // PstreamDetail::broadcast(buf, count, datatype, communicator, root);
