@@ -391,6 +391,7 @@ void makeGeometry
     const scalar offset,
     const bool swap,
     const bool unmatchedSource,
+    const bool multiTarget,
     DynamicList<point>& srcPts,
     DynamicList<face>& srcFaces,
     DynamicList<point>& tgtPts,
@@ -404,7 +405,14 @@ void makeGeometry
 
     if (ownSrc)
     {
-        if (test == "T05")
+        if (test == "T05" && multiTarget)
+        {
+            // Source A spans x in [0,2] and overlaps two target faces.
+            // Target T2 spans two source faces (A and B).
+            appendQuad(srcPts, srcFaces, 0, 2, 0, 1, 0, false);
+            appendQuad(srcPts, srcFaces, 2, 3, 0, 1, 0, false);
+        }
+        else if (test == "T05")
         {
             appendQuad(srcPts, srcFaces, 0, 1, 0, 1, 0, false);
             appendQuad(srcPts, srcFaces, 2, 3, 0, 1, 0, false);
@@ -423,7 +431,12 @@ void makeGeometry
 
     if (ownTgt)
     {
-        if (test == "T05")
+        if (test == "T05" && multiTarget)
+        {
+            appendQuad(tgtPts, tgtFaces, 0, 1.5, 0, 1, gap, true);
+            appendQuad(tgtPts, tgtFaces, 1.5, 3, 0, 1, gap, true);
+        }
+        else if (test == "T05")
         {
             appendQuad(tgtPts, tgtFaces, 2, 3, 0, 1, gap, true);
             appendQuad(tgtPts, tgtFaces, 0, 1, 0, 1, gap, true);
@@ -671,6 +684,7 @@ void runGeometryTest
         offset,
         args.found("swap"),
         args.found("unmatched-source"),
+        args.found("t05-multi"),
         srcPts,
         srcFaces,
         tgtPts,
@@ -925,42 +939,62 @@ void runGeometryTest
             nFailures
         );
 
-        // Each source face must map to exactly one target face with the
-        // same x-y footprint. Stable geometric identity is used because
-        // face indices change with the ordering variant. Serial only: remote
-        // target indices are not resolvable on the source rank in parallel.
-        if (!UPstream::parRun())
+        // Source-face physical mapping. Local addressing and weights are read
+        // directly. Target centroids on other ranks are reached through
+        // interpolateToSource, so the check is valid in parallel.
+        // Multi-target fixture (-t05-multi): source A spans x in [0,2] and
+        // overlaps T1 (x in [0,1.5], weight 0.75) and T2 (x in [1.5,3],
+        // weight 0.25). Source B spans x in [2,3] and maps only to T2.
+        const bool t05Multi = args.found("t05-multi");
+        const pointField srcCtr(src.faceCentres());
+        const pointField tgtCtr(tgt.faceCentres());
+        scalarField tgtX(tgtCtr.size());
+        scalarField tgtY(tgtCtr.size());
+        forAll(tgtCtr, tgtFacei)
         {
-            const pointField srcCtr(src.faceCentres());
-            const pointField tgtCtr(tgt.faceCentres());
-            const labelListList& addr = ami.srcAddress();
-            const scalarListList& wght = ami.srcWeights();
+            tgtX[tgtFacei] = tgtCtr[tgtFacei].x();
+            tgtY[tgtFacei] = tgtCtr[tgtFacei].y();
+        }
+        const scalarField mappedX(ami.interpolateToSource(tgtX));
+        const scalarField mappedY(ami.interpolateToSource(tgtY));
+        const scalarListList& wght = ami.srcWeights();
 
-            bool physical = true;
-            forAll(addr, facei)
+        bool physical = true;
+        forAll(wght, facei)
+        {
+            const point& s = srcCtr[facei];
+            if (t05Multi)
             {
-                label nMatched = 0;
-                forAll(addr[facei], j)
-                {
-                    if (wght[facei][j] > transferTol)
-                    {
-                        ++nMatched;
-                        const point& s = srcCtr[facei];
-                        const point& t = tgtCtr[addr[facei][j]];
-                        if (mag(s.x() - t.x()) > transferTol
-                         || mag(s.y() - t.y()) > transferTol)
-                        {
-                            physical = false;
-                        }
-                    }
-                }
-                if (nMatched != 1)
+                // Target centroid x is 0.75 for T1 and 2.25 for T2, y is 0.5
+                const scalar expectedX =
+                    s.x() < 2 ? 0.75*0.75 + 0.25*2.25 : 2.25;
+                if (mag(mappedX[facei] - expectedX) > transferTol
+                 || mag(mappedY[facei] - 0.5) > transferTol)
                 {
                     physical = false;
                 }
             }
-            reportBool(test, "T05_PHYSICAL_MAPPING", physical, true, nFailures);
+            else
+            {
+                // Exactly one target with the same x-y footprint
+                label nMatched = 0;
+                forAll(wght[facei], j)
+                {
+                    if (wght[facei][j] > transferTol)
+                    {
+                        ++nMatched;
+                    }
+                }
+                if (nMatched != 1
+                 || mag(mappedX[facei] - s.x()) > transferTol
+                 || mag(mappedY[facei] - s.y()) > transferTol)
+                {
+                    physical = false;
+                }
+            }
         }
+        physical = returnReduceAnd(physical);
+        reportBool(test, "T05_PHYSICAL_MAPPING", physical, true, nFailures);
         return;
     }
 
@@ -1179,6 +1213,7 @@ void runStateTransitionTest(label& nFailures)
             offsets[state],
             false,
             false,
+            false,
             srcPts,
             srcFaces,
             tgtPts,
@@ -1265,6 +1300,7 @@ void runCacheTest
         0,
         1,
         0,
+        false,
         false,
         false,
         srcPts,
@@ -1623,6 +1659,7 @@ void runCacheFractionDirection
         1,
         0,
         !toSource,
+        false,
         false,
         srcPts,
         srcFaces,
@@ -2435,6 +2472,7 @@ int main(int argc, char *argv[])
     argList::addBoolOption("no-restart");
     argList::addBoolOption("swap");
     argList::addBoolOption("unmatched-source");
+    argList::addBoolOption("t05-multi");
     argList::addBoolOption("topology-test");
     argList::addBoolOption("state-cycle");
     argList::addBoolOption("s04-fractions");

@@ -764,9 +764,10 @@ bool Foam::faceAreaWeightAMI::calculate
         }
     }
 
-    // Without restart, every source face must receive a contribution.
-    // Checked on all ranks so that the error is raised collectively.
-    if (requireMatch_ && !restartUncoveredSourceFace_)
+    // With requireMatch, every source face must receive a contribution,
+    // after any restart pass. Checked on all ranks so that the error is
+    // raised collectively.
+    if (requireMatch_)
     {
         label nUnmapped = 0;
         label firstUnmapped = labelMax;
@@ -802,8 +803,8 @@ bool Foam::faceAreaWeightAMI::calculate
         {
             FatalErrorInFunction
                 << nUnmapped << " source faces have no overlapping target face"
-                << " (requireMatch is true and restartUncoveredSourceFace is"
-                << " false). Lowest local index of an unmapped source face"
+                << " (requireMatch is true). Lowest local index of an"
+                << " unmapped source face"
                 << " (minimum over all ranks): "
                 << firstUnmapped
                 << abort(FatalError);

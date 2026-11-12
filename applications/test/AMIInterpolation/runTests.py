@@ -542,13 +542,15 @@ def t05_s07_scenarios() -> list[dict]:
         "T05_SOURCE_COVERAGE",
         "T05_TARGET_COVERAGE",
     }
+    all_assertions = base_assertions | {"T05_PHYSICAL_MAPPING"}
+    swapped_ownership = ["-src-rank", "1", "-tgt-rank", "0"]
     scenarios = []
     for order in T05_S07_ORDERINGS:
         if order != "as-built":
             scenarios.append(
                 {
                     "variant": f"{order}-serial",
-                    "assertions": base_assertions | {"T05_PHYSICAL_MAPPING"},
+                    "assertions": set(all_assertions),
                     "arguments": [
                         "-test", "T05",
                         "-no-restart",
@@ -560,7 +562,7 @@ def t05_s07_scenarios() -> list[dict]:
             {
                 "variant": f"{order}-two-rank-distributed",
                 "ranks": 2,
-                "assertions": set(base_assertions),
+                "assertions": set(all_assertions),
                 "arguments": [
                     "-parallel",
                     "-test", "T05",
@@ -569,6 +571,66 @@ def t05_s07_scenarios() -> list[dict]:
                 ],
             }
         )
+        scenarios.append(
+            {
+                "variant": f"restart-{order}-serial",
+                "assertions": set(all_assertions),
+                "arguments": ["-test", "T05", "-t05-order", order],
+            }
+        )
+        scenarios.append(
+            {
+                "variant": f"restart-{order}-two-rank-distributed",
+                "ranks": 2,
+                "assertions": set(all_assertions),
+                "arguments": [
+                    "-parallel",
+                    "-test", "T05",
+                    "-t05-order", order,
+                ],
+            }
+        )
+        scenarios.append(
+            {
+                "variant": f"restart-{order}-two-rank-swapped-ownership",
+                "ranks": 2,
+                "assertions": set(all_assertions),
+                "arguments": [
+                    "-parallel",
+                    "-test", "T05",
+                    "-t05-order", order,
+                    *swapped_ownership,
+                ],
+            }
+        )
+    scenarios.append(
+        {
+            "variant": "multi-target-restart-serial",
+            "assertions": set(all_assertions),
+            "arguments": ["-test", "T05", "-t05-multi"],
+        }
+    )
+    scenarios.append(
+        {
+            "variant": "multi-target-restart-two-rank-distributed",
+            "ranks": 2,
+            "assertions": set(all_assertions),
+            "arguments": ["-parallel", "-test", "T05", "-t05-multi"],
+        }
+    )
+    scenarios.append(
+        {
+            "variant": "multi-target-restart-two-rank-swapped-ownership",
+            "ranks": 2,
+            "assertions": set(all_assertions),
+            "arguments": [
+                "-parallel",
+                "-test", "T05",
+                "-t05-multi",
+                *swapped_ownership,
+            ],
+        }
+    )
     return scenarios
 
 
@@ -1418,9 +1480,11 @@ def run_t05_unmatched_rejection(
     timeout: float,
     binary: Path,
     ranks: int,
+    restart: bool = False,
 ) -> dict:
     layout = "two-rank-distributed" if ranks > 1 else "serial"
-    record_id = f"T05-unmatched-source-{layout}"
+    restart_part = "restart-" if restart else ""
+    record_id = f"T05-unmatched-source-{restart_part}{layout}"
     run_dir = run_root / run_id / record_id
     run_dir.mkdir(parents=True, exist_ok=False)
     case_dir = prepare_case("analytical", run_dir)
@@ -1434,7 +1498,9 @@ def run_t05_unmatched_rejection(
     command.extend(["-case", str(case_dir)])
     if ranks > 1:
         command.append("-parallel")
-    command.extend(["-test", "T05", "-no-restart", "-unmatched-source"])
+    command.extend(["-test", "T05", "-unmatched-source"])
+    if not restart:
+        command.append("-no-restart")
 
     result = run_process(command, run_dir, env, timeout)
     log_path = run_dir / "log.test"
@@ -1449,8 +1515,16 @@ def run_t05_unmatched_rejection(
     return {
         "id": record_id,
         "test_id": "T05",
-        "name": "unmatched source face with required match and no restart",
-        "variant": "explicit-fatal-required-match",
+        "name": (
+            "unmatched source face with required match and restart"
+            if restart
+            else "unmatched source face with required match and no restart"
+        ),
+        "variant": (
+            "restart-explicit-fatal-required-match"
+            if restart
+            else "explicit-fatal-required-match"
+        ),
         "case": "analytical",
         "rank_count": ranks,
         "status": "pass" if rejected else "failure",
@@ -2461,16 +2535,18 @@ def main() -> int:
                         )
                     )
                 for ranks in (1, 2):
-                    run_records.append(
-                        run_t05_unmatched_rejection(
-                            run_root,
-                            run_id,
-                            env,
-                            args.timeout,
-                            binary,
-                            ranks,
+                    for restart in (False, True):
+                        run_records.append(
+                            run_t05_unmatched_rejection(
+                                run_root,
+                                run_id,
+                                env,
+                                args.timeout,
+                                binary,
+                                ranks,
+                                restart,
+                            )
                         )
-                    )
 
     s04_integration_record = None
     if args.stage == "S04":
