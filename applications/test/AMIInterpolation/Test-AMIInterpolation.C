@@ -411,6 +411,111 @@ void appendGrid
 }
 
 
+// Each source cell is split into a sliver of relative width w (left edge)
+// and a main target face. The sliver lies wholly inside one source face,
+// so its overlap equals its own area.
+void appendSliverGrid
+(
+    const label n,
+    const scalar w,
+    DynamicList<point>& srcPoints,
+    DynamicList<face>& srcFaces,
+    DynamicList<point>& tgtPoints,
+    DynamicList<face>& tgtFaces
+)
+{
+    const scalar h = 1/scalar(n);
+    appendGrid(n, 0, srcPoints, srcFaces, false);
+
+    // Target faces share point indices so the target patch is connected;
+    // the advancing front can only reach a sliver through its neighbours
+    const label nx = 2*n + 1;
+    const label pointOffset = tgtPoints.size();
+    for (label iy = 0; iy <= n; ++iy)
+    {
+        for (label ix = 0; ix < nx; ++ix)
+        {
+            tgtPoints.append(point((ix/2)*h + (ix % 2)*w*h, iy*h, 0));
+        }
+    }
+
+    auto pid = [&](const label ix, const label iy)
+    {
+        return pointOffset + iy*nx + ix;
+    };
+
+    for (label i = 0; i < n; ++i)
+    {
+        for (label j = 0; j < n; ++j)
+        {
+            for (const label ix0 : {2*i, 2*i + 1})
+            {
+                face f(4);
+                f[0] = pid(ix0, j + 1);
+                f[1] = pid(ix0 + 1, j + 1);
+                f[2] = pid(ix0 + 1, j);
+                f[3] = pid(ix0, j);
+                tgtFaces.append(f);
+            }
+        }
+    }
+}
+
+
+// Each cell of an n x n source grid is covered by a 3x3 target split whose
+// centre column and row have width s (relative to the cell). Centre faces
+// have area s^2 cell-areas, far below the 1e-6 source-relative retention
+// threshold but above it relative to their own area.
+void appendSmallCentreGrid
+(
+    const label n,
+    const scalar s,
+    DynamicList<point>& srcPoints,
+    DynamicList<face>& srcFaces,
+    DynamicList<point>& tgtPoints,
+    DynamicList<face>& tgtFaces
+)
+{
+    const scalar h = 1/scalar(n);
+    appendGrid(n, 0, srcPoints, srcFaces, false);
+
+    // Global lattice with 3n+1 points per direction, shared between cells
+    const scalar off[3] = {0, 0.5 - 0.5*s, 0.5 + 0.5*s};
+    const label nk = 3*n + 1;
+    auto coord = [&](const label k)
+    {
+        return (k/3 + off[k % 3])*h;
+    };
+
+    const label pointOffset = tgtPoints.size();
+    for (label iy = 0; iy < nk; ++iy)
+    {
+        for (label ix = 0; ix < nk; ++ix)
+        {
+            tgtPoints.append(point(coord(ix), coord(iy), 0));
+        }
+    }
+
+    auto pid = [&](const label ix, const label iy)
+    {
+        return pointOffset + iy*nk + ix;
+    };
+
+    for (label iy = 0; iy < 3*n; ++iy)
+    {
+        for (label ix = 0; ix < 3*n; ++ix)
+        {
+            face f(4);
+            f[0] = pid(ix, iy + 1);
+            f[1] = pid(ix + 1, iy + 1);
+            f[2] = pid(ix + 1, iy);
+            f[3] = pid(ix, iy);
+            tgtFaces.append(f);
+        }
+    }
+}
+
+
 void makeGeometry
 (
     const word& test,
@@ -721,15 +826,50 @@ void runGeometryTest
     const scalar sliverWidth =
         args.getOrDefault<scalar>("sliver-width", 1.25e-6);
 
-    if (args.found("grid") && test != "T01")
+    if
+    (
+        (args.found("grid") || args.found("grid-sliver") || args.found("grid-small"))
+     && test != "T01"
+    )
     {
         FatalErrorInFunction
-            << "-grid requires -test T01" << exit(FatalError);
+            << "-grid, -grid-sliver and -grid-small require -test T01"
+            << exit(FatalError);
+    }
+
+    if (args.found("grid-sliver") && !args.found("grid"))
+    {
+        FatalErrorInFunction
+            << "-grid-sliver requires -grid N" << exit(FatalError);
     }
 
     DynamicList<point> srcPts, tgtPts;
     DynamicList<face> srcFaces, tgtFaces;
-    if (args.found("grid"))
+    if (args.found("grid-small"))
+    {
+        appendSmallCentreGrid
+        (
+            args.getOrDefault<label>("grid", 1),
+            args.get<scalar>("grid-small"),
+            srcPts,
+            srcFaces,
+            tgtPts,
+            tgtFaces
+        );
+    }
+    else if (args.found("grid-sliver"))
+    {
+        appendSliverGrid
+        (
+            args.get<label>("grid"),
+            args.get<scalar>("grid-sliver"),
+            srcPts,
+            srcFaces,
+            tgtPts,
+            tgtFaces
+        );
+    }
+    else if (args.found("grid"))
     {
         // Uniform source grid with a half-cell shifted target grid
         const label n = args.get<label>("grid");
@@ -828,7 +968,7 @@ void runGeometryTest
     const scalarField srcCoverage(ami.srcWeightsSum());
     const scalarField tgtCoverage(ami.tgtWeightsSum());
 
-    if (args.found("grid"))
+    if (args.found("grid") || args.found("grid-small"))
     {
         label nSrcLinks = 0;
         for (const labelList& addr : ami.srcAddress())
@@ -841,12 +981,45 @@ void runGeometryTest
             nTgtLinks += addr.size();
         }
 
+        label nSliverLinks = 0;
+        label nSliverFaces = 0;
+        if (args.found("grid-sliver"))
+        {
+            forAll(ami.tgtAddress(), tgti)
+            {
+                if (tgti % 2 == 0)
+                {
+                    ++nSliverFaces;
+                    nSliverLinks += ami.tgtAddress()[tgti].size();
+                }
+            }
+        }
+
+        // Sliver intersections carry ~1e-4 relative error, so use a looser
+        // threshold than the 1e-6 retention tolerance
+        label nSrcUncovered = 0;
+        forAll(srcCoverage, facei)
+        {
+            if (srcCoverage[facei] < 1 - 1e-3) ++nSrcUncovered;
+        }
+        label nTgtUncovered = 0;
+        forAll(tgtCoverage, facei)
+        {
+            if (tgtCoverage[facei] < 1 - 1e-3) ++nTgtUncovered;
+        }
+
         Info<< "AMI_STENCIL test=T01"
-            << " grid=" << args.get<label>("grid")
+            << " grid=" << args.getOrDefault<label>("grid", 0)
+            << " sliver=" << args.getOrDefault<scalar>("grid-sliver", 0)
+            << " small=" << args.getOrDefault<scalar>("grid-small", 0)
             << " srcFaces=" << ami.srcAddress().size()
             << " tgtFaces=" << ami.tgtAddress().size()
             << " srcLinks=" << nSrcLinks
             << " tgtLinks=" << nTgtLinks
+            << " sliverFaces=" << nSliverFaces
+            << " sliverLinks=" << nSliverLinks
+            << " srcUncovered=" << nSrcUncovered
+            << " tgtUncovered=" << nTgtUncovered
             << endl;
 
         return;
@@ -2627,6 +2800,18 @@ int main(int argc, char *argv[])
     argList::addBoolOption("state-cycle");
     argList::addBoolOption("s04-fractions");
     argList::addOption("grid", "cells", "T01 uniform N x N grid stencil case");
+    argList::addOption
+    (
+        "grid-sliver",
+        "w",
+        "with -grid: split each source cell into a sliver of relative width w"
+    );
+    argList::addOption
+    (
+        "grid-small",
+        "s",
+        "T01 with -grid (default 1): split each cell 3x3 with centre side s"
+    );
     argList::addOption
     (
         "sliver-width",
