@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2017-2018 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -29,7 +30,6 @@ License
 #include "nearestToCell.H"
 #include "polyMesh.H"
 #include "addToRunTimeSelectionTable.H"
-#include "mappedPatchBase.H"
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -69,29 +69,49 @@ Foam::topoSetSource::addToUsageTable Foam::nearestToCell::usage_
 
 void Foam::nearestToCell::combine(topoSet& set, const bool add) const
 {
-    // All the info for nearest. Construct to miss
-    List<mappedPatchBase::nearInfo> nearest(points_.size());
+    const int communicator = UPstream::worldComm;
+    const auto myProci = UPstream::myProcNo(communicator);
+
+    // Nearest cell index (locally)
+    labelList objectIndices(points_.size(), Foam::zero{});
+
+    // The nearest selection key. Construct as missed sample
+    // == (large distance, proc = max_ranks)
+    List<Tuple2<scalar, int>> nearest
+    (
+        points_.size(),
+        { VGREAT, UPstream::max_ranks() }
+    );
 
     forAll(points_, pointi)
     {
-        const label celli = mesh_.findNearestCell(points_[pointi]);
-        const point& cc = mesh_.cellCentres()[celli];
+        const auto& sample = points_[pointi];
 
-        nearest[pointi].first() = pointIndexHit(true, cc, celli);
-        nearest[pointi].second() = Tuple2<scalar, label>
+        if
         (
-            magSqr(cc-points_[pointi]),
-            Pstream::myProcNo()
-        );
+            label celli = mesh_.findNearestCell(sample);
+            celli >= 0
+        )
+        {
+            const point& cc = mesh_.cellCentres()[celli];
+
+            objectIndices[pointi] = celli;
+            nearest[pointi] = { sample.distSqr(cc), myProci };
+        }
     }
 
-    Pstream::listCombineReduce(nearest, mappedPatchBase::nearestEqOp());
-
-    for (const auto& near : nearest)
+    // Find rank with nearest - globally consistent
     {
-        if (near.second().second() == Pstream::myProcNo())
+        UPstream::minLocation(nearest, communicator);
+    }
+
+    forAll(nearest, samplei)
+    {
+        if (myProci == nearest[samplei].second())
         {
-            addOrDelete(set, near.first().index(), add);
+            label celli = objectIndices[samplei];
+
+            addOrDelete(set, celli, add);
         }
     }
 }
@@ -127,11 +147,8 @@ Foam::nearestToCell::nearestToCell
     const dictionary& dict
 )
 :
-    nearestToCell
-    (
-        mesh,
-        dict.get<pointField>("points")
-    )
+    topoSetCellSource(mesh, dict),
+    points_(dict.get<pointField>("points"))
 {}
 
 

@@ -351,4 +351,6 @@ regionModel/regionProperties/regionProperties.C
 
 tetOverlapVolume/tetOverlapVolume.C
 
+triangulatedPatch/triangulatedPatch.C
+
 LIB = $(FOAM_LIBBIN)/libmeshTools

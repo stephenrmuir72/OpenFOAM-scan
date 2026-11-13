@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2017-2022 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -32,9 +33,8 @@ License
 #include "treeBoundBox.H"
 #include "treeDataFace.H"
 #include "Time.H"
+#include "Random.H"
 #include "meshTools.H"
-// For 'nearInfo' helper class only
-#include "mappedPatchBase.H"
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -56,102 +56,163 @@ void Foam::patchCloudSet::calcSamples
     DynamicList<scalar>& samplingCurveDist
 ) const
 {
+    const int communicator = UPstream::worldComm;
+    const auto myProci = UPstream::myProcNo(communicator);
+    const auto numProc = UPstream::nProcs(communicator);
+
+    // Test for valid proc number
+    const auto valid_proc = [numProc](int proci)
+    {
+        return (proci >= 0 && proci < numProc);
+    };
+
     DebugInfo << "patchCloudSet : sampling on patches :" << endl;
 
-    // Construct search tree for all patch faces.
-    label sz = 0;
-    for (const label patchi : patchSet_)
+    // Boundary faces only
+    labelList bndFaces;
+    treeBoundBox overallBb;
+
     {
-        const polyPatch& pp = mesh().boundaryMesh()[patchi];
-
-        sz += pp.size();
-
-        DebugInfo << "    " << pp.name() << " size " << pp.size() << endl;
-    }
-
-    labelList patchFaces(sz);
-    sz = 0;
-    treeBoundBox bb;
-    for (const label patchi : patchSet_)
-    {
-        const polyPatch& pp = mesh().boundaryMesh()[patchi];
-
-        forAll(pp, i)
+        // Collect faces and bounding box
+        label sz = 0;
+        for (auto patchi : patchIDs_)
         {
-            patchFaces[sz++] = pp.start()+i;
+            const polyPatch& pp = mesh().boundaryMesh()[patchi];
+
+            if (pp.size())
+            {
+                sz += pp.size();
+
+                overallBb.add(pp.points(), pp.meshPoints());
+            }
+
+            DebugInfo << "    " << pp.name() << " size " << pp.size() << endl;
         }
 
-        // Without reduction.
-        bb.add(pp.points(), pp.meshPoints());
+        bndFaces.resize(sz);
+        sz = 0;
+
+        for (auto patchi : patchIDs_)
+        {
+            const polyPatch& pp = mesh().boundaryMesh()[patchi];
+
+            forAll(pp, i)
+            {
+                bndFaces[sz++] = pp.start()+i;
+            }
+        }
     }
 
-    // Not very random
-    Random rndGen(123456);
-    // Make bb asymmetric just to avoid problems on symmetric meshes
-    // Make sure bb is 3D.
-    bb.inflate(rndGen, 1e-4, ROOTVSMALL);
-
-
-    indexedOctree<treeDataFace> patchTree
-    (
-        treeDataFace(mesh(), patchFaces),  // boundary faces only
-
-        bb,             // overall search domain
-        8,              // maxLevel
-        10,             // leafsize
-        3.0             // duplicity
-    );
 
     // Force calculation of face-diagonal decomposition
     (void)mesh().tetBasePtIs();
 
+    // Nearest face index (locally)
+    labelList objectIndices(sampleCoords_.size(), Foam::zero{});
 
-    // All the info for nearest. Construct to miss
-    List<mappedPatchBase::nearInfo> nearest(sampleCoords_.size());
+    // Nearest selection key: (sqr(distance), rank)
+    // Construct as missed sample
+    // == (large distance, proc = max_ranks)
+    List<Tuple2<scalar, int>> nearest
+    (
+        sampleCoords_.size(),
+        { VGREAT, UPstream::max_ranks() }
+    );
 
-    forAll(sampleCoords_, sampleI)
+    // Initialize all hit points as point::max
+    pointField hitPoints(sampleCoords_.size(), point::max);
+
+    const bool hasLocal = !bndFaces.empty();
+
+    // Find the nearest locally
+    if (hasLocal)
     {
+        // Not very random
+        constexpr label rand_seed = 123456;
+
+        Random rndGen(rand_seed);
+        // Make bb asymmetric just to avoid problems on symmetric meshes
+        // Make sure bb is 3D.
+        overallBb.inflate(rndGen, 1e-4, ROOTVSMALL);
+
+        const indexedOctree<treeDataFace> patchTree
+        (
+            // Boundary faces only
+            treeDataFace(mesh(), std::move(bndFaces)),
+            overallBb,      // overall search domain
+            8,              // maxLevel
+            10,             // leafsize
+            3.0             // duplicity
+        );
+
+        // Search limit for findNearest
+        const scalar maxDistSqr = Foam::sqr(searchDist_);
+
         const auto& treeData = patchTree.shapes();
-        const point& sample = sampleCoords_[sampleI];
 
-        pointIndexHit& nearInfo = nearest[sampleI].first();
-        auto& distSqrProc = nearest[sampleI].second();
-
-        // Find the nearest locally
-        if (patchFaces.size())
+        forAll(sampleCoords_, samplei)
         {
-            nearInfo = patchTree.findNearest(sample, sqr(searchDist_));
-        }
-        else
-        {
-            nearInfo.setMiss();
-        }
+            const auto& sample = sampleCoords_[samplei];
 
+            pointIndexHit pHit = patchTree.findNearest(sample, maxDistSqr);
 
-        // Fill in the distance field and the processor field
-        if (!nearInfo.hit())
-        {
-            distSqrProc.first() = Foam::sqr(GREAT);
-            distSqrProc.second() = Pstream::myProcNo();
-        }
-        else
-        {
-            // Set nearest to mesh face label
-            const label objectIndex = treeData.objectIndex(nearInfo.index());
+            // Set nearest index to mesh face label
+            if (pHit.hit())
+            {
+                const auto& p = pHit.point();
 
-            nearInfo.setIndex(objectIndex);
+                label facei = treeData.objectIndex(pHit.index());
 
-            distSqrProc.first() = sample.distSqr(nearInfo.point());
-            distSqrProc.second() = Pstream::myProcNo();
+                objectIndices[samplei] = facei;
+                hitPoints[samplei] = p;
+                nearest[samplei] = { sample.distSqr(p), myProci };
+            }
         }
     }
 
-
     // Find nearest - globally consistent
-    Pstream::listCombineReduce(nearest, mappedPatchBase::nearestEqOp());
+    {
+        UPstream::minLocation(nearest, communicator);
+    }
 
+    // Update hitPoints
+    forAll(nearest, i)
+    {
+        const auto proci = nearest[i].second();
+        const auto& sample = sampleCoords_[i];
 
-    if (debug && Pstream::master())
+        // No hit on my proc
+        // - set as point::max (for later reduction)
+        //   or preserve original sample point if no hit anywhere
+
+        if (proci != myProci)
+        {
+            hitPoints[i] = valid_proc(proci) ? point::max : sample;
+        }
+    }
+
+    // Selects the best point or point::max
+    #if (OPENFOAM >= 2506)
+    Foam::reduce
+    (
+        hitPoints.data(),
+        hitPoints.size(),
+        minOp<point>(),
+        UPstream::msgType(),
+        UPstream::worldComm
+    );
+    #else
+    Foam::reduce
+    (
+        reinterpret_cast<point::cmptType*>(hitPoints.data()),
+        (point::nComponents * hitPoints.size()),
+        minOp<point::cmptType>(),
+        UPstream::msgType(),
+        UPstream::worldComm
+    );
+    #endif
+
+    if (debug && UPstream::master())
     {
         OFstream str
         (
@@ -162,51 +223,54 @@ void Foam::patchCloudSet::calcSamples
         Info<< "Dumping mapping as lines from supplied points to"
             << " nearest patch face to file " << str.name() << endl;
 
-        label vertI = 0;
-
+        label vertexIndex(0);
         forAll(nearest, i)
         {
-            if (nearest[i].first().hit())
+            if (valid_proc(nearest[i].second()))
             {
-                meshTools::writeOBJ(str, sampleCoords_[i]);
-                ++vertI;
-                meshTools::writeOBJ(str, nearest[i].first().point());
-                ++vertI;
-                str << "l " << vertI-1 << ' ' << vertI << nl;
+                meshTools::writeOBJ
+                (
+                    str,
+                    sampleCoords_[i],
+                    hitPoints[i],
+                    vertexIndex
+                );
             }
         }
     }
 
 
     // Store the sampling locations on the nearest processor
-    forAll(nearest, sampleI)
+    forAll(nearest, samplei)
     {
-        const pointIndexHit& nearInfo = nearest[sampleI].first();
+        const auto proci = nearest[samplei].second();
+        const auto facei = objectIndices[samplei];
+        const auto& sample = sampleCoords_[samplei];
+        const auto& p = hitPoints[samplei];
 
-        if (nearInfo.hit())
+        if (valid_proc(proci))  // ie, is hit()
         {
-            if (nearest[sampleI].second().second() == Pstream::myProcNo())
+            if (proci == myProci)
             {
-                label facei = nearInfo.index();
-
-                samplingPts.append(nearInfo.point());
-                samplingCells.append(mesh().faceOwner()[facei]);
-                samplingFaces.append(facei);
-                samplingSegments.append(0);
-                samplingCurveDist.append(1.0 * sampleI);
+                samplingPts.push_back(p);
+                samplingCells.push_back(mesh().faceOwner()[facei]);
+                samplingFaces.push_back(facei);
+                samplingSegments.push_back(0);
+                samplingCurveDist.push_back(1.0 * samplei);
             }
         }
         else
         {
             // No processor found point near enough. Mark with special value
             // which is intercepted when interpolating
-            if (Pstream::master())
+
+            if (UPstream::master())
             {
-                samplingPts.append(sampleCoords_[sampleI]);
-                samplingCells.append(-1);
-                samplingFaces.append(-1);
-                samplingSegments.append(0);
-                samplingCurveDist.append(1.0 * sampleI);
+                samplingPts.push_back(sample);
+                samplingCells.push_back(-1);
+                samplingFaces.push_back(-1);
+                samplingSegments.push_back(0);
+                samplingCurveDist.push_back(1.0 * samplei);
             }
         }
     }
@@ -268,7 +332,7 @@ Foam::patchCloudSet::patchCloudSet
 :
     sampledSet(name, mesh, searchEngine, axis),
     sampleCoords_(sampleCoords),
-    patchSet_(patchSet),
+    patchIDs_(patchSet.sortedToc()),
     searchDist_(searchDist)
 {
     genSamples();
@@ -285,9 +349,9 @@ Foam::patchCloudSet::patchCloudSet
 :
     sampledSet(name, mesh, searchEngine, dict),
     sampleCoords_(dict.get<pointField>("points")),
-    patchSet_
+    patchIDs_
     (
-        mesh.boundaryMesh().patchSet(dict.get<wordRes>("patches"))
+        mesh.boundaryMesh().patchSet(dict.get<wordRes>("patches")).sortedToc()
     ),
     searchDist_(dict.get<scalar>("maxDistance"))
 {

@@ -301,7 +301,13 @@ public:
         //- Return locations to probe
         virtual const pointField& probeLocations() const noexcept
         {
-            return *this;
+            return static_cast<const pointField&>(*this);
+        }
+
+        //- Return locations to probe
+        virtual pointField& probeLocations() noexcept
+        {
+            return static_cast<pointField&>(*this);
         }
 
         //- Return location for probe i

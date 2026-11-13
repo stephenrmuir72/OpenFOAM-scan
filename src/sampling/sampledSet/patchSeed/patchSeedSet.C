@@ -6,7 +6,8 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2012-2016 OpenFOAM Foundation
-    Copyright (C) 2018-2022 OpenCFD Ltd.
+    Copyright (C) 2018-2023 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -28,13 +29,11 @@ License
 
 #include "patchSeedSet.H"
 #include "polyMesh.H"
-#include "addToRunTimeSelectionTable.H"
 #include "treeBoundBox.H"
 #include "treeDataFace.H"
-#include "Time.H"
-#include "meshTools.H"
 #include "mappedPatchBase.H"
-#include "indirectPrimitivePatch.H"
+#include "triangulatedPatch.H"
+#include "addToRunTimeSelectionTable.H"
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -47,8 +46,10 @@ namespace Foam
 
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
-void Foam::patchSeedSet::calcSamples
+void Foam::patchSeedSet::calcPatchSamples
 (
+    const label nAvailable,
+    const label nPatchPoints,
     DynamicList<point>& samplingPts,
     DynamicList<label>& samplingCells,
     DynamicList<label>& samplingFaces,
@@ -56,150 +57,196 @@ void Foam::patchSeedSet::calcSamples
     DynamicList<scalar>& samplingCurveDist
 )
 {
-    DebugInfo << "patchSeedSet : sampling on patches :" << endl;
-
-    // Construct search tree for all patch faces.
-    label sz = 0;
-    for (const label patchi : patchSet_)
+    if (nAvailable < 1)
     {
-        const polyPatch& pp = mesh().boundaryMesh()[patchi];
-
-        sz += pp.size();
-
-        DebugInfo << "    " << pp.name() << " size " << pp.size() << endl;
+        return;
     }
 
-    labelList patchFaces(sz);
-    sz = 0;
-    for (const label patchi : patchSet_)
-    {
-        const polyPatch& pp = mesh().boundaryMesh()[patchi];
-        forAll(pp, i)
-        {
-            patchFaces[sz++] = pp.start()+i;
-        }
-    }
-
-
-    if (!rndGenPtr_)
-    {
-        rndGenPtr_.reset(new Random(0));
-    }
     Random& rndGen = *rndGenPtr_;
 
+    // Globally consistent addressing
+    const label globalPointStart = UPstream::find_offset(nAvailable);
+    const label nGlobalPatchPoints = returnReduce(nPatchPoints, sumOp<label>());
 
-    if (selectedLocations_.size())
+    point pt;
+    label facei;
+    label celli;
+
+    const bool perturb = true;
+
+    for (auto patchi : patchIDs_)
     {
-        DynamicList<label> newPatchFaces(patchFaces.size());
+        const polyPatch& pp = mesh().boundaryMesh()[patchi];
+        triangulatedPatch tp(pp, perturb);
 
-        // Find the nearest patch face
+        const label np = nAvailable*pp.size()/scalar(nGlobalPatchPoints);
+        for (label i = 0; i < np; ++i)
         {
-            // 1. All processors find nearest local patch face for all
-            //    selectedLocations
+            tp.randomLocalPoint(rndGen, pt, facei, celli);
 
-            // All the info for nearest. Construct to miss
-            List<mappedPatchBase::nearInfo> nearest(selectedLocations_.size());
+            samplingPts.append(pt);
+            samplingCells.append(celli);
+            samplingFaces.append(pp.start() + facei);
+            samplingSegments.append(0);
+            samplingCurveDist.append(globalPointStart + i);
+        }
+    }
+}
 
-            const indirectPrimitivePatch pp
-            (
-                IndirectList<face>(mesh().faces(), patchFaces),
-                mesh().points()
-            );
 
-            treeBoundBox patchBb
-            (
-                treeBoundBox(pp.points(), pp.meshPoints())
-                    .extend(rndGen, 1e-4, ROOTVSMALL)
-            );
+void Foam::patchSeedSet::calcSelectedLocations
+(
+    const label nAvailable,
+    const label nPatchPoints,
+    DynamicList<point>& samplingPts,
+    DynamicList<label>& samplingCells,
+    DynamicList<label>& samplingFaces,
+    DynamicList<label>& samplingSegments,
+    DynamicList<scalar>& samplingCurveDist
+)
+{
+    const int communicator = UPstream::worldComm;
+    const auto myProci = UPstream::myProcNo(communicator);
 
-            indexedOctree<treeDataFace> boundaryTree
-            (
-                treeDataFace(mesh(), patchFaces),  // boundary faces only
+    if (nAvailable < 1)
+    {
+        return;
+    }
 
-                patchBb,        // overall search domain
-                8,              // maxLevel
-                10,             // leafsize
-                3.0             // duplicity
-            );
+    Random& rndGen = *rndGenPtr_;
 
-            // Get some global dimension so all points are equally likely
-            // to be found
-            const scalar globalDistSqr
-            (
-                //boundBox(pp.points(), pp.meshPoints(), true).magSqr()
-                GREAT
-            );
+    // Boundary faces only
+    labelList bndFaces;
+    treeBoundBox overallBb;
 
-            forAll(selectedLocations_, sampleI)
+    {
+        // Collect faces and bounding box
+        label sz = 0;
+        for (auto patchi : patchIDs_)
+        {
+            const polyPatch& pp = mesh().boundaryMesh()[patchi];
+
+            if (pp.size())
             {
-                const auto& treeData = boundaryTree.shapes();
-                const point& sample = selectedLocations_[sampleI];
+                sz += pp.size();
 
-                pointIndexHit& nearInfo = nearest[sampleI].first();
-                auto& distSqrProc = nearest[sampleI].second();
-
-                nearInfo = boundaryTree.findNearest
-                (
-                    sample,
-                    globalDistSqr
-                );
-
-                if (!nearInfo.hit())
-                {
-                    distSqrProc.first() = Foam::sqr(GREAT);
-                    distSqrProc.second() = Pstream::myProcNo();
-                }
-                else
-                {
-                    nearInfo.setPoint(treeData.centre(nearInfo.index()));
-
-                    distSqrProc.first() = sample.distSqr(nearInfo.point());
-                    distSqrProc.second() = Pstream::myProcNo();
-                }
+                overallBb.add(pp.points(), pp.meshPoints());
             }
 
+            DebugInfo << "    " << pp.name() << " size " << pp.size() << endl;
+        }
 
-            // 2. Reduce on master. Select nearest processor.
+        bndFaces.resize(sz);
+        sz = 0;
 
-            // Find nearest - globally consistent
-            Pstream::listCombineReduce(nearest, mappedPatchBase::nearestEqOp());
+        for (auto patchi : patchIDs_)
+        {
+            const polyPatch& pp = mesh().boundaryMesh()[patchi];
 
-            // 3. Pick up my local faces that have won
-
-            forAll(nearest, sampleI)
+            forAll(pp, i)
             {
-                if (nearest[sampleI].first().hit())
-                {
-                    label procI = nearest[sampleI].second().second();
-                    label index = nearest[sampleI].first().index();
-
-                    if (procI == Pstream::myProcNo())
-                    {
-                        newPatchFaces.append(pp.addressing()[index]);
-                    }
-                }
+                bndFaces[sz++] = pp.start()+i;
             }
         }
+    }
 
-        if (debug)
+
+    // 1. Find nearest local patch face for all selectedLocations
+    labelList patchFaces(nAvailable, -1);
+
+    // The nearest selection key. Construct as missed sample
+    // == (large distance, proc = max_ranks)
+
+    List<Tuple2<scalar, int>> nearest
+    (
+        nAvailable,
+        { VGREAT, UPstream::max_ranks() }
+    );
+
+    const bool hasLocal = !bndFaces.empty();
+
+    if (hasLocal)
+    {
+        overallBb.inflate(rndGen, 1e-4, ROOTVSMALL);
+
+        const indexedOctree<treeDataFace> boundaryTree
+        (
+            // Boundary faces only
+            treeDataFace(mesh(), std::move(bndFaces)),
+
+            overallBb,      // overall search domain
+            8,              // maxLevel
+            10,             // leafsize
+            3.0             // duplicity
+        );
+
+        // Get some global dimension so all points are equally likely
+        // to be found
+        const scalar globalDistSqr
+        (
+            //overallBb.magSqr()
+            GREAT
+        );
+
+        const auto& treeData = boundaryTree.shapes();
+        const auto& samples = selectedLocations_;
+
+        for (label samplei = 0; samplei < nAvailable; ++samplei)
         {
-            Pout<< "Found " << newPatchFaces.size()
-                << " out of " << selectedLocations_.size()
-                << " on local processor" << endl;
-        }
+            const point& sample = samples[samplei];
 
-        patchFaces.transfer(newPatchFaces);
+            pointIndexHit pHit = boundaryTree.findNearest
+            (
+                sample,
+                globalDistSqr
+            );
+
+            if (pHit.hit())
+            {
+                const auto& p = pHit.point();
+
+                label facei = treeData.objectIndex(pHit.index());
+
+                patchFaces[samplei] = facei;
+                nearest[samplei] = { sample.distSqr(p), myProci };
+            }
+        }
+    }
+
+    // Find rank with nearest hit - globally consistent
+    {
+        UPstream::minLocation(nearest, communicator);
+    }
+
+    // Extract/filter local selections
+    {
+        label nLocal = 0;
+        forAll(nearest, samplei)
+        {
+            if (myProci == nearest[samplei].second())
+            {
+                patchFaces[nLocal] = patchFaces[samplei];
+                ++nLocal;
+            }
+        }
+        patchFaces.resize(nLocal);
+    }
+
+    if (debug)
+    {
+        Pout<< "Found " << patchFaces.size()
+            << " out of " << nAvailable
+            << " on local processor" << endl;
     }
 
 
     // Shuffle and truncate if in random mode
-    label totalSize = returnReduce(patchFaces.size(), sumOp<label>());
+    const label totalSize = returnReduce(patchFaces.size(), sumOp<label>());
 
-    if (maxPoints_ < totalSize)
+    if (totalSize > nAvailable)
     {
         // Check what fraction of maxPoints_ I need to generate locally.
-        label myMaxPoints =
-            label(scalar(patchFaces.size())/totalSize*maxPoints_);
+        label myMaxPoints = scalar(patchFaces.size())/totalSize*nAvailable;
 
         labelList subset = identity(patchFaces.size());
         for (label iter = 0; iter < 4; ++iter)
@@ -210,6 +257,7 @@ void Foam::patchSeedSet::calcSamples
                 std::swap(subset[i], subset[j]);
             }
         }
+
         // Truncate
         subset.setSize(myMaxPoints);
 
@@ -221,12 +269,14 @@ void Foam::patchSeedSet::calcSamples
                 << " faces out of " << patchFaces.size() << endl;
         }
 
-        patchFaces = labelUIndList(patchFaces, subset)();
+        patchFaces = labelUIndList(patchFaces, subset).list();
     }
 
 
     // Get points on patchFaces.
-    globalIndex globalSampleNumbers(patchFaces.size());
+
+    // Globally consistent addressing
+    const label globalFaceStart = UPstream::find_offset(patchFaces.size());
 
     samplingPts.setCapacity(patchFaces.size());
     samplingCells.setCapacity(patchFaces.size());
@@ -239,7 +289,8 @@ void Foam::patchSeedSet::calcSamples
 
     forAll(patchFaces, i)
     {
-        label facei = patchFaces[i];
+        const label facei = patchFaces[i];
+        const label celli = mesh().faceOwner()[facei];
 
         // Slightly shift point in since on warped face face-diagonal
         // decomposition might be outside cell for face-centre decomposition!
@@ -249,7 +300,6 @@ void Foam::patchSeedSet::calcSamples
             facei,
             polyMesh::FACE_DIAG_TRIS
         );
-        label celli = mesh().faceOwner()[facei];
 
         if (info.hit())
         {
@@ -267,7 +317,7 @@ void Foam::patchSeedSet::calcSamples
         samplingCells.append(celli);
         samplingFaces.append(facei);
         samplingSegments.append(0);
-        samplingCurveDist.append(globalSampleNumbers.toGlobal(i));
+        samplingCurveDist.append(globalFaceStart+i);
     }
 }
 
@@ -313,6 +363,59 @@ void Foam::patchSeedSet::genSamples()
 }
 
 
+void Foam::patchSeedSet::calcSamples
+(
+    DynamicList<point>& samplingPts,
+    DynamicList<label>& samplingCells,
+    DynamicList<label>& samplingFaces,
+    DynamicList<label>& samplingSegments,
+    DynamicList<scalar>& samplingCurveDist
+)
+{
+    DebugInfo << "patchSeedSet : sampling on patches :" << endl;
+
+    if (!rndGenPtr_)
+    {
+        rndGenPtr_.reset(new Random(0));
+    }
+
+    label nPatchPoints = 0;
+    for (auto patchi : patchIDs_)
+    {
+        const polyPatch& pp = mesh().boundaryMesh()[patchi];
+        nPatchPoints += pp.size();
+
+        DebugInfo << "    " << pp.name() << " size " << pp.size() << endl;
+    }
+
+    label nAvailable = min(maxPoints_, selectedLocations_.size());
+
+    calcSelectedLocations
+    (
+        nAvailable,
+        nPatchPoints,
+        samplingPts,
+        samplingCells,
+        samplingFaces,
+        samplingSegments,
+        samplingCurveDist
+    );
+
+    nAvailable = maxPoints_ - nAvailable;
+
+    calcPatchSamples
+    (
+        nAvailable,
+        nPatchPoints,
+        samplingPts,
+        samplingCells,
+        samplingFaces,
+        samplingSegments,
+        samplingCurveDist
+    );
+}
+
+
 // * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * //
 
 Foam::patchSeedSet::patchSeedSet
@@ -324,9 +427,9 @@ Foam::patchSeedSet::patchSeedSet
 )
 :
     sampledSet(name, mesh, searchEngine, dict),
-    patchSet_
+    patchIDs_
     (
-        mesh.boundaryMesh().patchSet(dict.get<wordRes>("patches"))
+        mesh.boundaryMesh().patchSet(dict.get<wordRes>("patches")).sortedToc()
     ),
     maxPoints_(dict.get<label>("maxPoints")),
     selectedLocations_
