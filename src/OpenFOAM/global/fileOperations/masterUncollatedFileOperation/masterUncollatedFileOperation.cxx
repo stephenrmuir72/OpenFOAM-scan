@@ -82,6 +82,57 @@ namespace fileOperations
 }
 }
 
+// * * * * * * * * * * * * * * * Local Functions * * * * * * * * * * * * * * //
+
+namespace
+{
+
+// Forward to IFstream reader, with extra debug etc.
+Foam::DynamicList<char> getFileContents
+(
+    const Foam::fileName& filePath,
+    const bool dieOnError = true
+)
+{
+    using namespace Foam;
+
+    // Report the public API name instead of the template's mangled signature
+    constexpr const char* funcName = "masterUncollated::getFileContents";
+
+    DynamicList<char> charData;
+
+    IFstream ifs(filePath, IOstreamOption::BINARY);
+
+    if (!ifs.good())
+    {
+        if (dieOnError)
+        {
+            // FatalIOErrorInFunction
+            FatalIOErrorIn(funcName, filePath)
+                << "Cannot open file " << filePath
+                << exit(FatalIOError);
+        }
+
+        return charData;
+    }
+
+    // Read file contents (compressed or uncompressed)
+    // into a character buffer
+
+    charData = IFstream::readContents(ifs);
+
+    if (fileOperations::masterUncollatedFileOperation::debug)
+    {
+        Info<< funcName << " :" << filePath
+            << " (compressed:" << bool(ifs.compression()) << ") : "
+            << int64_t(charData.size()) << " bytes\n";
+    }
+
+    return charData;
+}
+
+}  // End anonymous namespace
+
 
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
@@ -402,58 +453,11 @@ Foam::fileOperations::masterUncollatedFileOperation::localObjectPath
 }
 
 
-//
-// Local Functions
-//
-namespace Foam
-{
-
-// Read file contents and send to processors.
-// Handles compressed or uncompressed files
-static void readAndSend
-(
-    const fileName& filePath,
-    const UList<int>& recvProcs,
-    PstreamBuffers& pBufs
-)
-{
-    if (recvProcs.empty()) return;
-
-    IFstream ifs(filePath, IOstreamOption::BINARY);
-
-    if (!ifs.good())
-    {
-        FatalIOErrorInFunction(filePath)
-            << "Cannot open file " << filePath
-            << exit(FatalIOError);
-    }
-
-    // Read file contents (compressed or uncompressed) into a character buffer
-    DynamicList<char> buf(IFstream::readContents(ifs));
-
-    if (fileOperations::masterUncollatedFileOperation::debug)
-    {
-        Info<< "masterUncollatedFileOperation::readAndSend :"
-            << filePath
-            << " (compressed:" << bool(ifs.compression()) << ") : "
-            << buf.size() << " bytes" << endl;
-    }
-
-    for (auto proci : recvProcs)
-    {
-        UOPstream os(proci, pBufs);
-        os.write(buf.data(), buf.size());
-    }
-}
-
-} // End namespace Foam
-
-
 Foam::autoPtr<Foam::ISstream>
 Foam::fileOperations::masterUncollatedFileOperation::read
 (
     IOobject& io,
-    const int comm,
+    const int communicator,
     const bool uniform,             // on comms master only
     const fileNameList& filePaths,  // on comms master and sub-ranks
     const boolUList& readOnProcs    // on comms master and sub-ranks
@@ -461,18 +465,29 @@ Foam::fileOperations::masterUncollatedFileOperation::read
 {
     autoPtr<ISstream> isPtr;
 
-    PstreamBuffers pBufs(comm);
+    PtrList<DynamicList<char>> sendBuffers;
+    List<int64_t> sendSizes;
 
-    if (UPstream::master(comm))
+    const auto myProci = UPstream::myProcNo(communicator);
+    const auto numProc = UPstream::nProcs(communicator);
+
+    const int messageTag = (UPstream::msgType()+42);
+
+    const auto startOfRequests = UPstream::nRequests();
+
+    if (UPstream::master(communicator))
     {
+        sendBuffers.resize(numProc);
+        sendSizes.resize(numProc, 0);
+
         const auto& masterFilePath = filePaths[0];
 
         if (readOnProcs[0] && masterFilePath.empty())
         {
             FatalIOErrorInFunction(masterFilePath)
                 << "Cannot find file " << io.objectPath()
-                << " fileHandler : comm:" << comm
-                << " ioRanks:" << flatOutput(UPstream::procID(comm))
+                << " fileHandler : comm:" << communicator
+                << " ioRanks:" << flatOutput(UPstream::procID(communicator))
                 << exit(FatalIOError);
         }
 
@@ -483,12 +498,37 @@ Foam::fileOperations::masterUncollatedFileOperation::read
                 // Read on master and send to all processors
                 // (including master for simplicity)
 
-                DynamicList<int> recvProcs(UPstream::nProcs(comm));
-                for (const int proci : UPstream::allProcs(comm))
+                DynamicList<char> content(getFileContents(masterFilePath));
+
+                auto& sender =
+                    sendBuffers.emplace_set(0, std::move(content));
+
+                sendSizes[0] = sender.size();
+
+                DynamicList<int> recvProcs(numProc);
+                recvProcs.push_back(0);  // for debug
+
+                // Send to sub-ranks
+                for (const int proci : UPstream::subProcs(communicator))
                 {
                     if (readOnProcs[proci])
                     {
-                        recvProcs.push_back(proci);
+                        recvProcs.push_back(proci);  // for debug
+
+                        sendSizes[proci] = sender.size();
+
+                        if (sender.size() > 0)
+                        {
+                            UOPstream::write
+                            (
+                                UPstream::commsTypes::nonBlocking,
+                                proci,
+                                sender.data(),
+                                sender.size(),
+                                messageTag,
+                                communicator
+                            );
+                        }
                     }
                 }
 
@@ -496,10 +536,9 @@ Foam::fileOperations::masterUncollatedFileOperation::read
                 {
                     Pout<< "masterUncollatedFileOperation::read :"
                         << " For uniform file " << masterFilePath
-                        << " sending to " << flatOutput(recvProcs)
-                        << " in comm:" << comm << endl;
+                        << " sent to " << flatOutput(recvProcs)
+                        << " in comm:" << communicator << endl;
                 }
-                readAndSend(masterFilePath, recvProcs, pBufs);
             }
         }
         else
@@ -511,11 +550,9 @@ Foam::fileOperations::masterUncollatedFileOperation::read
             }
 
             // Read and send individual sub-rank files
-            List<int> recvProcs(1);
-            for (const int proci : UPstream::subProcs(comm))
+            for (const int proci : UPstream::subProcs(communicator))
             {
                 const auto& fPath = filePaths[proci];
-                recvProcs[0] = proci;
 
                 if (debug)
                 {
@@ -527,41 +564,74 @@ Foam::fileOperations::masterUncollatedFileOperation::read
 
                 if (readOnProcs[proci] && !fPath.empty())
                 {
-                    readAndSend(fPath, recvProcs, pBufs);
+                    DynamicList<char> content(getFileContents(fPath));
+
+                    auto& sender =
+                        sendBuffers.emplace_set(proci, std::move(content));
+
+                    sendSizes[proci] = sender.size();
+
+                    if (sender.size() > 0)
+                    {
+                        UOPstream::write
+                        (
+                            UPstream::commsTypes::nonBlocking,
+                            proci,
+                            sender.data(),
+                            sender.size(),
+                            messageTag,
+                            communicator
+                        );
+                    }
                 }
             }
         }
     }
 
-    // Finalize readAndSend
-    pBufs.finishedScatters();
 
-    if (!readOnProcs[UPstream::myProcNo(comm)])
+    // Communicate the expected sizes
+    const int64_t recvSize
+        = UPstream::listScatterValues(sendSizes, communicator);
+
+    List<char> recvBuffer;
+
+    if (UPstream::is_subrank(communicator) && recvSize > 0)
+    {
+        // Expecting to receive content
+
+        recvBuffer.resize(recvSize);
+
+        UIPstream::read
+        (
+            UPstream::commsTypes::nonBlocking,  // could also use scheduled
+            UPstream::masterNo(),
+            recvBuffer.data(),
+            recvBuffer.size(),
+            messageTag,
+            communicator
+        );
+    }
+
+    // Done communication
+    UPstream::waitRequests(startOfRequests);
+
+
+    if (!readOnProcs[myProci])
     {
         // This processor is not expected to read anything
         return dummyISstream::New();
     }
 
-    // isPtr will be valid on master and will be the unbuffered
-    // IFstream. Else the information is in the PstreamBuffers (and
-    // the special case of a uniform file)
-
-    if (!isPtr)
+    // isPtr will be valid on master and will be the unbuffered IFstream
+    if (isPtr)
     {
-        // This processor returns something
-        List<char> buf;
+        return isPtr;
+    }
 
-        if
-        (
-            const auto count0 = pBufs.recvDataCount(UPstream::masterNo());
-            (count0 > 0)
-        )
-        {
-            buf.resize(count0);
-
-            UIPstream is(UPstream::masterNo(), pBufs);
-            is.read(buf.data(), buf.size());
-        }
+    // special case for master with uniform file
+    if (UPstream::master(communicator) && sendBuffers.test(0))
+    {
+        auto& buf = sendBuffers[0];
 
         if (debug)
         {
@@ -576,8 +646,27 @@ Foam::fileOperations::masterUncollatedFileOperation::read
         isPtr.reset(new ICharStream(std::move(buf)));
 
         // With the proper file name
-        isPtr->name() = filePaths[UPstream::myProcNo(comm)];
+        isPtr->name() = filePaths[myProci];
     }
+    else
+    {
+        if (debug)
+        {
+            Pout<< "masterUncollatedFileOperation::read :"
+                << " Done reading " << recvBuffer.size()
+                << " bytes" << endl;
+        }
+
+        // A local character buffer copy.
+        // Construct with same parameters (ASCII, current version)
+        // as the IFstream so that it has the same characteristics.
+
+        isPtr.reset(new ICharStream(std::move(recvBuffer)));
+
+        // With the proper file name
+        isPtr->name() = filePaths[myProci];
+    }
+
 
     // Read header
     if (!io.readHeader(*isPtr))
@@ -585,8 +674,8 @@ Foam::fileOperations::masterUncollatedFileOperation::read
         FatalIOErrorInFunction(*isPtr)
             << "problem while reading header for object "
             << io.name()
-            << " fileHandler : comm:" << comm
-            << " ioRanks:" << flatOutput(UPstream::procID(comm))
+            << " fileHandler : comm:" << communicator
+            << " ioRanks:" << flatOutput(UPstream::procID(communicator))
             << exit(FatalIOError);
     }
 
@@ -1841,67 +1930,67 @@ bool Foam::fileOperations::masterUncollatedFileOperation::readHeader
             Pstream::gatherList(filePaths, UPstream::msgType(), comm_);
         }
 
-        // Intermediate storage arrays (master only)
-        boolList result;
-        wordList headerClassName;
-        stringList note;
 
-        if (Pstream::master(comm_))
+        // Use PstreamBuffers for scattering (small meta data...)
+        PstreamBuffers pBufs(comm_);
+
+        if (UPstream::master(comm_))
         {
-            const label np = Pstream::nProcs(comm_);
+            // Own values (rank 0), applied after the loop since
+            // readHeader() overwrites io
+            bool masterOk = false;
+            word masterClass;
+            string masterNote;
 
-            result.resize(np, false);
-            headerClassName.resize(np);
-            note.resize(np);
+            // Most recent result, reused when consecutive ranks share a file
+            bool procOk = false;
+            word procClass;
+            string procNote;
 
             forAll(filePaths, proci)
             {
-                if (!filePaths[proci].empty())
+                if (proci == 0 || filePaths[proci] != filePaths[proci-1])
                 {
-                    if (proci > 0 && filePaths[proci] == filePaths[proci-1])
-                    {
-                        result[proci] = result[proci-1];
-                        headerClassName[proci] = headerClassName[proci-1];
-                        note[proci] = note[proci-1];
-                    }
-                    else
+                    procOk = false;
+                    procClass.clear();
+                    procNote.clear();
+
+                    if (!filePaths[proci].empty())
                     {
                         IFstream is(filePaths[proci]);
 
                         if (is.good())
                         {
-                            result[proci] =
-                                decomposedBlockData::readHeader(io, is);
-                            headerClassName[proci] = io.headerClassName();
-                            note[proci] = io.note();
+                            procOk = decomposedBlockData::readHeader(io, is);
+                            procClass = io.headerClassName();
+                            procNote = io.note();
                         }
                     }
                 }
+
+                if (proci == 0)
+                {
+                    masterOk = procOk;
+                    masterClass = procClass;
+                    masterNote = procNote;
+                }
+                else
+                {
+                    UOPstream os(proci, pBufs);
+                    os << procOk << procClass << procNote;
+                }
             }
-        }
 
-        // Is a more efficient scatter possible?
-        PstreamBuffers pBufs(comm_);
-
-        if (Pstream::master(comm_))
-        {
-            ok = result[0];
-            io.headerClassName() = headerClassName[0];
-            io.note() = note[0];
-
-            // Scatter to each proc
-            for (const int proci : pBufs.subProcs())
-            {
-                UOPstream os(proci, pBufs);
-                os << result[proci] << headerClassName[proci] << note[proci];
-            }
+            ok = masterOk;
+            io.headerClassName() = std::move(masterClass);
+            io.note() = std::move(masterNote);
         }
 
         pBufs.finishedScatters();
 
-        if (!Pstream::master(comm_))
+        if (!UPstream::master(comm_))
         {
-            UIPstream is(Pstream::masterNo(), pBufs);
+            UIPstream is(UPstream::masterNo(), pBufs);
             is >> ok >> io.headerClassName() >> io.note();
         }
     }
@@ -2426,103 +2515,193 @@ Foam::fileOperations::masterUncollatedFileOperation::NewIFstream
 
     // Parallel
 
+    const auto myProci = UPstream::myProcNo(comm_);
+    const auto numProc = UPstream::nProcs(comm_);
+
+    const int messageTag = (UPstream::msgType()+42);
+
+    const auto startOfRequests = UPstream::nRequests();
+
+    // Insert logic of filePath. We assume that if a file is absolute
+    // on the master it is absolute also on the sub-ranks etc.
+
+    fileNameList filePaths(numProc);
+    filePaths[myProci] = filePath;
+    Pstream::gatherList(filePaths, messageTag, comm_);
+
+
+    // For communication we have two different possible paths
+    // - uniform data = broadcast
+    // - individual data = send/recv
+
+    PtrList<DynamicList<char>> sendBuffers;
+    List<int64_t> sendSizes;
+
+    int64_t broadcastCtrl[2] = { 0, 0 };  // (bool, size)
+
+    if (UPstream::master(comm_) && numProc > 1)
     {
-        // Insert logic of filePath. We assume that if a file is absolute
-        // on the master it is absolute also on the sub-ranks etc.
+        // Same filename on the IO node -> same file
+        const bool uniform = fileOperation::uniformFile(filePaths);
 
-        fileNameList filePaths(Pstream::nProcs(comm_));
-        filePaths[Pstream::myProcNo(comm_)] = filePath;
-        Pstream::gatherList(filePaths, Pstream::msgType(), comm_);
+        sendBuffers.resize(numProc);
+        sendSizes.resize(numProc, 0);
 
-        PstreamBuffers pBufs(comm_);
-
-        if (Pstream::master(comm_))
+        if (uniform)
         {
-            // Same filename on the IO node -> same file
-            const bool uniform = fileOperation::uniformFile(filePaths);
-
-            if (uniform)
+            if (debug)
             {
-                if (debug)
-                {
-                    Pout<< "masterUncollatedFileOperation::NewIFstream :"
-                        << " Opening global file " << filePath << endl;
-                }
-
-                // Read and send to sub-ranks
-
-                List<int> recvProcs(UPstream::nProcs(comm_)-1);
-                Foam::identity(recvProcs, 1);
-
-                readAndSend(filePath, recvProcs, pBufs);
+                Pout<< "masterUncollatedFileOperation::NewIFstream :"
+                    << " Opening global file " << filePath << endl;
             }
-            else
-            {
-                // Read individual sub-rank files
-                List<int> recvProcs(1);
-                for (const int proci : Pstream::subProcs(comm_))
-                {
-                    const fileName& fPath = filePaths[proci];
-                    recvProcs[0] = proci;
 
-                    if (debug)
-                    {
-                        Pout<< "masterUncollatedFileOperation::NewIFstream :"
-                            << " Opening local file " << fPath
-                            << " rank:" << proci << endl;
-                    }
+            // Read and broadcast to sub-ranks.
+            // use sendBuffers[0] for the storage
 
-                    readAndSend(filePaths[proci], recvProcs, pBufs);
-                }
-            }
-        }
+            DynamicList<char> content(getFileContents(filePath));
 
+            auto& sender =
+                sendBuffers.emplace_set(0, std::move(content));
 
-        pBufs.finishedSends();
+            broadcastCtrl[0] = true;
+            broadcastCtrl[1] = sender.size();
 
-        if (Pstream::master(comm_))
-        {
-            // Read myself
-            isPtr.reset(new IFstream(filePaths[Pstream::masterNo()]));
+            // Extra bookkeeping (may be useful for debugging)
+            sendSizes = sender.size();
         }
         else
         {
-            if (debug)
+            // Read individual sub-rank files
+
+            for (const int proci : UPstream::subProcs(comm_))
             {
-                Pout<< "masterUncollatedFileOperation::NewIFstream :"
-                    << " Reading " << filePath
-                    << " from processor " << Pstream::masterNo() << endl;
+                const fileName& fPath = filePaths[proci];
+
+                if (debug)
+                {
+                    Pout<< "masterUncollatedFileOperation::NewIFstream :"
+                        << " Opening local file " << fPath
+                        << " rank:" << proci << endl;
+                }
+
+                DynamicList<char> content(getFileContents(fPath));
+
+                auto& sender =
+                    sendBuffers.emplace_set(proci, std::move(content));
+
+                sendSizes[proci] = sender.size();
+
+                if (sender.size() > 0)
+                {
+                    UOPstream::write
+                    (
+                        UPstream::commsTypes::nonBlocking,
+                        proci,
+                        sender.data(),
+                        sender.size(),
+                        messageTag,
+                        comm_
+                    );
+                }
             }
-
-            List<char> buf;
-
-            if
-            (
-                const auto count0 = pBufs.recvDataCount(UPstream::masterNo());
-                (count0 > 0)
-            )
-            {
-                buf.resize(count0);
-
-                UIPstream is(UPstream::masterNo(), pBufs);
-                is.read(buf.data(), buf.size());
-            }
-
-            if (debug)
-            {
-                Pout<< "masterUncollatedFileOperation::NewIFstream :"
-                    << " Done reading " << buf.size() << " bytes" << endl;
-            }
-
-            // A local character buffer copy.
-            // Construct with same parameters (ASCII, current version)
-            // as the IFstream so that it has the same characteristics.
-
-            isPtr.reset(new ICharStream(std::move(buf)));
-
-            // With the proper file name
-            isPtr->name() = filePath;
         }
+    }
+
+
+    // Communicate the expected sizes
+
+    UPstream::broadcast(broadcastCtrl, 2, comm_);
+
+    const bool isBroadcast = (broadcastCtrl[0] != 0);
+    const auto broadcastSize = broadcastCtrl[1];
+
+    List<char> recvBuffer;
+
+    if (isBroadcast)
+    {
+        if (broadcastSize > 0)
+        {
+            // Only broadcast non-empty content
+
+            if (UPstream::master(comm_))
+            {
+                if (!sendBuffers.test(0))
+                {
+                    FatalErrorInFunction
+                        << "Attempting to broadcast nullptr"
+                        << exit(FatalError);
+                }
+
+                auto& list = sendBuffers[0];
+
+                UPstream::broadcast(list.data(), list.size(), comm_);
+            }
+            else if (UPstream::is_subrank(comm_))
+            {
+                auto& list = recvBuffer;
+
+                list.resize(broadcastSize);
+
+                UPstream::broadcast(list.data(), list.size(), comm_);
+            }
+        }
+    }
+    else
+    {
+        // Using point-to-point communication
+
+        const int64_t recvSize = UPstream::listScatterValues(sendSizes, comm_);
+
+        if (UPstream::is_subrank(comm_) && recvSize > 0)
+        {
+            // This processor receives something
+
+            recvBuffer.resize(recvSize);
+
+            UIPstream::read
+            (
+                UPstream::commsTypes::nonBlocking,  // could also use scheduled
+                UPstream::masterNo(),
+                recvBuffer.data(),
+                recvBuffer.size(),
+                messageTag,
+                comm_
+            );
+        }
+    }
+
+    if (UPstream::master(comm_))
+    {
+        // Read myself
+        isPtr.reset(new IFstream(filePaths[UPstream::masterNo()]));
+    }
+
+    // Done communication
+    UPstream::waitRequests(startOfRequests);
+
+    if (UPstream::is_subrank(comm_))
+    {
+        if (debug)
+        {
+            Pout<< "masterUncollatedFileOperation::NewIFstream :"
+                << " Reading " << filePath
+                << " from processor " << UPstream::masterNo() << endl;
+        }
+
+        if (debug)
+        {
+            Pout<< "masterUncollatedFileOperation::NewIFstream :"
+                << " Done reading " << recvBuffer.size() << " bytes" << endl;
+        }
+
+        // A local character buffer copy.
+        // Construct with same parameters (ASCII, current version)
+        // as the IFstream so that it has the same characteristics.
+
+        isPtr.reset(new ICharStream(std::move(recvBuffer)));
+
+        // With the proper file name
+        isPtr->name() = filePath;
     }
 
     return isPtr;
