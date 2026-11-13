@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+cd "${0%/*}" || exit
+. ${WM_PROJECT_DIR:?}/bin/tools/CleanFunctions
+
+cleanCase
+
