@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2016-2022 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -29,11 +30,11 @@ License
 #include "sampledMeshedSurface.H"
 #include "meshSearch.H"
 #include "Tuple2.H"
-#include "globalIndex.H"
 #include "treeDataCell.H"
 #include "treeDataFace.H"
 #include "meshTools.H"
 #include "addToRunTimeSelectionTable.H"
+#include "stringListOps.H"   // For stringListOps::findMatching()
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -143,38 +144,44 @@ void Foam::sampledMeshedSurface::setZoneMap()
 
 bool Foam::sampledMeshedSurface::update(const meshSearch& meshSearcher)
 {
-    // Global numbering for cells/faces
-    // - only used to uniquely identify local elements
-    globalIndex globalCells(onBoundary() ? mesh().nFaces() : mesh().nCells());
-
     // Find the cells the triangles of the surface are in.
     // Does approximation by looking at the face centres only
     const pointField& fc = surface_.faceCentres();
 
-    // sqr(distance), global index
-    typedef Tuple2<scalar, label> nearInfo;
-    List<nearInfo> nearest(fc.size(), nearInfo(Foam::sqr(GREAT), labelMax));
+    const int communicator = UPstream::worldComm;
+    const auto myProci = UPstream::myProcNo(communicator);
+
+    // The eligible object index (face or cell).
+    // Will be refilter after the initial collection phase
+    labelList objectIndices(fc.size(), -1);
+
+    // The nearest selection key: (sqr(distance), rank)
+    // Construct as missed sample == (large distance, proc = max_ranks)
+    List<Tuple2<scalar, int>> nearest
+    (
+        fc.size(),
+        { VGREAT, UPstream::max_ranks() }
+    );
+
 
     if (sampleSource_ == samplingSource::cells)
     {
         // Search for nearest cell
 
-        const auto& cellTree = meshSearcher.cellTree();
-        const auto& treeData = cellTree.shapes();
+        const auto& tree = meshSearcher.cellTree();
+        const auto& treeData = tree.shapes();
 
-        forAll(fc, facei)
+        forAll(fc, samplei)
         {
-            const point& pt = fc[facei];
-            auto& near = nearest[facei];
+            const point& pt = fc[samplei];
 
-            pointIndexHit info = cellTree.findNearest(pt, Foam::sqr(GREAT));
-
-            if (info.hit())
+            pointIndexHit pHit = tree.findNearest(pt, Foam::sqr(GREAT));
+            if (pHit.hit())
             {
-                const label objectIndex = treeData.objectIndex(info.index());
+                label celli = treeData.objectIndex(pHit.index());
 
-                near.first()  = info.point().distSqr(pt);
-                near.second() = globalCells.toGlobal(objectIndex);
+                objectIndices[samplei] = celli;
+                nearest[samplei] = { pHit.point().distSqr(pt), myProci };
             }
         }
     }
@@ -182,24 +189,22 @@ bool Foam::sampledMeshedSurface::update(const meshSearch& meshSearcher)
     {
         // Search for cell containing point
 
-        const auto& cellTree = meshSearcher.cellTree();
-        const auto& treeData = cellTree.shapes();
+        const auto& tree = meshSearcher.cellTree();
+        const auto& treeData = tree.shapes();
 
-        forAll(fc, facei)
+        forAll(fc, samplei)
         {
-            const point& pt = fc[facei];
-            auto& near = nearest[facei];
+            const point& pt = fc[samplei];
 
-            if (cellTree.bb().contains(pt))
+            if (tree.bb().contains(pt))
             {
-                const label index = cellTree.findInside(pt);
-
-                if (index != -1)
+                label index = tree.findInside(pt);
+                if (index >= 0)
                 {
-                    const label objectIndex = treeData.objectIndex(index);
+                    label celli = treeData.objectIndex(index);
 
-                    near.first()  = 0;
-                    near.second() = globalCells.toGlobal(objectIndex);
+                    objectIndices[samplei] = celli;
+                    nearest[samplei] = { scalar(0), myProci };
                 }
             }
         }
@@ -209,22 +214,20 @@ bool Foam::sampledMeshedSurface::update(const meshSearch& meshSearcher)
         // Search for nearest boundary face
         // on all non-coupled boundary faces
 
-        const auto& bndTree = meshSearcher.nonCoupledBoundaryTree();
-        const auto& treeData = bndTree.shapes();
+        const auto& tree = meshSearcher.nonCoupledBoundaryTree();
+        const auto& treeData = tree.shapes();
 
-        forAll(fc, facei)
+        forAll(fc, samplei)
         {
-            const point& pt = fc[facei];
-            auto& near = nearest[facei];
+            const point& pt = fc[samplei];
 
-            pointIndexHit info = bndTree.findNearest(pt, sqr(GREAT));
-
-            if (info.hit())
+            pointIndexHit pHit = tree.findNearest(pt, Foam::sqr(GREAT));
+            if (pHit.hit())
             {
-                const label objectIndex = treeData.objectIndex(info.index());
+                label facei = treeData.objectIndex(pHit.index());
 
-                near.first()  = info.point().distSqr(pt);
-                near.second() = globalCells.toGlobal(objectIndex);
+                objectIndices[samplei] = facei;
+                nearest[samplei] = { pHit.point().distSqr(pt), myProci };
             }
         }
     }
@@ -233,41 +236,39 @@ bool Foam::sampledMeshedSurface::update(const meshSearch& meshSearcher)
     // See which processor has the nearest. Mark and subset
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    Pstream::listCombineReduce(nearest, minFirstEqOp<scalar>{});
-
-    labelList cellOrFaceLabels(fc.size(), -1);
+    {
+        UPstream::minLocation(nearest, communicator);
+    }
 
     bitSet facesToSubset(fc.size());
 
     forAll(nearest, facei)
     {
-        const auto& near = nearest[facei];
+        //const auto [distSqr, proci] = nearest[facei];
+        const auto distSqr = nearest[facei].first();
+        const auto proci = nearest[facei].second();
 
-        const label index = near.second();
+        bool ok = false;
 
-        if (index == labelMax)
-        {
-            // Not found on any processor, or simply too far.
-            // How to map?
-        }
-        else if (globalCells.isLocal(index))
+        if (proci == myProci)
         {
             facesToSubset.set(facei);
 
-            // Mark as special if too far away
-            cellOrFaceLabels[facei] =
-            (
-                (near.first() < maxDistanceSqr_)
-              ? globalCells.toLocal(index)
-              : -1
-            );
+            // Filter on max distance, ignored (-1) if too far away
+            ok = (distSqr < maxDistanceSqr_);
+        }
+
+        if (!ok)
+        {
+            // Not on this rank, or too far away
+            objectIndices[facei] = -1;
         }
     }
 
 
     if (debug)
     {
-        Pout<< "Local out of faces:" << cellOrFaceLabels.size()
+        Pout<< "Local out of faces:" << objectIndices.size()
             << " keeping:" << facesToSubset.count() << endl;
     }
 
@@ -285,8 +286,8 @@ bool Foam::sampledMeshedSurface::update(const meshSearch& meshSearcher)
     setZoneMap();
 
 
-    // Subset cellOrFaceLabels (for compact faces)
-    cellOrFaceLabels = labelUIndList(cellOrFaceLabels, faceMap)();
+    // Subset objectIndices (for compact faces)
+    objectIndices = labelUIndList(objectIndices, faceMap).list();
 
 
     // Collect the samplePoints and sampleElements
@@ -323,7 +324,7 @@ bool Foam::sampledMeshedSurface::update(const meshSearch& meshSearcher)
                 // Use _copy_ of point
                 const point pt = samplePoints_[pointi];
 
-                const label celli = cellOrFaceLabels[pointToFace[pointi]];
+                const label celli = objectIndices[pointToFace[pointi]];
 
                 sampleElements_[pointi] = celli;
 
@@ -365,7 +366,7 @@ bool Foam::sampledMeshedSurface::update(const meshSearch& meshSearcher)
 
             forAll(samplePoints_, pointi)
             {
-                const label celli = cellOrFaceLabels[pointToFace[pointi]];
+                const label celli = objectIndices[pointToFace[pointi]];
 
                 sampleElements_[pointi] = celli;
             }
@@ -380,7 +381,7 @@ bool Foam::sampledMeshedSurface::update(const meshSearch& meshSearcher)
             {
                 const point& pt = samplePoints_[pointi];
 
-                const label facei = cellOrFaceLabels[pointToFace[pointi]];
+                const label facei = objectIndices[pointToFace[pointi]];
 
                 sampleElements_[pointi] = facei;
 
@@ -408,7 +409,7 @@ bool Foam::sampledMeshedSurface::update(const meshSearch& meshSearcher)
         //      sampleElements_ : per surface face, the boundary face
         //      samplePoints_   : n/a
 
-        sampleElements_.transfer(cellOrFaceLabels);
+        sampleElements_.transfer(objectIndices);
         samplePoints_.clear();
     }
 
@@ -486,9 +487,6 @@ Foam::sampledMeshedSurface::sampledMeshedSurface
     sampleSource_(sampleSource),
     needsUpdate_(true),
     keepIds_(true),
-    zoneIds_(),
-    sampleElements_(),
-    samplePoints_(),
     maxDistanceSqr_(Foam::sqr(GREAT)),
     defaultValues_()
 {}
@@ -519,9 +517,6 @@ Foam::sampledMeshedSurface::sampledMeshedSurface
     sampleSource_(samplingSourceNames_.get("source", dict)),
     needsUpdate_(true),
     keepIds_(dict.getOrDefault("keepIds", true)),
-    zoneIds_(),
-    sampleElements_(),
-    samplePoints_(),
     maxDistanceSqr_(Foam::sqr(GREAT)),
     defaultValues_(dict.subOrEmptyDict("defaultValue"))
 {
