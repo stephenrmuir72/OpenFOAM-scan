@@ -11,4 +11,6 @@ UOPstreamWrite.C
 UIPBstreamRead.C
 UOPBstreamWrite.C
 
+UPstreamOps.cxx
+
 LIB = $(FOAM_MPI_LIBBIN)/libPstream

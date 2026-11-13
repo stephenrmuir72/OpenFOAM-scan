@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2015-2023 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -57,6 +58,7 @@ namespace PstreamDetail {}
 
 // Forward Declarations
 template<class T> class Map;
+template<class T1, class T2> class Tuple2;
 
 /*---------------------------------------------------------------------------*\
                           Class UPstream Declaration
@@ -1199,6 +1201,91 @@ public:
         {
             return nProcs(communicator) - 1;
         }
+
+
+    // Backported functionality
+
+        //- The maximum number of MPI ranks possible.
+        static constexpr int max_ranks() noexcept { return INT_MAX; }
+
+        //- Locate the first rank for which the \p condition is true,
+        //- or -1 if no ranks satisfy the condition.
+        static int find_first(bool condition, int communicator);
+
+        //- Convenience wrapper to determine the rank-relative offset
+        //- for the given local-size.
+        static int32_t find_offset
+        (
+            int32_t localSize,
+            int communicator = UPstream::worldComm
+        );
+
+        //- Convenience wrapper to determine the rank-relative offset
+        //- for the given local-size.
+        static int64_t find_offset
+        (
+            int64_t localSize,
+            int communicator = UPstream::worldComm
+        );
+
+        #undef  Pstream_declareMethods
+        #define Pstream_declareMethods(Type)                                  \
+                                                                              \
+        /*!\brief A in-place \c min_location (MINLOC) allReduce operation  */ \
+        /*! \returns the index (second element of tuple)                   */ \
+        /*! \em non-parallel : no-op, returns the index                    */ \
+        static int minLocation                                                \
+        (                                                                     \
+            /*! [in,out] value/index tuple */                                 \
+            Tuple2<Type, int>& data_tuple,                                    \
+            int communicator = UPstream::worldComm                            \
+        );                                                                    \
+                                                                              \
+        /*!\brief An inplace \c min_location operation on multiple values  */ \
+        /*! \em non-parallel : no-op                                       */ \
+        static void minLocation                                               \
+        (                                                                     \
+            /*! [in,out] value/index tuples */                                \
+            Tuple2<Type, int>* data_tuples,                                   \
+            /*! The number of tuples (must be parallel consistent!) */        \
+            int64_t count,                                                    \
+            int communicator = UPstream::worldComm                            \
+        );                                                                    \
+                                                                              \
+        /*!\brief An inplace \c min_location operation on multiple values  */ \
+        /*! \em non-parallel : no-op                                       */ \
+        static void minLocation                                               \
+        (                                                                     \
+            /*! [in,out] value/index tuples */                                \
+            UList<Tuple2<Type, int>>& tuples,                                 \
+            int communicator = UPstream::worldComm                            \
+        );
+
+        // For backport only need (float|double) and minLocation
+        Pstream_declareMethods(float);
+        Pstream_declareMethods(double);
+
+        #undef Pstream_declareMethods
+
+        //- Logical (and) reduction (MPI_AllReduce) of multiple values
+        //- (same count on all ranks!)
+        //  For \b non-parallel : do nothing
+        static void reduceAnd
+        (
+            bool values[],
+            label count,
+            int communicator = UPstream::worldComm
+        );
+
+        //- Logical (or) reduction (MPI_AllReduce) of multiple values
+        //- (same count on all ranks!)
+        //  For \b non-parallel : do nothing
+        static void reduceOr
+        (
+            bool values[],
+            label count,
+            int communicator = UPstream::worldComm
+        );
 };
 
 
