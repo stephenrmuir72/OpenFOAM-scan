@@ -466,10 +466,18 @@ void Foam::faceAreaIntersect::calc
     area = 0.0;
     centroid = vector::zero;
 
+    // Clip in coordinates local to faceA so that large absolute offsets do
+    // not contaminate the intersection; origin is added back to the centroid
+    const point origin = faceA.centre(pointsA_);
+
     // Intersect triangles
     for (const face& triA : trisA_)
     {
         triPoints tpA = getTriPoints(pointsA_, triA, false);
+        for (point& p : tpA)
+        {
+            p -= origin;
+        }
 
         for (const face& triB : trisB_)
         {
@@ -478,9 +486,9 @@ void Foam::faceAreaIntersect::calc
                 triangleIntersect
                 (
                     tpA,
-                    pointsB_[triB[0]],
-                    pointsB_[triB[1]],
-                    pointsB_[triB[2]],
+                    pointsB_[triB[0]] - origin,
+                    pointsB_[triB[1]] - origin,
+                    pointsB_[triB[2]] - origin,
                     n,
                     area,
                     centroid
@@ -491,9 +499,9 @@ void Foam::faceAreaIntersect::calc
                 triangleIntersect
                 (
                     tpA,
-                    pointsB_[triB[2]],
-                    pointsB_[triB[1]],
-                    pointsB_[triB[0]],
+                    pointsB_[triB[2]] - origin,
+                    pointsB_[triB[1]] - origin,
+                    pointsB_[triB[0]] - origin,
                     n,
                     area,
                     centroid
@@ -506,6 +514,7 @@ void Foam::faceAreaIntersect::calc
     if (area > 0)
     {
         centroid /= area;
+        centroid += origin;
     }
 }
 

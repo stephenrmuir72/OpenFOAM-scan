@@ -295,7 +295,7 @@ defect; it does not mean the defect is acceptable.
 | T07 | Normal-gap discovery (gap 0.03, `maxDistance2 0.01`): coverage in fallback and bounded modes on 2 and 4 ranks; split-grid pair-set oracle in both modes on 2 ranks (4 ranks deferred) |
 | T08-T09 | Explicitly not run in S02; full topology, state, FV, and GAMG matrices are scheduled for S03 |
 | T10 | Partial-coverage diagnostics |
-| T11 | Scale/offset matrix scheduled for S03 and hardening in S10 |
+| T11 | Scale/offset matrix from S03. The S10 local-origin change in `faceAreaIntersect::calc()` removes the clipping error measured by the `calc()` probe (max centroid error 1.869 to 0.500 ULP; area error 2.4e-4 to about 1e-16 at large offsets). T11 centroid assertions were already at rounding level at HEAD and remain passing. |
 | T12 | Empty-target input |
 | T13 | Piecewise-constant area-average control |
 | T14-T19 | `pureZoneMixture` dictionaries, material properties, cell-zone coverage, analytical references, and static meshes validated; `solidFoam` is not run until S03 |
