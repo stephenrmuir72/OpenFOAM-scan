@@ -292,7 +292,7 @@ defect; it does not mean the defect is acceptable.
 | T04 | Rotational low-weight fallback; checks every face for U (vector), S (scalar control), T (tensor) and ST (symmTensor): receiver-side defaults stay unrotated, donor-valued faces match each side's `forwardT` (S06 fix; passes on the fixed build, fails pre-fix for U, T and ST) |
 | T05 | Seed selection with and without restart: every face ordering (`as-built`, `src-reversed`, `tgt-reversed`, `both-reversed`) must give the same physical mapping, serial and 2-rank, with restart on and off; 2-rank runs also swap rank ownership; a multi-target fixture (`-t05-multi`) covers one target face overlapping two source faces; `T05-unmatched-source-*` checks that a required unmatched source face fails on all ranks, with restart on and off |
 | T06 | Fully covered `2.5e-7` fine face in both ownership directions; no target face left uncovered |
-| T07 | Normal-gap discovery (gap 0.03, `maxDistance2 0.01`): coverage and pair-set equality on 2 and 4 ranks; split-grid pair-set oracle on 2 ranks (4 ranks deferred) |
+| T07 | Normal-gap discovery (gap 0.03, `maxDistance2 0.01`): coverage in fallback and bounded modes on 2 and 4 ranks; split-grid pair-set oracle in both modes on 2 ranks (4 ranks deferred) |
 | T08-T09 | Explicitly not run in S02; full topology, state, FV, and GAMG matrices are scheduled for S03 |
 | T10 | Partial-coverage diagnostics |
 | T11 | Scale/offset matrix scheduled for S03 and hardening in S10 |
@@ -321,9 +321,16 @@ The T07 case checks normal-gap discovery (gap `0.03`, `-maxDistance2 0.01`,
 `requireMatch true`). A pair accepted by the serial walk must also be accepted
 under MPI. The broad phase in `calcProcMap()` enlarges the target-face box by a
 distance bound derived from `maxDistance2` and `minCosAngle` when both are set.
-Otherwise it sends every non-empty target face to every source processor. The T07
-assertions are coverage (`T07_CALCULATED`), pair-set equality against the
-all-pairs oracle (`T07_PAIR_MISMATCH`), and pair count (`T07_PAIR_COUNT`).
+Otherwise it sends every non-empty target face to every source processor.
+
+The standard normal-gap variants assert calculation and source/target
+coverage. The `-split-grid N` variants compare accepted pairs with an all-pairs
+oracle and assert `T07_PAIR_MISMATCH` and `T07_PAIR_COUNT`. The runner gates
+fallback and bounded coverage variants on 2 and 4 ranks, and split-grid
+fallback and bounded variants on 2 ranks. The pair-set assertions are not
+gated on the standard normal-gap variants. The runner registers these cases
+under S03 observation mode; it has no separate S09 stage.
+
 Options: `-tilt <deg>` tilts the target plane, `-minCosAngle <cos>` sets the
 normal-cosine limit, and `-split-grid N` splits an `N x N` source patch across
 ranks (T07 only).
@@ -336,8 +343,15 @@ caused by the bound change. It is deferred with a follow-up. Traffic (send-map
 entries, 100x100 split grid, gap 0.03): fallback 20000 (2 ranks) and 40000
 (4 ranks); bounded 12700 and 18100.
 
+The current scenarios test an accepted normal gap of `0.03` with
+`maxDistance2 0.01`; they do not include an out-of-range distance negative
+control. The S09 plan's requirement that out-of-range pairs remain rejected is
+not independently evidenced by these scenarios.
+
 The bound is derived from the kernel test, not proven for oblique source
-normals. The fallback covers any case the bound does not. It does not replace the broader all-pairs discovery oracle and rank-topology
+normals. The fallback is used only when the configured limits do not provide a
+finite bound; it does not protect against an under-sized bound when both limits
+are active. It does not replace the broader all-pairs discovery oracle and rank-topology
 matrix in the approved plan. This is the targeted S02 baseline gate, not the
 full test matrix in every S02 substep. T02 currently checks the midpoint
 fraction; T05 checks seed selection with and without restart; T06 checks the fully covered fine face; T04
