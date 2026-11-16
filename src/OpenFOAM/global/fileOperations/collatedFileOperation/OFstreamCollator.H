@@ -81,9 +81,9 @@ class OFstreamCollator
         struct writeData
         {
             //- Storage type for local data
-            using dynamic_storage = DynamicList<char>;
+            using dynamic_storage = std::vector<char>;
             //- Storage type for individual proc data
-            using static_storage = List<char>;
+            using static_storage = std::vector<char>;
 
             const int comm_;
             const word objectType_;
@@ -143,7 +143,7 @@ class OFstreamCollator
             //- A view of local data
             std::string_view localView() const
             {
-                return std::string_view(localData_.cdata(), localData_.size());
+                return std::string_view(localData_.data(), localData_.size());
             }
 
             //- A view of optional proc data
@@ -153,7 +153,7 @@ class OFstreamCollator
                 {
                     return std::string_view
                     (
-                        procData_[proci].cdata(),
+                        procData_[proci].data(),
                         procData_[proci].size()
                     );
                 }

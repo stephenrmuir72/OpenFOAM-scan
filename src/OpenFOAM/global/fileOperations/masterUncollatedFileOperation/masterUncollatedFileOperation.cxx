@@ -88,7 +88,7 @@ namespace
 {
 
 // Forward to IFstream reader, with extra debug etc.
-Foam::DynamicList<char> getFileContents
+std::vector<char> getFileContents
 (
     const Foam::fileName& filePath,
     const bool dieOnError = true
@@ -99,7 +99,7 @@ Foam::DynamicList<char> getFileContents
     // Report the public API name instead of the template's mangled signature
     constexpr const char* funcName = "masterUncollated::getFileContents";
 
-    DynamicList<char> charData;
+    std::vector<char> charData;
 
     IFstream ifs(filePath, IOstreamOption::BINARY);
 
@@ -119,7 +119,7 @@ Foam::DynamicList<char> getFileContents
     // Read file contents (compressed or uncompressed)
     // into a character buffer
 
-    charData = IFstream::readContents(ifs);
+    charData = IFstream::readContents_vector(ifs);
 
     if (fileOperations::masterUncollatedFileOperation::debug)
     {
@@ -465,7 +465,8 @@ Foam::fileOperations::masterUncollatedFileOperation::read
 {
     autoPtr<ISstream> isPtr;
 
-    PtrList<DynamicList<char>> sendBuffers;
+    PtrList<std::vector<char>> sendBuffers;
+
     List<int64_t> sendSizes;
 
     const auto myProci = UPstream::myProcNo(communicator);
@@ -498,7 +499,7 @@ Foam::fileOperations::masterUncollatedFileOperation::read
                 // Read on master and send to all processors
                 // (including master for simplicity)
 
-                DynamicList<char> content(getFileContents(masterFilePath));
+                std::vector<char> content(getFileContents(masterFilePath));
 
                 auto& sender =
                     sendBuffers.emplace_set(0, std::move(content));
@@ -564,7 +565,7 @@ Foam::fileOperations::masterUncollatedFileOperation::read
 
                 if (readOnProcs[proci] && !fPath.empty())
                 {
-                    DynamicList<char> content(getFileContents(fPath));
+                    std::vector<char> content(getFileContents(fPath));
 
                     auto& sender =
                         sendBuffers.emplace_set(proci, std::move(content));
@@ -593,7 +594,7 @@ Foam::fileOperations::masterUncollatedFileOperation::read
     const int64_t recvSize
         = UPstream::listScatterValues(sendSizes, communicator);
 
-    List<char> recvBuffer;
+    std::vector<char> recvBuffer;
 
     if (UPstream::is_subrank(communicator) && recvSize > 0)
     {
@@ -2538,7 +2539,7 @@ Foam::fileOperations::masterUncollatedFileOperation::NewIFstream
     // - uniform data = broadcast
     // - individual data = send/recv
 
-    PtrList<DynamicList<char>> sendBuffers;
+    PtrList<std::vector<char>> sendBuffers;
     List<int64_t> sendSizes;
 
     int64_t broadcastCtrl[2] = { 0, 0 };  // (bool, size)
@@ -2562,7 +2563,7 @@ Foam::fileOperations::masterUncollatedFileOperation::NewIFstream
             // Read and broadcast to sub-ranks.
             // use sendBuffers[0] for the storage
 
-            DynamicList<char> content(getFileContents(filePath));
+            std::vector<char> content(getFileContents(filePath));
 
             auto& sender =
                 sendBuffers.emplace_set(0, std::move(content));
@@ -2588,7 +2589,7 @@ Foam::fileOperations::masterUncollatedFileOperation::NewIFstream
                         << " rank:" << proci << endl;
                 }
 
-                DynamicList<char> content(getFileContents(fPath));
+                std::vector<char> content(getFileContents(fPath));
 
                 auto& sender =
                     sendBuffers.emplace_set(proci, std::move(content));
@@ -2619,7 +2620,7 @@ Foam::fileOperations::masterUncollatedFileOperation::NewIFstream
     const bool isBroadcast = (broadcastCtrl[0] != 0);
     const auto broadcastSize = broadcastCtrl[1];
 
-    List<char> recvBuffer;
+    std::vector<char> recvBuffer;
 
     if (isBroadcast)
     {

@@ -348,7 +348,7 @@ public:
 class OCharStream
 :
     public Foam::Detail::StreamAllocator
-    <Foam::Detail::ocharstream<Foam::memorybuf::out_dynamic>>,
+    <Foam::Detail::ocharstream<Foam::memorybuf::out_vector>>,
     public Foam::OSstream
 {
     //- The wrapped stream type (eg, ocharstream)
