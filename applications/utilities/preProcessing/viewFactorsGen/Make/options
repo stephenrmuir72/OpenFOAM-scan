@@ -1,4 +1,8 @@
-include $(GENERAL_RULES)/cgal-header-only
+ifneq (,$(findstring ~cgal,$(WM_COMPILE_CONTROL)))
+  include $(GENERAL_RULES)/no-cgal
+else
+  include $(GENERAL_RULES)/cgal-header-only
+endif
 
 EXE_INC = \
     $(c++LESSWARN) \
@@ -14,4 +18,5 @@ EXE_LIBS = \
     -lsurfMesh \
     -lmeshTools \
     -ldistributed \
-    -lradiationModels
+    -lradiationModels \
+    $(CGAL_LIBRARIES)
