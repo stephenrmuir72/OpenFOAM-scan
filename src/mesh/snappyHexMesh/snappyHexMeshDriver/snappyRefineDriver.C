@@ -3991,6 +3991,11 @@ void Foam::snappyRefineDriver::doRefine
     );
 
 
+    // Surface refinement only sees cell-centre rays. A coarse background
+    // mesh can miss the geometry, in which case both calls below return 0
+    // and shells may be what first creates intersections.
+    label nSurfaceIter = 0;
+
     // Initial automatic gap-level refinement: gaps smaller than the cell size
     if
     (
@@ -4003,7 +4008,7 @@ void Foam::snappyRefineDriver::doRefine
         // (fast) since it is so slow.
 
         // Refine based on surface
-        surfaceOnlyRefine
+        nSurfaceIter += surfaceOnlyRefine
         (
             refineParams,
             20,         // maxIter
@@ -4020,7 +4025,7 @@ void Foam::snappyRefineDriver::doRefine
 
 
     // Refine based on surface
-    surfaceOnlyRefine
+    nSurfaceIter += surfaceOnlyRefine
     (
         refineParams,
         100,    // maxIter
@@ -4063,6 +4068,45 @@ void Foam::snappyRefineDriver::doRefine
         refineParams,
         100    // maxIter
     );
+
+    // Recover surface and curvature refinement when the background mesh
+    // did not cut the geometry. resolveFeatureAngle is active when its
+    // cosine is in range (keyword absent or outside 0..180 disables it).
+    // Shells seed nCellsBetweenLevels from the intersected faces present
+    // at their start; that set was empty, so rebuild the buffer afterwards.
+    {
+        const scalar curvature = refineParams.curvature();
+
+        if
+        (
+            nSurfaceIter == 0
+         && meshRefiner_.surfaces().maxLevel().size()
+         && curvature >= -1
+         && curvature <= 1
+        )
+        {
+            WarningInFunction
+                << "No initial intersections between the background"
+                << " mesh and the geometry were found." << nl
+                << "Running a second surfaceOnlyRefine pass." << nl
+                << "Consider making the background mesh intersect the"
+                << " geometry to avoid this warning."
+                << endl;
+
+            surfaceOnlyRefine
+            (
+                refineParams,
+                100,        // maxIter
+                labelMax    // leak closure stays with the first pass
+            );
+
+            shellRefine
+            (
+                refineParams,
+                100         // maxIter
+            );
+        }
+    }
 
     // Remove any extra cells from limitRegion with level -1, without
     // adding any buffer layer this time
