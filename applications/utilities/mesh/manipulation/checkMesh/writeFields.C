@@ -109,12 +109,12 @@ void minFaceToCell
     }
 }
 
-
 void writeSurfaceField
 (
     const fvMesh& mesh,
     const fileName& fName,
-    const scalarField& faceData
+    const scalarField& faceData,
+    const dimensionSet& dims = dimless
 )
 {
     // Write single surfaceScalarField
@@ -131,14 +131,13 @@ void writeSurfaceField
             IOobject::NO_REGISTER
         ),
         mesh,
-        dimensionedScalar(dimless, Zero)
+        dimensionedScalar(fName, dims, Zero)
     );
     fld.primitiveFieldRef() = faceData;
     //fld.correctBoundaryConditions();
     Info<< "    Writing face data to " << fName << endl;
     fld.write();
 }
-
 
 void Foam::writeFields
 (
@@ -486,14 +485,14 @@ void Foam::writeFields
         }
     }
 
-    // minTetVolume
-    if (selectedFields.found("minTetVolume"))
+    // minTetQuality
+    if (selectedFields.found("minTetQuality"))
     {
-        volScalarField minTetVolume
+        volScalarField minTetQuality
         (
             IOobject
             (
-                "minTetVolume",
+                "minTetQuality",
                 mesh.time().timeName(),
                 mesh,
                 IOobject::NO_READ,
@@ -501,7 +500,7 @@ void Foam::writeFields
                 IOobject::NO_REGISTER
             ),
             mesh,
-            dimensionedScalar("minTetVolume", dimless, GREAT),
+            dimensionedScalar("minQuality", dimless, GREAT),
             fvPatchFieldBase::zeroGradientType()
         );
 
@@ -516,7 +515,7 @@ void Foam::writeFields
 
             {
                 const point& ownCc = mesh.cellCentres()[own[facei]];
-                scalar& ownVol = minTetVolume[own[facei]];
+                scalar& ownVol = minTetQuality[own[facei]];
                 forAll(f, fp)
                 {
                     scalar tetQual = tetPointRef
@@ -532,7 +531,7 @@ void Foam::writeFields
             if (mesh.isInternalFace(facei))
             {
                 const point& neiCc = mesh.cellCentres()[nei[facei]];
-                scalar& neiVol = minTetVolume[nei[facei]];
+                scalar& neiVol = minTetQuality[nei[facei]];
                 forAll(f, fp)
                 {
                     scalar tetQual = tetPointRef
@@ -547,9 +546,9 @@ void Foam::writeFields
             }
         }
 
-        minTetVolume.correctBoundaryConditions();
-        Info<< "    Writing minTetVolume to " << minTetVolume.name() << endl;
-        minTetVolume.write();
+        minTetQuality.correctBoundaryConditions();
+        Info<< "    Writing minTetQuality to " << minTetQuality.name() << endl;
+        minTetQuality.write();
     }
 
     // minPyrVolume
@@ -567,7 +566,7 @@ void Foam::writeFields
                 IOobject::NO_REGISTER
             ),
             mesh,
-            dimensionedScalar("minPyrVolume", dimless, GREAT),
+            dimensionedScalar("minPyrVolume", dimVolume, GREAT),
             fvPatchFieldBase::zeroGradientType()
         );
 
@@ -626,8 +625,14 @@ void Foam::writeFields
                 minFacePyrVol,
                 SubField<scalar>(ownPyrVol, mesh.nInternalFaces())
             );
-            writeSurfaceField(mesh, "face_minPyrVolume", minFacePyrVol);
-        }
+            writeSurfaceField
+            (
+                 mesh,
+                 "face_minPyrVolume",
+                 minFacePyrVol,
+                 dimVolume
+            );            
+       }
     }
 
     if (selectedFields.found("cellRegion"))
