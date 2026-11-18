@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2017-2018 OpenFOAM Foundation
     Copyright (C) 2019-2025 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -44,11 +45,11 @@ namespace Foam
 
 bool Foam::OFstreamCollator::writeFile
 (
-    const label comm,
+    const int communicator,
     const word& objectType,
     const fileName& fName,
-    const UList<char>& localData,
-    const labelUList& recvSizes,
+    std::string_view localData,
+    const UList<int64_t>& recvSizes,
     const UList<std::string_view>& procData,  // optional proc data
     IOstreamOption streamOpt,
     IOstreamOption::atomicType atomic,
@@ -58,19 +59,19 @@ bool Foam::OFstreamCollator::writeFile
 {
     if (debug)
     {
-        Pout<< "OFstreamCollator : Writing local " << localData.size()
-            << " bytes to " << fName << " using comm " << comm
+        Pout<< "OFstreamCollator : Writing local " << int64_t(localData.size())
+            << " bytes to " << fName << " using comm " << communicator
             << " and " << procData.size() << " sub-ranks" << endl;
 
         forAll(procData, proci)
         {
             Pout<< "    " << proci << " size:"
-                << label(procData[proci].size()) << nl;
+                << int64_t(procData[proci].size()) << nl;
         }
     }
 
     autoPtr<OSstream> osPtr;
-    if (UPstream::master(comm))
+    if (UPstream::master(communicator))
     {
         Foam::mkDir(fName.path());
         osPtr.reset(new OFstream(atomic, fName, streamOpt, append));
@@ -114,7 +115,7 @@ bool Foam::OFstreamCollator::writeFile
     List<std::streamoff> blockOffsets;  // Optional
     decomposedBlockData::writeBlocks
     (
-        comm,
+        communicator,
         osPtr,
         blockOffsets,  // or List<std::streamoff>::null()
         localData,
@@ -135,18 +136,18 @@ bool Foam::OFstreamCollator::writeFile
         Pout<< "OFstreamCollator : Finished writing "
             << localData.size() << " bytes";
 
-        if (UPstream::master(comm))
+        if (UPstream::master(communicator))
         {
-            off_t total = 0;
-            for (const label recv : recvSizes)
+            int64_t total = 0;
+            for (auto recv : recvSizes)
             {
-                total += recv;
+                total += int64_t(recv);
             }
             // Use std::to_string to display long int
             Pout<< " (overall " << std::to_string(total) << ')';
         }
         Pout<< " to " << fName
-            << " using comm " << comm << endl;
+            << " using comm " << communicator << endl;
     }
 
     return true;
@@ -184,7 +185,7 @@ void* Foam::OFstreamCollator::writeAll(void *threadarg)
         List<std::string_view> procData(obj.procData_.size());
         forAll(procData, proci)
         {
-            procData[proci] = obj.procData_[proci].view();
+            procData[proci] = obj.procView(proci);
         }
 
         bool ok = writeFile
@@ -192,7 +193,7 @@ void* Foam::OFstreamCollator::writeAll(void *threadarg)
             obj.comm_,
             obj.objectType_,
             obj.pathName_,
-            obj.localData_,
+            obj.localView(),
             obj.sizes_,
             procData,
             obj.streamOpt_,
@@ -224,18 +225,18 @@ void* Foam::OFstreamCollator::writeAll(void *threadarg)
 }
 
 
-void Foam::OFstreamCollator::waitForBufferSpace(const off_t wantedSize) const
+void Foam::OFstreamCollator::waitForBufferSpace(const int64_t wantedSize) const
 {
     while (true)
     {
         // The pending output size(s)
-        off_t totalSize = 0;
+        int64_t totalSize = 0;
 
         {
             std::lock_guard<std::mutex> guard(mutex_);
             for (const writeData* ptr : objects_)
             {
-                if (ptr) totalSize += ptr->size();
+                if (ptr) totalSize += int64_t(ptr->size());
             }
         }
 
@@ -265,7 +266,7 @@ void Foam::OFstreamCollator::waitForBufferSpace(const off_t wantedSize) const
 
 // * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * //
 
-Foam::OFstreamCollator::OFstreamCollator(const off_t maxBufferSize)
+Foam::OFstreamCollator::OFstreamCollator(int64_t maxBufferSize)
 :
     OFstreamCollator(maxBufferSize, UPstream::worldComm)
 {}
@@ -273,13 +274,13 @@ Foam::OFstreamCollator::OFstreamCollator(const off_t maxBufferSize)
 
 Foam::OFstreamCollator::OFstreamCollator
 (
-    const off_t maxBufferSize,
-    const label comm
+    int64_t maxBufferSize,
+    int communicator
 )
 :
     maxBufferSize_(maxBufferSize),
     threadRunning_(false),
-    localComm_(comm),
+    localComm_(communicator),
     threadComm_(UPstream::dupCommunicator(localComm_))
 {}
 
@@ -302,6 +303,29 @@ Foam::OFstreamCollator::~OFstreamCollator()
 }
 
 
+// * * * * * * * * * * * * * * * Local Functions * * * * * * * * * * * * * * //
+
+namespace
+{
+
+// The address of the content if it is of the (native) storage type,
+// otherwise nullptr.
+template<class Storage, class T>
+Storage* ownedStorage(T& content)
+{
+    if constexpr (std::is_same_v<Storage, T>)
+    {
+        return &content;
+    }
+    else
+    {
+        return nullptr;
+    }
+}
+
+} // End anonymous namespace
+
+
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
 
 bool Foam::OFstreamCollator::write
@@ -316,38 +340,135 @@ bool Foam::OFstreamCollator::write
     const dictionary& headerEntries
 )
 {
+    // Can take ownership if it is the native storage type
+    auto* owner = ownedStorage<writeData::dynamic_storage>(localData);
+
+    return write_dispatch
+    (
+        objectType,
+        fName,
+        std::string_view(localData.data(), localData.size()),
+        owner,
+        streamOpt, atomic, append, useThread, headerEntries
+    );
+}
+
+
+bool Foam::OFstreamCollator::write
+(
+    const word& objectType,
+    const fileName& fName,
+    std::vector<char>&& localData,
+    IOstreamOption streamOpt,
+    IOstreamOption::atomicType atomic,
+    IOstreamOption::appendType append,
+    const bool useThread,
+    const dictionary& headerEntries
+)
+{
+    // Can take ownership if it is the native storage type
+    auto* owner = ownedStorage<writeData::dynamic_storage>(localData);
+
+    return write_dispatch
+    (
+        objectType,
+        fName,
+        std::string_view(localData.data(), localData.size()),
+        owner,
+        streamOpt, atomic, append, useThread, headerEntries
+    );
+}
+
+
+bool Foam::OFstreamCollator::write
+(
+    const word& objectType,
+    const fileName& fName,
+    std::string&& localData,
+    IOstreamOption streamOpt,
+    IOstreamOption::atomicType atomic,
+    IOstreamOption::appendType append,
+    const bool useThread,
+    const dictionary& headerEntries
+)
+{
+    // Can take ownership if it is the native storage type
+    auto* owner = ownedStorage<writeData::dynamic_storage>(localData);
+
+    return write_dispatch
+    (
+        objectType,
+        fName,
+        std::string_view(localData.data(), localData.size()),
+        owner,
+        streamOpt, atomic, append, useThread, headerEntries
+    );
+}
+
+
+bool Foam::OFstreamCollator::write
+(
+    const word& objectType,
+    const fileName& fName,
+    std::string_view localData,
+    IOstreamOption streamOpt,
+    IOstreamOption::atomicType atomic,
+    IOstreamOption::appendType append,
+    const bool useThread,
+    const dictionary& headerEntries
+)
+{
+    // No ownership of a string_view is possible.
+    // Use view directly, content is copied only if required (threaded)
+
+    return write_dispatch
+    (
+        objectType,
+        fName,
+        localData,
+        nullptr,  // owner
+        streamOpt, atomic, append, useThread, headerEntries
+    );
+}
+
+
+bool Foam::OFstreamCollator::write_dispatch
+(
+    const word& objectType,
+    const fileName& fName,
+    std::string_view localData,
+    writeData::dynamic_storage* localDataOwner,
+    IOstreamOption streamOpt,
+    IOstreamOption::atomicType atomic,
+    IOstreamOption::appendType append,
+    const bool useThread,
+    const dictionary& headerEntries
+)
+{
     // Determine (on master) sizes to receive. Note: do NOT use thread
     // communicator
-    const labelList recvSizes
+
+    const List<int64_t> recvSizes
     (
-        UPstream::listGatherValues<label>(localData.size(), localComm_)
+        UPstream::listGatherValues(int64_t(localData.size()), localComm_)
     );
 
-    off_t totalSize = 0;
-    label maxLocalSize = 0;
+    // Determine the dimensions (maxLocalSize, totalSize)
+    int64_t maxSizes[2] = { 0, 0 };
 
-    if (UPstream::master(localComm_))
+    for (auto recvSize : recvSizes)
     {
-        for (const label recvSize : recvSizes)
-        {
-            totalSize += recvSize;
-            maxLocalSize = Foam::max(maxLocalSize, recvSize);
-        }
+        maxSizes[0] = std::max(maxSizes[0], recvSize);
+        maxSizes[1] += recvSize;
     }
 
     // Broadcast the information to everyone
-    {
-        int64_t sizes[2] =
-        {
-            static_cast<int64_t>(totalSize),
-            static_cast<int64_t>(maxLocalSize)
-        };
+    UPstream::broadcast(maxSizes, 2, localComm_);
 
-        UPstream::broadcast(sizes, 2, localComm_);
-
-        totalSize = static_cast<off_t>(sizes[0]);
-        maxLocalSize = static_cast<label>(sizes[1]);
-    }
+    // All ranks now have the same maxLocalSize, totalSize information
+    // (from the master) and can stay in lockstep later
+    const int64_t maxLocalSize = maxSizes[0];
+    const int64_t totalSize = maxSizes[1];
 
 
     // Determine how things will be gathered and written...
@@ -419,8 +540,15 @@ bool Foam::OFstreamCollator::write
     {
         if (debug)
         {
-            Pout<< "OFstreamCollator : non-thread gather "
-                << "(local comm: " << localComm_
+            Pout<< "OFstreamCollator : non-thread gather";
+
+            if (UPstream::master(localComm_))
+            {
+                Pout<< "[" << (localDataOwner ? "copying" : "moving")
+                    << " localData prior to threading]";
+            }
+
+            Pout<< " (local comm: " << localComm_
                 << "); thread write of "
                 << fName << endl;
         }
@@ -444,41 +572,27 @@ bool Foam::OFstreamCollator::write
                 headerEntries
             )
         );
-        auto& fileAndData = *fileAndDataPtr;
-
-        List<List<char>>& procData = fileAndData.procData_;
-
-        // Receive from these procs
-        DynamicList<int> recvProcs;
+        auto& procData = fileAndDataPtr->procData_;
 
         if (UPstream::master(localComm_))
         {
-            // Move in local data (master only!)
-            fileAndData.transfer(localData);
+            // Move in (or copy) local data (master only!)
+            if (localDataOwner)
+            {
+                fileAndDataPtr->transfer(*localDataOwner);
+            }
+            else
+            {
+                fileAndDataPtr->assign(localData);
+            }
 
             // Storage for receive data
-            procData.resize_nocopy(UPstream::nProcs(localComm_));
-
-            // Sorted by message size
-            labelList order(Foam::sortedOrder(recvSizes));
-            recvProcs.reserve_exact(order.size());
-
-            // Want to receive large messages first. Ignore empty slots
-            forAllReverse(order, i)
-            {
-                const label proci = order[i];
-
-                // Ignore empty slots and don't try to receive from self
-                if (recvSizes[proci] > 0 && proci != UPstream::masterNo())
-                {
-                    recvProcs.push_back(proci);
-                }
-            }
+            procData.resize(UPstream::nProcs(localComm_));
         }
         else if (UPstream::is_subrank(localComm_))
         {
-            // Requires a size for decomposedBlockData::writeBlocks() logic
-            procData.resize_nocopy(UPstream::nProcs(localComm_));
+            // Requires sizing for decomposedBlockData::writeBlocks() logic
+            procData.resize(UPstream::nProcs(localComm_));
         }
 
 
@@ -490,18 +604,38 @@ bool Foam::OFstreamCollator::write
 
         if (UPstream::master(localComm_))
         {
-            // Receive from these procs (non-empty slots)
+            // The receive procs, large messages first
+            DynamicList<int> recvProcs(recvSizes.size());
+
+            forAll(recvSizes, proci)
+            {
+                // Ignore empty slots and rank=0 [self]
+                if (recvSizes[proci] > 0 && proci != UPstream::masterNo())
+                {
+                    recvProcs.push_back(proci);
+                }
+            }
+
+            // Reverse ordered
+            std::stable_sort
+            (
+                recvProcs.begin(), recvProcs.end(),
+                [&](int a, int b){ return (recvSizes[b] < recvSizes[a]); }
+            );
+
+            // Start the receives (already filtered to remove empty slots)
             for (const int proci : recvProcs)
             {
                 auto& slot = procData[proci];
-                slot.resize_nocopy(recvSizes[proci]);
+
+                slot.resize(recvSizes[proci]);
 
                 UIPstream::read
                 (
                     UPstream::commsTypes::nonBlocking,
                     proci,
-                    slot.data_bytes(),
-                    slot.size_bytes(),
+                    slot.data(),
+                    slot.size(),
                     messageTag,
                     localComm_
                 );
@@ -516,8 +650,8 @@ bool Foam::OFstreamCollator::write
                 (
                     UPstream::commsTypes::nonBlocking,
                     UPstream::masterNo(),
-                    localData.cdata_bytes(),
-                    localData.size_bytes(),
+                    localData.data(),
+                    localData.size(),
                     messageTag,
                     localComm_
                 )
@@ -533,7 +667,11 @@ bool Foam::OFstreamCollator::write
         UPstream::waitRequests(startOfRequests);
 
         // The localData has been moved (master) or communicated
-        localData.clearStorage();
+        if (localDataOwner)
+        {
+            localDataOwner->clear();
+            localDataOwner->shrink_to_fit();
+        }
 
 
         // Queue up for threading
@@ -572,8 +710,11 @@ bool Foam::OFstreamCollator::write
     {
         if (debug)
         {
-            Pout<< "OFstreamCollator : thread gather; thread write "
-                << "(thread comm: " << threadComm_
+            Pout<< "OFstreamCollator : thread gather; thread write"
+                << "[" << (localDataOwner ? "copying" : "moving")
+                << " localData prior to threading]";
+
+            Pout<< " (thread comm: " << threadComm_
                 << ") of " << fName << endl;
         }
 
@@ -597,8 +738,15 @@ bool Foam::OFstreamCollator::write
             )
         );
 
-        // Move in local data (all procs)
-        fileAndDataPtr->transfer(localData);
+        // Move in (or copy) local data (all procs)
+        if (localDataOwner)
+        {
+            fileAndDataPtr->transfer(*localDataOwner);
+        }
+        else
+        {
+            fileAndDataPtr->assign(localData);
+        }
 
 
         // Queue up for threading

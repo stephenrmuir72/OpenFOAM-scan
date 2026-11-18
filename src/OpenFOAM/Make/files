@@ -25,11 +25,12 @@ $(fileOps)/fileOperation/fileOperationInitialise.C
 $(fileOps)/dummyFileOperation/dummyFileOperation.C
 $(fileOps)/uncollatedFileOperation/uncollatedFileOperation.C
 $(fileOps)/uncollatedFileOperation/hostUncollatedFileOperation.C
-$(fileOps)/masterUncollatedFileOperation/masterUncollatedFileOperation.C
+$(fileOps)/masterUncollatedFileOperation/masterUncollatedFileOperation.cxx
 $(fileOps)/collatedFileOperation/collatedFileOperation.C
 $(fileOps)/collatedFileOperation/hostCollatedFileOperation.C
-$(fileOps)/collatedFileOperation/threadedCollatedOFstream.C
-$(fileOps)/collatedFileOperation/OFstreamCollator.C
+
+$(fileOps)/collatedFileOperation/threadedCollatedOFstream.cxx
+$(fileOps)/collatedFileOperation/OFstreamCollator.cxx
 
 parallel/processorTopology/processorTopology.C
 
@@ -268,7 +269,7 @@ Fstreams = $(Streams)/Fstreams
 $(Fstreams)/IFstream.cxx
 $(Fstreams)/OFstream.cxx
 $(Fstreams)/fstreamPointers.cxx
-$(Fstreams)/masterOFstream.C
+$(Fstreams)/masterOFstream.cxx
 
 Tstreams = $(Streams)/Tstreams
 $(Tstreams)/ITstream.C
@@ -337,8 +338,8 @@ $(IOdictionary)/localIOdictionary.C
 $(IOdictionary)/unwatchedIOdictionary.C
 $(IOdictionary)/IOdictionary.C
 
-db/IOobjects/decomposedBlockData/decomposedBlockData.C
-db/IOobjects/decomposedBlockData/decomposedBlockDataHeader.C
+db/IOobjects/decomposedBlockData/decomposedBlockData.cxx
+db/IOobjects/decomposedBlockData/decomposedBlockDataHeader.cxx
 
 db/IOobjects/rawIOField/rawIOFields.cxx
 db/IOobjects/GlobalIOField/globalIOFields.cxx
