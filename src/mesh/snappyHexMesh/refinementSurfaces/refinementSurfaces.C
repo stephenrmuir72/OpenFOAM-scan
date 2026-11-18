@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2015 OpenFOAM Foundation
     Copyright (C) 2015-2022,2025 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -47,8 +48,8 @@ Foam::labelList Foam::refinementSurfaces::findHigherLevel
 (
     const searchableSurface& geom,
     const shellSurfaces& shells,
-    const List<pointIndexHit>& intersectionInfo,
-    const labelList& surfaceLevel       // current level
+    const UList<pointIndexHit>& intersectionInfo,
+    const labelUList& surfaceLevel       // current level
 ) const
 {
     // See if a cached level field available
@@ -127,7 +128,7 @@ Foam::labelList Foam::refinementSurfaces::findHigherLevel
 Foam::labelList Foam::refinementSurfaces::calcSurfaceIndex
 (
     const searchableSurfaces& allGeometry,
-    const labelList& surfaces
+    const labelUList& surfaces
 )
 {
     // Determine overall number of global regions
@@ -678,13 +679,13 @@ Foam::refinementSurfaces::refinementSurfaces
 Foam::refinementSurfaces::refinementSurfaces
 (
     const searchableSurfaces& allGeometry,
-    const labelList& surfaces,
+    const labelUList& surfaces,
     const wordList& names,
     const PtrList<surfaceZonesInfo>& surfZones,
-    const labelList& regionOffset,
-    const labelList& minLevel,
-    const labelList& maxLevel,
-    const labelList& gapLevel,
+    const labelUList& regionOffset,
+    const labelUList& minLevel,
+    const labelUList& maxLevel,
+    const labelUList& gapLevel,
     const scalarField& perpendicularAngle,
     PtrList<dictionary>& patchInfo,
     const bool dryRun
@@ -746,7 +747,7 @@ Foam::labelPair Foam::refinementSurfaces::whichSurface
 // (
 //     const shellSurfaces& shells,
 //     const label surfI,
-//     const List<pointIndexHit>& info,    // Indices
+//     const UList<pointIndexHit>& info,   // Indices
 //     const pointField& ctrs,             // Representative coordinate
 //     labelList& minLevelField
 // ) const
@@ -835,30 +836,17 @@ void Foam::refinementSurfaces::setMinLevelFields(const shellSurfaces& shells)
         // searchableBox (size=6)
         if (geom.globalSize() > 10)
         {
-            // Representative local coordinates and bounding sphere
+            // Get surface characteristics
             pointField ctrs;
-            scalarField radiusSqr;
-            geom.boundingSpheres(ctrs, radiusSqr);
-
-            labelList minLevelField(ctrs.size(), Zero);
+            labelList minLevelField;
             {
-                // Get the element index in a roundabout way. Problem is e.g.
-                // distributed surface where local indices differ from global
-                // ones (needed for getRegion call)
-                List<pointIndexHit> info;
-                geom.findNearest(ctrs, radiusSqr, info);
-
-                // Get per element the region
-                labelList region;
-                geom.getRegion(info, region);
+                auto& region = minLevelField;  // can do this inplace
+                geom.measure(&ctrs, nullptr, &region, nullptr);
 
                 // From the region get the surface-wise refinement level
                 forAll(minLevelField, i)
                 {
-                    if (info[i].hit()) //Note: should not be necessary
-                    {
-                        minLevelField[i] = minLevel(surfI, region[i]);
-                    }
+                    minLevelField[i] = minLevel(surfI, region[i]);
                 }
             }
 
@@ -984,10 +972,9 @@ void Foam::refinementSurfaces::setCurvatureMinLevelFields
         // searchableBox (size=6)
         if (tsPtr)
         {
-            // Representative local coordinates and bounding sphere
+            // Get surface characteristics
             pointField ctrs;
-            scalarField radiusSqr;
-            geom.boundingSpheres(ctrs, radiusSqr);
+            geom.measure(&ctrs, nullptr, nullptr, nullptr);
 
             labelList minLevelField(ctrs.size(), Zero);
             //labelList surfMin(ctrs.size(), Zero);
@@ -995,24 +982,17 @@ void Foam::refinementSurfaces::setCurvatureMinLevelFields
             labelList nCurvCells(ctrs.size(), Zero);
             labelList curvIgnore(ctrs.size(), -1);
             {
-                // Get the element index in a roundabout way. Problem is e.g.
-                // distributed surface where local indices differ from global
-                // ones (needed for getRegion call)
-                List<pointIndexHit> info;
-                geom.findNearest(ctrs, radiusSqr, info);
-
                 // Get per element the region
                 labelList region;
-                geom.getRegion(info, region);
+                geom.measure(nullptr, nullptr, &region, nullptr);
 
                 // See if a cached level field available (from e.g. shells)
                 labelList cachedField;
-                geom.getField(info, cachedField);
+                geom.getField(cachedField);
 
                 // From the region get the surface-wise refinement level
                 forAll(minLevelField, i)
                 {
-                    if (info[i].hit()) //Note: should not be necessary
                     {
                         const label globali = globalRegion(surfI, region[i]);
                         curvIgnore[i] = extendedCurvatureLevel_[globali][3];
@@ -1471,7 +1451,7 @@ void Foam::refinementSurfaces::findAllIntersections
 
         forAll(hitInfo, pointI)
         {
-            const List<pointIndexHit>& pHits = hitInfo[pointI];
+            const auto& pHits = hitInfo[pointI];
 
             forAll(pHits, i)
             {
@@ -1564,7 +1544,7 @@ void Foam::refinementSurfaces::findAllIntersections
 
         forAll(hitInfo, pointI)
         {
-            const List<pointIndexHit>& pHits = hitInfo[pointI];
+            const auto& pHits = hitInfo[pointI];
 
             forAll(pHits, i)
             {
@@ -1658,7 +1638,7 @@ void Foam::refinementSurfaces::findAllIntersections
 //
 //        forAll(hitInfo, pointI)
 //        {
-//            const List<pointIndexHit>& pHits = hitInfo[pointI];
+//            const auto& pHits = hitInfo[pointI];
 //
 //            forAll(pHits, i)
 //            {

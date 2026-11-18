@@ -49,7 +49,7 @@ void Foam::searchableSurfacesQueries::mergeHits
     const point& start,
 
     const label testI,                    // index of surface
-    const List<pointIndexHit>& surfHits,  // hits on surface
+    const UList<pointIndexHit>& surfHits,  // hits on surface
 
     labelList& allSurfaces,
     List<pointIndexHit>& allInfo,
@@ -210,7 +210,7 @@ void Foam::searchableSurfacesQueries::findAllIntersections
     List<scalarList> hitDistSqr(hitInfo.size());
     forAll(hitInfo, pointi)
     {
-        const List<pointIndexHit>& pHits = hitInfo[pointi];
+        const auto& pHits = hitInfo[pointi];
 
         labelList& pSurfaces = hitSurfaces[pointi];
         pSurfaces.resize_fill(pHits.size(), 0);

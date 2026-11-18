@@ -272,14 +272,14 @@ public:
             //- From a set of points and indices get the region
             virtual void getRegion
             (
-                const List<pointIndexHit>&,
+                const UList<pointIndexHit>&,
                 labelList& region
             ) const;
 
             //- From a set of points and indices get the normal
             virtual void getNormal
             (
-                const List<pointIndexHit>&,
+                const UList<pointIndexHit>&,
                 vectorField& normal
             ) const;
 

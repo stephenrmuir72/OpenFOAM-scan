@@ -225,7 +225,7 @@ Foam::smoothTriSurfaceMesh::smoothTriSurfaceMesh
 
 void Foam::smoothTriSurfaceMesh::getNormal
 (
-    const List<pointIndexHit>& info,
+    const UList<pointIndexHit>& info,
     vectorField& normal
 ) const
 {

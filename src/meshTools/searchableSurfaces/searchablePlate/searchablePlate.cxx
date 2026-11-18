@@ -376,7 +376,7 @@ void Foam::searchablePlate::findLineAll
 
 void Foam::searchablePlate::getRegion
 (
-    const List<pointIndexHit>& info,
+    const UList<pointIndexHit>& info,
     labelList& region
 ) const
 {
@@ -386,7 +386,7 @@ void Foam::searchablePlate::getRegion
 
 void Foam::searchablePlate::getNormal
 (
-    const List<pointIndexHit>& info,
+    const UList<pointIndexHit>& info,
     vectorField& normal
 ) const
 {

@@ -247,7 +247,7 @@ void Foam::extendedEdgeMesh::cut
 
     forAll(edgeHits, edgeI)
     {
-        const List<pointIndexHit>& eHits = edgeHits[edgeI];
+        const auto& eHits = edgeHits[edgeI];
 
         if (eHits.size())
         {

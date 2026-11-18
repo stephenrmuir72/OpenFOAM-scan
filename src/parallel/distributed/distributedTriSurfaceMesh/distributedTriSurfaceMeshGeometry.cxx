@@ -356,7 +356,7 @@ void exchangeSurfacesGeneric
     // Surface extract, storage, remember sizing,
     // optionally collect surface patch information.
 
-    for (label proci = 0; proci < numProc; ++proci)
+    for (int proci = 0; proci < static_cast<int>(numProc); ++proci)
     {
         // No exchange with self
         if (proci == myProci) continue;
@@ -446,7 +446,7 @@ void exchangeSurfacesGeneric
 
     DynamicList<pendingRecv> pending(numProc);
 
-    for (label proci = 0; proci < numProc; ++proci)
+    for (int proci = 0; proci < static_cast<int>(numProc); ++proci)
     {
         const auto [numPoints, numFaces] = recvSizes[proci];
 
@@ -481,7 +481,7 @@ void exchangeSurfacesGeneric
     //
     // Post all sends
     //
-    for (label proci = 0; proci < numProc; ++proci)
+    for (int proci = 0; proci < static_cast<int>(numProc); ++proci)
     {
         if (const auto* ptr = sendBuffers.get(proci))
         {

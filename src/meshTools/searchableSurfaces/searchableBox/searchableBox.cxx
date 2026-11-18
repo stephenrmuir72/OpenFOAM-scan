@@ -608,7 +608,7 @@ void Foam::searchableBox::findLineAll
 
 void Foam::searchableBox::getRegion
 (
-    const List<pointIndexHit>& info,
+    const UList<pointIndexHit>& info,
     labelList& region
 ) const
 {
@@ -618,7 +618,7 @@ void Foam::searchableBox::getRegion
 
 void Foam::searchableBox::getNormal
 (
-    const List<pointIndexHit>& info,
+    const UList<pointIndexHit>& info,
     vectorField& normal
 ) const
 {

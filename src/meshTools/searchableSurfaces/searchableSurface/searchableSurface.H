@@ -308,14 +308,14 @@ public:
             //- From a set of points and indices get the region
             virtual void getRegion
             (
-                const List<pointIndexHit>&,
+                const UList<pointIndexHit>&,
                 labelList& region
             ) const = 0;
 
             //- From a set of points and indices get the normal
             virtual void getNormal
             (
-                const List<pointIndexHit>&,
+                const UList<pointIndexHit>&,
                 vectorField& normal
             ) const = 0;
 
@@ -347,7 +347,7 @@ public:
             //  set if the surface has done any redistribution.
             virtual void distribute
             (
-                const List<treeBoundBox>&,
+                const UList<treeBoundBox>&,
                 const bool keepNonLocal,
                 autoPtr<mapDistribute>& faceMap,
                 autoPtr<mapDistribute>& pointMap
@@ -363,7 +363,7 @@ public:
             //- Clears the \p values output parameter if not supported.
             virtual void getField
             (
-                const List<pointIndexHit>&,
+                const UList<pointIndexHit>&,
                 labelList& values
             )
             const

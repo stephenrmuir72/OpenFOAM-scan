@@ -225,7 +225,7 @@ class distanceSurface
         (
             scalarField& distance,
             const pointField& points,
-            const List<pointIndexHit>& nearest
+            const UList<pointIndexHit>& nearest
         )
         {
             forAll(nearest, i)
