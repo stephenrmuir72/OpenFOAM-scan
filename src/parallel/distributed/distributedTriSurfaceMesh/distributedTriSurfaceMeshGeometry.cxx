@@ -472,7 +472,7 @@ void exchangeSurfacesGeneric
         const auto end = UPstream::nRequests();
 
         // Note: emplace_back() doesn't work with the ad hoc struct
-        pending.push_back( pendingRecv{ proci, beg, end } );
+        pending.push_back( pendingRecv{ int(proci), beg, end } );
     }
 
     // Done posting receives
