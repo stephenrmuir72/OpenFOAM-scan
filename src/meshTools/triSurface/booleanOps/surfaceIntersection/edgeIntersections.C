@@ -377,18 +377,15 @@ bool Foam::edgeIntersections::offsetPerturb
 
     const edge& e = surf1.edges()[edgeI];
 
-    const List<pointIndexHit>& hits = operator[](edgeI);
-
-
     bool hasPerturbed = false;
 
     // For all hits on edge
-    for (const pointIndexHit& pHit : hits)
+    for (const pointIndexHit& pHit : (*this)[edgeI])
     {
         // Classify point on face of surface2
         const label surf2Facei = pHit.index();
 
-        const triSurface::face_type& f2 = surf2.localFaces()[surf2Facei];
+        const auto& f2 = surf2.localFaces()[surf2Facei];
         const pointField& surf2Pts = surf2.localPoints();
 
         const point ctr = f2.centre(surf2Pts);

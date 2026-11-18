@@ -73,7 +73,7 @@ void Foam::patchEdgeSet::genSamples()
 
         forAll(hits, edgei)
         {
-            const List<pointIndexHit>& eHits = hits[edgei];
+            const auto& eHits = hits[edgei];
 
             if (eHits.size())
             {

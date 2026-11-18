@@ -1331,7 +1331,7 @@ Foam::surfaceIntersection::surfaceIntersection
 
         forAll(intersections1, edgeI)
         {
-            const List<pointIndexHit>& intersections = intersections1[edgeI];
+            const auto& intersections = intersections1[edgeI];
 
             forAll(intersections, i)
             {
@@ -1373,7 +1373,7 @@ Foam::surfaceIntersection::surfaceIntersection
 
         forAll(intersections2, edgeI)
         {
-            const List<pointIndexHit>& intersections = intersections2[edgeI];
+            const auto& intersections = intersections2[edgeI];
 
             forAll(intersections, i)
             {

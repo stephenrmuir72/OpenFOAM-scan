@@ -235,7 +235,7 @@ void Foam::searchablePlane::findLineAll
 
 void Foam::searchablePlane::getRegion
 (
-    const List<pointIndexHit>& info,
+    const UList<pointIndexHit>& info,
     labelList& region
 ) const
 {
@@ -245,7 +245,7 @@ void Foam::searchablePlane::getRegion
 
 void Foam::searchablePlane::getNormal
 (
-    const List<pointIndexHit>& info,
+    const UList<pointIndexHit>& info,
     vectorField& n
 ) const
 {

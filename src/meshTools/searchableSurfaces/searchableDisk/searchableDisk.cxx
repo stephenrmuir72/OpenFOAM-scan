@@ -275,7 +275,7 @@ void Foam::searchableDisk::findLineAll
 
 void Foam::searchableDisk::getRegion
 (
-    const List<pointIndexHit>& info,
+    const UList<pointIndexHit>& info,
     labelList& region
 ) const
 {
@@ -285,7 +285,7 @@ void Foam::searchableDisk::getRegion
 
 void Foam::searchableDisk::getNormal
 (
-    const List<pointIndexHit>& info,
+    const UList<pointIndexHit>& info,
     vectorField& normals
 ) const
 {

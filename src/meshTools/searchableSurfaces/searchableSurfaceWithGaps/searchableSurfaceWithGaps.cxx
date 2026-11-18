@@ -115,7 +115,7 @@ void Foam::searchableSurfaceWithGaps::offsetVecs
 
 Foam::label Foam::searchableSurfaceWithGaps::countMisses
 (
-    const List<pointIndexHit>& info,
+    const UList<pointIndexHit>& info,
     labelList& missMap
 )
 {
@@ -146,8 +146,8 @@ Foam::label Foam::searchableSurfaceWithGaps::countMisses
 // Anything not a hit in both counts as a hit
 Foam::label Foam::searchableSurfaceWithGaps::countMisses
 (
-    const List<pointIndexHit>& plusInfo,
-    const List<pointIndexHit>& minInfo,
+    const UList<pointIndexHit>& plusInfo,
+    const UList<pointIndexHit>& minInfo,
     labelList& missMap
 )
 {

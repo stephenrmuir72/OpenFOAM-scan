@@ -53,6 +53,7 @@ SourceFiles
 namespace Foam
 {
 
+// Forward Declarations
 class searchableSurfaces;
 class shellSurfaces;
 class triSurfaceMesh;
@@ -134,16 +135,20 @@ class refinementSurfaces
         (
             const searchableSurface& geom,
             const shellSurfaces& shells,
-            const List<pointIndexHit>& intersectionInfo,
-            const labelList& surfaceLevel
+            const UList<pointIndexHit>& intersectionInfo,
+            const labelUList& surfaceLevel
         ) const;
 
         //- Calculate global region to surface
         static labelList calcSurfaceIndex
         (
             const searchableSurfaces& allGeometry,
-            const labelList& surfaces
+            const labelUList& surfaces
         );
+
+public:
+
+    // Generated Methods
 
         //- No copy construct
         refinementSurfaces(const refinementSurfaces&) = delete;
@@ -151,8 +156,6 @@ class refinementSurfaces
         //- No copy assignment
         void operator=(const refinementSurfaces&) = delete;
 
-
-public:
 
     // Constructors
 
@@ -169,13 +172,13 @@ public:
         refinementSurfaces
         (
             const searchableSurfaces& allGeometry,
-            const labelList& surfaces,
+            const labelUList& surfaces,
             const wordList& names,
             const PtrList<surfaceZonesInfo>& surfZones,
-            const labelList& regionOffset,
-            const labelList& minLevel,
-            const labelList& maxLevel,
-            const labelList& gapLevel,
+            const labelUList& regionOffset,
+            const labelUList& minLevel,
+            const labelUList& maxLevel,
+            const labelUList& gapLevel,
             const scalarField& perpendicularAngle,
             PtrList<dictionary>& patchInfo,
             const bool dryRun

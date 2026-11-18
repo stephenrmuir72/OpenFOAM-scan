@@ -2282,7 +2282,7 @@ Foam::distributedTriSurfaceMesh::calcLocalQueries
 void Foam::distributedTriSurfaceMesh::surfaceSide
 (
     const pointField& samples,
-    const List<pointIndexHit>& nearestInfo,
+    const UList<pointIndexHit>& nearestInfo,
     List<volumeType>& volType
 ) const
 {
@@ -2757,7 +2757,7 @@ void Foam::distributedTriSurfaceMesh::collectLeafMids
 
 Foam::volumeType Foam::distributedTriSurfaceMesh::calcVolumeType
 (
-    const List<volumeType>& midPointTypes,
+    const UList<volumeType>& midPointTypes,
     label& midPointi,
     PackedList<2>& nodeTypes,
     const label nodeI
@@ -4692,7 +4692,7 @@ void Foam::distributedTriSurfaceMesh::findLineAll
 
 void Foam::distributedTriSurfaceMesh::getRegion
 (
-    const List<pointIndexHit>& info,
+    const UList<pointIndexHit>& info,
     labelList& region
 ) const
 {
@@ -4834,7 +4834,7 @@ void Foam::distributedTriSurfaceMesh::getRegion
 
 void Foam::distributedTriSurfaceMesh::getNormal
 (
-    const List<pointIndexHit>& info,
+    const UList<pointIndexHit>& info,
     vectorField& normal
 ) const
 {
@@ -4869,7 +4869,7 @@ void Foam::distributedTriSurfaceMesh::getNormal
         (
             comm_,
             UPstream::msgType(),
-            [this](const List<pointIndexHit>& i, vectorField& out)
+            [this](const UList<pointIndexHit>& i, vectorField& out)
             {
                 triSurfaceMesh::getNormal(i, out);
             },
@@ -5487,7 +5487,7 @@ Foam::label Foam::distributedTriSurfaceMesh::getField(labelList& values) const
 
 void Foam::distributedTriSurfaceMesh::getField
 (
-    const List<pointIndexHit>& info,
+    const UList<pointIndexHit>& info,
     labelList& values
 ) const
 {
@@ -5880,7 +5880,7 @@ bool Foam::distributedTriSurfaceMesh::getDistribution
 
 void Foam::distributedTriSurfaceMesh::distribute
 (
-    const List<treeBoundBox>& followBb,
+    const UList<treeBoundBox>& followBb,
     const bool keepNonLocal,
     autoPtr<mapDistribute>& faceMap,
     autoPtr<mapDistribute>& pointMap

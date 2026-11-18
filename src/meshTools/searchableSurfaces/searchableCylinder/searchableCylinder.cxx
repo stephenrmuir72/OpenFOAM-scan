@@ -644,7 +644,7 @@ void Foam::searchableCylinder::findLineAll
 
 void Foam::searchableCylinder::getRegion
 (
-    const List<pointIndexHit>& info,
+    const UList<pointIndexHit>& info,
     labelList& region
 ) const
 {
@@ -654,7 +654,7 @@ void Foam::searchableCylinder::getRegion
 
 void Foam::searchableCylinder::getNormal
 (
-    const List<pointIndexHit>& info,
+    const UList<pointIndexHit>& info,
     vectorField& normal
 ) const
 {

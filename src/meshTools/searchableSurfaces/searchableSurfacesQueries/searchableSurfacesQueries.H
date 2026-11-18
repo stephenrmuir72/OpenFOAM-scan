@@ -61,7 +61,7 @@ class searchableSurfacesQueries
             const point& start,
 
             const label surfI,
-            const List<pointIndexHit>& surfHits,
+            const UList<pointIndexHit>& surfHits,
 
             labelList& allSurfaces,
             List<pointIndexHit>& allInfo,

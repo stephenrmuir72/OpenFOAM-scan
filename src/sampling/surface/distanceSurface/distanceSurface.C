@@ -121,7 +121,7 @@ static inline void calcNormalDistance_zero
 (
     scalarField& distance,
     const pointField& points,
-    const List<pointIndexHit>& nearest,
+    const UList<pointIndexHit>& nearest,
     const vectorField& normals
 )
 {
@@ -139,7 +139,7 @@ static inline void calcNormalDistance_nonzero
 (
     scalarField& distance,
     const pointField& points,
-    const List<pointIndexHit>& nearest,
+    const UList<pointIndexHit>& nearest,
     const vectorField& normals
 )
 {
@@ -163,7 +163,7 @@ static inline void calcNormalDistance_filtered
     scalarField& distance,
     const bitSet& ignoreLocation,
     const pointField& points,
-    const List<pointIndexHit>& nearest,
+    const UList<pointIndexHit>& nearest,
     const vectorField& normals
 )
 {
@@ -196,7 +196,7 @@ template<bool WantPointFilter = false>
 static bitSet simpleGeometricFilter
 (
     bitSet& ignoreCells,
-    const List<pointIndexHit>& nearest,
+    const UList<pointIndexHit>& nearest,
     const polyMesh& mesh,
     const scalar boundBoxInflate = 0.1  // 10% to catch corners
 )
