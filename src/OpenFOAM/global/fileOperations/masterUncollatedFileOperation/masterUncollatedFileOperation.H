@@ -6,7 +6,8 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2017 OpenFOAM Foundation
-    Copyright (C) 2019-2026 OpenCFD Ltd.
+    Copyright (C) 2019-2025 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -70,10 +71,6 @@ Description
 
 namespace Foam
 {
-
-// Forward Declarations
-class PstreamBuffers;
-
 namespace fileOperations
 {
 
@@ -88,7 +85,7 @@ class masterUncollatedFileOperation
     // Private Data
 
         //- Communicator allocated/managed by us
-        mutable label managedComm_;
+        mutable int managedComm_;
 
 
     // Private Member Functions
@@ -437,20 +434,11 @@ protected:
             const word& instancePath
         ) const;
 
-        //- Read file contents and send to processors.
-        //  Handles compressed or uncompressed files
-        static void readAndSend
-        (
-            const fileName& filePath,
-            const labelUList& recvProcs,
-            PstreamBuffers& pBufs
-        );
-
         //- Read files on comms master
         static autoPtr<ISstream> read
         (
             IOobject& io,
-            const label comm,
+            const int communicator,
             const bool uniform,             // on comms master only
             const fileNameList& filePaths,  // on comms master and sub-ranks
             const boolUList& readOnProcs    // on comms master and sub-ranks

@@ -6,7 +6,8 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2017-2018 OpenFOAM Foundation
-    Copyright (C) 2020-2026 OpenCFD Ltd.
+    Copyright (C) 2020-2025 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -76,10 +77,9 @@ NCHARS
 ...
 \endverbatim
 
-
 SourceFiles
-    decomposedBlockData.C
-    decomposedBlockDataHeader.C
+    decomposedBlockData.cxx
+    decomposedBlockDataHeader.cxx
 
 \*---------------------------------------------------------------------------*/
 
@@ -90,6 +90,8 @@ SourceFiles
 #include "ISstream.H"
 #include "OSstream.H"
 #include "UPstream.H"
+#include "CSRAddressing.H"
+#include <vector>
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -121,15 +123,13 @@ class decomposedBlockData
         );
 
 
-protected:
-
-    // Protected Data
+    // Private Data
 
         //- Type to use for gather
         const UPstream::commsTypes commsType_;
 
         //- Communicator for all parallel comms
-        const label comm_;
+        const int comm_;
 
         //- The block content
         List<char> contentData_;
@@ -137,16 +137,11 @@ protected:
 
     // Protected Member Functions
 
-        //- Read data (on master) and transmit.
-        static bool readBlocks
-        (
-            const label comm,
-            // [in] The input stream (only valid on master)
-            autoPtr<ISstream>& isPtr,
-            // [out] The processor local data
-            List<char>& localData,
-            const UPstream::commsTypes commsType  /* unused */
-        );
+        //- A view of the block content
+        std::string_view contentView() const
+        {
+            return std::string_view(contentData_.cdata(), contentData_.size());
+        }
 
         //- Helper: skip a block of (binary) character data
         static bool skipBlockEntry(Istream& is);
@@ -162,7 +157,7 @@ public:
         //- Construct given an IOobject
         decomposedBlockData
         (
-            const label comm,
+            const int communicator,
             const IOobject& io,
             const UPstream::commsTypes = UPstream::commsTypes::scheduled
         );
@@ -261,6 +256,20 @@ public:
         static bool readBlockEntry
         (
             Istream& is,
+            std::string& charData
+        );
+
+        //- Helper: read block of (binary) character data
+        static bool readBlockEntry
+        (
+            Istream& is,
+            std::vector<char>& charData
+        );
+
+        //- Helper: read block of (binary) character data
+        static bool readBlockEntry
+        (
+            Istream& is,
             List<char>& charData
         );
 
@@ -273,19 +282,7 @@ public:
             const size_t len
         );
 
-        //- Helper: write block of (binary) character data
-        static std::streamoff writeBlockEntry
-        (
-            OSstream& os,
-            const label blocki,
-            const UList<char>& s
-        )
-        {
-            return writeBlockEntry(os, blocki, s.cdata(), s.size_bytes());
-        }
-
         //- Helper: write block of (binary) character content
-        //  Housekeeping
         static std::streamoff writeBlockEntry
         (
             OSstream& os,
@@ -294,6 +291,17 @@ public:
         )
         {
             return writeBlockEntry(os, blocki, sv.data(), sv.size());
+        }
+
+        //- Helper: write block of (binary) character data
+        static std::streamoff writeBlockEntry
+        (
+            OSstream& os,
+            const label blocki,
+            const UList<char>& s
+        )
+        {
+            return writeBlockEntry(os, blocki, s.cdata(), s.size());
         }
 
         //- Helper: write block of (binary) character data
@@ -319,7 +327,7 @@ public:
         //- data in stream.
         static autoPtr<ISstream> readBlocks
         (
-            const label comm,
+            const int communicator,
             const fileName& fName,
             //! [in] The input stream (only valid on master)
             autoPtr<ISstream>& isPtr,
@@ -329,22 +337,26 @@ public:
         );
 
         //- Helper: gather data from (subset of) sub-ranks.
-        //  In non-blocking mode it sets up send/recv for non-empty content.
-        //  In blocking/scheduled mode it uses MPI_Gatherv to collect data.
+        //  It sets up non-blocking send/recv for non-empty content.
+        //
+        //  If called as blocking/scheduled, it waits internally before
+        //  returning.
         //
         //  Returns:
         //  - recvData : the received data
         //  - recvOffsets : offset in data. recvOffsets is nProcs+1
         static void gatherProcData
         (
-            const label comm,
-            const UList<char>& localData,   //!< [in] required on all procs
-            const labelUList& recvSizes,    //!< [in] only required on master
+            const int communicator,
+            std::string_view localData,         //!< [in] required on all procs
+            const UList<int64_t>& recvSizes,    //!< [in] required on master
 
-            const labelRange& whichProcs,   //!< [in] required on all procs
+            const labelRange& whichProcs,       //!< [in] required on all procs
 
-            List<int>& recvOffsets,         //!< [out] only relevant on master
-            DynamicList<char>& recvData,    //!< [out] only relevant on master
+            //! [out] only relevant on master
+            CSRAddressing<int64_t>& recvAddr,
+            //! [out] only relevant on master
+            DynamicList<char>& recvData,
 
             const UPstream::commsTypes commsType
         );
@@ -353,16 +365,17 @@ public:
         //  Returns offsets of processor blocks in blockOffset
         static bool writeBlocks
         (
-            const label comm,
+            const int communicator,
 
             //! [in] output stream (relevant on master)
             autoPtr<OSstream>& osPtr,
+
             //! [out] start offsets to each block (relevant on master),
             //! ignored if List::null() type
             List<std::streamoff>& blockOffset,
 
-            const UList<char>& localData,   //!< [in] required on all procs
-            const labelUList& recvSizes,    //!< [in] only required on master
+            std::string_view localData,       //!< [in] required on all procs
+            const UList<int64_t>& recvSizes,  //!< [in] required on master
 
             //! Optional proc data (only written on master)
             //! but \b must also be symmetrically defined (empty/non-empty)
@@ -372,78 +385,6 @@ public:
             const UPstream::commsTypes commsType,
             const bool syncReturnState = true
         );
-
-
-    // Housekeeping
-
-        //- Write *this. Ostream only valid on master.
-        //  Returns offsets of processor blocks in blockOffset
-        FOAM_DEPRECATED_FOR(2023-09, "write with std::string_view instead")
-        static bool writeBlocks
-        (
-            const label comm,
-            autoPtr<OSstream>& osPtr,
-            List<std::streamoff>& blockOffset,
-
-            const UList<char>& localData, // [in] required on all procs
-            const labelUList& recvSizes,  // [in] only required on master
-
-            // Optional proc data (only written on master)
-            // but \b must also be symmetrically defined (empty/non-empty)
-            // on all ranks
-            const UPtrList<SubList<char>>& procData,
-
-            const UPstream::commsTypes commsType,
-            const bool syncReturnState = true
-        )
-        {
-            // Transcribe to string_view
-            List<std::string_view> spans(procData.size());
-            forAll(procData, proci)
-            {
-                const auto* ptr = procData.get(proci);
-                if (ptr && !ptr->empty())
-                {
-                    spans[proci] = std::string_view(ptr->cdata(), ptr->size());
-                }
-            }
-
-            bool ok = decomposedBlockData::writeBlocks
-            (
-                comm,
-                osPtr,
-                blockOffset,
-                localData,
-                recvSizes,
-                spans,
-                commsType,
-                syncReturnState
-            );
-            return ok;
-        }
-
-        //- Deprecated(2023-09) - consider UPstream::listGatherValue
-        //  The only difference is that this gather also resizes the output
-        //  on the non-master procs
-        //  \deprecated(2023-09) - consider UPstream::listGatherValue
-        FOAM_DEPRECATED_FOR(2023-09, "consider UPstream::listGatherValue()")
-        static void gather
-        (
-            const label comm,
-            const label localValue,
-            labelList& allValues
-        )
-        {
-            allValues.resize_nocopy(UPstream::nProcs(comm));
-
-            UPstream::mpiGather
-            (
-                reinterpret_cast<const char*>(&localValue),
-                allValues.data_bytes(),
-                sizeof(label),  // The send/recv size per rank
-                comm
-            );
-        }
 };
 
 

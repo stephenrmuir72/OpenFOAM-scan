@@ -86,7 +86,7 @@ Foam::threadedCollatedOFstream::~threadedCollatedOFstream()
 void Foam::threadedCollatedOFstream::commit()
 {
     // Take ownership of serialized content, without copying or reallocation
-    DynamicList<char> charData(OCharStream::release());
+    auto charData(OCharStream::release());
 
     writer_.write
     (

@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2017 OpenFOAM Foundation
     Copyright (C) 2020-2025 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -75,29 +76,19 @@ class masterOFstream
         const bool writeOnProc_;
 
         //- Communicator
-        const label comm_;
+        const int comm_;
 
 
     // Private Member Functions
 
         //- Open file with checking and write append contents.
-        //  A no-op if str is null or len is zero
+        //  A no-op if str is nullptr or len is zero
         void checkWrite
         (
             const fileName& fName,
             const char* str,
             std::streamsize len
         );
-
-        //- Open file with checking and write append contents
-        void checkWrite
-        (
-            const fileName& fName,
-            const UList<char>& charData
-        )
-        {
-            checkWrite(fName, charData.cdata(), charData.size_bytes());
-        }
 
         //- Commit buffered information, including communication as required
         void commit();

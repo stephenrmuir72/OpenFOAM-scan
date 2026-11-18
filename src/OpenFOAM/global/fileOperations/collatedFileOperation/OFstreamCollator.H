@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2017-2018 OpenFOAM Foundation
     Copyright (C) 2019-2025 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -52,12 +53,16 @@ SourceFiles
 #define Foam_OFstreamCollator_H
 
 #include "IOstream.H"
-#include "List.H"
 #include "CircularBuffer.H"  // As FIFO
+#include "DynamicList.H"
 #include "dictionary.H"
 
+#include <algorithm>
 #include <mutex>
+#include <string>
+#include <string_view>
 #include <thread>
+#include <vector>
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -75,12 +80,19 @@ class OFstreamCollator
         //- Holds data to be written
         struct writeData
         {
-            const label comm_;
+            //- Storage type for local data
+            using dynamic_storage = DynamicList<char>;
+            //- Storage type for individual proc data
+            using static_storage = List<char>;
+
+            const int comm_;
             const word objectType_;
             const fileName pathName_;
-            DynamicList<char> localData_;
-            const labelList sizes_;
-            List<List<char>> procData_;
+
+            dynamic_storage localData_;      // local data
+            List<static_storage> procData_;  // subrank data (if any)
+
+            const List<int64_t> sizes_;
             const IOstreamOption streamOpt_;
             IOstreamOption::atomicType atomic_;
             IOstreamOption::appendType append_;
@@ -95,17 +107,17 @@ class OFstreamCollator
             //- Construct without local or proc data
             writeData
             (
-                const label comm,
+                const int communicator,
                 const word& objectType,
                 const fileName& pathName,
-                const labelUList& sizes,
+                const UList<int64_t>& sizes,
                 IOstreamOption streamOpt,
                 IOstreamOption::atomicType atomic,
                 IOstreamOption::appendType append,
                 const dictionary& headerEntries
             )
             :
-                comm_(comm),
+                comm_(communicator),
                 objectType_(objectType),
                 pathName_(pathName),
                 sizes_(sizes),
@@ -115,19 +127,49 @@ class OFstreamCollator
                 headerEntries_(headerEntries)
             {}
 
-            //- Move reset local data
-            void transfer(DynamicList<char>& localData)
+            //- Copy assign local data
+            void assign(std::string_view sv)
             {
-                localData_.transfer(localData);
+                localData_.resize(sv.size());
+                std::copy(sv.begin(), sv.end(), localData_.begin());
+            }
+
+            //- Move reset local data
+            void transfer(dynamic_storage& localData)
+            {
+                localData_ = std::move(localData);
+            }
+
+            //- A view of local data
+            std::string_view localView() const
+            {
+                return std::string_view(localData_.cdata(), localData_.size());
+            }
+
+            //- A view of optional proc data
+            std::string_view procView(int proci) const
+            {
+                if (proci >= 0 && proci < procData_.size())
+                {
+                    return std::string_view
+                    (
+                        procData_[proci].cdata(),
+                        procData_[proci].size()
+                    );
+                }
+                else
+                {
+                    return std::string_view();
+                }
             }
 
             //- The (approximate) size of local + any optional proc data
-            off_t size() const
+            int64_t size() const
             {
-                off_t total = localData_.size();
+                int64_t total = int64_t(localData_.size());
                 for (const auto& data : procData_)
                 {
-                    total += data.size();
+                    total += int64_t(data.size());
                 }
                 return total;
             }
@@ -137,7 +179,7 @@ class OFstreamCollator
     // Private Data
 
         //- Total amount of storage to use for object stack below
-        const off_t maxBufferSize_;
+        const int64_t maxBufferSize_;
 
         mutable std::mutex mutex_;
 
@@ -150,10 +192,10 @@ class OFstreamCollator
         bool threadRunning_;
 
         //- Communicator to use for all parallel ops (in simulation thread)
-        label localComm_;
+        int localComm_;
 
         //- Communicator to use for all parallel ops (in write thread)
-        label threadComm_;
+        int threadComm_;
 
 
     // Private Member Functions
@@ -161,15 +203,38 @@ class OFstreamCollator
         //- Write actual file
         static bool writeFile
         (
-            const label comm,
+            const int communicator,
             const word& objectType,
             const fileName& fName,
-            const UList<char>& localData,
-            const labelUList& recvSizes,
+            std::string_view localData,
+            const UList<int64_t>& recvSizes,
+            //! optional proc data
             const UList<std::string_view>& procData,
             IOstreamOption streamOpt,
             IOstreamOption::atomicType atomic,
             IOstreamOption::appendType append,
+            const dictionary& headerEntries
+        );
+
+        //- Write implementation/dispatcher.
+        //
+        //  The content is always accessed via the string_view of \p localData.
+        //
+        //  The \p localDataOwner refers to the storage behind the view that
+        //  can be moved (no copy) when queuing for the write thread.
+        //  A nullptr indicates ownership cannot be transferred and
+        //  thus a deep copy of the \p localData string_view will be used
+        //  for the threaded writer.
+        bool write_dispatch
+        (
+            const word& objectType,
+            const fileName& fName,
+            std::string_view localData,
+            writeData::dynamic_storage* localDataOwner,
+            IOstreamOption streamOpt,
+            IOstreamOption::atomicType atomic,
+            IOstreamOption::appendType append,
+            const bool useThread,
             const dictionary& headerEntries
         );
 
@@ -178,7 +243,7 @@ class OFstreamCollator
 
         //- Wait for total size of objects_ (master + optional slave data)
         //  to be wantedSize less than overall maxBufferSize.
-        void waitForBufferSpace(const off_t wantedSize) const;
+        void waitForBufferSpace(const int64_t wantedSize) const;
 
 
 public:
@@ -191,11 +256,11 @@ public:
 
         //- Construct from buffer size (0 = do not use thread)
         //- and with worldComm
-        explicit OFstreamCollator(const off_t maxBufferSize);
+        explicit OFstreamCollator(int64_t maxBufferSize);
 
         //- Construct from buffer size (0 = do not use thread)
         //- and specified communicator
-        OFstreamCollator(const off_t maxBufferSize, const label comm);
+        OFstreamCollator(int64_t maxBufferSize, int communicator);
 
 
     //- Destructor
@@ -205,7 +270,8 @@ public:
     // Member Functions
 
         //- Write file with contents, possibly taking ownership of the
-        //- content.
+        //- content (if it is the native storage type).
+        //
         //  Blocks until write-thread has space available
         //  (total file sizes < maxBufferSize)
         bool write
@@ -220,36 +286,56 @@ public:
             const dictionary& headerEntries = dictionary::null
         );
 
-        //- Write file with contents.
-        FOAM_DEPRECATED_FOR(2023-09, "use write with movable content")
+        //- Write file with contents, possibly taking ownership of the
+        //- content (if it is the native storage type).
+        //
+        //  Blocks until write-thread has space available
+        //  (total file sizes < maxBufferSize)
         bool write
         (
             const word& objectType,
             const fileName& fName,
-            const std::string& s,
+            std::vector<char>&& localData,
             IOstreamOption streamOpt,
             IOstreamOption::atomicType atomic,
             IOstreamOption::appendType append,
             const bool useThread = true,
             const dictionary& headerEntries = dictionary::null
-        )
-        {
-            DynamicList<char> charData(label(s.size()));
-            charData.resize(s.size());
-            std::copy(s.begin(), s.end(), charData.begin());
+        );
 
-            return write
-            (
-                objectType,
-                fName,
-                std::move(charData),
-                streamOpt,
-                atomic,
-                append,
-                useThread,
-                headerEntries
-            );
-        }
+        //- Write file with contents, possibly taking ownership of the
+        //- content (if it is the native storage type).
+        //
+        //  Blocks until write-thread has space available
+        //  (total file sizes < maxBufferSize)
+        bool write
+        (
+            const word& objectType,
+            const fileName& fName,
+            std::string&& localData,
+            IOstreamOption streamOpt,
+            IOstreamOption::atomicType atomic,
+            IOstreamOption::appendType append,
+            const bool useThread = true,
+            const dictionary& headerEntries = dictionary::null
+        );
+
+        //- Write file with contents.
+        //
+        //  Blocks until write-thread has space available
+        //  (total file sizes < maxBufferSize)
+        FOAM_DEPRECATED_FOR(2023-09, "prefer write with movable content")
+        bool write
+        (
+            const word& objectType,
+            const fileName& fName,
+            std::string_view localData,
+            IOstreamOption streamOpt,
+            IOstreamOption::atomicType atomic,
+            IOstreamOption::appendType append,
+            const bool useThread = true,
+            const dictionary& headerEntries = dictionary::null
+        );
 
         //- Wait for all thread actions to have finished
         void waitAll();
