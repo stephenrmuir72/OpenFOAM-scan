@@ -34,6 +34,58 @@ License
 #include "cyclicPolyPatch.H"
 #include "cyclicAMIPolyPatch.H"
 
+// * * * * * * * * * * * * * * * Local Functions * * * * * * * * * * * * * * //
+
+namespace
+{
+
+// When solveScalar != scalar the solvers work on a copy of psi, so
+// jumpCyclicFvPatchField::updateInterfaceMatrix cannot recognise psi and
+// omits the jump. Add the equivalent jump contribution to the source instead.
+void addJumpCyclicSource
+(
+    const Foam::fvMatrix<Foam::scalar>& matrix,
+    Foam::scalarField& source
+)
+{
+    if (std::is_same<Foam::solveScalar, Foam::scalar>::value)
+    {
+        return;
+    }
+
+    const Foam::volScalarField& psi = matrix.psi();
+
+    forAll(psi.boundaryField(), patchi)
+    {
+        const auto* jumpPtr =
+            Foam::isA<Foam::jumpCyclicFvPatchField<Foam::scalar>>
+            (
+                psi.boundaryField()[patchi]
+            );
+
+        if (jumpPtr)
+        {
+            Foam::scalarField jf(jumpPtr->jump());
+
+            if (!jumpPtr->cyclicPatch().owner())
+            {
+                jf.negate();
+            }
+
+            const Foam::labelUList& faceCells = jumpPtr->patch().faceCells();
+            const Foam::scalarField coeffs(matrix.boundaryCoeffs(patchi));
+
+            forAll(faceCells, facei)
+            {
+                source[faceCells[facei]] -= coeffs[facei]*jf[facei];
+            }
+        }
+    }
+}
+
+} // End anonymous namespace
+
+
 // * * * * * * * * * * * * * * * Member Functions  * * * * * * * * * * * * * //
 
 template<>
@@ -210,6 +262,11 @@ Foam::solverPerformance Foam::fvMatrix<Foam::scalar>::solveSegregated
     scalarField totalSource(source_);
     addBoundarySource(totalSource, false);
 
+    if (!useImplicit_)
+    {
+        addJumpCyclicSource(*this, totalSource);
+    }
+
     lduInterfaceFieldPtrsList interfaces;
     PtrDynList<lduInterfaceField> newInterfaces;
     if (!useImplicit_)
@@ -323,13 +380,16 @@ Foam::tmp<Foam::scalarField> Foam::fvMatrix<Foam::scalar>::residual() const
     ConstPrecisionAdaptor<solveScalar, scalar> tpsi(psif);
     const solveScalarField& psi = tpsi();
 
+    scalarField source(source_ - boundaryDiag*psif);
+    addJumpCyclicSource(*this, source);
+
     // Calculate residual using flat storage + offsets
     tmp<solveScalarField> tres
     (
         lduMatrix::residual
         (
             psi,
-            source_ - boundaryDiag*psif,
+            source,
             boundaryCoeffs_,
             coeffsOffset_,
             psi_.boundaryField().scalarInterfaces(),
