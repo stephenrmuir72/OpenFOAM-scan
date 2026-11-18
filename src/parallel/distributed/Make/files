@@ -1,4 +1,5 @@
 distributedTriSurfaceMesh/distributedTriSurfaceMesh.cxx
+distributedTriSurfaceMesh/distributedTriSurfaceMeshGeometry.cxx
 
 patchDistMethods/exact/exactPatchDistMethod.C
 
