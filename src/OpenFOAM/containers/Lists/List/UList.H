@@ -65,7 +65,10 @@ namespace Foam
 {
 
 // Forward Declarations
-template <typename Func>
+
+//- Dispatch \tparam Func with \c par_unseq or \c seq
+//- (depending on offloading and \p loop_length)
+template<typename Func>
 void apply_policy(size_t loop_length, Func&& f);
 
 class labelRange;

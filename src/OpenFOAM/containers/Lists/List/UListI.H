@@ -30,9 +30,150 @@ License
 #include "error.H"
 
 // <algorithm> already included by stdFoam.H
-#include <execution>
+#if __has_include(<execution>)
+    #include <execution>
+#else
+    #define Foam_execution_fallback
+    #include <iterator>
+    #include <utility>
+#endif
 
-template <typename Func>
+// Ugly shim for older compilers
+#ifdef Foam_execution_fallback
+
+// Minimal stand-in for compilers without <execution> (eg, gcc-7):
+// sequenced policy tag and sequential overloads of the algorithms that are
+// called with an execution policy.
+namespace std
+{
+namespace execution
+{
+    struct sequenced_policy {};
+    inline constexpr sequenced_policy seq{};
+}
+
+
+template<class T> struct is_execution_policy : false_type {};
+template<>
+struct is_execution_policy<execution::sequenced_policy> : std::true_type {};
+
+template<class T>
+constexpr bool is_execution_policy_v =
+std::is_execution_policy<std::decay_t<T>>::value;
+
+template<class Policy, class... Args>
+inline auto copy(Policy&&, Args&&... args) -> enable_if_t
+<
+    is_execution_policy_v<Policy>,
+    decltype(std::copy(std::forward<Args>(args)...))
+>
+{
+    return std::copy(std::forward<Args>(args)...);
+}
+
+template<class Policy, class... Args>
+inline auto fill(Policy&&, Args&&... args) -> enable_if_t
+<
+    is_execution_policy_v<Policy>,
+    void
+>
+{
+    std::fill(std::forward<Args>(args)...);
+}
+
+template<class Policy, class... Args>
+inline auto fill_n(Policy&&, Args&&... args)
+-> enable_if_t
+<
+    is_execution_policy_v<Policy>,
+    decltype(std::fill_n(std::forward<Args>(args)...))
+>
+{
+    return std::fill_n(std::forward<Args>(args)...);
+}
+
+template<class Policy, class... Args>
+inline auto for_each(Policy&&, Args&&... args) -> enable_if_t
+<
+    is_execution_policy_v<Policy>,
+    void
+>
+{
+    std::for_each(std::forward<Args>(args)...);
+}
+
+template<class Policy, class... Args>
+inline auto transform(Policy&&, Args&&... args)
+-> enable_if_t
+<
+    is_execution_policy_v<Policy>,
+    decltype(std::transform(std::forward<Args>(args)...))
+>
+{
+    return std::transform(std::forward<Args>(args)...);
+}
+
+template<class Policy, class... Args>
+inline auto stable_sort(Policy&&, Args&&... args) -> enable_if_t
+<
+    is_execution_policy_v<Policy>,
+    void
+>
+{
+    std::stable_sort(std::forward<Args>(args)...);
+}
+
+template<class Policy, class... Args>
+inline auto sort(Policy&&, Args&&... args) -> enable_if_t
+<
+    is_execution_policy_v<Policy>,
+    void
+>
+{
+    std::sort(std::forward<Args>(args)...);
+}
+
+template<class Policy, class InIt, class T, class BinOp>
+inline enable_if_t<is_execution_policy_v<Policy>, T>
+reduce(Policy&&, InIt first, InIt last, T init, BinOp op)
+{
+    for (; first != last; ++first) init = op(init, *first);
+    return init;
+}
+
+template<class Policy, class InIt1, class InIt2, class T, class BinOp1, class BinOp2>
+inline enable_if_t<is_execution_policy_v<Policy>, T>
+transform_reduce
+(
+    Policy&&,
+    InIt1 first1, InIt1 last1, InIt2 first2, T init, BinOp1 op1, BinOp2 op2
+)
+{
+    for (; first1 != last1; ++first1, (void)++first2)
+    {
+        init = op1(init, op2(*first1, *first2));
+    }
+    return init;
+}
+
+template<class Policy, class InIt, class OutIt, class T>
+inline enable_if_t<is_execution_policy_v<Policy>, OutIt>
+exclusive_scan(Policy&&, InIt first, InIt last, OutIt out, T init)
+{
+    for (; first != last; ++first, (void)++out)
+    {
+        T tmp(init);
+        init = init + *first;
+        *out = tmp;
+    }
+    return out;
+}
+
+} // End namespace std
+
+#endif  /* [Foam_execution_fallback] */
+
+template<typename Func>
 void Foam::apply_policy(size_t loop_length, Func&& f)
 {
     #ifdef FOAM_OFFLOAD
