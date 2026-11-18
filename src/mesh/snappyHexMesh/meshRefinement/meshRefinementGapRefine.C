@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2015 OpenFOAM Foundation
     Copyright (C) 2015-2022,2026 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -1622,35 +1623,12 @@ Foam::label Foam::meshRefinement::markSmallFeatureRefinement
         label geomI = surfaceIndices[surfI];
         const searchableSurface& geom = surfaces_.geometry()[geomI];
 
-
-        // Get the element index in a roundabout way. Problem is e.g.
-        // distributed surface where local indices differ from global
-        // ones (needed for getRegion call)
-
+        // Get surface characteristics
         pointField ctrs;
         labelList region;
         vectorField normal;
         {
-            // Representative local coordinates and bounding sphere
-            scalarField radiusSqr;
-            geom.boundingSpheres(ctrs, radiusSqr);
-
-            List<pointIndexHit> info;
-            geom.findNearest(ctrs, radiusSqr, info);
-
-            forAll(info, i)
-            {
-                if (!info[i].hit())
-                {
-                    FatalErrorInFunction
-                        << "fc:" << ctrs[i]
-                        << " radius:" << radiusSqr[i]
-                        << exit(FatalError);
-                }
-            }
-
-            geom.getRegion(info, region);
-            geom.getNormal(info, normal);
+            geom.measure(&ctrs, nullptr, &region, &normal);
         }
 
         // Do test to see whether triangles are inside/outside shell with
@@ -1875,34 +1853,12 @@ Foam::label Foam::meshRefinement::markSurfaceFieldRefinement
         label geomI = surfaceIndices[surfI];
         const searchableSurface& geom = surfaces_.geometry()[geomI];
 
-        // Get the element index in a roundabout way. Problem is e.g.
-        // distributed surface where local indices differ from global
-        // ones (needed for getRegion call)
-
+        // Get surface characteristics
         pointField ctrs;
-        labelList region;
         labelList minLevelField;
         {
-            // Representative local coordinates and bounding sphere
-            scalarField radiusSqr;
-            geom.boundingSpheres(ctrs, radiusSqr);
-
-            List<pointIndexHit> info;
-            geom.findNearest(ctrs, radiusSqr, info);
-
-            forAll(info, i)
-            {
-                if (!info[i].hit())
-                {
-                    FatalErrorInFunction
-                        << "fc:" << ctrs[i]
-                        << " radius:" << radiusSqr[i]
-                        << exit(FatalError);
-                }
-            }
-
-            geom.getRegion(info, region);
-            geom.getField(info, minLevelField);
+            geom.measure(&ctrs, nullptr, nullptr, nullptr);
+            geom.getField(minLevelField);
         }
 
         if (minLevelField.size() != geom.size())
