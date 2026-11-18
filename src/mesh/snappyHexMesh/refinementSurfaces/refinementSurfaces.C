@@ -47,8 +47,8 @@ Foam::labelList Foam::refinementSurfaces::findHigherLevel
 (
     const searchableSurface& geom,
     const shellSurfaces& shells,
-    const List<pointIndexHit>& intersectionInfo,
-    const labelList& surfaceLevel       // current level
+    const UList<pointIndexHit>& intersectionInfo,
+    const labelUList& surfaceLevel       // current level
 ) const
 {
     // See if a cached level field available
@@ -127,7 +127,7 @@ Foam::labelList Foam::refinementSurfaces::findHigherLevel
 Foam::labelList Foam::refinementSurfaces::calcSurfaceIndex
 (
     const searchableSurfaces& allGeometry,
-    const labelList& surfaces
+    const labelUList& surfaces
 )
 {
     // Determine overall number of global regions
@@ -678,13 +678,13 @@ Foam::refinementSurfaces::refinementSurfaces
 Foam::refinementSurfaces::refinementSurfaces
 (
     const searchableSurfaces& allGeometry,
-    const labelList& surfaces,
+    const labelUList& surfaces,
     const wordList& names,
     const PtrList<surfaceZonesInfo>& surfZones,
-    const labelList& regionOffset,
-    const labelList& minLevel,
-    const labelList& maxLevel,
-    const labelList& gapLevel,
+    const labelUList& regionOffset,
+    const labelUList& minLevel,
+    const labelUList& maxLevel,
+    const labelUList& gapLevel,
     const scalarField& perpendicularAngle,
     PtrList<dictionary>& patchInfo,
     const bool dryRun
@@ -746,7 +746,7 @@ Foam::labelPair Foam::refinementSurfaces::whichSurface
 // (
 //     const shellSurfaces& shells,
 //     const label surfI,
-//     const List<pointIndexHit>& info,    // Indices
+//     const UList<pointIndexHit>& info,   // Indices
 //     const pointField& ctrs,             // Representative coordinate
 //     labelList& minLevelField
 // ) const
@@ -1471,7 +1471,7 @@ void Foam::refinementSurfaces::findAllIntersections
 
         forAll(hitInfo, pointI)
         {
-            const List<pointIndexHit>& pHits = hitInfo[pointI];
+            const auto& pHits = hitInfo[pointI];
 
             forAll(pHits, i)
             {
@@ -1564,7 +1564,7 @@ void Foam::refinementSurfaces::findAllIntersections
 
         forAll(hitInfo, pointI)
         {
-            const List<pointIndexHit>& pHits = hitInfo[pointI];
+            const auto& pHits = hitInfo[pointI];
 
             forAll(pHits, i)
             {
@@ -1658,7 +1658,7 @@ void Foam::refinementSurfaces::findAllIntersections
 //
 //        forAll(hitInfo, pointI)
 //        {
-//            const List<pointIndexHit>& pHits = hitInfo[pointI];
+//            const auto& pHits = hitInfo[pointI];
 //
 //            forAll(pHits, i)
 //            {

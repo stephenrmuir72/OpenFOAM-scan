@@ -1156,7 +1156,7 @@ void Foam::triSurfaceMesh::findLineAll
 
 void Foam::triSurfaceMesh::getRegion
 (
-    const List<pointIndexHit>& info,
+    const UList<pointIndexHit>& info,
     labelList& region
 ) const
 {
@@ -1235,7 +1235,7 @@ Foam::label betterQualityNeighbour
 
 void Foam::triSurfaceMesh::getNormal
 (
-    const List<pointIndexHit>& info,
+    const UList<pointIndexHit>& info,
     vectorField& normal
 ) const
 {
@@ -1591,7 +1591,7 @@ Foam::label Foam::triSurfaceMesh::getField(labelList& values) const
 
 void Foam::triSurfaceMesh::getField
 (
-    const List<pointIndexHit>& info,
+    const UList<pointIndexHit>& info,
     labelList& values
 ) const
 {

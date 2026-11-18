@@ -606,7 +606,7 @@ void Foam::searchableSurfaceCollection::findLineAll
 
 void Foam::searchableSurfaceCollection::getRegion
 (
-    const List<pointIndexHit>& info,
+    const UList<pointIndexHit>& info,
     labelList& region
 ) const
 {
@@ -669,12 +669,7 @@ void Foam::searchableSurfaceCollection::getRegion
                 const label regOffset = regionOffset_[surfI];
 
                 labelList surfRegion;
-                subGeom_[surfI].getRegion
-                (
-                    // The API needs an update!
-                    static_cast<const List<pointIndexHit>&>(surfInfo[surfI]),
-                    surfRegion
-                );
+                subGeom_[surfI].getRegion(surfInfo[surfI], surfRegion);
 
                 UIndirectList<label> mapped(region, infoMap[surfI]);
 
@@ -692,7 +687,7 @@ void Foam::searchableSurfaceCollection::getRegion
 
 void Foam::searchableSurfaceCollection::getNormal
 (
-    const List<pointIndexHit>& info,
+    const UList<pointIndexHit>& info,
     vectorField& normal
 ) const
 {
@@ -718,12 +713,7 @@ void Foam::searchableSurfaceCollection::getNormal
         forAll(surfInfo, surfI)
         {
             vectorField surfNormal;
-            subGeom_[surfI].getNormal
-            (
-                // The API needs an update!
-                static_cast<const List<pointIndexHit>&>(surfInfo[surfI]),
-                surfNormal
-            );
+            subGeom_[surfI].getNormal(surfInfo[surfI], surfNormal);
 
             // Transform back to global coordinate sys.
             surfNormal = transform_[surfI].globalVector(surfNormal);
@@ -748,7 +738,7 @@ void Foam::searchableSurfaceCollection::getVolumeType
 
 void Foam::searchableSurfaceCollection::distribute
 (
-    const List<treeBoundBox>& bbs,
+    const UList<treeBoundBox>& bbs,
     const bool keepNonLocal,
     autoPtr<mapDistribute>& faceMap,
     autoPtr<mapDistribute>& pointMap
@@ -871,7 +861,7 @@ Foam::label Foam::searchableSurfaceCollection::getField
 
 void Foam::searchableSurfaceCollection::getField
 (
-    const List<pointIndexHit>& info,
+    const UList<pointIndexHit>& info,
     labelList& values
 ) const
 {
@@ -897,12 +887,7 @@ void Foam::searchableSurfaceCollection::getField
         forAll(surfInfo, surfI)
         {
             labelList surfValues;
-            subGeom_[surfI].getField
-            (
-                // The API needs an update!
-                static_cast<const List<pointIndexHit>&>(surfInfo[surfI]),
-                surfValues
-            );
+            subGeom_[surfI].getField(surfInfo[surfI], surfValues);
 
             if (surfValues.size())
             {

@@ -109,17 +109,20 @@ private:
 
         static label countMisses
         (
-            const List<pointIndexHit>& info,
+            const UList<pointIndexHit>& info,
             labelList& missMap
         );
 
         static label countMisses
         (
-            const List<pointIndexHit>& plusInfo,
-            const List<pointIndexHit>& minInfo,
+            const UList<pointIndexHit>& plusInfo,
+            const UList<pointIndexHit>& minInfo,
             labelList& missMap
         );
 
+public:
+
+    // Generated Methods
 
         //- No copy construct
         searchableSurfaceWithGaps(const searchableSurfaceWithGaps&) = delete;
@@ -127,8 +130,6 @@ private:
         //- No copy assignment
         void operator=(const searchableSurfaceWithGaps&) = delete;
 
-
-public:
 
     //- Runtime type information
     TypeName("searchableSurfaceWithGaps");
@@ -262,7 +263,7 @@ public:
             //- From a set of points and indices get the region
             virtual void getRegion
             (
-                const List<pointIndexHit>& info,
+                const UList<pointIndexHit>& info,
                 labelList& region
             ) const
             {
@@ -272,7 +273,7 @@ public:
             //- From a set of points and indices get the normal
             virtual void getNormal
             (
-                const List<pointIndexHit>& info,
+                const UList<pointIndexHit>& info,
                 vectorField& normal
             ) const
             {
@@ -299,7 +300,7 @@ public:
             //  set if the surface has done any redistribution.
             //virtual void distribute
             //(
-            //    const List<treeBoundBox>& bbs,
+            //    const UList<treeBoundBox>& bbs,
             //    const bool keepNonLocal,
             //    autoPtr<mapDistribute>& faceMap,
             //    autoPtr<mapDistribute>& pointMap
@@ -320,7 +321,7 @@ public:
             //- Entries corresponding to misses are left untouched.
             virtual void getField
             (
-                const List<pointIndexHit>& info,
+                const UList<pointIndexHit>& info,
                 labelList& values
             ) const
             {

@@ -428,7 +428,7 @@ private:
             void surfaceSide
             (
                 const pointField& samples,
-                const List<pointIndexHit>& nearestInfo,
+                const UList<pointIndexHit>& nearestInfo,
                 List<volumeType>& region
             ) const;
 
@@ -472,7 +472,7 @@ private:
             //- Find volume type of tree boxes
             volumeType calcVolumeType
             (
-                const List<volumeType>& midPointTypes,
+                const UList<volumeType>& midPointTypes,
                 label& index,
                 PackedList<2>& nodeTypes,
                 const label nodeI
@@ -822,14 +822,14 @@ public:
             //- From a set of points and indices get the region
             virtual void getRegion
             (
-                const List<pointIndexHit>&,
+                const UList<pointIndexHit>&,
                 labelList& region
             ) const;
 
             //- From a set of points and indices get the normal
             virtual void getNormal
             (
-                const List<pointIndexHit>&,
+                const UList<pointIndexHit>&,
                 vectorField& normal
             ) const;
 
@@ -854,7 +854,7 @@ public:
             //  same amount as work as actual distribution.
             virtual void distribute
             (
-                const List<treeBoundBox>& followBb,
+                const UList<treeBoundBox>& followBb,
                 const bool keepNonLocal,
                 autoPtr<mapDistribute>& faceMap,
                 autoPtr<mapDistribute>& pointMap
@@ -865,7 +865,11 @@ public:
 
             //- WIP. From a set of hits (points and indices)
             //- get the specified field. Misses do not get set.
-            virtual void getField(const List<pointIndexHit>&, labelList&) const;
+            virtual void getField
+            (
+                const UList<pointIndexHit>&,
+                labelList&
+            ) const;
 
             //- WIP.
             //- Retrieve the "values" field entries (if it exists)

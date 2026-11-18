@@ -383,7 +383,7 @@ void Foam::searchableRotatedBox::findLineAll
 
 void Foam::searchableRotatedBox::getRegion
 (
-    const List<pointIndexHit>& info,
+    const UList<pointIndexHit>& info,
     labelList& region
 ) const
 {
@@ -393,7 +393,7 @@ void Foam::searchableRotatedBox::getRegion
 
 void Foam::searchableRotatedBox::getNormal
 (
-    const List<pointIndexHit>& info,
+    const UList<pointIndexHit>& info,
     vectorField& normal
 ) const
 {

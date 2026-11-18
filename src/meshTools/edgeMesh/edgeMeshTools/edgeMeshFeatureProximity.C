@@ -41,7 +41,7 @@ namespace Foam
 
 static scalar calcProximityOfFeaturePoints
 (
-    const List<pointIndexHit>& hitList,
+    const UList<pointIndexHit>& hitList,
     const scalar defaultCellSize
 )
 {
@@ -84,7 +84,7 @@ static scalar calcProximityOfFeaturePoints
 scalar calcProximityOfFeatureEdges
 (
     const edgeMesh& emesh,
-    const List<pointIndexHit>& hitList,
+    const UList<pointIndexHit>& hitList,
     const scalar defaultCellSize
 )
 {

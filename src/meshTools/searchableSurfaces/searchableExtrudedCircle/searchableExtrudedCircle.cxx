@@ -424,7 +424,7 @@ void Foam::searchableExtrudedCircle::findParametricNearest
 
 void Foam::searchableExtrudedCircle::getRegion
 (
-    const List<pointIndexHit>& info,
+    const UList<pointIndexHit>& info,
     labelList& region
 ) const
 {
@@ -434,7 +434,7 @@ void Foam::searchableExtrudedCircle::getRegion
 
 void Foam::searchableExtrudedCircle::getNormal
 (
-    const List<pointIndexHit>& info,
+    const UList<pointIndexHit>& info,
     vectorField& normal
 ) const
 {

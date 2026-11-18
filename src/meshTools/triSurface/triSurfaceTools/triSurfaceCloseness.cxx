@@ -47,7 +47,7 @@ static void drawHitProblem
     const pointField& start,
     const pointField& faceCentres,
     const pointField& end,
-    const List<pointIndexHit>& hitInfo
+    const UList<pointIndexHit>& hitInfo
 )
 {
     Info<< nl << "# findLineAll did not hit its own face."
@@ -159,7 +159,7 @@ Foam::triSurfaceTools::writeCloseness
 
     forAll(allHitInfo, fI)
     {
-        const List<pointIndexHit>& hitInfo = allHitInfo[fI];
+        const auto& hitInfo = allHitInfo[fI];
 
         if (hitInfo.size() < 1)
         {
