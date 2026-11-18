@@ -190,7 +190,7 @@ int main(int argc, char *argv[])
         "cellVolume",
         "cellVolumeRatio",
         "cellAspectRatio",
-        "minTetVolume",
+        "minTetQuality",
         "minPyrVolume",
         "cellRegion",
         "wallDistance",
