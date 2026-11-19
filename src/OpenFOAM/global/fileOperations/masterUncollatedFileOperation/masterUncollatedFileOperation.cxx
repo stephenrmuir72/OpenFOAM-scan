@@ -625,11 +625,13 @@ Foam::fileOperations::masterUncollatedFileOperation::read
     // isPtr will be valid on master and will be the unbuffered IFstream
     if (isPtr)
     {
-        return isPtr;
+        // already has its content, but needs to readHeader
     }
-
-    // special case for master with uniform file
-    if (UPstream::master(communicator) && sendBuffers.test(0))
+    else if
+    (
+        // special case for master with uniform file
+        UPstream::master(communicator) && sendBuffers.test(0)
+    )
     {
         auto& buf = sendBuffers[0];
 
@@ -650,6 +652,8 @@ Foam::fileOperations::masterUncollatedFileOperation::read
     }
     else
     {
+        // Regular case - received content via point-to-point
+
         if (debug)
         {
             Pout<< "masterUncollatedFileOperation::read :"
