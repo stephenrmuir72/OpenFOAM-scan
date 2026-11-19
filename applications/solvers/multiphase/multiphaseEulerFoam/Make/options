@@ -10,7 +10,7 @@ EXE_INC = \
     -I$(LIB_SRC)/transportModels/incompressible/singlePhaseTransportModel \
     -I$(LIB_SRC)/TurbulenceModels/turbulenceModels/lnInclude \
     -I$(LIB_SRC)/TurbulenceModels/incompressible/lnInclude \
-    -I$(LIB_SRC)/turbulenceModels/LES/LESdeltas/lnInclude
+    -I$(LIB_SRC)/TurbulenceModels/turbulenceModels/LES/LESdeltas/lnInclude
 
 EXE_LIBS = \
     -lfiniteVolume \

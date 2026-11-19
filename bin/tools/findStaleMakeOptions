@@ -1,0 +1,148 @@
+#!/bin/bash
+#------------------------------------------------------------------------------
+# =========                 |
+# \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox
+#  \\    /   O peration     |
+#   \\  /    A nd           | www.openfoam.com
+#    \\/     M anipulation  |
+#-------------------------------------------------------------------------------
+#    Copyright (C) 2026 Keysight Technologies
+#------------------------------------------------------------------------------
+# License
+#     This file is part of OpenFOAM, distributed under GPL-3.0-or-later.
+#
+# Script
+#     findStaleMakeOptions
+#
+# Description
+#     Usage: findStaleMakeOptions [dir1 .. dirN]
+#
+#     Find Make/options files that have EXE_INC '-I' include references
+#     to stale or missing locations. Locations with /lnInclude are
+#     considered valid if the enclosing directory exists and that
+#     enclosing directory contains a Make/ directory.
+#
+#     The processing is very simplistic, it assumes that -I$(LIB_SRC)
+#     corresponds to the WM_PROJECT_DIR/src (ie, OpenFOAM).
+#
+#------------------------------------------------------------------------------
+projectDir="${WM_PROJECT_DIR:-.}"
+projectSourceDir="$projectDir/src"
+projectAppDir="$projectDir/applications"
+
+usage() {
+    exec 1>&2
+    while [ "$#" -ge 1 ]; do echo "$1"; shift; done
+    cat<<USAGE
+Usage: ${0##*/} [OPTION] [dir1 .. dirN]
+
+Find Make/options files with -I include paths to non-existent directories.
+    Entries containing unresolved variables are skipped.
+    Prints 'path/Make/options: stale-include'.
+    Exit code 1 if any are found.
+
+USAGE
+    exit 1
+}
+
+# Expand known variables in a path (stdin -> stdout)
+expandVars()
+{
+    sed \
+        -e "s#\$(LIB_SRC)#$projectSourceDir#g" \
+        -e "s#\$(FOAM_SRC)#$projectSourceDir#g" \
+        -e "s#\$(FOAM_APP)#$projectAppDir#g" \
+        -e "s#\$(FOAM_SOLVERS)#$projectAppDir/solvers#g" \
+        -e "s#\$(FOAM_UTILITIES)#$projectAppDir/utilities#g" \
+        -e "s#\$(WM_PROJECT_DIR)#$projectDir#g"
+}
+
+# checkInclude baseDir incDir
+#   Return 0 if the include is valid or cannot be checked.
+#   Return 1 if stale, with the resolved directory in resolved.
+#   A path ending in /lnInclude is valid only if its parent is a
+#   library directory (contains Make/).
+checkInclude()
+{
+    baseDir="$1"
+    resolved="$(echo "$2" | expandVars)"
+
+    case "$resolved" in
+    *'$'*) return 0 ;;  # unresolved variable
+    esac
+
+    unset isLib
+    case "$resolved" in
+    (*/lnInclude) isLib=true; resolved="${resolved%/lnInclude}" ;;
+    esac
+
+    case "$resolved" in
+    (/*) ;;
+    (*) resolved="$baseDir/$resolved" ;;
+    esac
+
+    [ -d "$resolved" ] || return 1
+    [ -z "$isLib" ] || [ -d "$resolved/Make" ]
+}
+
+
+# parse options
+while [ "$#" -gt 0 ]
+do
+    case "$1" in
+    -h | -help*)
+        usage
+        ;;
+    -*)
+       usage "unknown option: '$*'"
+       ;;
+    *)
+       break
+       ;;
+    esac
+done
+
+# default is the current directory
+[ "$#" -gt 0 ] || set -- .
+
+for checkDir
+do
+    if [ -d "$checkDir" ]
+    then
+        echo "searching: $checkDir" 1>&2
+    else
+        echo "skipping non-dir: $checkDir" 1>&2
+        continue
+    fi
+
+    find "$checkDir" -path '*/Make/options' -type f -print | sort | \
+    while read optionsFile
+    do
+        # relative paths are resolved from the directory containing Make/
+        baseDir="${optionsFile%/Make/options}"
+
+        # join continuation lines, drop comments, extract -I entries
+        sed -e ':a' -e '/\\$/N; s/\\\n/ /; ta' -e 's/#.*//' "$optionsFile" | \
+        grep -oE -- '-I *[^[:space:]]+' | sed -e 's/^-I *//' | \
+        while read incDir
+        do
+            checkInclude "$baseDir" "$incDir" || echo "$optionsFile: $resolved"
+        done
+    done
+done | {
+    # Count by appending (the loop runs in this subshell)
+    unset numSuspicious
+    while read -r line
+    do
+        echo "$line"
+        numSuspicious="${numSuspicious}x"
+    done
+
+    echo
+    echo "Found ${#numSuspicious} suspicious entries" 1>&2
+
+    # exit 1 if anything was found
+    [ -z "$numSuspicious" ]
+}
+
+#------------------------------------------------------------------------------

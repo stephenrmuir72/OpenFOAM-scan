@@ -43,9 +43,13 @@ darwin*Clang*/
 darwin*Gcc*/
 platforms/
 
+# Ignore any meson caches
+**/meson.build
+
 # Top-level build directories
 /build/
 /platforms/
+/meson/__pycache__
 
 # Reinstate wmake rules that might look like build directories
 !/wmake/rules/*/
@@ -83,3 +87,5 @@ doc/Doxygen/DTAGS
 
 # Ignore the test directory
 /tutorialsTest
+
+# ---------------------------------------------------------------------------
