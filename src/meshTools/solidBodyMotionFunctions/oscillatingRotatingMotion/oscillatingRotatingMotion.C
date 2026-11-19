@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2019 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -56,9 +57,26 @@ oscillatingRotatingMotion
     const Time& runTime
 )
 :
-    solidBodyMotionFunction(SBMFCoeffs, runTime)
+    solidBodyMotionFunction(SBMFCoeffs, runTime),
+    origin_(SBMFCoeffs_.get<vector>("origin")),
+    omegaPtr_
+    (
+        Function1<scalar>::New("omega", SBMFCoeffs_, &time_)
+    ),
+    amplitudePtr_
+    (
+        Function1<vector>::New("amplitude", SBMFCoeffs_, &time_)
+    ),
+    phaseShiftPtr_
+    (
+        Function1<scalar>::NewIfPresent("phaseShift", SBMFCoeffs_, &time_)
+    ),
+    angleShiftPtr_
+    (
+        Function1<vector>::NewIfPresent("angleShift", SBMFCoeffs_, &time_)
+    )
 {
-    read(SBMFCoeffs);
+    // NB: no read(..) here - already done in preamble
 }
 
 
@@ -68,11 +86,30 @@ Foam::septernion
 Foam::solidBodyMotionFunctions::oscillatingRotatingMotion::
 transformation() const
 {
-    scalar t = time_.value();
+    const scalar t = time_.value();
 
-    vector eulerAngles = amplitude_*sin(omega_*t);
+    const vector amplitude = amplitudePtr_->value(t);
+    const scalar omega = omegaPtr_->value(t);
 
-    // Convert the rotational motion from deg to rad
+    scalar phaseShift = 0;
+    if (phaseShiftPtr_)
+    {
+        phaseShift = phaseShiftPtr_->value(t);
+    }
+
+    // The rotational motion - units are [deg] at this point
+    vector eulerAngles
+    (
+        amplitude * std::sin(omega*(t + phaseShift))
+    );
+
+    if (angleShiftPtr_)
+    {
+        vector angleShift = angleShiftPtr_->value(t);
+        eulerAngles += angleShift;
+    }
+
+    // Convert rotational angles from deg to rad
     eulerAngles *= degToRad();
 
     quaternion R(quaternion::XYZ, eulerAngles);
@@ -89,11 +126,32 @@ bool Foam::solidBodyMotionFunctions::oscillatingRotatingMotion::read
     const dictionary& SBMFCoeffs
 )
 {
-    solidBodyMotionFunction::read(SBMFCoeffs);
+    if (!solidBodyMotionFunction::read(SBMFCoeffs))
+    {
+        return false;
+    }
 
     SBMFCoeffs_.readEntry("origin", origin_);
-    SBMFCoeffs_.readEntry("amplitude", amplitude_);
-    SBMFCoeffs_.readEntry("omega", omega_);
+
+    omegaPtr_.reset
+    (
+        Function1<scalar>::New("omega", SBMFCoeffs_, &time_)
+    );
+
+    amplitudePtr_.reset
+    (
+        Function1<vector>::New("amplitude", SBMFCoeffs_, &time_)
+    );
+
+    phaseShiftPtr_.reset
+    (
+        Function1<scalar>::NewIfPresent("phaseShift", SBMFCoeffs_, &time_)
+    );
+
+    angleShiftPtr_.reset
+    (
+        Function1<vector>::NewIfPresent("angleShift", SBMFCoeffs_, &time_)
+    );
 
     return true;
 }

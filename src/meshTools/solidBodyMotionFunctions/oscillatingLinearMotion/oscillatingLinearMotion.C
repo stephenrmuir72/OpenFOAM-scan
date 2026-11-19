@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2022 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -48,37 +49,32 @@ namespace solidBodyMotionFunctions
 
 // * * * * * * * * * * * * * * * * Constructors  * * * * * * * * * * * * * * //
 
-Foam::solidBodyMotionFunctions::oscillatingLinearMotion::oscillatingLinearMotion
+Foam::solidBodyMotionFunctions::oscillatingLinearMotion::
+oscillatingLinearMotion
 (
     const dictionary& SBMFCoeffs,
     const Time& runTime
 )
 :
     solidBodyMotionFunction(SBMFCoeffs, runTime),
-    omegaPtr_(Function1<scalar>::New("omega", SBMFCoeffs_, &runTime)),
+    omegaPtr_
+    (
+        Function1<scalar>::New("omega", SBMFCoeffs_, &time_)
+    ),
+    amplitudePtr_
+    (
+        Function1<vector>::New("amplitude", SBMFCoeffs_, &time_)
+    ),
     phaseShiftPtr_
     (
-        Function1<scalar>::NewIfPresent
-        (
-            "phaseShift",
-            SBMFCoeffs_,
-            word::null,
-            &runTime
-        )
+        Function1<scalar>::NewIfPresent("phaseShift", SBMFCoeffs_, &time_)
     ),
-    amplitudePtr_(Function1<vector>::New("amplitude", SBMFCoeffs_, &runTime)),
     verticalShiftPtr_
     (
-        Function1<vector>::NewIfPresent
-        (
-            "verticalShift",
-            SBMFCoeffs_,
-            word::null,
-            &runTime
-        )
+        Function1<vector>::NewIfPresent("verticalShift", SBMFCoeffs_, &time_)
     )
 {
-    read(SBMFCoeffs);
+    // NB: no read(..) here - already done in preamble
 }
 
 
@@ -89,7 +85,7 @@ Foam::solidBodyMotionFunctions::oscillatingLinearMotion::transformation() const
 {
     const scalar t = time_.value();
 
-    const vector amplitude(amplitudePtr_->value(t));
+    const vector amplitude = amplitudePtr_->value(t);
     const scalar omega = omegaPtr_->value(t);
 
     scalar phaseShift = 0;
@@ -98,16 +94,16 @@ Foam::solidBodyMotionFunctions::oscillatingLinearMotion::transformation() const
         phaseShift = phaseShiftPtr_->value(t);
     }
 
-    vector verticalShift(Zero);
+    vector displacement
+    (
+        amplitude * std::sin(omega*(t + phaseShift))
+    );
+
     if (verticalShiftPtr_)
     {
-        verticalShift = verticalShiftPtr_->value(t);
+        vector verticalShift = verticalShiftPtr_->value(t);
+        displacement += verticalShift;
     }
-
-    const vector displacement
-    (
-        amplitude*sin(omega*(t + phaseShift)) + verticalShift
-    );
 
     quaternion R(1);
     septernion TR(septernion(-displacement)*R);
@@ -133,31 +129,19 @@ bool Foam::solidBodyMotionFunctions::oscillatingLinearMotion::read
         Function1<scalar>::New("omega", SBMFCoeffs_, &time_)
     );
 
-    phaseShiftPtr_.reset
-    (
-        Function1<scalar>::NewIfPresent
-        (
-            "phaseShift",
-            SBMFCoeffs_,
-            word::null,
-            &time_
-        )
-    );
-
     amplitudePtr_.reset
     (
         Function1<vector>::New("amplitude", SBMFCoeffs_, &time_)
     );
 
+    phaseShiftPtr_.reset
+    (
+        Function1<scalar>::NewIfPresent("phaseShift", SBMFCoeffs_, &time_)
+    );
+
     verticalShiftPtr_.reset
     (
-        Function1<vector>::NewIfPresent
-        (
-            "verticalShift",
-            SBMFCoeffs_,
-            word::null,
-            &time_
-        )
+        Function1<vector>::NewIfPresent("verticalShift", SBMFCoeffs_, &time_)
     );
 
     return true;

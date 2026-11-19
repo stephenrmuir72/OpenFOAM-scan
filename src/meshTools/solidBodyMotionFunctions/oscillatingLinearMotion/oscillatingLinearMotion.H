@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2020-2022 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -106,32 +107,31 @@ class oscillatingLinearMotion
 {
     // Private Data
 
-        //- Radial velocity
+        //- Radial velocity [rad/s]
         autoPtr<Function1<scalar>> omegaPtr_;
 
-        //- Phase shift
-        autoPtr<Function1<scalar>> phaseShiftPtr_;
-
-        //- Amplitude
+        //- Amplitude [m]
         autoPtr<Function1<vector>> amplitudePtr_;
 
-        //- Vertical shift
+        //- Phase shift [s] (optional)
+        autoPtr<Function1<scalar>> phaseShiftPtr_;
+
+        //- Vertical shift [m] (optional)
         autoPtr<Function1<vector>> verticalShiftPtr_;
 
+public:
 
-    // Private Member Functions
+    //- Runtime type information
+    TypeName("oscillatingLinearMotion");
+
+
+    // Generated Methods
 
         //- No copy construct
         oscillatingLinearMotion(const oscillatingLinearMotion&) = delete;
 
         //- No copy assignment
         void operator=(const oscillatingLinearMotion&) = delete;
-
-
-public:
-
-    //- Runtime type information
-    TypeName("oscillatingLinearMotion");
 
 
     // Constructors

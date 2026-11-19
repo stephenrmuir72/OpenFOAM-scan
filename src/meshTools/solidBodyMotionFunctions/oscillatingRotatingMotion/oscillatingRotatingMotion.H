@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2020 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -30,17 +31,66 @@ Class
 Description
     SolidBodyMotionFvMesh 6DoF motion function. Oscillating rotation.
 
+    The governing equation for the rotation is given by:
+    \f[
+        r = A*\sin(B*(t + C)) + D
+    \f]
+
+    where:
+    \vartable
+        r    | Rotation angles [deg] (vector)
+        A    | Rotation angles [deg] (vector)
+        B    | Radial velocity [rad/s] (scalar)
+        C    | Phase-shift to left [s] (scalar)
+        D    | Angle shift [deg] (vector)
+    \endvartable
+
+Usage
+    Minimal example by using \c constant/fvOptions:
+    \verbatim
+    oscillation
+    {
+        // Mandatory entries
+        solidBodyMotionFunction oscillatingRotatingMotion;
+
+        oscillatingRotatingMotionCoeffs
+        {
+            // Mandatory entries
+            origin          <vector>;
+            amplitude       <Function1<vector>>;
+            omega           <Function1<scalar>>;
+
+            // Optional entries
+            phaseShift      <Function1<scalar>>;
+            angleShift      <Function1<vector>>;
+        }
+    }
+
+    where the entries mean:
+    \table
+      Property  | Description          | Type                | Reqd | Deflt
+      solidBodyMotionFunction          | Type name: oscillatingRotatingMotion <!--
+                -->                    | word                | yes  | -
+      origin    | Centre of rotation   | <vector>            | yes  | -
+      amplitude | Rotation angles      | Function1\<vector\> | yes  | -
+      omega     | Radial velocity      | Function1\<scalar\> | yes  | -
+      phaseShift | Phase-shift to left | Function1\<scalar\> | no   | -
+      angleShift | Angle offset        | Function1\<vector\> | no   | -
+    \endtable
+
 SourceFiles
     oscillatingRotatingMotion.C
 
 \*---------------------------------------------------------------------------*/
 
-#ifndef oscillatingRotatingMotion_H
-#define oscillatingRotatingMotion_H
+#ifndef Foam_solidBodyMotionFunctions_oscillatingRotatingMotion_H
+#define Foam_solidBodyMotionFunctions_oscillatingRotatingMotion_H
 
 #include "solidBodyMotionFunction.H"
 #include "primitiveFields.H"
 #include "point.H"
+#include "Function1.H"
+#include "autoPtr.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -50,7 +100,7 @@ namespace solidBodyMotionFunctions
 {
 
 /*---------------------------------------------------------------------------*\
-                          Class oscillatingRotatingMotion Declaration
+                  Class oscillatingRotatingMotion Declaration
 \*---------------------------------------------------------------------------*/
 
 class oscillatingRotatingMotion
@@ -59,29 +109,35 @@ class oscillatingRotatingMotion
 {
     // Private Data
 
-        //- Centre of gravity
+        //- Centre of rotation
         point origin_;
 
-        //- Amplitude
-        vector amplitude_;
+        //- Radial velocity [rad/s]
+        autoPtr<Function1<scalar>> omegaPtr_;
 
-        //- Radial velocity
-        scalar omega_;
+        //- Amplitude == rotation angles [deg]
+        autoPtr<Function1<vector>> amplitudePtr_;
 
+        //- Phase shift [s] (optional)
+        autoPtr<Function1<scalar>> phaseShiftPtr_;
 
-    // Private Member Functions
-
-        //- No copy construct
-        oscillatingRotatingMotion(const oscillatingRotatingMotion&) = delete;
-
-        //- No copy assignment
-        void operator=(const oscillatingRotatingMotion&) = delete;
+        //- Angle shift [deg] (optional)
+        autoPtr<Function1<vector>> angleShiftPtr_;
 
 
 public:
 
     //- Runtime type information
     TypeName("oscillatingRotatingMotion");
+
+
+    // Generated Methods
+
+        //- No copy construct
+        oscillatingRotatingMotion(const oscillatingRotatingMotion&) = delete;
+
+        //- No copy assignment
+        void operator=(const oscillatingRotatingMotion&) = delete;
 
 
     // Constructors
