@@ -260,17 +260,11 @@ int main(int argc, char *argv[])
             DebugVar(m0.hasDiag());
             DebugVar(m0.hasUpper());
             DebugVar(m0.hasLower());
-            forAll(m0.internalCoeffs(), i)
+            for (label i = 0; i < m0.nPatches(); ++i)
             {
                 DebugVar(i);
-                if (m0.internalCoeffs().set(i))
-                {
-                    DebugVar(m0.internalCoeffs()[i]);
-                }
-                if (m0.boundaryCoeffs().set(i))
-                {
-                    DebugVar(m0.boundaryCoeffs()[i]);
-                }
+                DebugVar(m0.internalCoeffs(i));
+                DebugVar(m0.boundaryCoeffs(i));
             }
         }
 
@@ -288,18 +282,12 @@ int main(int argc, char *argv[])
             DebugVar(m2.dimensions());
             DebugVar(m2.hasDiag());
             DebugVar(m2.hasUpper());
-            DebugVar(expr.hasLower());
-            forAll(m2.internalCoeffs(), i)
+            DebugVar(m2.hasLower());
+            for (label i = 0; i < m2.nPatches(); ++i)
             {
                 DebugVar(i);
-                if (m2.internalCoeffs().set(i))
-                {
-                    DebugVar(m2.internalCoeffs()[i]);
-                }
-                if (m2.boundaryCoeffs().set(i))
-                {
-                    DebugVar(m2.boundaryCoeffs()[i]);
-                }
+                DebugVar(m2.internalCoeffs(i));
+                DebugVar(m2.boundaryCoeffs(i));
             }
         }
     }

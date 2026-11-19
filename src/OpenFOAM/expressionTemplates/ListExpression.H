@@ -131,6 +131,7 @@ public:
         const Foam::labelRange idx(loopLen);
         #endif
 
+        #if FOAM_OFFLOAD_TMP
         if (expr.is_alias(&lst))
         {
             // Need temporary storage to avoid overwriting source data
@@ -154,6 +155,7 @@ public:
             );
         }
         else
+        #endif
         {
             std::transform
             (
