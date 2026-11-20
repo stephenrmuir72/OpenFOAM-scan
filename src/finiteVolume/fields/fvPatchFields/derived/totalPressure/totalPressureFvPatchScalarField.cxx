@@ -45,9 +45,12 @@ Foam::totalPressureFvPatchScalarField::totalPressureFvPatchScalarField
     UName_("U"),
     phiName_("phi"),
     rhoName_("rho"),
+    nuName_("nu"),
+    muName_("thermo:mu"),
     psiName_("none"),
     gamma_(0.0),
-    p0_(p.size(), Zero)
+    p0_(p.size(), Zero),
+    flowResistanceModel_()
 {}
 
 
@@ -62,13 +65,25 @@ Foam::totalPressureFvPatchScalarField::totalPressureFvPatchScalarField
     UName_(dict.getOrDefault<word>("U", "U")),
     phiName_(dict.getOrDefault<word>("phi", "phi")),
     rhoName_(dict.getOrDefault<word>("rho", "rho")),
+    nuName_(dict.getOrDefault<word>("nu", "nu")),
+    muName_(dict.getOrDefault<word>("mu", "thermo:mu")),
     psiName_(dict.getOrDefault<word>("psi", "none")),
     gamma_(psiName_ != "none" ? dict.get<scalar>("gamma") : 1),
-    p0_("p0", dict, p.size())
+    p0_("p0", dict, p.size()),
+    flowResistanceModel_()
 {
     if (!this->readValueEntry(dict))
     {
         fvPatchField<scalar>::operator=(p0_);
+    }
+
+    // Read optional flow resistance
+    if (dict.found("flowResistanceCoeffs"))
+    {
+        flowResistanceModel_ = flowResistanceModel::New
+        (
+            dict.subDict("flowResistanceCoeffs")
+        );
     }
 }
 
@@ -85,9 +100,12 @@ Foam::totalPressureFvPatchScalarField::totalPressureFvPatchScalarField
     UName_(ptf.UName_),
     phiName_(ptf.phiName_),
     rhoName_(ptf.rhoName_),
+    nuName_(ptf.nuName_),
+    muName_(ptf.muName_),
     psiName_(ptf.psiName_),
     gamma_(ptf.gamma_),
-    p0_(ptf.p0_, mapper)
+    p0_(ptf.p0_, mapper),
+    flowResistanceModel_(ptf.flowResistanceModel_.clone())
 {}
 
 
@@ -101,9 +119,12 @@ Foam::totalPressureFvPatchScalarField::totalPressureFvPatchScalarField
     UName_(tppsf.UName_),
     phiName_(tppsf.phiName_),
     rhoName_(tppsf.rhoName_),
+    nuName_(tppsf.nuName_),
+    muName_(tppsf.muName_),
     psiName_(tppsf.psiName_),
     gamma_(tppsf.gamma_),
-    p0_(tppsf.p0_)
+    p0_(tppsf.p0_),
+    flowResistanceModel_(tppsf.flowResistanceModel_.clone())
 {}
 
 
@@ -211,11 +232,157 @@ void Foam::totalPressureFvPatchScalarField::updateCoeffs
 
 void Foam::totalPressureFvPatchScalarField::updateCoeffs()
 {
-    updateCoeffs
-    (
-        p0(),
-        patch().lookupPatchField<volVectorField>(UName())
-    );
+    if (updated())
+    {
+        return;
+    }
+
+    if (flowResistanceModel_)
+    {
+        // Flow resistance active — modify p0 by the pressure loss
+
+        const vectorField& Up =
+            patch().lookupPatchField<volVectorField>(UName());
+        const auto& phip =
+            patch().lookupPatchField<surfaceScalarField>(phiName_);
+
+        const scalar A = gSum(patch().magSf());
+
+        if (!(A > 0))
+        {
+            FatalErrorInFunction
+                << "Zero or negative patch area (" << A << ") on patch "
+                << this->patch().name() << " of field "
+                << this->internalField().name()
+                << "; cannot evaluate the flow resistance correction."
+                << exit(FatalError);
+        }
+
+        // Velocity-flux sum and area-averaged density (1 incompressible).
+        scalar Q;
+
+        if (phip.internalField().dimensions() == dimVolume/dimTime)
+        {
+            Q = gSum(phip);
+        }
+        else if (phip.internalField().dimensions() == dimMass/dimTime)
+        {
+            const scalarField& rhop =
+                patch().lookupPatchField<volScalarField>(rhoName_);
+
+            Q = gSum(phip/rhop);
+        }
+        else
+        {
+            FatalErrorInFunction
+                << " Incorrect flux dimensions "
+                << phip.internalField().dimensions() << nl
+                << "    Should be " << dimVolume/dimTime
+                << " for volumetric flux" << nl
+                << "    or " << dimMass/dimTime
+                << " for mass flux," << nl
+                << "    on patch " << this->patch().name()
+                << " of field " << phip.internalField().name()
+                << " in file " << phip.internalField().objectPath()
+                << exit(FatalError);
+        }
+
+        scalar rhoAvg;
+        if (internalField().dimensions() == dimPressure)
+        {
+            const scalarField& rhop =
+                patch().lookupPatchField<volScalarField>(rhoName_);
+
+            rhoAvg = gSum(rhop*patch().magSf())/A;
+        }
+        else if (internalField().dimensions() == dimPressure/dimDensity)
+        {
+            rhoAvg = 1;
+        }
+        else
+        {
+            FatalErrorInFunction
+                << " Incorrect pressure dimensions "
+                << internalField().dimensions() << nl
+                << "    Should be " << dimPressure
+                << " for compressible/variable density flow" << nl
+                << "    or " << dimPressure/dimDensity
+                << " for incompressible flow," << nl
+                << "    on patch " << this->patch().name()
+                << " of field " << this->internalField().name()
+                << " in file " << this->internalField().objectPath()
+                << exit(FatalError);
+        }
+
+        // Patch-averaged normal velocity
+        const scalar UnAvg = Q/A;
+
+        // Kinematic viscosity: user-specified, otherwise looked up
+        // directly from the registered nu/mu field (nu = mu/rho for
+        // compressible flow), avoiding a hard dependency on a
+        // turbulenceModel (which would introduce a circular library
+        // dependency, since TurbulenceModels itself links against
+        // finiteVolume). Only required for the Reynolds-number-
+        // dependent resistance types (perforated/slotted/screen); no
+        // viscosity field need be registered for the 'constant' type.
+        scalar nuAvg = flowResistanceModel_->userNu();
+
+        if (flowResistanceModel_->needsNu())
+        {
+            const word nuName(IOobject::groupName(nuName_, internalField().group()));
+            const word muName(IOobject::groupName(muName_, internalField().group()));
+
+            if (db().foundObject<volScalarField>(nuName))
+            {
+                const auto& nu =
+                    patch().lookupPatchField<volScalarField>(nuName);
+
+                nuAvg = gSum(nu*patch().magSf())/A;
+            }
+            else if (db().foundObject<volScalarField>(muName))
+            {
+                const auto& mu =
+                    patch().lookupPatchField<volScalarField>(muName);
+
+                const scalarField& rhop =
+                    patch().lookupPatchField<volScalarField>(rhoName_);
+
+                nuAvg = gSum((mu/rhop)*patch().magSf())/A;
+            }
+            else
+            {
+                FatalErrorInFunction
+                    << "Cannot find a registered '" << nuName
+                    << "' or '" << muName << "' field to evaluate the "
+                       "kinematic viscosity for the flow resistance "
+                       "model. Specify the 'nu' entry in "
+                       "flowResistanceCoeffs instead."
+                    << exit(FatalError);
+            }
+        }
+
+        // Patch-averaged normal velocity and relaxed pressure correction
+        const scalar correction =
+            flowResistanceModel_->updateCorrection(Q, A, rhoAvg, nuAvg);
+
+        // Apply one uniform correction based on the net patch flow
+        // direction
+        updateCoeffs(p0_ + correction, Up);
+
+        if (debug)
+        {
+            Info<< "Patch average velocity = " << UnAvg << nl
+                << "Target pressure correction = "
+                << flowResistanceModel_->targetCorrection() << nl
+                << "Relaxed pressure correction = "
+                << flowResistanceModel_->relaxedCorrection() << endl;
+        }
+    }
+    else
+    {
+        // Standard behaviour — no flow resistance
+        updateCoeffs(p0(), patch().lookupPatchField<volVectorField>(UName()));
+    }
 }
 
 
@@ -225,9 +392,20 @@ void Foam::totalPressureFvPatchScalarField::write(Ostream& os) const
     os.writeEntryIfDifferent<word>("U", "U", UName_);
     os.writeEntryIfDifferent<word>("phi", "phi", phiName_);
     os.writeEntry("rho", rhoName_);
+    os.writeEntryIfDifferent<word>("nu", "nu", nuName_);
+    os.writeEntryIfDifferent<word>("mu", "thermo:mu", muName_);
     os.writeEntry("psi", psiName_);
     os.writeEntry("gamma", gamma_);
     p0_.writeEntry("p0", os);
+
+    // Write flowResistanceCoeffs if active
+    if (flowResistanceModel_)
+    {
+        os.beginBlock("flowResistanceCoeffs");
+        flowResistanceModel_->write(os);
+        os.endBlock();
+    }
+
     fvPatchField<scalar>::writeValueEntry(os);
 }
 

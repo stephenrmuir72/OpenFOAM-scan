@@ -98,9 +98,12 @@ Usage
         U            | Velocity field name        | no       | U
         phi          | Flux field name            | no       | phi
         rho          | Density field name         | no       | rho
+        nu           | Kinematic viscosity field name (for flowResistanceCoeffs) | no | nu
+        mu           | Dynamic viscosity field name (for flowResistanceCoeffs) | no | thermo:mu
         psi          | Compressibility field name | no       | none
         gamma        | (Cp/Cv)                    | no       | 1
         p0           | Total pressure             | yes      |
+        flowResistanceCoeffs | Flow resistance settings | no |
     \endtable
 
     Example of the boundary condition specification:
@@ -109,11 +112,23 @@ Usage
     {
         type            totalPressure;
         p0              uniform 1e5;
+
+        flowResistanceCoeffs
+        {
+            resistanceType      constant;
+            lossCoefficient     10;
+            relax               0.3;
+        }
     }
     \endverbatim
 
+    The optional \c relax entry under-relaxes the signed flow-resistance
+    pressure correction. It must be in the range \f$0 < relax \le 1\f$ and
+    defaults to 1.
+
 See also
     Foam::fixedValueFvPatchField
+    Foam::flowResistanceModel
 
 SourceFiles
     totalPressureFvPatchScalarField.C
@@ -124,6 +139,7 @@ SourceFiles
 #define Foam_totalPressureFvPatchScalarField_H
 
 #include "fixedValueFvPatchFields.H"
+#include "flowResistanceModel.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -153,6 +169,14 @@ class totalPressureFvPatchScalarField
         //- if necessary
         word rhoName_;
 
+        //- Name of the kinematic viscosity field (incompressible flow)
+        //- used by the flow resistance model
+        word nuName_;
+
+        //- Name of the dynamic viscosity field (compressible flow)
+        //- used by the flow resistance model
+        word muName_;
+
         //- Name of the compressibility field used to calculate the wave speed
         word psiName_;
 
@@ -161,6 +185,9 @@ class totalPressureFvPatchScalarField
 
         //- Total pressure
         scalarField p0_;
+
+        //- Optional flow resistance model
+        autoPtr<flowResistanceModel> flowResistanceModel_;
 
 
 public:
@@ -256,6 +283,32 @@ public:
             word& rhoName()
             {
                 return rhoName_;
+            }
+
+            //- Return the name of the kinematic viscosity field
+            const word& nuName() const
+            {
+                return nuName_;
+            }
+
+            //- Return reference to the name of the kinematic viscosity
+            //  field to allow adjustment
+            word& nuName()
+            {
+                return nuName_;
+            }
+
+            //- Return the name of the dynamic viscosity field
+            const word& muName() const
+            {
+                return muName_;
+            }
+
+            //- Return reference to the name of the dynamic viscosity
+            //  field to allow adjustment
+            word& muName()
+            {
+                return muName_;
             }
 
             //- Return the name of the compressibility field

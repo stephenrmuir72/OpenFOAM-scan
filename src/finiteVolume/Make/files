@@ -493,6 +493,13 @@ finiteVolume/fvc/fvcCorrectAlpha.C
 general = cfdTools/general
 $(general)/findRefCell/findRefCell.C
 $(general)/constrainHbyA/constrainHbyA.C
+$(general)/flowResistanceModel/flowResistanceModel.C
+$(general)/flowResistanceModel/flowResistanceModelNew.C
+$(general)/flowResistanceModel/flowResistanceModels/constant/constantFlowResistance.C
+$(general)/flowResistanceModel/flowResistanceModels/screen/screenFlowResistance.C
+$(general)/flowResistanceModel/flowResistanceModels/holeFlowResistance/holeFlowResistance.C
+$(general)/flowResistanceModel/flowResistanceModels/perforated/perforatedFlowResistance.C
+$(general)/flowResistanceModel/flowResistanceModels/slotted/slottedFlowResistance.C
 $(general)/adjustPhi/adjustPhi.C
 $(general)/bound/bound.C
 $(general)/CorrectPhi/correctUphiBCs.C
