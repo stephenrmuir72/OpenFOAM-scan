@@ -9,6 +9,8 @@ wmake -all $targetType blockMesh
 wmake -all $targetType extrude
 wmake -all $targetType extrude2DMesh
 wmake -all $targetType snappyHexMesh
+wmake -all $targetType cutCellCartesian
+wmake -all $targetType cutMeshWithSurface
 
 foamyMesh/Allwmake $targetType $*
 

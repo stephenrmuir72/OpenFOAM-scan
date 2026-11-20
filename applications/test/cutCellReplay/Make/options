@@ -1,0 +1,5 @@
+EXE_INC = \
+    -I$(LIB_SRC)/mesh/cutCellMesh/lnInclude
+
+EXE_LIBS = \
+    -lcutCellMesh

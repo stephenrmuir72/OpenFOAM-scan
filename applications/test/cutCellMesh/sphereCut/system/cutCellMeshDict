@@ -1,0 +1,87 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Website:  https://openfoam.com                  |
+|   \\  /    A nd           |                                                 |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    format      ascii;
+    class       dictionary;
+    object      cutCellMeshDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// Regression case for the sliver-merge geometry check: a sphere cut from a
+// 16-cubed background, with the sliver merge on (the default).
+//
+// The sphere is an icosphere with two subdivisions (320 facets), so the surface
+// is an inscribed tessellation. Its planar facets make the cut exact for that
+// shape. Several merged sliver groups form on this geometry, and the merge check
+// must return any group whose internal faces are misoriented or steeply
+// non-orthogonal to single cut cells. Allrun asserts that none remain.
+
+geometry
+{
+    sphere
+    {
+        type triSurfaceMesh;
+        file "sphere.stl";
+    }
+}
+
+castellatedMeshControls
+{
+    maxLocalCells       1000000;
+    maxGlobalCells      10000000;
+    minRefinementCells  0;
+    nCellsBetweenLevels 2;
+    resolveFeatureAngle 30;
+    gapLevelIncrement   0;
+    allowFreeStandingZoneFaces false;
+    features ();
+    refinementSurfaces
+    {
+    }
+    refinementRegions
+    {
+    }
+}
+
+snapControls
+{
+    nSmoothPatch 3;
+    tolerance    1.0;
+    nSolveIter    30;
+    nRelaxIter    5;
+}
+
+meshQualityControls
+{
+    maxNonOrtho          65;
+    maxBoundarySkewness  20;
+    maxInternalSkewness   4;
+    maxConcave           80;
+    minVol               1e-13;
+    minTetQuality        1e-30;
+    minArea              -1;
+    minTwist             0.05;
+    minDeterminant       0.001;
+    minFaceWeight        0.05;
+    minVolRatio          0.01;
+    minTriangleTwist     -1;
+    nSmoothScale         4;
+    errorReduction       0.75;
+}
+
+decomposeParDict
+{
+    method              none;
+    numberOfSubdomains  1;
+}
+
+sliverVolumeRatio 0.30;
+minVolumeRatio    0.30;
+
+// ************************************************************************* //
