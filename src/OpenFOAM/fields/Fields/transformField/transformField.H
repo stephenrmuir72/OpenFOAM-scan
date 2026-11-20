@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2018 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -31,7 +32,8 @@ Description
     Spatial transformation functions for primitive fields.
 
 SourceFiles
-    transformField.C
+    transformField.cxx
+    transformField.txx
 
 \*---------------------------------------------------------------------------*/
 
@@ -224,6 +226,21 @@ tmp<vectorField> transformPoints(const septernion&, const vectorField&);
 //- Transform given tmp<vectorField> of coordinates with the given septernion
 tmp<vectorField> transformPoints(const septernion&, const tmp<vectorField>&);
 
+//- Transform the indirect vector list of coordinates with the given septernion
+void transformPoints
+(
+    vectorField&,
+    const septernion&,
+    const UIndirectList<vector>& fld
+);
+
+//- Transform the indirect vector list of coordinates with the given septernion
+tmp<vectorField> transformPoints
+(
+    const septernion&,
+    const UIndirectList<vector>& fld
+);
+
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -232,7 +249,7 @@ tmp<vectorField> transformPoints(const septernion&, const tmp<vectorField>&);
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 #ifdef NoRepository
-    #include "transformFieldTemplates.C"
+    #include "transformField.txx"
 #endif
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //

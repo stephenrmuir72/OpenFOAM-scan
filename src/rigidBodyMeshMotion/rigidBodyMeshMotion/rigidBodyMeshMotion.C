@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2016-2017 OpenFOAM Foundation
     Copyright (C) 2016-2022 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -216,22 +217,23 @@ Foam::rigidBodyMeshMotion::rigidBodyMeshMotion
 Foam::tmp<Foam::pointField>
 Foam::rigidBodyMeshMotion::curPoints() const
 {
-    tmp<pointField> newPoints(points0() + pointDisplacement_.primitiveField());
+    const auto& pts0 = this->points0();
+    const auto& disp = pointDisplacement_.primitiveField();
 
-    if (moveAllCells())
-    {
-        return newPoints;
-    }
-    else
+    if (!moveAllCells())
     {
         auto ttransformedPts = tmp<pointField>::New(mesh().points());
         auto& transformedPts = ttransformedPts.ref();
 
-        UIndirectList<point>(transformedPts, pointIDs()) =
-            pointField(newPoints.ref(), pointIDs());
+        for (const label pointi : pointIDs())
+        {
+            transformedPts[pointi] = (pts0[pointi] + disp[pointi]);
+        }
 
         return ttransformedPts;
     }
+
+    return tmp<pointField>(pts0 + disp);
 }
 
 

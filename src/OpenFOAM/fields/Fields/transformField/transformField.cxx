@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2018 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -30,7 +31,7 @@ License
 #include "FieldM.H"
 #include "diagTensor.H"
 
-// * * * * * * * * * * * * * * * global functions  * * * * * * * * * * * * * //
+// * * * * * * * * * * * * * * * Global Functions  * * * * * * * * * * * * * //
 
 void Foam::transform
 (
@@ -98,6 +99,51 @@ void Foam::transformPoints
 }
 
 
+void Foam::transformPoints
+(
+    vectorField& result,
+    const septernion& tr,
+    const UIndirectList<vector>& fld
+)
+{
+    const vector& trans = tr.t();
+    const tensor rot = tr.r().R();
+
+    // transform points
+    //     = (rot & (p - trans))
+    //
+    // inverse transform points
+    //     = (trans + rot.T() & p)
+    //     = (trans + (p & rot))
+
+    // No off-loading with indirect input
+
+    if (!rot.is_identity(SMALL))  // use rotation
+    {
+        std::transform
+        (
+            fld.cbegin(), fld.cend(),
+            result.begin(),
+            [rot,trans](const vector& p) { return (rot & (p - trans)); }
+        );
+    }
+    else if (trans.mag() > VSMALL)  // use translate
+    {
+        std::transform
+        (
+            fld.cbegin(), fld.cend(),
+            result.begin(),
+            [trans](const vector& p) { return (p - trans); }
+        );
+    }
+    else
+    {
+        // No translation or rotation
+        std::copy(fld.cbegin(), fld.cend(), result.begin());
+    }
+}
+
+
 Foam::tmp<Foam::vectorField> Foam::transformPoints
 (
     const septernion& tr,
@@ -119,6 +165,18 @@ Foam::tmp<Foam::vectorField> Foam::transformPoints
     tmp<vectorField> tresult = New(tfld);
     transformPoints(tresult.ref(), tr, tfld());
     tfld.clear();
+    return tresult;
+}
+
+
+Foam::tmp<Foam::vectorField> Foam::transformPoints
+(
+    const septernion& tr,
+    const UIndirectList<vector>& fld
+)
+{
+    auto tresult = tmp<vectorField>::New(fld.size());
+    transformPoints(tresult.ref(), tr, fld);
     return tresult;
 }
 
