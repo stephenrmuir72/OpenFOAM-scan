@@ -44,12 +44,11 @@ SourceFiles
 
 \*---------------------------------------------------------------------------*/
 
-#ifndef patchSeedSet_H
-#define patchSeedSet_H
+#ifndef Foam_patchSeedSet_H
+#define Foam_patchSeedSet_H
 
 #include "sampledSet.H"
 #include "DynamicList.H"
-#include "HashSet.H"
 #include "Random.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -58,17 +57,17 @@ namespace Foam
 {
 
 /*---------------------------------------------------------------------------*\
-                           Class patchSeedSet Declaration
+                        Class patchSeedSet Declaration
 \*---------------------------------------------------------------------------*/
 
 class patchSeedSet
 :
     public sampledSet
 {
-    // Private data
+    // Private Data
 
         //- Patches to sample
-        const labelHashSet patchSet_;
+        const labelList patchIDs_;
 
         //- Maximum number of patch faces to seed (if in random subset mode)
         const label maxPoints_;
@@ -81,6 +80,30 @@ class patchSeedSet
 
 
     // Private Member Functions
+
+        //- Determine (random) samples on patch
+        void calcPatchSamples
+        (
+            const label nAvailable,
+            const label nPatchPoints,
+            DynamicList<point>& samplingPts,
+            DynamicList<label>& samplingCells,
+            DynamicList<label>& samplingFaces,
+            DynamicList<label>& samplingSegments,
+            DynamicList<scalar>& samplingCurveDist
+        );
+
+        //- Determine samples provided by supplied points
+        void calcSelectedLocations
+        (
+            const label nAvailable,
+            const label nPatchPoints,
+            DynamicList<point>& samplingPts,
+            DynamicList<label>& samplingCells,
+            DynamicList<label>& samplingFaces,
+            DynamicList<label>& samplingSegments,
+            DynamicList<scalar>& samplingCurveDist
+        );
 
         //- Samples all points in sampleCoords.
         void calcSamples

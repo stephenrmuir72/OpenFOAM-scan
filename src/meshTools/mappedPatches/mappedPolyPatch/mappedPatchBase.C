@@ -6,7 +6,8 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
-    Copyright (C) 2015-2023 OpenCFD Ltd.
+    Copyright (C) 2015-2024 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -84,6 +85,44 @@ Foam::mappedPatchBase::offsetModeNames_
 });
 
 
+// * * * * * * * * * * * * * * * Local Functions * * * * * * * * * * * * * * //
+
+namespace
+{
+
+// Older OpenFOAM only has byte broadcast.
+// Can quicky exhaust the INT_MAX range.
+// May well need data chunking here since the older version
+// is broadcasting bytes and not double[3]
+
+#if (OPENFOAM < 2506)
+template<class Type>
+void chunked_broadcast(Type* buffer, int64_t size, int communicator)
+{
+    // The MPI (int) message-size limit, but if chunking add some safety.
+    constexpr auto maxChunk = int64_t(INT_MAX/2+1);
+
+    auto* data = reinterpret_cast<char*>(buffer);
+    const int64_t count = int64_t(sizeof(Type))*(size);
+
+    // Operate on chunks, single pass when no chunking is needed
+    for (int64_t start = 0; start < count; start += maxChunk)
+    {
+        int span_count = int(std::min(maxChunk, count - start));
+
+        Foam::UPstream::broadcast
+        (
+            (data + start),
+            span_count,
+            communicator
+        );
+    }
+}
+#endif
+
+} // End namespace Foam
+
+
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
 Foam::autoPtr<Foam::fileName> Foam::mappedPatchBase::readDatabase
@@ -97,7 +136,7 @@ Foam::autoPtr<Foam::fileName> Foam::mappedPatchBase::readDatabase
         {
             return autoPtr<fileName>::New
             (
-                dict.lookupOrDefault<fileName>
+                dict.getOrDefault<fileName>
                 (
                     "sampleDatabasePath",
                     fileName::null
@@ -183,11 +222,14 @@ void Foam::mappedPatchBase::collectSamples
 {
     DebugInFunction << nl;
 
-    const label myComm = getCommunicator();  // Get or create
-    const label myRank = Pstream::myProcNo(myComm);
-    const label nProcs = Pstream::nProcs(myComm);
+    const auto myComm = getCommunicator();  // Get or create
+    const auto myRank = UPstream::myProcNo(myComm);
+    const auto nProcs = UPstream::nProcs(myComm);
 
-    const label oldWarnComm = UPstream::commWarn(myComm);
+    const auto oldWarnComm = UPstream::commWarn(myComm);
+
+    constexpr auto commsType = UPstream::commsTypes::nonBlocking;
+    const int uniqueTag = (UPstream::msgType() + 1492);
 
     if (debug & 2)
     {
@@ -197,68 +239,109 @@ void Foam::mappedPatchBase::collectSamples
     }
 
     // Collect all sample points and the faces they come from.
+
+    // Older code (v2606 and earlier) used
+    // allGatherList and ListListOps::combine, but that gives
+    // serialization problems (buffer overrun) with very large cases.
+    //
+    // Instead use combination globalIndex and broadcast which
+    // enables send/recv/broadcast of contiguous data, albeit with
+    // a data bottleneck on the master rank.
+
+    do
     {
-        List<pointField> globalFc(nProcs);
-        globalFc[myRank] = facePoints;
+        const label nLocalPoints = facePoints.size();
 
-        Pstream::allGatherList(globalFc, Pstream::msgType(), myComm);
-
-        // Rework into straight list
-        patchFc = ListListOps::combine<pointField>
+        const globalIndex addr
         (
-            globalFc,
-            accessOp<pointField>()
+            globalIndex::gatherOnly{},
+            nLocalPoints,
+            myComm
         );
-    }
 
+        label totalSize = addr.totalSize();
+        Pstream::broadcast(totalSize, myComm);
+
+        if (!totalSize)
+        {
+            patchFc.clear();
+            samples.clear();
+            break;
+        }
+
+        // Concatenate facePoints into a straight list
+        addr.gather(facePoints, patchFc, uniqueTag, commsType, myComm);
+        if (UPstream::is_subrank(myComm))
+        {
+            patchFc.resize_nocopy(totalSize);
+        }
+
+        #if (OPENFOAM >= 2506)
+        UPstream::broadcast(patchFc.data(), patchFc.size(), myComm);
+        #else
+        chunked_broadcast(patchFc.data(), patchFc.size(), myComm);
+        #endif
+
+
+        auto tsampledValues = samplePoints(facePoints);
+
+        // Concatenate sampled values into a straight list
+        addr.gather(tsampledValues(), samples, uniqueTag, commsType, myComm);
+        tsampledValues.clear();
+
+        if (UPstream::is_subrank(myComm))
+        {
+            samples.resize_nocopy(totalSize);
+        }
+
+        #if (OPENFOAM >= 2506)
+        UPstream::broadcast(samples.data(), samples.size(), myComm);
+        #else
+        chunked_broadcast(samples.data(), samples.size(), myComm);
+        #endif
+
+    } while (false);
+
+
+    // Now handle world and processor addressing
     {
-        List<pointField> globalSamples(nProcs);
-        globalSamples[myRank] = samplePoints(facePoints);
-        Pstream::allGatherList(globalSamples, Pstream::msgType(), myComm);
-
-        // Rework into straight list
-        samples = ListListOps::combine<pointField>
-        (
-            globalSamples,
-            accessOp<pointField>()
-        );
-    }
-
-    {
-        labelListList globalFaces(nProcs);
-        globalFaces[myRank] = identity(patch_.size());
-        // Distribute to all processors
-        Pstream::allGatherList(globalFaces, Pstream::msgType(), myComm);
-
-        patchFaces = ListListOps::combine<labelList>
-        (
-            globalFaces,
-            accessOp<labelList>()
-        );
-    }
-
-    {
-        labelList procToWorldIndex
+        const labelList procToWorldIndex
         (
             UPstream::allGatherValues<label>(mySampleWorld, myComm)
         );
-        labelList nPerProc
+        const labelList nFacesPerProc
         (
             UPstream::allGatherValues<label>(patch_.size(), myComm)
         );
 
-        patchFaceWorlds.resize(patchFaces.size());
-        patchFaceProcs.resize(patchFaces.size());
-
-        label sampleI = 0;
-        forAll(nPerProc, proci)
+        label nTotalFaces = 0;
+        for (auto n : nFacesPerProc)
         {
-            for (label i = 0; i < nPerProc[proci]; i++)
+            nTotalFaces += n;
+        }
+
+        patchFaceWorlds.resize_nocopy(nTotalFaces);
+        patchFaceProcs.resize_nocopy(nTotalFaces);
+        patchFaces.resize_nocopy(nTotalFaces);
+
+        label start = 0;
+
+        forAll(nFacesPerProc, proci)
+        {
+            const auto len = nFacesPerProc[proci];
+            const auto worldIndex = procToWorldIndex[proci];
+
+            patchFaceProcs.slice(start, len) = proci;
+            patchFaceWorlds.slice(start, len) = worldIndex;
+
+            // Local one-to-one identity mapping for patchFaces
             {
-                patchFaceWorlds[sampleI] = procToWorldIndex[proci];
-                patchFaceProcs[sampleI] = proci;
-                sampleI++;
+                auto slice = patchFaces.slice(start, len);
+                // Foam::identity(slice);
+                forAll(slice, i) { slice[i] = i; }
             }
+
+            start += len;
         }
     }
 
@@ -267,36 +350,66 @@ void Foam::mappedPatchBase::collectSamples
 }
 
 
-void Foam::mappedPatchBase::findLocalSamples
+Foam::List<Foam::mappedPatchBase::nearKey>
+Foam::mappedPatchBase::findLocalSamples
 (
     const sampleMode mode,
 
-    const label mySampleWorld,  // local world to sample == my own world
-    const word& sampleRegion,   // local region to sample
-    const word& samplePatch,    // local patch to sample
+    const word& sampleRegion,
+    const word& samplePatch,
 
     const pointField& samples,
-    List<nearInfoWorld>& nearest
+
+    // Indices within the locally sampled entity
+    labelList& sampleIndices,
+    // Locations within the locally sampled entity
+    pointField& sampleLocations,
+    // optional: subset filter (zero-size == no subsetting)
+    const bitSet& sampleFilter
 ) const
 {
     DebugInFunction << nl;
 
-    const label myComm = getCommunicator();  // Get or create
-
-    // Find the local cell containing the samples
-    const label myRank = Pstream::myProcNo(myComm);
+    const auto myComm = getCommunicator();  // Get or create
+    const auto myRank = UPstream::myProcNo(myComm);
 
     // Lookup the correct region
     const polyMesh& mesh = lookupMesh(sampleRegion);
 
-    // All the info for nearest. Construct to miss
-    nearest.setSize(samples.size());
-    nearInfoWorld miss;
+    // Initialize as out-of-range
+    sampleIndices.resize_nocopy(samples.size());
+    sampleIndices = -1;
+    sampleLocations.resize_nocopy(samples.size());
+    sampleLocations = point::max;
+
+    // The nearest selection key. Construct as missed sample
+    // == (large distance, proc = max_ranks)
+    List<nearKey> nearest(samples.size(), { VGREAT, UPstream::max_ranks() } );
+
+    // For multi-world, accept or ignore this sample?
+    const auto accept = [&sampleFilter](label i) noexcept
     {
-        miss.first().second() = Tuple2<scalar, label>(Foam::sqr(GREAT), -1);
-        miss.second() = -1; // set world to be ignored
-    }
-    nearest = miss;
+        //return sampleFilter.empty_or_test(i);
+        return (sampleFilter.empty() || sampleFilter.test(i));
+    };
+
+
+    // Update the indices and locations.
+    // Caller already checked that pointIndexHit is hit()
+    const auto setHit =
+        [&sampleIndices,&sampleLocations,&nearest,myRank]
+        (
+            label i,
+            const pointIndexHit& pHit,
+            scalar distSqr
+        )
+        {
+            sampleIndices[i] = pHit.index();
+            sampleLocations[i] = pHit.point();
+            nearest[i].first() = distSqr;
+            nearest[i].second() = myRank;
+        };
+
 
     switch (mode)
     {
@@ -310,34 +423,23 @@ void Foam::mappedPatchBase::findLocalSamples
             }
 
             //- Note: face-diagonal decomposition
-            const indexedOctree<Foam::treeDataCell>& tree = mesh.cellTree();
+            const auto& tree = mesh.cellTree();
 
-            forAll(samples, sampleI)
+            forAll(samples, samplei)
             {
-                const point& sample = samples[sampleI];
-                nearInfoWorld& near = nearest[sampleI];
+                if (!accept(samplei)) continue;
+
+                const point& sample = samples[samplei];
 
                 label celli = tree.findInside(sample);
 
-                if (celli == -1)
-                {
-                    near.first().second().first() = Foam::sqr(GREAT);
-                    near.first().second().second() = myRank;
-                    near.second() = mySampleWorld;
-                }
-                else
+                if (celli > 0)
                 {
                     const point& cc = mesh.cellCentres()[celli];
 
-                    near.first().first() = pointIndexHit
-                    (
-                        true,
-                        cc,
-                        celli
-                    );
-                    near.first().second().first() = sample.distSqr(cc);
-                    near.first().second().second() = myRank;
-                    near.second() = mySampleWorld;
+                    pointIndexHit pHit(true, cc, celli);
+
+                    setHit(samplei, pHit, sample.distSqr(cc));
                 }
             }
             break;
@@ -353,55 +455,46 @@ void Foam::mappedPatchBase::findLocalSamples
             }
 
             //- Note: face-diagonal decomposition
-            const indexedOctree<Foam::treeDataCell>& tree = mesh.cellTree();
+            const auto& tree = mesh.cellTree();
 
-            forAll(samples, sampleI)
+            forAll(samples, samplei)
             {
-                const point& sample = samples[sampleI];
-                nearInfoWorld& near = nearest[sampleI];
+                if (!accept(samplei)) continue;
 
-                near.first().first() = tree.findNearest(sample, sqr(GREAT));
+                const point& sample = samples[samplei];
 
-                near.first().second().first() =
-                    near.first().first().hitPoint().distSqr(sample);
+                pointIndexHit pHit = tree.findNearest(sample, Foam::sqr(GREAT));
 
-                near.first().second().second() = myRank;
-                near.second() = mySampleWorld;
+                if (pHit.hit())
+                {
+                    const auto& p = pHit.point();
+
+                    setHit(samplei, pHit, sample.distSqr(p));
+                }
             }
             break;
         }
 
         case NEARESTPATCHFACE:
         {
-            Random rndGen(123456);
+            constexpr label rand_seed = 123456;
 
             const polyPatch& pp = lookupPatch(sampleRegion, samplePatch);
 
-            if (pp.empty())
-            {
-                forAll(samples, sampleI)
-                {
-                    nearInfoWorld& near = nearest[sampleI];
-                    near.first().second().first() = Foam::sqr(GREAT);
-                    near.first().second().second() = myRank;
-                    near.second() = mySampleWorld;
-                }
-            }
-            else
-            {
-                treeBoundBox patchBb
-                (
-                    treeBoundBox(pp.points(), pp.meshPoints()).extend
-                    (
-                        rndGen,
-                        1e-4,
-                        ROOTVSMALL
-                    )
-                );
+            // NB: an empty patch == "missed" sampling (already handled above)
 
-                indexedOctree<treeDataFace> boundaryTree
+            if (!pp.empty())
+            {
+                Random rndGen(rand_seed);
+
+                treeBoundBox patchBb(pp.points(), pp.meshPoints());
+
+                // Inflate by 0.1% and clamp with min size
+                patchBb.inflate(rndGen, 1e-3, ROOTVSMALL);
+
+                const indexedOctree<treeDataFace> boundaryTree
                 (
-                    treeDataFace(mesh, pp.range()),  // Patch faces
+                    treeDataFace(pp),  // Patch faces
 
                     patchBb,        // overall search domain
                     8,              // maxLevel
@@ -410,32 +503,24 @@ void Foam::mappedPatchBase::findLocalSamples
                 );
                 const auto& treeData = boundaryTree.shapes();
 
-                forAll(samples, sampleI)
+                // Search limit for findNearest
+                const scalar maxDistSqr = patchBb.magSqr();
+
+                forAll(samples, samplei)
                 {
-                    const point& sample = samples[sampleI];
+                    if (!accept(samplei)) continue;
 
-                    nearInfoWorld& near = nearest[sampleI];
-                    pointIndexHit& nearInfo = near.first().first();
-                    nearInfo = boundaryTree.findNearest
-                    (
-                        sample,
-                        patchBb.magSqr()
-                    );
+                    const point& sample = samples[samplei];
 
-                    if (!nearInfo.hit())
+                    pointIndexHit pHit =
+                        boundaryTree.findNearest(sample, maxDistSqr);
+
+                    if (pHit.hit())
                     {
-                        near.first().second().first() = Foam::sqr(GREAT);
-                        near.first().second().second() = myRank;
-                        near.second() = mySampleWorld;
-                    }
-                    else
-                    {
-                        const point& fc = treeData.centre(nearInfo.index());
+                        const point& p = treeData.centre(pHit.index());
 
-                        nearInfo.setPoint(fc);
-                        near.first().second().first() = sample.distSqr(fc);
-                        near.first().second().second() = myRank;
-                        near.second() = mySampleWorld;
+                        pHit.setPoint(p);
+                        setHit(samplei, pHit, sample.distSqr(p));
                     }
                 }
             }
@@ -444,34 +529,23 @@ void Foam::mappedPatchBase::findLocalSamples
 
         case NEARESTPATCHPOINT:
         {
-            Random rndGen(123456);
+            constexpr label rand_seed = 123456;
 
             const polyPatch& pp = lookupPatch(sampleRegion, samplePatch);
 
-            if (pp.empty())
-            {
-                forAll(samples, sampleI)
-                {
-                    nearInfoWorld& near = nearest[sampleI];
-                    near.first().second().first() = Foam::sqr(GREAT);
-                    near.first().second().second() = myRank;
-                    near.second() = mySampleWorld;
-                }
-            }
-            else
-            {
-                // patch (local) points
-                treeBoundBox patchBb
-                (
-                    treeBoundBox(pp.points(), pp.meshPoints()).extend
-                    (
-                        rndGen,
-                        1e-4,
-                        ROOTVSMALL
-                    )
-                );
+            // NB: an empty patch == "missed" sampling (already handled above)
 
-                indexedOctree<treeDataPoint> boundaryTree
+            if (!pp.empty())
+            {
+                Random rndGen(rand_seed);
+
+                // patch (local) points
+                treeBoundBox patchBb(pp.points(), pp.meshPoints());
+
+                // Inflate by 0.1% and clamp with min size
+                patchBb.inflate(rndGen, 1e-3, ROOTVSMALL);
+
+                const indexedOctree<treeDataPoint> boundaryTree
                 (
                     // Patch points
                     treeDataPoint(mesh.points(), pp.meshPoints()),
@@ -482,31 +556,23 @@ void Foam::mappedPatchBase::findLocalSamples
                     3.0             // duplicity
                 );
 
-                forAll(samples, sampleI)
+                // Search limit for findNearest
+                const scalar maxDistSqr = patchBb.magSqr();
+
+                forAll(samples, samplei)
                 {
-                    const point& sample = samples[sampleI];
+                    if (!accept(samplei)) continue;
 
-                    nearInfoWorld& near = nearest[sampleI];
-                    pointIndexHit& nearInfo = near.first().first();
-                    nearInfo = boundaryTree.findNearest
-                    (
-                        sample,
-                        patchBb.magSqr()
-                    );
+                    const point& sample = samples[samplei];
 
-                    if (!nearInfo.hit())
+                    pointIndexHit pHit =
+                        boundaryTree.findNearest(sample, maxDistSqr);
+
+                    if (pHit.hit())
                     {
-                        near.first().second().first() = Foam::sqr(GREAT);
-                        near.first().second().second() = myRank;
-                        near.second() = mySampleWorld;
-                    }
-                    else
-                    {
-                        const point& pt = nearInfo.point();
+                        const auto& p = pHit.point();
 
-                        near.first().second().first() = sample.distSqr(pt);
-                        near.first().second().second() = myRank;
-                        near.second() = mySampleWorld;
+                        setHit(samplei, pHit, sample.distSqr(p));
                     }
                 }
             }
@@ -523,30 +589,23 @@ void Foam::mappedPatchBase::findLocalSamples
             }
 
             //- Note: face-diagonal decomposition
-            const meshSearchMeshObject& meshSearchEngine =
-                meshSearchMeshObject::New(mesh);
+            const auto& meshSearchEngine = meshSearchMeshObject::New(mesh);
 
-            forAll(samples, sampleI)
+            forAll(samples, samplei)
             {
-                const point& sample = samples[sampleI];
-                nearInfoWorld& near = nearest[sampleI];
+                if (!accept(samplei)) continue;
+
+                const point& sample = samples[samplei];
 
                 label facei = meshSearchEngine.findNearestFace(sample);
 
-                if (facei == -1)
+                if (facei >= 0)
                 {
-                    near.first().second().first() = Foam::sqr(GREAT);
-                    near.first().second().second() = myRank;
-                    near.second() = mySampleWorld;
-                }
-                else
-                {
-                    const point& fc = mesh.faceCentres()[facei];
+                    const point& p = mesh.faceCentres()[facei];
 
-                    near.first().first() = pointIndexHit(true, fc, facei);
-                    near.first().second().first() = sample.distSqr(fc);
-                    near.first().second().second() = myRank;
-                    near.second() = mySampleWorld;
+                    pointIndexHit pHit(true, p, facei);
+
+                    setHit(samplei, pHit, sample.distSqr(p));
                 }
             }
             break;
@@ -554,16 +613,22 @@ void Foam::mappedPatchBase::findLocalSamples
 
         case NEARESTPATCHFACEAMI:
         {
-            // nothing to do here
-            return;
+            // nothing to do here, treat as "missed" sampling
+            // (already handled above)
+            break;
         }
 
         default:
         {
             FatalErrorInFunction
-                << "problem." << abort(FatalError);
+                << "Unhandled enumeration ("
+                << int(mode) << ") = programming problem!"
+                << abort(FatalError);
+            break;
         }
     }
+
+    return nearest;
 }
 
 
@@ -572,8 +637,8 @@ void Foam::mappedPatchBase::findSamples
     const sampleMode mode,
     const label myWorld,
     const pointField& samples,
-    const labelList& wantedWorlds,
-    const labelList& origProcs,
+    const labelUList& wantedWorlds,
+    const labelUList& origProcs,
 
     labelList& sampleProcs,
     labelList& sampleIndices,
@@ -585,130 +650,223 @@ void Foam::mappedPatchBase::findSamples
     // Find the processor/cell containing the samples. Does not account
     // for samples being found in two processors.
 
-    const label myComm = getCommunicator();  // Get or create
-    const label myRank = Pstream::myProcNo(myComm);
-    const label nProcs = Pstream::nProcs(myComm);
+    const auto myComm = getCommunicator();  // Get or create
+    const auto myRank = UPstream::myProcNo(myComm);
+    const auto nProcs = UPstream::nProcs(myComm);
 
-    const label oldWarnComm = UPstream::commWarn(myComm);
+    const int uniqueTag = (UPstream::msgType() + 1492);
 
-    wordList samplePatches(nProcs);
+    const auto oldWarnComm = UPstream::commWarn(myComm);
+
+    // The final output are flat lists, mark all as invalid
+    sampleProcs.resize_nocopy(samples.size());
+    sampleProcs = -1;
+    sampleIndices.resize_nocopy(samples.size());
+    sampleIndices = -1;
+    sampleLocations.resize_nocopy(samples.size());
+    sampleLocations = point::max;
+
+
+    // Tuple of patch/region used for sampling:
+    List<wordPair> sampledObjects(nProcs);
     {
-        samplePatches[myRank] = samplePatch_;
-        Pstream::allGatherList(samplePatches, Pstream::msgType(), myComm);
-    }
-    wordList sampleRegions(nProcs);
-    {
-        sampleRegions[myRank] = sampleRegion_;
-        Pstream::allGatherList(sampleRegions, Pstream::msgType(), myComm);
-    }
-
-
-    // Find all the info for nearest
-    List<nearInfoWorld> nearest(samples.size());
-    forAll(nearest, samplei)
-    {
-        nearest[samplei].first() = nearInfo
-        (
-            pointIndexHit(),
-            Tuple2<scalar, label>(Foam::sqr(GREAT), -1)
-        );
-        nearest[samplei].second() = wantedWorlds[samplei];
+        sampledObjects[myRank].first() = samplePatch_;
+        sampledObjects[myRank].second() = sampleRegion_;
+        Pstream::allGatherList(sampledObjects, uniqueTag, myComm);
     }
 
 
-    // Extract samples to search for locally
+    // Subset of worlds to sample. Empty == no subset needed
+
+    bitSet worldSelection(samples.size());
+
+    forAll(wantedWorlds, i)
     {
-        DynamicList<label> localMap(samples.size());
-        forAll(wantedWorlds, samplei)
+        if (wantedWorlds[i] == myWorld)
         {
-            if (wantedWorlds[samplei] == myWorld)
-            {
-                localMap.append(samplei);
-            }
-        }
-
-        if (localMap.size())
-        {
-            pointField localSamples(samples, localMap);
-            labelList localOrigProcs(origProcs, localMap);
-
-            //Assume single patch to sample for now
-            const word localOrigPatch(samplePatches[localOrigProcs[0]]);
-            const word localOrigRegion(sampleRegions[localOrigProcs[0]]);
-            List<nearInfoWorld> localNearest(localSamples.size());
-
-            if (debug)
-            {
-                Pout<< "Searching locally for " << localSamples.size()
-                    << " samples on region:" << localOrigRegion
-                    << " on patch:" << localOrigPatch << endl;
-            }
-            findLocalSamples
-            (
-                mode,
-                myWorld,
-                localOrigRegion,
-                localOrigPatch,
-                localSamples,
-                localNearest
-            );
-            UIndirectList<nearInfoWorld>(nearest, localMap) = localNearest;
+            worldSelection.set(i);
         }
     }
 
+    const auto leadProci = worldSelection.find_first();
 
-    // Find nearest - globally consistent
-    Pstream::listCombineReduce
+    // If sampling is a single world only, don't bother with the extra filter.
+    // This will be most of the cases.
+    if (worldSelection.all())
+    {
+        worldSelection.clearStorage();
+    }
+
+    // Assume single patch to sample for now
+    const word origPatch =
     (
-        nearest,
-        nearestWorldEqOp(),
-        Pstream::msgType(),
-        myComm
+        (leadProci >= 0)
+      ? sampledObjects[origProcs[leadProci]].first()
+      : word::null
     );
 
-    //if (debug)
-    //{
-    //    Pout<< "** After combining:" << endl;
-    //    forAll(nearest, samplei)
-    //    {
-    //        Pout<< "  sample:" << samples[samplei]
-    //            << " origating from proc:" << origProcs[samplei]
-    //            << " to be found on world:" << wantedWorlds[samplei] << nl
-    //            << "    found on world:" << nearest[samplei].second() << nl
-    //            << "    found on proc:"
-    //            << nearest[samplei].first().second().second() << nl
-    //            << "    found on patchfacei:"
-    //            << nearest[samplei].first().first().index() << nl
-    //            << "    found at location:"
-    //            << nearest[samplei].first().first().point() << nl;
-    //    }
-    //    Pout<< endl;
-    //}
+    const word origRegion =
+    (
+        (leadProci >= 0)
+      ? sampledObjects[origProcs[leadProci]].second()
+      : word::null
+    );
 
-    // Convert back into proc+local index
-    sampleProcs.setSize(samples.size());
-    sampleIndices.setSize(samples.size());
-    sampleLocations.setSize(samples.size());
-
-    forAll(nearest, sampleI)
+    if (debug)
     {
-        const nearInfo& ni = nearest[sampleI].first();
+        const bool localOnly = worldSelection.empty();
 
-        if (!ni.first().hit())
+        label nLocalOnly = (localOnly ? 1 : 0);
+        Foam::reduce(nLocalOnly, sumOp<label>(), UPstream::msgType(), myComm);
+
+        Info<< "Searching locally (single world) on " << nLocalOnly
+            << '/' << nProcs << " ranks" << endl;
+
+        if (localOnly)
         {
-            sampleProcs[sampleI] = -1;
-            sampleIndices[sampleI] = -1;
-            sampleLocations[sampleI] = vector::max;
+            Pout<< "Searching locally (single world) for " << samples.size()
+                << " samples on region:" << origRegion
+                << " on patch:" << origPatch << endl;
+        }
+        else if (worldSelection.none())
+        {
+            Pout<< "No local search (world:" << myWorld << ")" << endl;
         }
         else
         {
-            sampleProcs[sampleI] = ni.second().second();
-            sampleIndices[sampleI] = ni.first().index();
-            sampleLocations[sampleI] = ni.first().point();
+            Pout<< "Searching locally (world:" << myWorld
+                << " ) for " << worldSelection.count()
+                << " samples on region:" << origRegion
+                << " on patch:" << origPatch << endl;
         }
     }
 
-    // Return communicator settings
+
+    // The selection keys for MINLOC-style reduction.
+    // (distance, rank)
+
+    List<nearKey> selectionKeys
+    (
+        findLocalSamples
+        (
+            mode,
+            origRegion,
+            origPatch,
+            samples,
+
+            sampleIndices,
+            sampleLocations,
+
+            worldSelection
+        )
+    );
+
+    // if (debug)
+    // {
+    //     PrintMemoryInFunction << endl;
+    // }
+
+    // Reduction: Stage 1
+    //
+    // reduce the (distance, rank) key as a MINLOC type of operation
+    {
+        UPstream::minLocation(selectionKeys, myComm);
+    }
+
+
+    // Reduction: Stage 2
+    //
+    // use (globally consistent) selection key information to decide
+    // on the originating rank. Use this to markup the corresponding
+    // entries in sample procs, indices, locations.
+    //
+    // With (-1, -1, point::max) denoting an invalid entry,
+    // can simply use max() for indices/ranks and min() for locations.
+
+    forAll(selectionKeys, i)
+    {
+        auto proci = selectionKeys[i].second();
+
+        if (proci == myRank)
+        {
+            // My rank provides values.
+            // Retain sample indices and location
+            sampleProcs[i] = myRank;
+        }
+        else
+        {
+            // My rank provides nothing
+            sampleIndices[i] = -1;
+            sampleProcs[i] = -1;
+            sampleLocations[i] = point::max;
+        }
+    }
+
+    // Reduction: Stage 3
+    //
+    // let MPI_Allreduce work everything out
+
+    // Selects the winning index or -1
+    Foam::reduce
+    (
+        sampleIndices.data(),
+        sampleIndices.size(),
+        maxOp<label>(),
+        UPstream::msgType(),
+        myComm
+    );
+
+    // Selects the winning rank or -1
+    Foam::reduce
+    (
+        sampleProcs.data(),
+        sampleProcs.size(),
+        maxOp<label>(),
+        UPstream::msgType(),
+        myComm
+    );
+
+    // Selects the best point or point::max
+    #if (OPENFOAM >= 2506)
+    Foam::reduce
+    (
+        sampleLocations.data(),
+        sampleLocations.size(),
+        minOp<point>(),
+        UPstream::msgType(),
+        myComm
+    );
+    #else
+    Foam::reduce
+    (
+        reinterpret_cast<point::cmptType*>(sampleLocations.data()),
+        (point::nComponents * sampleLocations.size()),
+        minOp<point::cmptType>(),
+        UPstream::msgType(),
+        myComm
+    );
+    #endif
+
+    #if 0
+    if constexpr (false)  // OR: if (debug >= 4)
+    {
+        Pout<< "** After combining:" << endl;
+        forAll(samples, i)
+        {
+            const auto proci = selectionKeys[i].second();
+
+            Pout<< "  sample: " << samples[i]
+                << " from proc:" << origProcs[i]
+                << " (world:" << wantedWorlds[i]
+                << " ) found on proc:" << proci
+                << " at index:" << sampleIndices[i]
+                << " point:" << sampleLocations[i] << nl;
+        }
+        Pout<< endl;
+    }
+    #endif
+
+    // Restore communicator settings
     UPstream::commWarn(oldWarnComm);
 }
 
@@ -768,7 +926,7 @@ void Foam::mappedPatchBase::calcMapping() const
 
     // Do a sanity check - am I sampling my own patch?
     // This only makes sense for a non-zero offset.
-    bool sampleMyself =
+    const bool sampleMyself =
     (
         mode_ == NEARESTPATCHFACE
      && sampleWorld() == UPstream::myWorld()
@@ -823,16 +981,18 @@ void Foam::mappedPatchBase::calcMapping() const
         patchFc
     );
 
-    //if (debug)
-    //{
-    //    forAll(samples, samplei)
-    //    {
-    //        Pout<< "    sample:" << samples[samplei]
-    //            << " origating from proc:" << patchFaceProcs[samplei]
-    //            << "  face:" << patchFaces[samplei]
-    //            << " to be found on world:" << patchFaceWorlds[samplei] << nl;
-    //    }
-    //}
+    #if 0
+    if constexpr (false)  // OR: if (debug >= 4)
+    {
+        forAll(samples, i)
+        {
+            Pout<< "    sample:" << samples[i]
+                << " from proc:" << patchFaceProcs[i]
+                << " face:" << patchFaces[i]
+                << " on world:" << patchFaceWorlds[i] << nl;
+        }
+    }
+    #endif
 
     // Find processor and cell/face samples are in and actual location.
     labelList sampleProcs;
@@ -855,42 +1015,38 @@ void Foam::mappedPatchBase::calcMapping() const
     // NEARESTCELL since finds cell containing a location
     if (mode_ == NEARESTCELL)
     {
-        label nNotFound = 0;
-        forAll(sampleProcs, sampleI)
+        // Collect the samples that cannot be found.
+        // Note that sampleProcs is already parallel consistent, so no futher
+        // reduction or coordination is required here.
+        DynamicList<label> subMap;
+        forAll(sampleProcs, samplei)
         {
-            if (sampleProcs[sampleI] == -1)
+            if (sampleProcs[samplei] == -1)
             {
-                nNotFound++;
+                subMap.push_back(samplei);
             }
         }
-        reduce(nNotFound, sumOp<label>(), Pstream::msgType(), myComm);
 
+        const label nNotFound = subMap.size();
         if (nNotFound > 0)
         {
             if (!hasWarned)
             {
+                hasWarned = true;
                 WarningInFunction
                     << "Did not find " << nNotFound
                     << " out of " << sampleProcs.size() << " total samples."
-                    << " Sampling these on owner cell centre instead." << endl
+                    << " Sampling these on owner cell centre instead." << nl
                     << "On patch " << patch_.name()
                     << " on region " << sampleRegion()
-                    << " in mode " << sampleModeNames_[mode_] << endl
+                    << " in mode " << sampleModeNames_[mode_] << nl
                     << "with offset mode " << offsetModeNames_[offsetMode_]
                     << ". Suppressing further warnings from " << type() << endl;
-
-                hasWarned = true;
             }
 
-            // Collect the samples that cannot be found
-            DynamicList<label> subMap;
-            forAll(sampleProcs, sampleI)
-            {
-                if (sampleProcs[sampleI] == -1)
-                {
-                    subMap.append(sampleI);
-                }
-            }
+            const pointField samples_subset(samples, subMap);
+            const labelList worlds_subset(patchFaceWorlds, subMap);
+            const labelList procs_subset(patchFaceProcs, subMap);
 
             // And re-search for pure nearest (should not fail)
             labelList subSampleProcs;
@@ -901,9 +1057,9 @@ void Foam::mappedPatchBase::calcMapping() const
                 NEARESTONLYCELL,
                 myWorld,        // my world (in index form)
 
-                pointField(samples, subMap),
-                UIndirectList<label>(patchFaceWorlds, subMap)(),
-                UIndirectList<label>(patchFaceProcs, subMap)(),
+                samples_subset,
+                worlds_subset,
+                procs_subset,
 
                 subSampleProcs,
                 subSampleIndices,
@@ -911,8 +1067,8 @@ void Foam::mappedPatchBase::calcMapping() const
             );
 
             // Insert
-            labelUIndList(sampleProcs, subMap) = subSampleProcs;
-            labelUIndList(sampleIndices, subMap) = subSampleIndices;
+            UIndirectList<label>(sampleProcs, subMap) = subSampleProcs;
+            UIndirectList<label>(sampleIndices, subMap) = subSampleIndices;
             UIndirectList<point>(sampleLocations, subMap) = subSampleLocations;
         }
     }
@@ -923,7 +1079,7 @@ void Foam::mappedPatchBase::calcMapping() const
     // - cell/face sample is in (so source when mapping)
     //   sampleIndices, sampleProcs.
 
-    if (Pstream::master(myComm))
+    if (UPstream::master(myComm))
     {
         forAll(samples, i)
         {
@@ -940,21 +1096,28 @@ void Foam::mappedPatchBase::calcMapping() const
     }
 
 
-    if (debug && Pstream::master(myComm))
+    if (debug && UPstream::master(myComm))
     {
-        //forAll(samples, i)
-        //{
-        //    Pout<< i << " need data in region "
-        //        << patch_.boundaryMesh().mesh().name()
-        //        << " for proc:" << patchFaceProcs[i]
-        //        << " face:" << patchFaces[i]
-        //        << " at:" << patchFc[i] << endl
-        //        << "Found data in region " << sampleRegion()
-        //        << " at proc:" << sampleProcs[i]
-        //        << " face:" << sampleIndices[i]
-        //        << " at:" << sampleLocations[i]
-        //        << nl << endl;
-        //}
+        #if 0
+        if constexpr (false)  // OR: if (debug >= 4)
+        {
+            const auto& meshName = patch_.boundaryMesh().mesh().name();
+            const auto& sampleName = sampleRegion();
+
+            forAll(samples, i)
+            {
+                Pout<< i << " need data in region " << meshName
+                    << " for proc:" << patchFaceProcs[i]
+                    << " face:" << patchFaces[i]
+                    << " at:" << patchFc[i] << endl
+                    << "Found data in region " << sampleName
+                    << " at proc:" << sampleProcs[i]
+                    << " face:" << sampleIndices[i]
+                    << " at:" << sampleLocations[i]
+                    << nl << endl;
+            }
+        }
+        #endif
 
         OFstream str
         (
@@ -1138,8 +1301,13 @@ void Foam::mappedPatchBase::calcAMI() const
         // weights.
 
         // Change to use inter-world communicator
-        const label oldWarnComm = UPstream::commWarn(myComm);
-        const label oldWorldComm = UPstream::commWorld(myComm);
+        const auto oldWarnComm = UPstream::warnComm;
+        const auto oldWorldComm = UPstream::worldComm;
+        if (!sameWorld())
+        {
+            UPstream::commWarn(myComm);
+            UPstream::commWorld(myComm);
+        }
 
         AMIPtr_->calculate(patch_, nbrPatch0, surf);
 
@@ -1158,8 +1326,10 @@ void Foam::mappedPatchBase::calcAMI() const
         );
 
         // Change to use inter-world communicator
-        const label oldWarnComm = UPstream::commWarn(myComm);
-        const label oldWorldComm = UPstream::commWorld(myComm);
+        // AMIPtr_->comm(myComm);
+
+        const auto oldWarnComm = UPstream::commWarn(myComm);
+        const auto oldWorldComm = UPstream::commWorld(myComm);
 
         if (masterWorld())
         {
@@ -1567,8 +1737,9 @@ Foam::mappedPatchBase::~mappedPatchBase()
 void Foam::mappedPatchBase::clearOut()
 {
     mapPtr_.reset(nullptr);
-    surfPtr_.reset(nullptr);
     AMIPtr_->upToDate(false);
+
+    //Note: no need to clear out surface since not mesh related
 }
 
 

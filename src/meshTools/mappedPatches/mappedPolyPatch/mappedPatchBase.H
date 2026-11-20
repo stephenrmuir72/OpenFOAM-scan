@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2020-2021 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -88,8 +89,8 @@ SourceFiles
 
 \*---------------------------------------------------------------------------*/
 
-#ifndef mappedPatchBase_H
-#define mappedPatchBase_H
+#ifndef Foam_mappedPatchBase_H
+#define Foam_mappedPatchBase_H
 
 #include "pointField.H"
 #include "Tuple2.H"
@@ -103,6 +104,7 @@ SourceFiles
 namespace Foam
 {
 
+// Forward Declarations
 class polyPatch;
 class polyMesh;
 class mapDistribute;
@@ -115,7 +117,7 @@ class mappedPatchBase
 {
 public:
 
-    // Type enumerations
+    // Data Types
 
         //- Mesh items to sample
         enum sampleMode
@@ -136,88 +138,48 @@ public:
             NORMAL              //!< use face normal + distance
         };
 
+        //! Names for sampleMode enumeration
         static const Enum<sampleMode> sampleModeNames_;
 
+        //! Names for offsetMode enumeration
         static const Enum<offsetMode> offsetModeNames_;
 
+        //- Compact reduction key for nearest distance
+        //- as a MINLOC-style reduction (second paramater is 'int').
+        //
+        //  Data content will frequently correspond to
+        //  (sqr(distance), rank) with rank = -1 (or UPstream::max_ranks)
+        //  for "not-found".
+        typedef Tuple2<scalar, int> nearKey;
 
-    //- Helper class for finding nearest
-    //  Nearest:
-    //  - point+local index
-    //  - sqr(distance)
-    //  - processor
-    typedef Tuple2<pointIndexHit, Tuple2<scalar, label>> nearInfo;
+        //- A pointIndexHit reduction information for finding the nearest
+        //- hit distance.
+        //  Nearest:
+        //  - pointIndexHit == (point+local index)
+        //  - sqr(distance)
+        //  - rank
+        typedef Tuple2<pointIndexHit, Tuple2<scalar, label>> nearInfo;
 
-    class nearestEqOp
-    {
-    public:
-
-        void operator()(nearInfo& x, const nearInfo& y) const
+        //- Reduction/combine operator for nearInfo
+        struct nearestEqOp
         {
-            if (y.first().hit())
+            //- Min distance (MINLOC) operation for nearInfo,
+            //- that only propagates through 'hit' entries.
+            void operator()(nearInfo& x, const nearInfo& y) const
             {
-                if (!x.first().hit())
-                {
-                    x = y;
-                }
-                else if (y.second().first() < x.second().first())
+                if
+                (
+                    y.first().hit() &&
+                    (
+                        !x.first().hit()
+                     || (y.second().first() < x.second().first())
+                    )
+                )
                 {
                     x = y;
                 }
             }
-        }
-    };
-
-    class maxProcEqOp
-    {
-    public:
-
-        void operator()(nearInfo& x, const nearInfo& y) const
-        {
-            if (y.first().hit())
-            {
-                if (!x.first().hit())
-                {
-                    x = y;
-                }
-                else if (y.second().second() > x.second().second())
-                {
-                    x = y;
-                }
-            }
-        }
-    };
-
-
-    //- nearest + world
-    //  Used to only look at entries from same world
-    typedef Tuple2<nearInfo, label> nearInfoWorld;
-
-    class nearestWorldEqOp
-    {
-    public:
-
-        void operator()(nearInfoWorld& x, const nearInfoWorld& y) const
-        {
-            // Is there a hit and is it sampling the same world
-            const nearInfo& xi = x.first();
-            const nearInfo& yi = y.first();
-            if (yi.first().hit())
-            {
-                if (x.second() == y.second())
-                {
-                    if (!xi.first().hit())
-                    {
-                        x = y;
-                    }
-                    else if (yi.second().first() < xi.second().first())
-                    {
-                        x = y;
-                    }
-                }
-            }
-        }
-    };
+        };
 
 
 protected:
@@ -335,16 +297,25 @@ protected:
             pointField& patchFc
         ) const;
 
-        //- Find (local) cells/faces containing samples
-        void findLocalSamples
+        //- Find (local) cells/faces containing samples.
+        //  \return a list of selection keys (sqr(distance), rank)
+        List<nearKey> findLocalSamples
         (
             const sampleMode mode,
-            const label sampleWorld,        // my world as index
-            const word& sampleRegion,
-            const word& samplePatch,
+            const word& sampleRegion,   //!< local region to sample
+            const word& samplePatch,    //!< local patch to sample
+
+            //! The sample point references
             const pointField& samplePoints,
 
-            List<nearInfoWorld>& nearest
+            //! [out] Indices within the locally sampled entity (-1 = invalid)
+            labelList& sampleIndices,
+            //! [out] Locations within the locally sampled entity
+            //! (invalid = point::max)
+            pointField& sampleLocations,
+            //! optional: the samplePoints to include, with a zero-size set
+            //! corresponding to no subsetting.
+            const bitSet& sampleFilter = bitSet::null()
         ) const;
 
         //- Find (global) cells/faces containing samples
@@ -353,9 +324,11 @@ protected:
             const sampleMode mode,      // search mode
             const label myWorldIndex,   // my world (in index form)
 
-            const pointField&,
-            const labelList& wantedWorlds,
-            const labelList& origProcs, // per sample the originating proc
+            //! The sample point references
+            const pointField& samplePoints,
+
+            const labelUList& wantedWorlds,
+            const labelUList& origProcs, // per sample the originating proc
 
             labelList& sampleProcs,     // processor containing sample
             labelList& sampleIndices,   // local index of cell/face
@@ -371,6 +344,16 @@ protected:
         //- Calculate AMI interpolator
         void calcAMI() const;
 
+        //- True if using any variant of nearest patch face sampling
+        bool isPatchSampling() const noexcept
+        {
+            return
+            (
+                mode_ == sampleMode::NEARESTPATCHFACE
+             || mode_ == sampleMode::NEARESTPATCHFACEAMI
+             || mode_ == sampleMode::NEARESTPATCHPOINT
+            );
+        }
 
         // Database Handling
 

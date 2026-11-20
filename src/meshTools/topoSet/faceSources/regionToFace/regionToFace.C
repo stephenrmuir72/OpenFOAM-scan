@@ -6,7 +6,8 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2012-2017 OpenFOAM Foundation
-    Copyright (C) 2018-2022 OpenCFD Ltd.
+    Copyright (C) 2018-2024 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -29,7 +30,6 @@ License
 #include "regionToFace.H"
 #include "polyMesh.H"
 #include "faceSet.H"
-#include "mappedPatchBase.H"
 #include "indirectPrimitivePatch.H"
 #include "PatchTools.H"
 #include "addToRunTimeSelectionTable.H"
@@ -83,34 +83,26 @@ void Foam::regionToFace::markZone
 ) const
 {
     // Data on all edges and faces
-    List<edgeTopoDistanceData<label>> allEdgeInfo(patch.nEdges());
-    List<edgeTopoDistanceData<label>> allFaceInfo(patch.size());
+    using dataType = edgeTopoDistanceData<label>;
+
+    List<dataType> allEdgeInfo(patch.nEdges());
+    List<dataType> allFaceInfo(patch.size());
 
     DynamicList<label> changedEdges;
-    DynamicList<edgeTopoDistanceData<label>> changedInfo;
+    DynamicList<dataType> changedInfo;
 
-    if (Pstream::myProcNo() == proci)
+    if (UPstream::myProcNo() == proci)
     {
-        const labelList& fEdges = patch.faceEdges()[facei];
-        for (const label edgei : fEdges)
-        {
-            changedEdges.append(edgei);
-            changedInfo.append
-            (
-                edgeTopoDistanceData<label>
-                (
-                    0,          // distance
-                    zonei
-                )
-            );
-        }
+        changedEdges = patch.faceEdges()[facei];
+        // (distance, zone)
+        changedInfo.resize(changedEdges.size(), dataType(0, zonei));
     }
 
     // Walk
     PatchEdgeFaceWave
     <
         indirectPrimitivePatch,
-        edgeTopoDistanceData<label>
+        dataType
     > calc
     (
         mesh_,
@@ -136,63 +128,85 @@ void Foam::regionToFace::markZone
 }
 
 
-void Foam::regionToFace::combine(topoSet& set, const bool add) const
+void Foam::regionToFace::combine
+(
+    topoSet& set,
+    const bool add,
+    const labelUList& ids
+) const
 {
+    const int communicator = UPstream::worldComm;
+    const auto myProci = UPstream::myProcNo(communicator);
+
     if (verbose_)
     {
         Info<< "    Loading subset " << setName_
-            << " to delimit search region." << endl;
+            << " to delimit search region." << nl;
     }
-
-    faceSet subSet(mesh_, setName_);
 
     indirectPrimitivePatch patch
     (
-        IndirectList<face>(mesh_.faces(), subSet.toc()),
+        IndirectList<face>(mesh_.faces(), ids),
         mesh_.points()
     );
 
-    mappedPatchBase::nearInfo ni
-    (
-        pointIndexHit(false, Zero, -1),
-        Tuple2<scalar, label>
-        (
-            sqr(GREAT),
-            Pstream::myProcNo()
-        )
-    );
+    label bestFacei = -1;
+    point bestPoint(point::max);
 
-    forAll(patch, i)
+    // The nearest selection key. Construct as missed sample
+    // == (large distance, proc = max_ranks)
+
+    Tuple2<scalar, int> nearest(VGREAT, UPstream::max_ranks());
+
+    if (patch.size())
     {
-        const point& fc = patch.faceCentres()[i];
-        scalar d2 = magSqr(fc-nearPoint_);
+        scalar minDistSqr = VGREAT;
 
-        if (!ni.first().hit() || d2 < ni.second().first())
+        forAll(patch, i)
         {
-            ni.second().first() = d2;
-            ni.first().hitPoint(fc);
-            ni.first().setIndex(i);
+            const point& fc = patch.faceCentres()[i];
+            scalar distSqr = nearPoint_.distSqr(fc);
+
+            if (minDistSqr > distSqr)
+            {
+                minDistSqr = distSqr;
+                bestFacei = i;
+                bestPoint = fc;
+            }
         }
+
+        nearest = { minDistSqr, myProci };
     }
 
-    // Globally reduce
-    Pstream::combineReduce(ni, mappedPatchBase::nearestEqOp());
+    // Find rank with nearest - globally consistent
+    UPstream::minLocation(nearest, communicator);
+
+
+    const label markProci = nearest.second();
+    const label markFacei = (markProci == myProci ? bestFacei :  -1);
 
     if (verbose_)
     {
-        Info<< "    Found nearest face at " << ni.first().point()
-            << " on processor " << ni.second().second()
-            << " face " << ni.first().index()
-            << " distance " << Foam::sqrt(ni.second().first()) << endl;
+        if (markProci != myProci)
+        {
+            bestPoint = point::max;
+        }
+
+        Foam::reduce(bestPoint, minOp<point>());
+
+        Info<< "    Found nearest face at " << bestPoint
+            << " on processor " << markProci
+            << " face " << markFacei
+            << " distance " << Foam::sqrt(nearest.first()) << endl;
     }
 
     labelList faceRegion(patch.size(), -1);
     markZone
     (
         patch,
-        ni.second().second(),   // proci
-        ni.first().index(),     // start face
-        0,                      // currentZone
+        markProci,  // proci
+        markFacei,  // start face
+        0,          // currentZone
         faceRegion
     );
 
@@ -217,6 +231,7 @@ Foam::regionToFace::regionToFace
 :
     topoSetFaceSource(mesh),
     setName_(setName),
+    isZone_(false),
     nearPoint_(nearPoint)
 {}
 
@@ -227,10 +242,19 @@ Foam::regionToFace::regionToFace
     const dictionary& dict
 )
 :
-    topoSetFaceSource(mesh),
-    setName_(dict.get<word>("set")),
+    topoSetFaceSource(mesh, dict),
+    setName_(),
+    isZone_(false),
     nearPoint_(dict.get<point>("nearPoint"))
-{}
+{
+    // A single "set" or "zone" only
+    if (!dict.readIfPresent("set", setName_))
+    {
+        // Mandatory entry
+        dict.readEntry("zone", setName_);
+        isZone_ = true;
+    }
+}
 
 
 Foam::regionToFace::regionToFace
@@ -241,6 +265,7 @@ Foam::regionToFace::regionToFace
 :
     topoSetFaceSource(mesh),
     setName_(checkIs(is)),
+    isZone_(false),
     nearPoint_(checkIs(is))
 {}
 
@@ -257,23 +282,41 @@ void Foam::regionToFace::applyToSet
     {
         if (verbose_)
         {
-            Info<< "    Adding all faces of connected region of set "
+            Info<< "    Adding all faces of connected region of "
+                << (isZone_ ? "zone " : "set ")
                 << setName_ << " starting from point " << nearPoint_
                 << " ..." << endl;
         }
 
-        combine(set, true);
+        if (isZone_)
+        {
+            combine(set, true, mesh_.faceZones()[setName_].addressing());
+        }
+        else
+        {
+            faceSet subSet(mesh_, setName_, IOobject::NO_REGISTER);
+            combine(set, true, subSet.sortedToc());
+        }
     }
     else if (action == topoSetSource::SUBTRACT)
     {
         if (verbose_)
         {
-            Info<< "    Removing all cells of connected region of set "
+            Info<< "    Removing all cells of connected region of "
+                << (isZone_ ? "zone " : "set ")
                 << setName_ << " starting from point " << nearPoint_
                 << " ..." << endl;
         }
 
-        combine(set, false);
+        if (isZone_)
+        {
+            combine(set, false, mesh_.faceZones()[setName_].addressing());
+        }
+        else
+        {
+            faceSet subSet(mesh_, setName_, IOobject::NO_REGISTER);
+            combine(set, false, subSet.sortedToc());
+        }
     }
 }
 

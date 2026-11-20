@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2017-2018 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -29,7 +30,6 @@ License
 #include "nearestToPoint.H"
 #include "polyMesh.H"
 #include "addToRunTimeSelectionTable.H"
-#include "mappedPatchBase.H"
 
 // * * * * * * * * * * * * * * Static Data Members * * * * * * * * * * * * * //
 
@@ -69,48 +69,60 @@ Foam::topoSetSource::addToUsageTable Foam::nearestToPoint::usage_
 
 void Foam::nearestToPoint::combine(topoSet& set, const bool add) const
 {
-    // All the info for nearest. Construct to miss
-    List<mappedPatchBase::nearInfo> nearest(points_.size());
+    const int communicator = UPstream::worldComm;
+    const auto myProci = UPstream::myProcNo(communicator);
+
+    // Nearest point index (locally)
+    labelList objectIndices(points_.size(), Foam::zero{});
+
+    // The nearest selection key. Construct as missed sample
+    // == (large distance, proc = max_ranks)
+    List<Tuple2<scalar, int>> nearest
+    (
+        points_.size(),
+        { VGREAT, UPstream::max_ranks() }
+    );
 
     // Do linear search since usually just a few points.
     const pointField& pts = mesh_.points();
 
-    forAll(points_, pointi)
+    if (pts.size() > 0)
     {
-        if (pts.size())
+        forAll(points_, samplei)
         {
+            const auto& p = points_[samplei];
+
             label minPointi = 0;
-            scalar minDistSqr = magSqr(pts[minPointi] - points_[pointi]);
+            scalar minDistSqr = p.distSqr(pts[minPointi]);
 
-            for (label i = 1; i < pts.size(); i++)
+            for (label i = 1; i < pts.size(); ++i)
             {
-                scalar distSqr = magSqr(pts[i] - points_[pointi]);
+                scalar distSqr = p.distSqr(pts[i]);
 
-                if (distSqr < minDistSqr)
+                if (minDistSqr > distSqr)
                 {
                     minDistSqr = distSqr;
                     minPointi = i;
                 }
             }
 
-            const point& minPt = pts[minPointi];
-            nearest[pointi].first() = pointIndexHit(true, minPt, minPointi);
-            nearest[pointi].second() = Tuple2<scalar, label>
-            (
-                magSqr(minPt-points_[pointi]),
-                Pstream::myProcNo()
-            );
+            objectIndices[samplei] = minPointi;
+            nearest[samplei] = { minDistSqr, myProci };
         }
     }
 
-
-    Pstream::listCombineReduce(nearest, mappedPatchBase::nearestEqOp());
-
-    for (const auto& near : nearest)
+    // Find rank with nearest - globally consistent
     {
-        if (near.second().second() == Pstream::myProcNo())
+        UPstream::minLocation(nearest, communicator);
+    }
+
+    forAll(nearest, samplei)
+    {
+        if (myProci == nearest[samplei].second())
         {
-            addOrDelete(set, near.first().index(), add);
+            label pointi = objectIndices[samplei];
+
+            addOrDelete(set, pointi, add);
         }
     }
 }
@@ -146,7 +158,8 @@ Foam::nearestToPoint::nearestToPoint
     const dictionary& dict
 )
 :
-    nearestToPoint(mesh, dict.get<pointField>("points"))
+    topoSetPointSource(mesh, dict),
+    points_(dict.get<pointField>("points"))
 {}
 
 

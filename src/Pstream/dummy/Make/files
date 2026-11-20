@@ -10,4 +10,6 @@ UOPstreamWrite.C
 UIPBstreamRead.C
 UOPBstreamWrite.C
 
+UPstreamOps.cxx
+
 LIB = $(FOAM_LIBBIN)/dummy/libPstream

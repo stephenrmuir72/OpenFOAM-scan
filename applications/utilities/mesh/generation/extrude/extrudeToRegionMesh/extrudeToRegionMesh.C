@@ -6,7 +6,8 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
-    Copyright (C) 2015-2022 OpenCFD Ltd.
+    Copyright (C) 2015-2025 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -556,8 +557,8 @@ void calcEdgeMinMaxZone
             forAll(eFaces, i)
             {
                 label zoneI = mappedZoneID[eFaces[i]];
-                minZoneID[edgeI] = min(minZoneID[edgeI], zoneI);
-                maxZoneID[edgeI] = max(maxZoneID[edgeI], zoneI);
+                minZoneID[edgeI] = Foam::min(minZoneID[edgeI], zoneI);
+                maxZoneID[edgeI] = Foam::max(maxZoneID[edgeI], zoneI);
             }
         }
     }
@@ -661,8 +662,14 @@ void countExtrudePatches
     }
     // Synchronise decision. Actual numbers are not important, just make
     // sure that they're > 0 on all processors.
+
+    #if (OPENFOAM >= 2506)
+    Pstream::listReduce(zoneSidePatch, sumOp<label>());
+    Pstream::listReduce(zoneZonePatch, sumOp<label>());
+    #else
     Pstream::listCombineReduce(zoneSidePatch, plusEqOp<label>());
     Pstream::listCombineReduce(zoneZonePatch, plusEqOp<label>());
+    #endif
 }
 
 
@@ -813,8 +820,8 @@ void addCoupledPatches
             forAll(eFaces, i)
             {
                 label proci = procID[eFaces[i]];
-                minProcID[edgeI] = min(minProcID[edgeI], proci);
-                maxProcID[edgeI] = max(maxProcID[edgeI], proci);
+                minProcID[edgeI] = Foam::min(minProcID[edgeI], proci);
+                maxProcID[edgeI] = Foam::max(maxProcID[edgeI], proci);
             }
         }
     }
@@ -947,7 +954,7 @@ void addZoneSidePatches
 
     forAll(zoneSidePatch, zoneI)
     {
-        if (oneDPolyPatchType != word::null)
+        if (!oneDPolyPatchType.empty())
         {
             // Reuse single empty patch.
             word patchName;
@@ -1088,8 +1095,8 @@ tmp<pointField> calcOffset
 {
     vectorField::subField fc = pp.faceCentres();
 
-    tmp<pointField> toffsets(new pointField(fc.size()));
-    pointField& offsets = toffsets.ref();
+    auto toffsets = tmp<pointField>::New(fc.size());
+    auto& offsets = toffsets.ref();
 
     forAll(fc, i)
     {
@@ -1110,8 +1117,9 @@ void setCouplingInfo
     fvMesh& mesh,
     const labelList& zoneToPatch,
     const word& sampleRegion,
-    const mappedWallPolyPatch::sampleMode mode,
-    const List<pointField>& offsets
+    const mappedPatchBase::sampleMode mode,
+    const List<pointField>& offsets,
+    const List<boundBox>& bbs
 )
 {
     const polyBoundaryMesh& patches = mesh.boundaryMesh();
@@ -1132,7 +1140,6 @@ void setCouplingInfo
 
             if (isA<mappedWallPolyPatch>(pp))
             {
-                const boundBox bb(pp.points(), pp.meshPoints(), true);
                 const vector avgOffset = gAverage(offsets[zoneI]);
                 const scalar mergeSqrDist =
                     gMax(magSqr(offsets[zoneI]-avgOffset));
@@ -1157,7 +1164,7 @@ void setCouplingInfo
 
                 // Verify uniformity of offset
                 // (same check as blockMesh geom merge)
-                if (mergeSqrDist < magSqr(10*SMALL*bb.span()))
+                if (mergeSqrDist < magSqr(10*SMALL*bbs[zoneI].span()))
                 {
                     Info<< "uniform offset " << avgOffset << endl;
                 }
@@ -1210,7 +1217,7 @@ void extrudeGeometricProperties
         (
             "patchFaceCentres",
             mesh.pointsInstance(),
-            mesh.meshSubDir,
+            polyMesh::meshSubDir,
             mesh,
             IOobject::MUST_READ
         )
@@ -1222,7 +1229,7 @@ void extrudeGeometricProperties
         (
             "patchEdgeCentres",
             mesh.pointsInstance(),
-            mesh.meshSubDir,
+            polyMesh::meshSubDir,
             mesh,
             IOobject::MUST_READ
         )
@@ -1268,7 +1275,7 @@ void extrudeGeometricProperties
         (
             "faceCentres",
             regionMesh.pointsInstance(),
-            regionMesh.meshSubDir,
+            polyMesh::meshSubDir,
             regionMesh,
             IOobject::NO_READ,
             IOobject::NO_WRITE,
@@ -1291,7 +1298,7 @@ void extrudeGeometricProperties
             label celli = regionMesh.faceOwner()[facei];
             if (regionMesh.isInternalFace(facei))
             {
-                celli = max(celli, regionMesh.faceNeighbour()[facei]);
+                celli = Foam::max(celli, regionMesh.faceNeighbour()[facei]);
             }
 
             // Calculate layer from cell numbering (see createShellMesh)
@@ -1352,7 +1359,7 @@ void extrudeGeometricProperties
         (
             "cellCentres",
             regionMesh.pointsInstance(),
-            regionMesh.meshSubDir,
+            polyMesh::meshSubDir,
             regionMesh,
             IOobject::NO_READ,
             IOobject::NO_WRITE,
@@ -1847,24 +1854,48 @@ int main(int argc, char *argv[])
     }
     const primitiveFacePatch extrudePatch(std::move(zoneFaces), mesh.points());
 
-
-    Pstream::listCombineReduce(isInternal, orEqOp<bool>());
+    // Reduce OR (same size on all ranks)
+    UPstream::reduceOr
+    (
+        isInternal.data(),
+        isInternal.size(),
+        UPstream::worldComm
+    );
 
     // Check zone either all internal or all external faces
     checkZoneInside(mesh, zoneNames, zoneID, extrudeMeshFaces, isInternal);
 
 
-    const pointField& extrudePoints = extrudePatch.localPoints();
-    const faceList& extrudeFaces = extrudePatch.localFaces();
+    //debug: const pointField& extrudePoints = extrudePatch.localPoints();
+    //debug: const faceList& extrudeFaces = extrudePatch.localFaces();
     const labelListList& edgeFaces = extrudePatch.edgeFaces();
 
 
-    Info<< "extrudePatch :"
-        << " faces:" << extrudePatch.size()
-        << " points:" << extrudePatch.nPoints()
-        << " edges:" << extrudePatch.nEdges()
-        << nl
-        << endl;
+    {
+        // Report global quantities
+        label dims[3] =
+        {
+            extrudePatch.size(),
+            extrudePatch.nPoints(),
+            extrudePatch.nEdges()
+        };
+
+        Foam::reduce
+        (
+            dims,
+            3,
+            sumOp<label>(),
+            UPstream::msgType(),
+            UPstream::worldComm
+        );
+
+        Info<< "extrudePatch :"
+            << " faces:" << dims[0]
+            << " points:" << dims[1]
+            << " edges:" << dims[2]
+            << nl
+            << endl;
+    }
 
 
     // Determine per-extrude-edge info
@@ -2192,8 +2223,8 @@ int main(int argc, char *argv[])
 
             if (zone0 != zone1) // || (cos(angle) > blabla))
             {
-                label minZone = min(zone0,zone1);
-                label maxZone = max(zone0,zone1);
+                label minZone = Foam::min(zone0,zone1);
+                label maxZone = Foam::max(zone0,zone1);
                 label index = minZone*zoneNames.size()+maxZone;
 
                 ePatches.setSize(eFaces.size());
@@ -2286,42 +2317,115 @@ int main(int argc, char *argv[])
     }
 
     // Calculate region normals by reducing local region normals
-    pointField localRegionNormals(localToGlobalRegion.size());
+    pointField localRegionNormals(localToGlobalRegion.size(), Foam::zero{});
     {
-        pointField localSum(localToGlobalRegion.size(), Zero);
-
         forAll(pointLocalRegions, facei)
         {
-            const face& pRegions = pointLocalRegions[facei];
-            forAll(pRegions, fp)
+            const auto& faceNormal = extrudePatch.faceNormals()[facei];
+
+            for (label localRegioni : pointLocalRegions[facei])
             {
-                label localRegionI = pRegions[fp];
-                localSum[localRegionI] += extrudePatch.faceNormals()[facei];
+                localRegionNormals[localRegioni] += faceNormal;
             }
         }
 
-        Map<point> globalSum(2*localToGlobalRegion.size());
-
-        forAll(localSum, localRegionI)
+        // Older code (v2606 and earlier) used a simpler logic
+        // with a mapCombineReduce() for all points, but that gives
+        // serialization problems (buffer overrun) with very large cases.
+        //
+        // Instead use a two-step logic to restrict the global summation
+        // to the actually shared. Also uses direct MPI operations
+        if (UPstream::parRun())
         {
-            label globalRegionI = localToGlobalRegion[localRegionI];
-            globalSum.insert(globalRegionI, localSum[localRegionI]);
-        }
+            // Determine duplicate points (globally consistent size)
+            label count = 0;
+            if (!localToGlobalRegion.empty())
+            {
+                count = Foam::max(localToGlobalRegion);
+                ++count;  // From index to size
+            }
+            Foam::reduce(count, maxOp<label>());  // ie, worldComm
 
-        // Reduce
-        Pstream::mapCombineReduce(globalSum, plusEqOp<point>());
+            // Mark the points used
+            DynamicList<label> shared(count, Foam::zero{});
+            UIndirectList<label>(shared, localToGlobalRegion) = 1;
 
-        forAll(localToGlobalRegion, localRegionI)
-        {
-            label globalRegionI = localToGlobalRegion[localRegionI];
-            localRegionNormals[localRegionI] = globalSum[globalRegionI];
+            Foam::reduce
+            (
+                shared.data(),
+                shared.size(),
+                sumOp<label>(),
+                UPstream::msgType(),
+                UPstream::worldComm
+            );
+
+            // Compact the shared point indices (ie, used more than once)
+            // into a map from local to global region. Uses -1 for shared
+            // indices that are not locally mapped to ensure that the
+            // compacted size remains globally consistent.
+
+            count = 0;
+            forAll(shared, globalRegioni)
+            {
+                if (shared[globalRegioni] >= 2)
+                {
+                    shared[count] = localToGlobalRegion.find(globalRegioni);
+                    ++count;
+                }
+            }
+            shared.resize(count);
+
+            // Global summation for the shared points
+            pointField globalSum(shared.size(), Foam::zero{});
+
+            forAll(shared, i)
+            {
+                label localRegioni = shared[i];
+
+                if (localRegioni >= 0)
+                {
+                    globalSum[i] = localRegionNormals[localRegioni];
+                }
+            }
+
+            #if (OPENFOAM >= 2506)
+            Foam::reduce
+            (
+                globalSum.data(),
+                globalSum.size(),
+                sumOp<point>(),
+                UPstream::msgType(),
+                UPstream::worldComm
+            );
+            #else
+            Foam::reduce
+            (
+                reinterpret_cast<point::cmptType*>(globalSum.data()),
+                (point::nComponents * globalSum.size()),
+                sumOp<vector::cmptType>(),
+                UPstream::msgType(),
+                UPstream::worldComm
+            );
+            #endif
+
+            // Update (overwrite) normals to account for shared points
+            forAll(shared, i)
+            {
+                label localRegioni = shared[i];
+
+                if (localRegioni >= 0)
+                {
+                    localRegionNormals[localRegioni] = globalSum[i];
+                }
+            }
         }
-        localRegionNormals /= mag(localRegionNormals);
+        localRegionNormals.normalise();
     }
 
 
     // For debugging: dump hedgehog plot of normals
-    if (false)
+    #if 0
+    if constexpr (false)
     {
         OFstream str(runTime.path()/"localRegionNormals.obj");
         label vertI = 0;
@@ -2349,6 +2453,7 @@ int main(int argc, char *argv[])
             }
         }
     }
+    #endif
 
 
     // Use model to create displacements of first layer
@@ -2468,7 +2573,10 @@ int main(int argc, char *argv[])
     // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     List<pointField> topOffsets(zoneNames.size());
+    List<boundBox> topBbs(zoneNames.size());
+
     List<pointField> bottomOffsets(zoneNames.size());
+    List<boundBox> bottomBbs(zoneNames.size());
 
     forAll(regionMesh.boundaryMesh(), patchi)
     {
@@ -2480,11 +2588,13 @@ int main(int argc, char *argv[])
             {
                 label zoneI = interRegionTopPatch.find(patchi);
                 topOffsets[zoneI] = calcOffset(extrudePatch, extruder, pp);
+                topBbs[zoneI] = boundBox(pp.points(), pp.meshPoints(), true);
             }
             else if (interRegionBottomPatch.found(patchi))
             {
                 label zoneI = interRegionBottomPatch.find(patchi);
                 bottomOffsets[zoneI] = calcOffset(extrudePatch, extruder, pp);
+                bottomBbs[zoneI] = boundBox(pp.points(), pp.meshPoints(), true);
             }
         }
     }
@@ -2501,7 +2611,8 @@ int main(int argc, char *argv[])
             interRegionTopPatch,
             regionName,                 // name of main mesh
             sampleMode,                 // sampleMode
-            topOffsets
+            topOffsets,
+            topBbs
         );
 
         // Correct bottom patches for offset
@@ -2511,7 +2622,8 @@ int main(int argc, char *argv[])
             interRegionBottomPatch,
             regionName,
             sampleMode,                 // sampleMode
-            bottomOffsets
+            bottomOffsets,
+            bottomBbs
         );
 
         // Remove any unused patches
@@ -2530,7 +2642,8 @@ int main(int argc, char *argv[])
             interMeshTopPatch,
             shellRegionName,                        // name of shell mesh
             sampleMode,                             // sampleMode
-            -topOffsets
+            -topOffsets,
+            topBbs
         );
 
         // Correct bottom patches for offset
@@ -2540,7 +2653,8 @@ int main(int argc, char *argv[])
             interMeshBottomPatch,
             shellRegionName,
             sampleMode,
-            -bottomOffsets
+            -bottomOffsets,
+            bottomBbs
         );
     }
 
@@ -2647,7 +2761,7 @@ int main(int argc, char *argv[])
         (
             "patchFaceCentres",
             mesh.pointsInstance(),
-            mesh.meshSubDir,
+            polyMesh::meshSubDir,
             mesh,
             IOobject::MUST_READ
         );
