@@ -57,6 +57,14 @@ Foam::radiation::opaqueReflective::opaqueReflective
     pp_(pp),
     fd_(dict.getOrDefault<scalar>("fd", 1))
 {
+    if (dict.found("faceZoneOverrides"))
+    {
+        FatalErrorInFunction
+            << "faceZoneOverrides must be placed inside the "
+            << "'wallAbsorptionEmissionModel' subdictionary for patch "
+            << pp.name() << exit(FatalError);
+    }
+
     const dictionary& absorptionDict =
         dict.subDict("wallAbsorptionEmissionModel");
 

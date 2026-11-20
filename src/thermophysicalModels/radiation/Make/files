@@ -45,6 +45,7 @@ submodels/absorptionEmissionModel/multiBandAbsorptionEmission/multiBandAbsorptio
 submodels/absorptionEmissionModel/multiBandZoneAbsorptionEmission/multiBandZoneAbsorptionEmission.C
 submodels/boundaryRadiationProperties/boundaryRadiationProperties.C
 submodels/boundaryRadiationProperties/boundaryRadiationPropertiesPatch.C
+submodels/boundaryRadiationProperties/faceZoneOverrides/faceZoneOverrides.C
 
 /* Types of radiative walls */
 submodels/boundaryRadiationProperties/transparent/transparent.C

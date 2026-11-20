@@ -56,6 +56,14 @@ Foam::radiation::transparent::transparent
     boundaryRadiationPropertiesPatch(dict, pp),
     pp_(pp)
 {
+    if (dict.found("faceZoneOverrides"))
+    {
+        FatalErrorInFunction
+            << "faceZoneOverrides must be placed inside the "
+            << "'wallAbsorptionEmissionModel' subdictionary for patch "
+            << pp.name() << exit(FatalError);
+    }
+
     const dictionary& absorptionDict =
         dict.subDict("wallAbsorptionEmissionModel");
 
