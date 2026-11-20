@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2020 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -90,7 +91,7 @@ Note
       observations suggest that the matter poses no importance.
 
 See also
-    Foam::inletOutletFvPatchField
+    Foam::turbulentEpsilonOmegaInletFvPatchScalarField
 
 SourceFiles
     turbulentMixingLengthDissipationRateInletFvPatchScalarField.C
@@ -100,7 +101,7 @@ SourceFiles
 #ifndef turbulentMixingLengthDissipationRateInletFvPatchScalarField_H
 #define turbulentMixingLengthDissipationRateInletFvPatchScalarField_H
 
-#include "inletOutletFvPatchFields.H"
+#include "turbulentEpsilonOmegaInletFvPatchScalarField.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -113,23 +114,12 @@ namespace Foam
 
 class turbulentMixingLengthDissipationRateInletFvPatchScalarField
 :
-    public inletOutletFvPatchScalarField
+    public turbulentEpsilonOmegaInletFvPatchScalarField
 {
     typedef
         turbulentMixingLengthDissipationRateInletFvPatchScalarField
         this_bctype;
-    typedef inletOutletFvPatchScalarField parent_bctype;
-
-    // Private Data
-
-        //- Name of the turbulent kinetic energy field
-        word kName_;
-
-        //- Mixing length scale
-        scalar mixingLength_;
-
-        //- Empirical model constant
-        scalar Cmu_;
+    typedef turbulentEpsilonOmegaInletFvPatchScalarField parent_bctype;
 
 
 public:
@@ -185,15 +175,6 @@ public:
         {
             return fvPatchField<scalar>::Clone(*this, iF);
         }
-
-
-    // Member Functions
-
-        //- Update the coefficients associated with the patch field
-        virtual void updateCoeffs();
-
-        //- Write
-        virtual void write(Ostream&) const;
 
 
     // Member Operators
