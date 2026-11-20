@@ -427,9 +427,12 @@ void Foam::domainDecomposition::decomposeMesh()
     // used for the processor. Collect the list of used points for the
     // processor.
 
+    bitSet pointsInUse(nPoints(), false);
+    DynamicList<label> curPoints;
+
     forAll(procPointAddressing_, proci)
     {
-        bitSet pointsInUse(nPoints(), false);
+        curPoints.clear();
 
         // For each of the faces used
         for (const label facei : procFaceAddressing_[proci])
@@ -438,10 +441,18 @@ void Foam::domainDecomposition::decomposeMesh()
             const labelList& facePoints = fcs[mag(facei) - 1];
 
             // Mark the face points as being used
-            pointsInUse.set(facePoints);
+            for (const label pointi : facePoints)
+            {
+                if (!pointsInUse.test_set(pointi))
+                {
+                    curPoints.push_back(pointi);
+                }
+            }
         }
 
-        procPointAddressing_[proci] = pointsInUse.sortedToc();
+        Foam::sort(curPoints);
+        procPointAddressing_[proci] = curPoints;
+        pointsInUse.unset(curPoints);
     }
 }
 

@@ -411,6 +411,13 @@ int main(int argc, char *argv[])
         "as per 2512 and earlier [special use]",
         true  // Advanced option
     );
+    argList::addBoolOption
+    (
+        "no-mesh-caching",
+        "Disable in-memory mesh caching and reread processor meshes"
+        " for field decomposition (as per 2606 and earlier)",
+        true  // Advanced option
+    );
 
     argList::addBoolOption
     (
@@ -916,6 +923,18 @@ int main(int argc, char *argv[])
             PtrList<labelIOList> pointBoundaryProcAddressingList(numProcs);
 
             PtrList<fvFieldDecomposer> fieldDecomposerList(numProcs);
+
+            // Rebuild processor meshes in memory instead of reading back
+            const bool procMeshCachingActive =
+            (
+                !decomposeFieldsOnly && !args.found("no-mesh-caching")
+             && mesh.canCreateProcMeshes()
+            );
+
+            if (procMeshCachingActive)
+            {
+                Info<< "Field decomposition with cached processor meshes" << nl;
+            }
             PtrList<pointFieldDecomposer> pointFieldDecomposerList(numProcs);
 
 
@@ -1266,6 +1285,73 @@ int main(int argc, char *argv[])
                     auto& processorDb =
                         emplaceTime(processorDbList, proci, args);
                     processorDb.setTime(runTime);
+
+                    // Processor mesh and addressing: rebuild in memory from
+                    // the decomposition when available. Reading them back
+                    // costs O(proci) per file for collated (block skipping).
+
+                    if (procMeshCachingActive && !procMeshList.test(proci))
+                    {
+                        procMeshList.set
+                        (
+                            proci,
+                            mesh.processorFvMesh(proci, processorDb)
+                        );
+                        const auto& pm = procMeshList[proci];
+
+                        const auto setAddr =
+                        [&]
+                        (
+                            PtrList<labelIOList>& list,
+                            const word& name,
+                            const labelUList& addr
+                        )
+                        {
+                            list.resize(numProcs);
+                            list.emplace_set
+                            (
+                                proci,
+                                IOobject
+                                (
+                                    name,
+                                    pm.facesInstance(),
+                                    polyMesh::meshSubDir,
+                                    pm,
+                                    IOobjectOption::NO_READ,
+                                    IOobjectOption::NO_WRITE,
+                                    IOobjectOption::NO_REGISTER
+                                ),
+                                addr
+                            );
+                        };
+
+                        setAddr
+                        (
+                            faceProcAddressingList, "faceProcAddressing",
+                            mesh.procFaceAddressing(proci)
+                        );
+                        setAddr
+                        (
+                            cellProcAddressingList, "cellProcAddressing",
+                            mesh.procCellAddressing(proci)
+                        );
+                        setAddr
+                        (
+                            boundaryProcAddressingList,
+                            "boundaryProcAddressing",
+                            mesh.procBoundaryAddressing(proci)
+                        );
+                        if (!pointFieldCache.empty())
+                        {
+                            // (cleared again after the point fields)
+                            setAddr
+                            (
+                                pointProcAddressingList,
+                                "pointProcAddressing",
+                                mesh.procPointAddressing(proci)
+                            );
+                        }
+                    }
 
                     // Read the mesh
                     const auto& procMesh = procMeshList.try_emplace

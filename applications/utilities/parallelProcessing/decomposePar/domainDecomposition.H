@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2021 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -74,6 +75,9 @@ class domainDecomposition
         //- Is the decomposition data to be distributed for each processor
         bool distributed_;
 
+        //- Lookups/zone markers prepared
+        mutable bool procMeshBuildReady_;
+
         //- Processor label for each cell
         labelList cellToProc_;
 
@@ -102,7 +106,7 @@ class domainDecomposition
         labelListList procPatchStartIndex_;
 
 
-        // Per inter-processor patch information
+    // Per inter-processor patch information
 
         //- Neighbour processor ID for inter-processor boundaries
         labelListList procNeighbourProcessors_;
@@ -118,6 +122,19 @@ class domainDecomposition
 
         //- Sub patch sizes for inter-processor patches
         List<labelListList> procProcessorPatchSubPatchStarts_;
+
+
+    // Work data for constructing processor meshes
+
+        //- Full-mesh point/face to processor-local index (-1 if unused).
+        //  Allocated once, only touched entries are reset per processor.
+        mutable labelList pointLookup_;
+        mutable labelList faceLookup_;
+
+        //- Single zone per point/face/cell (-1: none, -2: multiple)
+        mutable labelList pointToZone_;
+        mutable labelList faceToZone_;
+        mutable labelList cellToZone_;
 
 
     // Private Member Functions
@@ -154,6 +171,34 @@ class domainDecomposition
             List<labelListList>& subPatchStarts,
             bool owner,
             BinaryOp bop
+        ) const;
+
+        //- True if the processor meshes can be created/rebuilt in memory
+        //- (decomposition done, mesh points not from a different instance)
+        bool buildProcMesh_hasData() const noexcept
+        {
+            return
+            (
+                !facesInstancePointsPtr_
+             && (procCellAddressing_.size() == nProcs_)
+             && (procPatchSize_.size() == nProcs_)
+             && (nProcs_ == 0 || procPatchSize_[0].size())
+            );
+        }
+
+        //- Prepare lookups and zone markers (once)
+        void buildProcMesh_init() const;
+
+        //- Reset the lookup entries touched by processor proci
+        void buildProcMesh_reset(const label proci) const;
+
+        //- Construct processor mesh (points, faces, cells, patches, zones).
+        //  Leaves the lookups set for proci; call procMeshBuild_reset() after.
+        template<class MeshType>
+        autoPtr<MeshType> buildProcMesh_impl
+        (
+            const label proci,
+            const Time& processorDb
         ) const;
 
 
@@ -231,6 +276,42 @@ public:
 
         //- Write decomposition
         bool writeDecomposition(const bool decomposeSets);
+
+        //- True if the processor meshes can be created/rebuilt in memory
+        //- (decomposition done, mesh points not from a different instance)
+        bool canCreateProcMeshes() const noexcept
+        {
+            return buildProcMesh_hasData();
+        }
+
+        //- In-memory processor fvMesh, identical to the one written by
+        //- writeDecomposition (avoids reading it back from disk)
+        autoPtr<fvMesh> processorFvMesh
+        (
+            const label proci,
+            const Time& processorDb
+        ) const;
+
+        //- Point addressing (processor to complete mesh) for proci
+        const labelList& procPointAddressing(label proci) const
+        {
+            return procPointAddressing_[proci];
+        }
+
+        //- Face addressing (with turning index) for proci
+        const labelUList& procFaceAddressing(label proci) const
+        {
+            return procFaceAddressing_[proci];
+        }
+
+        //- Cell addressing for proci
+        const labelList& procCellAddressing(label proci) const
+        {
+            return procCellAddressing_[proci];
+        }
+
+        //- Boundary addressing for proci (identity, -1 for processor patches)
+        labelList procBoundaryAddressing(label proci) const;
 
 
     // Write
