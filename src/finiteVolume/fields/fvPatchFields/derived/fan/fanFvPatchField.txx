@@ -44,6 +44,31 @@ Foam::fanFvPatchField<Type>::operatingModeNames_
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
 template<class Type>
+typename Foam::fanFvPatchField<Type>::operatingMode
+Foam::fanFvPatchField<Type>::mode(const dictionary& dict)
+{
+    operatingMode mode =
+        operatingModeNames_.getOrDefault("mode", dict, operatingMode::VELOCITY);
+
+    // Backwards compatibility
+    if (mode == operatingMode::VELOCITY)
+    {
+        if (dict.getOrDefault("nonDimensional", false))
+        {
+            mode = operatingMode::NON_DIMENSIONAL;
+        }
+
+        if (dict.getOrDefault("uniformJump", false))
+        {
+            mode = operatingMode::UNIFORM_VELOCITY;
+        }
+    }
+
+    return mode;
+}
+
+
+template<class Type>
 void Foam::fanFvPatchField<Type>::calcFanJump()
 {
     if (this->cyclicPatch().owner())
@@ -66,8 +91,13 @@ Foam::fanFvPatchField<Type>::fanFvPatchField
     operatingMode_(operatingMode::VELOCITY),
     phiName_("phi"),
     rhoName_("rho"),
-    rpm_(nullptr),
-    dm_(nullptr)
+    fanNonDimensional_
+    (
+        p,
+        iF.dimensions(),
+        iF.name(),
+        iF.objectPath()
+    )
 {}
 
 
@@ -80,41 +110,20 @@ Foam::fanFvPatchField<Type>::fanFvPatchField
 )
 :
     parent_bctype(p, iF, dict, false),  // needValue = false
-    operatingMode_
-    (
-        operatingModeNames_.getOrDefault("mode", dict, operatingMode::VELOCITY)
-    ),
+    operatingMode_(mode(dict)),
     phiName_(dict.getOrDefault<word>("phi", "phi")),
     rhoName_(dict.getOrDefault<word>("rho", "rho")),
-    rpm_(nullptr),
-    dm_(nullptr)
+    fanNonDimensional_
+    (
+        p,
+        iF.dimensions(),
+        iF.name(),
+        iF.objectPath(),
+        dict,
+        this->db(),
+        operatingMode_ == operatingMode::NON_DIMENSIONAL
+    )
 {
-    // Backwards compatibility
-    if (operatingMode_ == operatingMode::VELOCITY)
-    {
-        bool nonDimCompat = dict.getOrDefault("nonDimensional", false);
-        if (nonDimCompat)
-        {
-            // Warn?
-            operatingMode_ = operatingMode::NON_DIMENSIONAL;
-        }
-
-        bool uniformCompat = dict.getOrDefault("uniformJump", false);
-        if (uniformCompat)
-        {
-            // Warn?
-            operatingMode_ = operatingMode::UNIFORM_VELOCITY;
-        }
-    }
-
-
-    // Note that we've not read jumpTable_ etc
-    if (operatingMode_ == operatingMode::NON_DIMENSIONAL)
-    {
-        rpm_.reset(Function1<scalar>::New("rpm", dict, &this->db()));
-        dm_.reset(Function1<scalar>::New("dm", dict, &this->db()));
-    }
-
     if (this->cyclicPatch().owner())
     {
         this->jumpTable_ = Function1<Type>::New("jumpTable", dict, &this->db());
@@ -140,8 +149,14 @@ Foam::fanFvPatchField<Type>::fanFvPatchField
     operatingMode_(rhs.operatingMode_),
     phiName_(rhs.phiName_),
     rhoName_(rhs.rhoName_),
-    rpm_(rhs.rpm_.clone()),
-    dm_(rhs.dm_.clone())
+    fanNonDimensional_
+    (
+        rhs.fanNonDimensional_,
+        p,
+        iF.dimensions(),
+        iF.name(),
+        iF.objectPath()
+    )
 {}
 
 
@@ -156,8 +171,14 @@ Foam::fanFvPatchField<Type>::fanFvPatchField
     operatingMode_(rhs.operatingMode_),
     phiName_(rhs.phiName_),
     rhoName_(rhs.rhoName_),
-    rpm_(rhs.rpm_.clone()),
-    dm_(rhs.dm_.clone())
+    fanNonDimensional_
+    (
+        rhs.fanNonDimensional_,
+        this->patch(),
+        iF.dimensions(),
+        iF.name(),
+        iF.objectPath()
+    )
 {}
 
 
@@ -189,8 +210,7 @@ void Foam::fanFvPatchField<Type>::write(Ostream& os) const
 
     if (operatingMode_ == operatingMode::NON_DIMENSIONAL)
     {
-        rpm_->writeData(os);
-        dm_->writeData(os);
+        fanNonDimensional_.write(os);
     }
 }
 

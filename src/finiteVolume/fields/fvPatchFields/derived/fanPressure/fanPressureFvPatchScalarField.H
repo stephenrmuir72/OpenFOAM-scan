@@ -34,23 +34,19 @@ Description
     This boundary condition can be applied to assign either a pressure inlet
     or outlet total pressure condition for a fan.
 
-    The switch nonDimensional can be used for a non-dimensional fan curve.
-    It needs inputs rpm and dm of the fan.
+    The pressure drop \c deltaP can be optionally under-relaxed using the
+    \c relax factor (0 < relax <= 1). The update is:
 
-    The nonDimensional flux is calculate as :
+        deltaP = relax*deltaPNew + (1 - relax)*deltaP0
 
-        phi = 4.0*mDot/(rho*sqr(PI)*dm^3*omega)
-        where:
-            dm is the mean diameter.
-            omega is rad/sec.
+    where \c deltaP0 is the reference value from the previous update. The
+    reference is refreshed only when the time index changes, so the
+    relaxation acts within the iterations of a time step and is therefore
+    also valid for transient simulations.
 
-    The nonDimensinal pressure :
-
-        Psi = 2 deltaP/(rho*(sqr(PI*omega*dm)))
-        where:
-            deltaP is the pressure drop
-
-    The non-dimensional table should be given as Psi = F(phi).
+    When \c relax is active, \c deltaP0 is written and read automatically to
+    preserve the relaxation state across restarts; it is not intended as a
+    normal user configuration entry.
 
 Usage
     \table
@@ -59,11 +55,16 @@ Usage
         direction    | direction of flow through fan [in/out] | yes |
         p0           | environmental total pressure      | yes |
         nonDimensional | uses non-dimensional table      | no  | false
-        rpm          | fan rpm for non-dimensional table | no  |
-        dm           | mean diameter for non-dimensional table | no |
+        relax         | under-relaxation factor for deltaP    | no | -1
         file         | fan curve file name               | legacy |
         outOfBounds  | out of bounds handling            | legacy |
     \endtable
+
+    For the inputs and formulation related to non-dimensional operation, refer
+    to \link fanNonDimensional.H \endlink.
+
+    The inherited entries are elaborated in:
+      - \link totalPressureFvPatchScalarField.H \endlink
 
     Example of the boundary condition specification:
     \verbatim
@@ -99,6 +100,7 @@ Note
     the \c file keyword mandatory.
 
 See also
+    Foam::fanNonDimensional
     Foam::fanFvPatchField
     Foam::totalPressureFvPatchScalarField
     Foam::Function1
@@ -112,7 +114,7 @@ SourceFiles
 #define Foam_fanPressureFvPatchScalarField_H
 
 #include "totalPressureFvPatchScalarField.H"
-#include "Function1.H"
+#include "fanNonDimensional.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -150,18 +152,23 @@ private:
         //- Run-time selectable fan curve
         autoPtr<Function1<scalar>> fanCurve_;
 
-        //- Direction of flow through the fan relative to patch
-        fanFlowDirection direction_;
-
         //- Use non-dimensional curve
         bool nonDimensional_;
 
-        //- Fan rpm (for non-dimensional curve)
-        autoPtr<Function1<scalar>> rpm_;
+        //- Non-dimensional fan-curve formulation
+        fanNonDimensional fanNonDimensional_;
 
-        //- Fan mean diameter (for non-dimensional curve)
-        autoPtr<Function1<scalar>> dm_;
+        //- Under-relaxation factor for the pressure drop
+        scalar relaxFactor_;
 
+        //- Reference pressure drop for under-relaxation
+        scalar pdFan0_;
+
+        //- Time index of the reference pressure drop
+        label timeIndex_;
+
+        //- Direction of flow through the fan relative to patch
+        fanFlowDirection direction_;
 
 public:
 

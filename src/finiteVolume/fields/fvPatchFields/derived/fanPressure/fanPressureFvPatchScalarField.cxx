@@ -55,10 +55,18 @@ Foam::fanPressureFvPatchScalarField::fanPressureFvPatchScalarField
 :
     parent_bctype(p, iF),
     fanCurve_(nullptr),
-    direction_(ffdOut),
     nonDimensional_(false),
-    rpm_(nullptr),
-    dm_(nullptr)
+    fanNonDimensional_
+    (
+        p,
+        iF.dimensions(),
+        iF.name(),
+        iF.objectPath()
+    ),
+    relaxFactor_(-1),
+    pdFan0_(0),
+    timeIndex_(-1),
+    direction_(ffdOut)
 {}
 
 
@@ -72,10 +80,19 @@ Foam::fanPressureFvPatchScalarField::fanPressureFvPatchScalarField
 :
     parent_bctype(rhs, p, iF, mapper),
     fanCurve_(rhs.fanCurve_.clone()),
-    direction_(rhs.direction_),
     nonDimensional_(rhs.nonDimensional_),
-    rpm_(rhs.rpm_.clone()),
-    dm_(rhs.dm_.clone())
+    fanNonDimensional_
+    (
+        rhs.fanNonDimensional_,
+        p,
+        iF.dimensions(),
+        iF.name(),
+        iF.objectPath()
+    ),
+    relaxFactor_(rhs.relaxFactor_),
+    pdFan0_(rhs.pdFan0_),
+    timeIndex_(rhs.timeIndex_),
+    direction_(rhs.direction_)
 {}
 
 
@@ -88,11 +105,34 @@ Foam::fanPressureFvPatchScalarField::fanPressureFvPatchScalarField
 :
     parent_bctype(p, iF, dict),
     fanCurve_(nullptr),
-    direction_(fanFlowDirectionNames_.get("direction", dict)),
     nonDimensional_(dict.getOrDefault("nonDimensional", false)),
-    rpm_(nullptr),
-    dm_(nullptr)
+    fanNonDimensional_
+    (
+        p,
+        iF.dimensions(),
+        iF.name(),
+        iF.objectPath(),
+        dict,
+        this->db(),
+        nonDimensional_
+    ),
+    relaxFactor_(-1),
+    pdFan0_(0),
+    timeIndex_(this->db().time().timeIndex()),
+    direction_(fanFlowDirectionNames_.get("direction", dict))
 {
+    // Validate the under-relaxation factor. The value is optional and
+    // defaults to -1 (disabled); when specified it must satisfy 0 < relax <= 1.
+    dict.readCheckIfPresent
+    (
+        "relax",
+        relaxFactor_,
+        [](const scalar v)
+        {
+            return v > 0 && v <= 1;
+        }
+    );
+
     // Backwards compatibility
     if (dict.found("file"))
     {
@@ -106,10 +146,10 @@ Foam::fanPressureFvPatchScalarField::fanPressureFvPatchScalarField
         fanCurve_.reset(Function1<scalar>::New("fanCurve", dict, &this->db()));
     }
 
-    if (nonDimensional_)
+    // Read optional saved relaxation state for restart
+    if (dict.found("deltaP0"))
     {
-        rpm_.reset(Function1<scalar>::New("rpm", dict, &this->db()));
-        dm_.reset(Function1<scalar>::New("dm", dict, &this->db()));
+        pdFan0_ = dict.get<scalar>("deltaP0");
     }
 }
 
@@ -122,10 +162,19 @@ Foam::fanPressureFvPatchScalarField::fanPressureFvPatchScalarField
 :
     parent_bctype(rhs, iF),
     fanCurve_(rhs.fanCurve_.clone()),
-    direction_(rhs.direction_),
     nonDimensional_(rhs.nonDimensional_),
-    rpm_(rhs.rpm_.clone()),
-    dm_(rhs.dm_.clone())
+    fanNonDimensional_
+    (
+        rhs.fanNonDimensional_,
+        this->patch(),
+        iF.dimensions(),
+        iF.name(),
+        iF.objectPath()
+    ),
+    relaxFactor_(rhs.relaxFactor_),
+    pdFan0_(rhs.pdFan0_),
+    timeIndex_(rhs.timeIndex_),
+    direction_(rhs.direction_)
 {}
 
 
@@ -165,37 +214,65 @@ void Foam::fanPressureFvPatchScalarField::updateCoeffs()
             << exit(FatalError);
     }
 
-    // The non-dimensional parameters
-
-    scalar rpm(0);
-    scalar meanDiam(0);
-
-    if (nonDimensional_)
-    {
-        rpm = rpm_->value(this->db().time().timeOutputValue());
-        meanDiam = dm_->value(this->db().time().timeOutputValue());
-
-        // Create an non-dimensional flow rate
-        volFlowRate =
-            120.0*volFlowRate
-          / stabilise
-            (
-                pow3(constant::mathematical::pi * meanDiam) * rpm,
-                VSMALL
-            );
-    }
+    // Preserve the physical volume flow rate for reporting
+    const scalar Q = volFlowRate;
 
     // Pressure drop for this flow rate
-    scalar pdFan = fanCurve_->value(max(volFlowRate, scalar(0)));
+    scalar pdFan;
 
     if (nonDimensional_)
     {
-        // Convert the non-dimensional deltap from curve into deltaP
+        const scalar timeValue =
+            this->db().time().timeOutputValue();
+
+        volFlowRate =
+            fanNonDimensional_.nonDimensionalFlowRate
+            (
+                volFlowRate,
+                timeValue
+            );
+
+        pdFan = fanCurve_->value(max(volFlowRate, scalar(0)));
+
         pdFan =
-        (
-            pdFan*pow4(constant::mathematical::pi)
-          * sqr(rpm * meanDiam) / 1800.0
-        );
+            fanNonDimensional_.dimensionalPressure
+            (
+                pdFan,
+                rhoName(),
+                timeValue
+            );
+    }
+    else
+    {
+        pdFan = fanCurve_->value(max(volFlowRate, scalar(0)));
+    }
+
+    if (relaxFactor_ > 0)
+    {
+        pdFan = lerp(pdFan0_, pdFan, relaxFactor_);
+
+        if (timeIndex_ != this->db().time().timeIndex())
+        {
+            pdFan0_ = pdFan;
+            timeIndex_ = this->db().time().timeIndex();
+        }
+    }
+
+    if (debug)
+    {
+        Info<< type() << " on patch " << patch().name()
+            << " of field " << internalField().name() << ':' << nl
+            << "    volume flow rate = " << Q << " m3/s"
+            << ", deltaP = " << pdFan;
+
+        if (internalField().dimensions() == dimPressure)
+        {
+            Info<< " Pa" << endl;
+        }
+        else
+        {
+            Info<< " Pa/(kg/m3)" << endl;
+        }
     }
 
     this->parent_bctype::updateCoeffs
@@ -212,11 +289,16 @@ void Foam::fanPressureFvPatchScalarField::write(Ostream& os) const
     fanCurve_->writeData(os);
     os.writeEntry("direction", fanFlowDirectionNames_[direction_]);
 
+    if (relaxFactor_ > 0)
+    {
+        os.writeEntry("relax", relaxFactor_);
+        os.writeEntry("deltaP0", pdFan0_);
+    }
+
     if (nonDimensional_)
     {
         os.writeEntry("nonDimensional", "true");
-        rpm_->writeData(os);
-        dm_->writeData(os);
+        fanNonDimensional_.write(os);
     }
 }
 

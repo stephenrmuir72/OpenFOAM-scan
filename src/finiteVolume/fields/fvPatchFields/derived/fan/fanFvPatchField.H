@@ -44,29 +44,6 @@ Description
     - volumeFlowRate:  deltap = F(patch volume flow rate)
     - nonDimensional:  non-dim deltap = F(non-dim volume flow rate)
 
-    Non-dimensional operation:
-
-    As inputs it needs the fan RPM (rpm) and the mean diameter (dm).
-
-    The non-dimensional U for the table is calculated as follows:
-
-    \verbatim
-        phi = 120*Un/(PI^3*dm^3*rpm)
-        where:
-            dm is the mean diameter.
-            rpm is the RPM of the fan.
-    \endverbatim
-
-    The non-dimensional pressure:
-
-    \verbatim
-        Psi = 2 deltaP/(rho*(sqr(PI*omega*dm)))
-        where:
-            deltaP is the pressure drop
-    \endverbatim
-
-    The non-dimensional table should be given as Psi = F(phi).
-
 Usage
     \table
         Property    | Description                           | Required | Default
@@ -75,9 +52,16 @@ Usage
         jumpTable   | jump data, e.g. \c csvFile            | yes |
         phi         | flux field name                       | no  | phi
         rho         | density field name                    | no  | rho
-        rpm         | fan rpm (non-dimensional table)       | no |
-        dm          | mean diameter (non-dimensional table) | no |
+        nonDimensional | legacy: select non-dimensional mode         | no | false
+        uniformJump   | legacy: select uniform velocity mode         | no | false
     \endtable
+
+    For the inputs and formulation related to non-dimensional operation, refer
+    to \link fanNonDimensional.H \endlink.
+
+    The inherited entries are elaborated in:
+      - \link uniformJumpFvPatchField.H \endlink
+      - \link fixedJumpFvPatchField.H \endlink
 
     Example of the boundary condition specification:
     \verbatim
@@ -108,6 +92,7 @@ Note
     The underlying \c patchType should be set to \c cyclic
 
 See also
+    Foam::fanNonDimensional
     Foam::Function1Types
 
 SourceFiles
@@ -121,7 +106,7 @@ SourceFiles
 #define Foam_fanFvPatchField_H
 
 #include "uniformJumpFvPatchField.H"
-#include "Function1.H"
+#include "fanNonDimensional.H"
 #include "Enum.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
@@ -146,7 +131,7 @@ public:
     // Public Data Types
 
         //- Enumeration defining the operating modes
-        enum class operatingMode
+        enum class operatingMode : uint8_t
         {
             VELOCITY,           //!< velocity-based lookup
             UNIFORM_VELOCITY,   //!< uniform velocity-based lookup
@@ -171,14 +156,14 @@ private:
         //- Name of the density field for normalising the mass flux if necessary
         word rhoName_;
 
-        //- Fan rpm (for non-dimensional curve)
-        autoPtr<Function1<scalar>> rpm_;
-
-        //- Fan mean diameter (for non-dimensional curve)
-        autoPtr<Function1<scalar>> dm_;
+        //- Non-dimensional fan-curve formulation
+        fanNonDimensional fanNonDimensional_;
 
 
     // Private Member Functions
+
+        //- Read the operating mode, including legacy compatibility entries
+        static operatingMode mode(const dictionary&);
 
         //- Calculate the fan pressure jump
         void calcFanJump();

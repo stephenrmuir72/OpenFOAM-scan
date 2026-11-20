@@ -73,10 +73,6 @@ void Foam::fanFvPatchField<Foam::scalar>::calcFanJump()
     }
 
 
-    // The non-dimensional parameters
-    scalar rpm(0);
-    scalar meanDiam(0);
-
     scalarField pdFan(patch().size(), Zero);
 
     switch (operatingMode_)
@@ -120,28 +116,26 @@ void Foam::fanFvPatchField<Foam::scalar>::calcFanJump()
         {
             // Face-based volFlowRate converted to patch-based volFlowRate
             // for pd curve lookup
-            scalar sumVolFlowRate = gSum(volFlowRate);
+            const scalar timeValue =
+                this->db().time().timeOutputValue();
 
-            rpm = rpm_->value(this->db().time().timeOutputValue());
-            meanDiam = dm_->value(this->db().time().timeOutputValue());
-
-            // Create a non-dimensional flow rate
-            sumVolFlowRate *=
-            (
-                120.0
-               /stabilise
+            const scalar sumVolFlowRate =
+                fanNonDimensional_.nonDimensionalFlowRate
                 (
-                    pow3(constant::mathematical::pi*meanDiam)*rpm,
-                    VSMALL
-                )
-            );
+                    gSum(volFlowRate),
+                    timeValue
+                );
 
             const scalar pdNonDim = this->jumpTable_->value(sumVolFlowRate);
 
             // Convert uniform non-dimensional pdFan from curve into deltaP
             pdFan =
-                pdNonDim
-               *pow4(constant::mathematical::pi)*sqr(meanDiam*rpm)/1800.0;
+                fanNonDimensional_.dimensionalPressure
+                (
+                    pdNonDim,
+                    rhoName_,
+                    timeValue
+                );
 
             break;
         }
@@ -158,6 +152,65 @@ void Foam::fanFvPatchField<Foam::scalar>::calcFanJump()
     this->setJump(pdFan);
 
     this->relax();
+
+    if (debug)
+    {
+        const scalarField appliedJump(this->jump());
+
+        Info<< type() << " on patch " << patch().name()
+            << " of field " << internalField().name() << ':' << nl
+            << "    mode: " << operatingModeNames_[operatingMode_] << nl;
+
+        switch (operatingMode_)
+        {
+            case operatingMode::VELOCITY:
+            {
+                const auto vel = gMinMax(volFlowRate);
+                const auto dp = gMinMax(appliedJump);
+
+                Info<< "    U (m/s): min " << vel.min()
+                    << ", max " << vel.max()
+                    << ", average " << gAverage(volFlowRate) << nl
+                    << "    deltaP: min " << dp.min()
+                    << ", max " << dp.max()
+                    << ", average " << gAverage(appliedJump);
+
+                break;
+            }
+            case operatingMode::UNIFORM_VELOCITY:
+            {
+                const scalar UnAve =
+                    gSum(volFlowRate*patch().magSf())/gSum(patch().magSf());
+                const scalar deltaP = gMax(appliedJump);
+
+                Info<< "    U = " << UnAve << " m/s, deltaP = " << deltaP;
+
+                break;
+            }
+            case operatingMode::VOL_FLOW_RATE:
+            case operatingMode::NON_DIMENSIONAL:
+            {
+                const scalar Q = gSum(volFlowRate);
+                const scalar deltaP = gMax(appliedJump);
+
+                Info<< "    volume flow rate = " << Q
+                    << " m3/s, deltaP = " << deltaP;
+
+                break;
+            }
+            default:
+                break;
+        }
+
+        if (internalField().dimensions() == dimPressure)
+        {
+            Info<< " Pa" << endl;
+        }
+        else
+        {
+            Info<< " Pa/(kg/m3)" << endl;
+        }
+    }
 }
 
 
