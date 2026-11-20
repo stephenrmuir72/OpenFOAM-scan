@@ -1,7 +1,7 @@
 /*--------------------------------*- C++ -*----------------------------------*\
 | =========                 |                                                 |
 | \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
-|  \\    /   O peration     | Version:  v2606                                 |
+|  \\    /   O peration     | Version:  v2612                                 |
 |   \\  /    A nd           | Website:  www.openfoam.com                      |
 |    \\/     M anipulation  |                                                 |
 \*---------------------------------------------------------------------------*/
@@ -76,10 +76,10 @@ surfaceNoiseCoeffs
     N               4096; // 8192; // 4096;
 
     // Lower frequency limit, default = 25Hz
-    //fl              25;
+    //minFreq         25;
 
     // Upper frequency limit, default = 10kHz
-    fu              15000;
+    maxFreq         15000;
 
     // Start time, default = 0s
     //startTime       0;
@@ -87,12 +87,11 @@ surfaceNoiseCoeffs
     // Write interval for FFT data, default = 1
     //fftWriteInterval 100;
 
-    // Bounds for valid pressure from input source
-        // Maximum pressure, default 0.5*VGREAT
-        //maxPressure 150e5;
+    // Minimum bound for valid pressure (input source), default -0.5*VGREAT
+    //minPressure -150e5;
 
-        // Minimum pressure, default -0.5*VGREAT
-        //minPressure -150e5;
+    // Maximum bound for valid pressure (input source), default 0.5*VGREAT
+    //maxPressure 150e5;
 }
 
 pointNoiseCoeffs
@@ -126,10 +125,10 @@ pointNoiseCoeffs
     N               4096;
 
     // Lower frequency limit, default = 25Hz
-    //fl              25;
+    //minFreq         25;
 
     // Upper frequency limit, default = 10kHz
-    //fu              10000;
+    //maxFreq         10000;
 
     // Start time, default = 0s
     //startTime       0;
@@ -137,12 +136,11 @@ pointNoiseCoeffs
     // Write interval for FFT data, default = 1
     fftWriteInterval 100;
 
-    // Bounds for valid pressure from input source
-        // Maximum pressure, default 0.5*VGREAT
-        //maxPressure 150e5;
+    // Minimum bound for valid pressure (input source), default -0.5*VGREAT
+    //minPressure -150e5;
 
-        // Minimum pressure, default -0.5*VGREAT
-        //minPressure -150e5;
+    // Maximum bound for valid pressure (input source), default 0.5*VGREAT
+    //maxPressure 150e5;
 }
 
 

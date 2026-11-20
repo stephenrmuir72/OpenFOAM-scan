@@ -7,6 +7,7 @@
 #------------------------------------------------------------------------------
 #     Copyright (C) 2011-2016 OpenFOAM Foundation
 #     Copyright (C) 2017-2023 OpenCFD Ltd.
+#     Copyright (C) 2026 Keysight Technologies
 #------------------------------------------------------------------------------
 # License
 #     This file is part of OpenFOAM, distributed under GPL-3.0-or-later.
@@ -161,7 +162,7 @@ s/^    //
 s?SourceFiles?\\par Source files\
 <ul>\
   <li><a href="%filePath%">%fileName%</a></li> ?
-s? *\([a-zA-Z0-9]*\.[a-zA-Z]*\)?  <li><a href="%dirName%/\1">\1</a></li>?
+s? *\([-_a-zA-Z0-9]*\.[a-zA-Z]*\)?  <li><a href="%dirName%/\1">\1</a></li>?
 s?^$?</ul>?
 }
 
@@ -170,7 +171,7 @@ s?^$?</ul>?
 N
 s?\n$?</ul>?g
 s/<\/li>\n/<\/li> /
-s? *\([a-zA-Z0-9]*\.[a-zA-Z]*\)?  <li><a href="%dirName%/\1">\1</a></li>?
+s? *\([-_a-zA-Z0-9]*\.[a-zA-Z]*\)?  <li><a href="%dirName%/\1">\1</a></li>?
 }
 
 s/.*\*\//\*\//

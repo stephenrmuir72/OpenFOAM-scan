@@ -21,14 +21,6 @@ runApplication blockMesh
 
 runApplication $decompDict decomposePar
 
-# Using distributedTriSurfaceMesh?
-if foamDictionary -entry geometry -value system/snappyHexMeshDict | \
-   grep -q distributedTriSurfaceMesh
-then
-    echo "surfaceRedistributePar does not need to be run anymore"
-    echo " - distributedTriSurfaceMesh will do on-the-fly redistribution"
-fi
-
 runParallel $decompDict snappyHexMesh -overwrite
 
 runParallel $decompDict topoSet
