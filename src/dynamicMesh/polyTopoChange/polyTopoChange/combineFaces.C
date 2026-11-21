@@ -128,6 +128,7 @@ void Foam::combineFaces::regioniseFaces
 (
     const scalar minCos,
     const bool mergeAcrossPatches,
+    const bitSet& mergeAcrossPatchExceptions,
     const label celli,
     const labelList& cEdges,
     Map<label>& faceRegion
@@ -148,12 +149,10 @@ void Foam::combineFaces::regioniseFaces
 
         // Face can be merged if
         // - small angle
-        // - mergeAcrossPatches=false : same non-constraint patch
-        // - mergeAcrossPatches=true  : always (if non-constraint patch)
-        //   (this logic could be extended to e.g. merge faces on symm plane
-        //    if they have similar normals. But there might be lots of other
-        //    constraints which disallow merging so this decision ideally should
-        //    be up to patch type)
+        // - neither side is a constraint patch
+        // - same patch, or mergeAcrossPatches and neither patch is an
+        //   exception. An exception patch is fully preserved: its faces
+        //   are never merged with a different patch.
         if
         (
             p0 != -1
@@ -164,9 +163,22 @@ void Foam::combineFaces::regioniseFaces
             )
         )
         {
-            if (!mergeAcrossPatches && (p0 != p1))
+            if (p0 != p1)
             {
-                continue;
+                if (!mergeAcrossPatches)
+                {
+                    continue;
+                }
+
+                // Direct lookup. The mask is built once per merge.
+                if
+                (
+                    mergeAcrossPatchExceptions.test(p0)
+                 || mergeAcrossPatchExceptions.test(p1)
+                )
+                {
+                    continue;
+                }
             }
 
             const vector f0Normal = normalised(a0);
@@ -301,7 +313,8 @@ Foam::labelListList Foam::combineFaces::getMergeSets
     const scalar featureCos,
     const scalar minConcaveCos,
     const labelHashSet& boundaryCells,
-    const bool mergeAcrossPatches
+    const bool mergeAcrossPatches,
+    const bitSet& mergeAcrossPatchExceptions
 ) const
 {
     // Lists of faces that can be merged.
@@ -323,6 +336,7 @@ Foam::labelListList Foam::combineFaces::getMergeSets
         (
             featureCos,
             mergeAcrossPatches,
+            mergeAcrossPatchExceptions,
             celli,
             cEdges,
             faceRegion
@@ -417,7 +431,8 @@ Foam::labelListList Foam::combineFaces::getMergeSets
 (
     const scalar featureCos,
     const scalar minConcaveCos,
-    const bool mergeAcrossPatches
+    const bool mergeAcrossPatches,
+    const bitSet& mergeAcrossPatchExceptions
 ) const
 {
     const polyBoundaryMesh& patches = mesh_.boundaryMesh();
@@ -443,7 +458,8 @@ Foam::labelListList Foam::combineFaces::getMergeSets
         featureCos,
         minConcaveCos,
         boundaryCells,
-        mergeAcrossPatches
+        mergeAcrossPatches,
+        mergeAcrossPatchExceptions
     );
 }
 

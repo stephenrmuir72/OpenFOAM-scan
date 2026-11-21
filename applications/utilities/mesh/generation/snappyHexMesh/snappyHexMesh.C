@@ -1801,12 +1801,45 @@ int main(int argc, char *argv[])
                 meshDict.getOrDefault("mergeAcrossPatches", false)
             );
 
+            // Quoted entries are regular expressions ("custom.*").
+            // Bare words are exact patch names (myPatch2).
+            const wordRes mergeAcrossPatchExceptions
+            (
+                meshDict.getOrDefault<wordRes>
+                (
+                    "mergeAcrossPatchExceptions",
+                    wordRes()
+                )
+            );
+
             if (mergeAcrossPatches)
             {
                 Info<< "Merging co-planar patch-faces of cells"
-                    << ", regardless of patch assignment"
-                    << nl << endl;
+                    << ", regardless of patch assignment" << nl;
+
+                if (mergeAcrossPatchExceptions.size())
+                {
+                    Info<< "    Preserving patches matching "
+                        << mergeAcrossPatchExceptions << nl
+                        << "    (quoted entries are regular expressions;"
+                        << " matching patches are not merged with a"
+                        << " different patch)" << nl;
+                }
+
+                Info<< endl;
+
                 mergeType = meshRefinement::FaceMergeType::IGNOREPATCH;
+
+                meshRefiner.setMergeAcrossPatchExceptions
+                (
+                    mergeAcrossPatchExceptions
+                );
+            }
+            else if (mergeAcrossPatchExceptions.size())
+            {
+                Info<< "mergeAcrossPatchExceptions is set, but"
+                    << " mergeAcrossPatches is false; every patch"
+                    << " boundary is already kept" << nl << endl;
             }
         }
     }
