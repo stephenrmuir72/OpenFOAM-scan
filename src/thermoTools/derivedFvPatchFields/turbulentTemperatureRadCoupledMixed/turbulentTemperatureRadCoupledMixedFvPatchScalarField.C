@@ -613,7 +613,8 @@ void turbulentTemperatureRadCoupledMixedFvPatchScalarField::updateCoeffs()
 
         valueFraction() = KDeltaNbr/(KDeltaNbr + alpha);
         refValue() = TcNbr;
-        refGrad() = (qr + qrNbr)/kappaTp;
+        // qrNbr is absorbed on the neighbour side and crosses the layer
+        refGrad() = (qr + qrNbr/(1 + KDeltaNbr/KDeltaC))/kappaTp;
     }
 
     source() = Zero;
