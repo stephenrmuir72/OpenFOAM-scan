@@ -320,7 +320,7 @@ void Foam::GAMGSolver::Vcycle
     // Smoothing and prolongation of the coarse correction fields
     // (going to finer levels)
 
-    solveScalarField dummyField(0);
+    solveScalarField dummyField;
 
     // Work storage for prolongation
     solveScalarField work;
@@ -482,21 +482,25 @@ void Foam::GAMGSolver::Vcycle
         );
     }
 
-    labelRange cellRange(psi.size());
-
-    apply_policy(cellRange.size(), [&](auto policy)
+    if (const label kernel_size = psi.size(); kernel_size > 0)
     {
-        std::for_each
-        (
-            policy,
-            cellRange.begin(),
-            cellRange.end(),
-            [&](const auto& i)
-            {
-                psi[i] += finestCorrection[i];
-            }
-        );
-    });
+        const auto kernel = [&](const label i)
+        {
+            psi[i] += finestCorrection[i];
+        };
+
+        const labelRange cellRange(kernel_size);
+
+        apply_policy(kernel_size, [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                cellRange.begin(), cellRange.end(),
+                kernel
+            );
+        });
+    }
 
     smoothers[0].smooth
     (

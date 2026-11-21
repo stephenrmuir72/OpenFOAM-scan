@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -40,8 +41,8 @@ SourceFiles
 
 \*---------------------------------------------------------------------------*/
 
-#ifndef localMin_H
-#define localMin_H
+#ifndef Foam_localMin_H
+#define Foam_localMin_H
 
 #include "surfaceInterpolationScheme.H"
 #include "volFields.H"
@@ -145,21 +146,25 @@ public:
             const labelUList& own = mesh.owner();
             const labelUList& nei = mesh.neighbour();
 
-            labelRange faceRange(vff.size());
-
-            apply_policy(vff.size(), [&](auto policy)
+            if (const label kernel_size = vff.size(); kernel_size > 0)
             {
-                std::for_each
-                (
-                    policy,
-                    faceRange.begin(),
-                    faceRange.end(),
-                    [&](const label facei)
-                    {
-                        vff[facei] = min(vf[own[facei]], vf[nei[facei]]);
-                    }
-                );
-            });
+                const auto kernel = [&](const label facei)
+                {
+                    vff[facei] = min(vf[own[facei]], vf[nei[facei]]);
+                };
+
+                const labelRange faceRange(kernel_size);
+
+                apply_policy(kernel_size, [&](auto policy)
+                {
+                    std::for_each
+                    (
+                        policy,
+                        faceRange.begin(), faceRange.end(),
+                        body,
+                    );
+                });
+            }
 
             typename GeometricField<Type, fvsPatchField, surfaceMesh>::
                 Boundary& bff = vff.boundaryFieldRef();
@@ -176,19 +181,23 @@ public:
 
                     tmp<Field<Type>> tpnf(pf.patchNeighbourField());
                     const Field<Type>& pnf = tpnf();
-                    labelRange faceRange(pff.size());
 
-                    apply_policy(pff.size(), [&](auto policy)
+                    const label kernel_size = pff.size();
+
+                    const auto kernel = [&](const label i)
+                    {
+                        pff[i] = min(pif[i], pnf[i]);
+                    };
+
+                    const labelRange faceRange(kernel_size);
+
+                    apply_policy(kernel_size, [&](auto policy)
                     {
                         std::for_each
                         (
                             policy,
-                            faceRange.begin(),
-                            faceRange.end(),
-                            [&](const label i)
-                            {
-                                pff[i] = min(pif[i], pnf[i]);
-                            }
+                            faceRange.begin(), faceRange.end(),
+                            kernel
                         );
                     });
                 }

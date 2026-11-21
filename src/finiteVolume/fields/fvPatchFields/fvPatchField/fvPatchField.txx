@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2015-2025 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -231,23 +232,25 @@ void Foam::fvPatchField<Type>::snGrad(UList<Type>& result) const
     const Field<Type>& pfld = *this;
     const auto& dc = patch().deltaCoeffs();
 
-    const label len = result.size();
-
-    labelRange faceRange(len);
-
-    apply_policy(static_cast<std::size_t>(len), [&](auto policy)
+    if (const label kernel_size = result.size(); kernel_size > 0)
     {
-        std::for_each
-        (
-            policy,
-            faceRange.begin(),
-            faceRange.end(),
-            [&](const label i)
-            {
-                result[i] = dc[i]*(pfld[i] - pif[i]);
-            }
-        );
-    });
+        const auto kernel = [&](const label i)
+        {
+            result[i] = dc[i]*(pfld[i] - pif[i]);
+        };
+
+        const labelRange faceRange(kernel_size);
+
+        apply_policy(kernel_size, [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                faceRange.begin(), faceRange.end(),
+                kernel
+            );
+        });
+        }
 }
 
 template<class Type>

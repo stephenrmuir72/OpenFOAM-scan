@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2017-2022 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -108,23 +109,25 @@ void Foam::GAMGSolver::scale
     const labelRange cellRange(nCells);
 
     #ifdef FOAM_OFFLOAD
-    ScalePair<solveScalar> pairResult{Zero, Zero};
-
-    apply_policy(cellRange.size(), [&](auto policy)
     {
-        pairResult = std::transform_reduce
-        (
-            policy,
-            cellRange.begin(),
-            cellRange.end(),
-            ScalePair<solveScalar>{Zero, Zero},
-            ScalePairPlus<solveScalar>(),
-            ScalePairTransform<solveScalar>{fieldPtr, sourcePtr, AcfPtr}
-        );
-    });
+        ScalePair<solveScalar> pairResult{Zero, Zero};
 
-    scalingFactor[0] = pairResult.first_;
-    scalingFactor[1] = pairResult.second_;
+        apply_policy(nCells, [&](auto policy)
+        {
+            pairResult = std::transform_reduce
+            (
+                policy,
+                cellRange.begin(), cellRange.end(),
+
+                ScalePair<solveScalar>{Zero, Zero},
+                ScalePairPlus<solveScalar>(),
+                ScalePairTransform<solveScalar>{fieldPtr, sourcePtr, AcfPtr}
+            );
+        });
+
+        scalingFactor[0] = pairResult.first_;
+        scalingFactor[1] = pairResult.second_;
+    }
     #else
     for (label i=0; i<nCells; i++)
     {
@@ -149,20 +152,23 @@ void Foam::GAMGSolver::scale
     const scalarField& D = A.diag();
     const scalar* const __restrict__ DPtr = D.begin();
 
-    apply_policy(cellRange.size(), [&](auto policy)
     {
-        std::for_each
-        (
-            policy,
-            cellRange.begin(),
-            cellRange.end(),
-            [&](const auto& i)
-            {
-                fieldPtr[i] =
-                    sf*fieldPtr[i] + (sourcePtr[i] - sf*AcfPtr[i])/DPtr[i];
-            }
-        );
-    });
+        const auto kernel = [&](const label i)
+        {
+            fieldPtr[i] =
+                sf*fieldPtr[i] + (sourcePtr[i] - sf*AcfPtr[i])/DPtr[i];
+        };
+
+        apply_policy(nCells, [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                cellRange.begin(), cellRange.end(),
+                kernel
+            );
+        });
+    }
 }
 
 

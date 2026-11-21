@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2019 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -62,12 +63,12 @@ bool Foam::adjustPhi
                 {
                     #ifdef FOAM_OFFLOAD
                     apply_policy(phip.size(), [&](auto policy)
-                    { 
-                        massIn =  std::transform_reduce
+                    {
+                        massIn = std::transform_reduce
                         (
                             policy,
-                            phip.begin(),
-                            phip.end(),
+                            phip.begin(), phip.end(),
+
                             0.0, // initial value
                             std::plus<scalar>(),
                             [](const scalar& val)
@@ -76,14 +77,14 @@ bool Foam::adjustPhi
                             }
                         );
                     });
-                    
+
                     apply_policy(phip.size(), [&](auto policy)
-                    {  
+                    {
                         fixedMassOut = std::transform_reduce
                         (
                             policy,
-                            phip.begin(),
-                            phip.end(),
+                            phip.begin(), phip.end(),
+
                             0.0, // initial value
                             std::plus<scalar>(),
                             [](const scalar& val)
@@ -110,13 +111,13 @@ bool Foam::adjustPhi
                 {
                     #ifdef FOAM_OFFLOAD
                     apply_policy(phip.size(), [&](auto policy)
-                    { 
-                        massIn =  std::transform_reduce
+                    {
+                        massIn = std::transform_reduce
                         (
                             policy,
-                            phip.begin(),
-                            phip.end(),
+                            phip.begin(), phip.end(),
                             0.0, // initial value
+
                             std::plus<scalar>(),
                             [](const scalar& val)
                             {
@@ -130,15 +131,15 @@ bool Foam::adjustPhi
                         adjustableMassOut = std::transform_reduce
                         (
                             policy,
-                            phip.begin(),
-                            phip.end(),
+                            phip.begin(), phip.end(),
                             0.0, // initial value
+
                             std::plus<scalar>(), // sum operation
                             [](const scalar& val)
                             {
                                 return val > 0 ? val : 0;
                             }
-                        ); 
+                        );
                     });
                     #else
                     forAll(phip, i)
@@ -205,11 +206,11 @@ bool Foam::adjustPhi
                     apply_policy(phip.size(), [&](auto policy)
                     {
                         std::transform
-                        (   
+                        (
                             policy,
+                            phip.begin(), phip.end(),
                             phip.begin(),
-                            phip.end(),
-                            phip.begin(),
+
                             [massCorr](const scalar& phi)
                             {
                                 return phi > scalar(0) ? phi*massCorr : phi;

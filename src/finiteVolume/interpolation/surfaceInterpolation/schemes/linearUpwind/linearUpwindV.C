@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -87,56 +88,60 @@ Foam::linearUpwindV<Type>::correction
         volMesh
     >& gradVf = tgradVf();
 
-    labelRange faceRange(faceFlux.size());
-
-    apply_policy(static_cast<std::size_t>(faceFlux.size()), [&](auto policy)
+    if (const label kernel_size = faceFlux.size(); kernel_size > 0)
     {
-        std::for_each
-        (
-            policy,
-            faceRange.begin(),
-            faceRange.end(),
-            [&](size_t facei)
+        const auto kernel = [&](const label facei)
+        {
+            const label ownFace = own[facei];
+            const label neiFace = nei[facei];
+
+            vector maxCorr;
+
+            if (faceFlux[facei] > 0.0)
             {
-                const label ownFace = own[facei];
-                const label neiFace = nei[facei];
+                maxCorr =
+                    (1.0 - w[facei])*(vf[neiFace] - vf[ownFace]);
 
-                vector maxCorr;
+                sfCorr[facei] =
+                    (Cf[facei] - C[ownFace]) & gradVf[ownFace];
+            }
+            else
+            {
+                maxCorr =
+                    w[facei]*(vf[ownFace] - vf[neiFace]);
 
-                if (faceFlux[facei] > 0.0)
-                {
-                    maxCorr =
-                        (1.0 - w[facei])*(vf[neiFace] - vf[ownFace]);
-
-                    sfCorr[facei] =
-                        (Cf[facei] - C[ownFace]) & gradVf[ownFace];
-                }
-                else
-                {
-                    maxCorr =
-                        w[facei]*(vf[ownFace] - vf[neiFace]);
-
-                    sfCorr[facei] =
+                sfCorr[facei] =
                     (Cf[facei] - C[neiFace]) & gradVf[neiFace];
-                }
+            }
 
-                scalar sfCorrs = magSqr(sfCorr[facei]);
-                scalar maxCorrs = sfCorr[facei] & maxCorr;
+            scalar sfCorrs = magSqr(sfCorr[facei]);
+            scalar maxCorrs = sfCorr[facei] & maxCorr;
 
-                if (sfCorrs > 0)
+            if (sfCorrs > 0)
+            {
+                if (maxCorrs < 0)
                 {
-                    if (maxCorrs < 0)
-                    {
-                        sfCorr[facei] = Zero;
-                    }
-                    else if (sfCorrs > maxCorrs)
-                    {
-                        sfCorr[facei] *= maxCorrs/(sfCorrs + VSMALL);
-                    }
+                    sfCorr[facei] = Zero;
+                }
+                else if (sfCorrs > maxCorrs)
+                {
+                    sfCorr[facei] *= maxCorrs/(sfCorrs + VSMALL);
                 }
             }
-        );
-    });
+        };
+
+        const labelRange faceRange(faceFlux.size());
+
+        apply_policy(kernel_size, [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                faceRange.begin(), faceRange.end(),
+                kernel
+            );
+        });
+    }
 
     typename GeometricField<Type, fvsPatchField, surfaceMesh>::
         Boundary& bSfCorr = sfCorr.boundaryFieldRef();
@@ -168,54 +173,53 @@ Foam::linearUpwindV<Type>::correction
             // Build the d-vectors
             vectorField pd(Cf.boundaryField()[patchi].patch().delta());
 
-            labelRange faceRange(pOwner.size());
+            const label kernel_size = pOwner.size();
 
-            apply_policy(pOwner.size(), [&](auto policy)
+            const auto kernel = [&](const label facei)
+            {
+                const label own = pOwner[facei];
+
+                vector maxCorr;
+
+                if (pFaceFlux[facei] > 0)
+                {
+                    pSfCorr[facei] = (pCf[facei] - C[own]) & gradVf[own];
+                    maxCorr = (1.0 - pW[facei])*(pVfNei[facei] - vf[own]);
+                }
+                else
+                {
+                    pSfCorr[facei] =
+                    (
+                        (pCf[facei] - pd[facei] - C[own]) & pGradVfNei[facei]
+                    );
+                    maxCorr = pW[facei]*(vf[own] - pVfNei[facei]);
+                }
+
+                const scalar pSfCorrs = magSqr(pSfCorr[facei]);
+                const scalar maxCorrs = pSfCorr[facei] & maxCorr;
+
+                if (pSfCorrs > 0)
+                {
+                    if (maxCorrs < 0)
+                    {
+                        pSfCorr[facei] = Zero;
+                    }
+                    else if (pSfCorrs > maxCorrs)
+                    {
+                        pSfCorr[facei] *= maxCorrs/(pSfCorrs + VSMALL);
+                    }
+                }
+            };
+
+            const labelRange faceRange(kernel_size);
+
+            apply_policy(kernel_size, [&](auto policy)
             {
                 std::for_each
                 (
                     policy,
-                    faceRange.begin(),
-                    faceRange.end(),
-                    [&](const label facei)
-                    {
-                        const label own = pOwner[facei];
-
-                        vector maxCorr;
-
-                        if (pFaceFlux[facei] > 0)
-                        {
-                            pSfCorr[facei] =
-                                (pCf[facei] - C[own]) & gradVf[own];
-
-                            maxCorr =
-                                (1.0 - pW[facei])*(pVfNei[facei] - vf[own]);
-                        }
-                        else
-                        {
-                            pSfCorr[facei] =
-                                (pCf[facei] - pd[facei] - C[own])
-                            & pGradVfNei[facei];
-
-                            maxCorr =
-                                pW[facei]*(vf[own] - pVfNei[facei]);
-                        }
-
-                        const scalar pSfCorrs = magSqr(pSfCorr[facei]);
-                        const scalar maxCorrs = pSfCorr[facei] & maxCorr;
-
-                        if (pSfCorrs > 0)
-                        {
-                            if (maxCorrs < 0)
-                            {
-                                pSfCorr[facei] = Zero;
-                            }
-                            else if (pSfCorrs > maxCorrs)
-                            {
-                                pSfCorr[facei] *= maxCorrs/(pSfCorrs + VSMALL);
-                            }
-                        }
-                    }
+                    faceRange.begin(), faceRange.end(),
+                    kernel
                 );
             });
         }

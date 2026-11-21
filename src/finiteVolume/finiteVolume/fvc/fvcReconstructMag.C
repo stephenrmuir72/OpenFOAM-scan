@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2013-2016 OpenFOAM Foundation
     Copyright (C) 2026 UKRI-STFC.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -85,61 +86,66 @@ tmp<volScalarField> reconstructMag(const surfaceScalarField& ssf)
     const labelUList& neiStart = mesh.lduAddr().losortStartAddr();
     const labelUList& losort = mesh.lduAddr().losortAddr();
 
-    auto ownFun = [&Sf, &Cf, &C, &ssf, &magSf]
-        (const label celli, const label facei)
+    if (const label kernel_size = rf.size(); kernel_size > 0)
     {
-        return
-        (
-            (Sf[facei] & (Cf[facei] - C[celli]))
-        *ssf[facei]/magSf[facei]
-        );
-    };
+        const auto ownFun =
+            [&Sf, &Cf, &C, &ssf, &magSf]
+            (const label celli, const label facei)
+            {
+                return
+                (
+                    (Sf[facei] & (Cf[facei] - C[celli]))
+                    *ssf[facei]/magSf[facei]
+                );
+            };
 
-    auto neiFun =[&Sf, &Cf, &C, &ssf, &magSf]
-        (const label celli, const label facei)
-    {
-        return
-        (
-        -((Sf[facei] & (Cf[facei] - C[celli]))
-            *ssf[facei]/magSf[facei])
-        );
-    };
+        const auto neiFun =
+            [&Sf, &Cf, &C, &ssf, &magSf]
+            (const label celli, const label facei)
+            {
+                return
+                (
+                    -((Sf[facei] & (Cf[facei] - C[celli]))
+                      *ssf[facei]/magSf[facei])
+                );
+            };
 
-    auto plusOp = [](scalar& result, const scalar value)
-    {
-        result += value;
-    };
+        const auto plusOp = [](scalar& result, const scalar value)
+        {
+            result += value;
+        };
 
-    labelRange cells(rf.size());
+        const labelRange cells(kernel_size);
 
-    apply_policy(cells.size(), [&](auto policy)
-    {
-        std::transform
-        (
-            policy,
-            cells.begin(),
-            cells.end(),
-            rf.begin(),
-            cellReduceFunctor
-            <
-                scalar,
-                decltype(ownFun),
-                decltype(neiFun),
-                decltype(plusOp),
-                decltype(plusOp)
-            >
+        apply_policy(kernel_size, [&](auto policy)
+        {
+            std::transform
             (
-                pTraits<scalar>::zero,
-                ownStart,
-                neiStart,
-                losort,
-                ownFun,
-                neiFun,
-                plusOp,
-                plusOp
-            )
-        );
-    });
+                policy,
+                cells.begin(), cells.end(),
+                rf.begin(),
+
+                cellReduceFunctor
+                <
+                    scalar,
+                    decltype(ownFun),
+                    decltype(neiFun),
+                    decltype(plusOp),
+                    decltype(plusOp)
+                >
+                (
+                    pTraits<scalar>::zero,
+                    ownStart,
+                    neiStart,
+                    losort,
+                    ownFun,
+                    neiFun,
+                    plusOp,
+                    plusOp
+                )
+            );
+        });
+    }
     #else
     forAll(owner, facei)
     {
@@ -170,10 +176,10 @@ tmp<volScalarField> reconstructMag(const surfaceScalarField& ssf)
         // patch-local views (avoid repeated boundaryField() inside kernel)
         const auto& pssf = ssf.boundaryField()[patchi];
 
-        labelRange indices(pOwner.size());
+        const label kernel_size = pOwner.size();
 
         // device-callable lambda
-        auto neiFun = [&](const label id, const label facei) -> scalar
+        const auto neiFun = [&](const label id, const label facei) -> scalar
         {
             const label celli = pOwner[facei];
 
@@ -181,15 +187,21 @@ tmp<volScalarField> reconstructMag(const surfaceScalarField& ssf)
                 *pssf[facei]/pMagSf[facei];
         };
 
-        apply_policy(pOwner.size(), [&]( auto policy )
+        const labelRange indices(kernel_size);
+
+        apply_policy(kernel_size, [&](auto policy)
         {
             std::for_each
             (
                 policy,
-                indices.begin(),
-                indices.end(),
-                patchCellReduceFunctor<scalar, decltype(neiFun),
-                    plusEqOp<scalar>>
+                indices.begin(), indices.end(),
+
+                patchCellReduceFunctor
+                <
+                    scalar,
+                    decltype(neiFun),
+                    plusEqOp<scalar>
+                >
                 (
                     rf,
                     sortStart,

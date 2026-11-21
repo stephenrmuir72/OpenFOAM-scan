@@ -9,6 +9,7 @@
     Copyright (C) 2019 OpenCFD Ltd.
     Copyright (C) 2025 Cineca
     Copyright (C) 2026 UKRI-STFC.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -101,44 +102,56 @@ void Foam::aDILUPreconditioner::calcReciprocalD
     solveScalarField& sumD = tsumD.ref();
     solveScalar* __restrict__ sumDPtr = sumD.begin();
 
-    apply_policy(nCells, [&](auto policy)
     {
-        std::for_each
-        (
-            policy,
-            labelRange(nCells).begin(),
-            labelRange(nCells).end(),
-            [=](const label celli)
+        const auto kernel = [=](const label celli)
+        {
+            solveScalar sum = diagPtr[celli];
+
+            const label fStart = losortStartPtr[celli];
+            const label fEnd = losortStartPtr[celli + 1];
+
+            for (label i = fStart; i < fEnd; ++i)
             {
-                solveScalar sum = diagPtr[celli];
-
-                const label fStart = losortStartPtr[celli];
-                const label fEnd = losortStartPtr[celli + 1];
-
-                for (label i = fStart; i < fEnd; ++i)
-                {
-                    const label facei = losortPtr[i];
-                    sum -= upperPtr[facei]*lowerPtr[facei]/diagPtr[lPtr[facei]];
-                }
-
-                sumDPtr[celli] = sum;
+                const label facei = losortPtr[i];
+                sum -= upperPtr[facei]*lowerPtr[facei]/diagPtr[lPtr[facei]];
             }
-        );
-    });
+
+            sumDPtr[celli] = sum;
+        };
+
+        const labelRange cellRange(nCells);
+
+        apply_policy(nCells, [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                cellRange.begin(), cellRange.end(),
+                kernel
+            );
+        });
+    }
 
     // Calculate the reciprocal of the preconditioned diagonal
     solveScalar* __restrict__ rDPtr = rD.begin();
 
-    apply_policy(nCells, [&](auto policy)
     {
-        std::transform
-        (
-            policy,
-            sumDPtr, sumDPtr + nCells,
-            rDPtr,
-            [](const solveScalar sum) { return solveScalar(1.0)/sum; }
-        );
-    });
+        const auto kernel = [](const solveScalar sum)
+        {
+            return solveScalar(1.0)/sum;
+        };
+
+        apply_policy(nCells, [&](auto policy)
+        {
+            std::transform
+            (
+                policy,
+                sumDPtr, sumDPtr + nCells,
+                rDPtr,
+                kernel
+            );
+        });
+    }
 }
 
 
@@ -176,19 +189,24 @@ void Foam::aDILUPreconditioner::precondition
 
     const label nCells = wA.size();
 
-    apply_policy(nCells, [&](auto policy)
     {
-        std::for_each
-        (
-            policy,
-            labelRange(nCells).begin(),
-            labelRange(nCells).end(),
-            [=](const label celli)
-            {
-                wAPtr[celli] = rDPtr[celli]*rAPtr[celli];
-            }
-        );
-    });
+        const auto kernel = [=](const label celli)
+        {
+            wAPtr[celli] = rDPtr[celli]*rAPtr[celli];
+        };
+
+        const labelRange cellRange(nCells);
+
+        apply_policy(nCells, [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                cellRange.begin(), cellRange.end(),
+                kernel
+            );
+        });
+    }
 
     tmp<solveScalarField> wATmp = tmp<solveScalarField>::New(wA);
     solveScalarField& wAtmp = wATmp.ref();
@@ -198,59 +216,69 @@ void Foam::aDILUPreconditioner::precondition
     // from the faces for which it is the neighbour, using the lower
     // coefficient (reads only the owner-side wA values, which are
     // untouched during this sweep).
-    apply_policy(nCells, [&](auto policy)
     {
-        std::for_each
-        (
-            policy,
-            labelRange(nCells).begin(),
-            labelRange(nCells).end(),
-            [=](const label celli)
+        const auto kernel = [=](const label celli)
+        {
+            solveScalar val = wAPtr[celli];
+
+            const label fStart = losortStartPtr[celli];
+            const label fEnd = losortStartPtr[celli + 1];
+
+            for (label i = fStart; i < fEnd; ++i)
             {
-                solveScalar val = wAPtr[celli];
-
-                const label fStart = losortStartPtr[celli];
-                const label fEnd = losortStartPtr[celli + 1];
-
-                for (label i = fStart; i < fEnd; ++i)
-                {
-                    const label facei = losortPtr[i];
-                    val -= rDPtr[celli]*lowerPtr[facei]*wAPtr[lPtr[facei]];
-                }
-
-                wAtmpPtr[celli] = val;
+                const label facei = losortPtr[i];
+                val -= rDPtr[celli]*lowerPtr[facei]*wAPtr[lPtr[facei]];
             }
-        );
-    });
+
+            wAtmpPtr[celli] = val;
+        };
+
+        const labelRange cellRange(nCells);
+
+        apply_policy(nCells, [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                cellRange.begin(), cellRange.end(),
+                kernel
+            );
+        });
+    }
 
     wA = wAtmp;
 
     // Sweep 2 (backward substitution): gather contributions onto each cell
     // from the faces for which it is the owner, using the upper coefficient
     // (reads only the neighbour-side wA values, as just updated by sweep 1).
-    apply_policy(nCells, [&](auto policy)
     {
-        std::for_each
-        (
-            policy,
-            labelRange(nCells).begin(),
-            labelRange(nCells).end(),
-            [=](const label celli)
+        const auto kernel = [=](const label celli)
+        {
+            solveScalar val = wAPtr[celli];
+
+            const label fStart = ownStartPtr[celli];
+            const label fEnd = ownStartPtr[celli + 1];
+
+            for (label facei = fStart; facei < fEnd; ++facei)
             {
-                solveScalar val = wAPtr[celli];
-
-                const label fStart = ownStartPtr[celli];
-                const label fEnd = ownStartPtr[celli + 1];
-
-                for (label facei = fStart; facei < fEnd; ++facei)
-                {
-                    val -= rDPtr[celli]*upperPtr[facei]*wAPtr[uPtr[facei]];
-                }
-
-                wAtmpPtr[celli] = val;
+                val -= rDPtr[celli]*upperPtr[facei]*wAPtr[uPtr[facei]];
             }
-        );
-    });
+
+            wAtmpPtr[celli] = val;
+        };
+
+        const labelRange cellRange(nCells);
+
+        apply_policy(nCells, [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                cellRange.begin(), cellRange.end(),
+                kernel
+            );
+        });
+    }
 
     wA = wAtmp;
 }
@@ -286,19 +314,24 @@ void Foam::aDILUPreconditioner::preconditionT
 
     const label nCells = wT.size();
 
-    apply_policy(nCells, [&](auto policy)
     {
-        std::for_each
-        (
-            policy,
-            labelRange(nCells).begin(),
-            labelRange(nCells).end(),
-            [=](const label celli)
-            {
-                wTPtr[celli] = rDPtr[celli]*rTPtr[celli];
-            }
-        );
-    });
+        const auto kernel = [=](const label celli)
+        {
+            wTPtr[celli] = rDPtr[celli]*rTPtr[celli];
+        };
+
+        const labelRange cellRange(nCells);
+
+        apply_policy(nCells, [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                cellRange.begin(), cellRange.end(),
+                kernel
+            );
+        });
+    }
 
     tmp<solveScalarField> wTTmp = tmp<solveScalarField>::New(wT);
     solveScalarField& wTtmp = wTTmp.ref();
@@ -307,56 +340,66 @@ void Foam::aDILUPreconditioner::preconditionT
     // Transpose sweeps mirror precondition() with the upper and lower
     // coefficients swapped (the upper-triangular and lower-triangular
     // factors trade places under transposition).
-    apply_policy(nCells, [&](auto policy)
     {
-        std::for_each
-        (
-            policy,
-            labelRange(nCells).begin(),
-            labelRange(nCells).end(),
-            [=](const label celli)
+        const auto kernel = [=](const label celli)
+        {
+            solveScalar val = wTPtr[celli];
+
+            const label fStart = losortStartPtr[celli];
+            const label fEnd = losortStartPtr[celli + 1];
+
+            for (label i = fStart; i < fEnd; ++i)
             {
-                solveScalar val = wTPtr[celli];
-
-                const label fStart = losortStartPtr[celli];
-                const label fEnd = losortStartPtr[celli + 1];
-
-                for (label i = fStart; i < fEnd; ++i)
-                {
-                    const label facei = losortPtr[i];
-                    val -= rDPtr[celli]*upperPtr[facei]*wTPtr[lPtr[facei]];
-                }
-
-                wTtmpPtr[celli] = val;
+                const label facei = losortPtr[i];
+                val -= rDPtr[celli]*upperPtr[facei]*wTPtr[lPtr[facei]];
             }
-        );
-    });
+
+            wTtmpPtr[celli] = val;
+        };
+
+        const labelRange cellRange(nCells);
+
+        apply_policy(nCells, [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                cellRange.begin(), cellRange.end(),
+                kernel
+            );
+        });
+    }
 
     wT = wTtmp;
 
-    apply_policy(nCells, [&](auto policy)
     {
-        std::for_each
-        (
-            policy,
-            labelRange(nCells).begin(),
-            labelRange(nCells).end(),
-            [=](const label celli)
+        const auto kernel = [=](const label celli)
+        {
+            solveScalar val = wTPtr[celli];
+
+            const label fStart = ownStartPtr[celli];
+            const label fEnd = ownStartPtr[celli + 1];
+
+            for (label facei = fStart; facei < fEnd; ++facei)
             {
-                solveScalar val = wTPtr[celli];
-
-                const label fStart = ownStartPtr[celli];
-                const label fEnd = ownStartPtr[celli + 1];
-
-                for (label facei = fStart; facei < fEnd; ++facei)
-                {
-                    val -= rDPtr[celli]*lowerPtr[facei]*wTPtr[uPtr[facei]];
-                }
-
-                wTtmpPtr[celli] = val;
+                val -= rDPtr[celli]*lowerPtr[facei]*wTPtr[uPtr[facei]];
             }
-        );
-    });
+
+            wTtmpPtr[celli] = val;
+        };
+
+        const labelRange cellRange(nCells);
+
+        apply_policy(nCells, [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                cellRange.begin(), cellRange.end(),
+                kernel
+            );
+        });
+    }
 
     wT = wTtmp;
 }

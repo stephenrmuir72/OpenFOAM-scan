@@ -69,36 +69,39 @@ void Foam::fvMatrix<Type>::addToInternalField
             << abort(FatalError);
     }
 
-    labelRange indices(sortStart.size() - 1);
-
-    auto neiFun = [&pf](const label, const label facei)
+    if (const label kernel_size = (sortStart.size() - 1); kernel_size > 0)
     {
-        return pf[facei];
-    };
+        const auto neiFun = [&pf](const label, const label facei)
+        {
+            return pf[facei];
+        };
 
-    auto neiOp = [](Type2& result, const Type2& value)
-    {
-        result += value;
-    };
+        const auto neiOp = [](Type2& result, const Type2& value)
+        {
+            result += value;
+        };
 
-    apply_policy(indices.size(), [&](auto policy)
-    {
-        std::for_each
-        (
-            policy,
-            indices.begin(),
-            indices.end(),
-            patchCellReduceFunctor<Type2, decltype(neiFun), decltype(neiOp)>
+        const labelRange indices(kernel_size);
+
+        apply_policy(kernel_size, [&](auto policy)
+        {
+            std::for_each
             (
-                intf,
-                sortStart,
-                sort,
-                addr,
-                neiFun,
-                neiOp
-            )
-        );
-    });
+                policy,
+                indices.begin(), indices.end(),
+
+                patchCellReduceFunctor<Type2, decltype(neiFun), decltype(neiOp)>
+                (
+                    intf,
+                    sortStart,
+                    sort,
+                    addr,
+                    neiFun,
+                    neiOp
+                )
+            );
+        });
+    }
     #else
     if (addr.size() != pf.size())
     {
@@ -168,36 +171,39 @@ void Foam::fvMatrix<Type>::subtractFromInternalField
             << abort(FatalError);
     }
 
-    auto neiFun = [&pf](const label, const label facei)
+    if (const label kernel_size = pf.size(); kernel_size > 0)
     {
-        return pf[facei];
-    };
+        const auto neiFun = [&pf](const label, const label facei)
+        {
+            return pf[facei];
+        };
 
-    auto neiOp = [](Type2& result, const Type2& value)
-    {
-        result -= value;
-    };
+        const auto neiOp = [](Type2& result, const Type2& value)
+        {
+            result -= value;
+        };
 
-    labelRange indices(pf.size());
+        const labelRange indices(kernel_size);
 
-    apply_policy(pf.size(), [&](auto policy)
-    {
-        std::for_each
-        (
-            policy,
-            indices.begin(),
-            indices.end(),
-            patchCellReduceFunctor<Type2, decltype(neiFun), decltype(neiOp)>
+        apply_policy(kernel_size, [&](auto policy)
+        {
+            std::for_each
             (
-                intf,
-                sortStart,
-                sort,
-                addr,
-                neiFun,
-                neiOp
-            )
-        );
-    });
+                policy,
+                indices.begin(), indices.end(),
+
+                patchCellReduceFunctor<Type2, decltype(neiFun), decltype(neiOp)>
+                (
+                    intf,
+                    sortStart,
+                    sort,
+                    addr,
+                    neiFun,
+                    neiOp
+                )
+            );
+        });
+    }
     #else
     if (addr.size() != pf.size())
     {
@@ -361,6 +367,8 @@ void Foam::fvMatrix<Type>::addBoundarySource
                     const labelUList& sortStart =
                         lduAddr().patchSortStartAddr(patchi);
 
+                    const label kernel_size = patchCells.size();
+
                     auto neiFun = [&pbc, &pnf](const label, const label facei)
                     {
                         return cmptMultiply(pbc[facei], pnf[facei]);
@@ -371,17 +379,21 @@ void Foam::fvMatrix<Type>::addBoundarySource
                         result += value;
                     };
 
-                    labelRange indices(patchCells.size());
+                    const labelRange indices(kernel_size);
 
-                    apply_policy(indices.size(), [&](auto policy)
+                    apply_policy(kernel_size, [&](auto policy)
                     {
                         std::for_each
                         (
                             policy,
-                            indices.begin(),
-                            indices.end(),
-                            patchCellReduceFunctor<Type, decltype(neiFun),
-                                decltype(neiOp)>
+                            indices.begin(), indices.end(),
+
+                            patchCellReduceFunctor
+                            <
+                                Type,
+                                decltype(neiFun),
+                                decltype(neiOp)
+                            >
                             (
                                 source,
                                 sortStart,
@@ -444,25 +456,29 @@ void Foam::fvMatrix<Type>::setValuesFromList
     Field<Type>   cellValues(nCells, Zero);
     List<label>   cellMask(nCells, 0);
 
-    labelRange indices(cellLabels.size());
-
-    apply_policy(cellLabels.size(), [&](auto policy)
+    if (const label kernel_size = cellLabels.size(); kernel_size > 0)
     {
-        std::for_each
-        (
-            policy,
-            indices.begin(),
-            indices.end(),
-            [&](const label i)
-            {
-                const label celli = cellLabels[i];
-                cellMask[celli]   = 1;
-                cellValues[celli] = values[i];
-                psi[celli]        = values[i];
-                source_[celli]    = values[i] * Diag[celli];
-            }
-        );
-    });
+        const auto kernel = [&](const label i)
+        {
+            const label celli = cellLabels[i];
+            cellMask[celli]   = 1;
+            cellValues[celli] = values[i];
+            psi[celli]        = values[i];
+            source_[celli]    = values[i] * Diag[celli];
+        };
+
+        const labelRange indices(kernel_size);
+
+        apply_policy(kernel_size, [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                indices.begin(), indices.end(),
+                kernel
+            );
+        });
+    }
 
     // Following actions for the matrix connectivity:
     // - adjust source on non-fixed cells that neighbour a fixed cell
@@ -476,22 +492,26 @@ void Foam::fvMatrix<Type>::setValuesFromList
         List<label> ownMask(nInternalFaces, 0);
         List<label> neiMask(nInternalFaces, 0);
 
-        labelRange faceIndices(nInternalFaces);
-
-        apply_policy(nInternalFaces, [&](auto policy)
+        if (const label kernel_size = nInternalFaces; kernel_size > 0)
         {
-            std::for_each
-            (
-                policy,
-                faceIndices.begin(),
-                faceIndices.end(),
-                [&](const label facei)
-                {
-                    ownMask[facei] = cellMask[own[facei]];
-                    neiMask[facei] = cellMask[nei[facei]];
-                }
-            );
-        });
+            const auto kernel = [&](const label facei)
+            {
+                ownMask[facei] = cellMask[own[facei]];
+                neiMask[facei] = cellMask[nei[facei]];
+            };
+
+            const labelRange faceIndices(kernel_size);
+
+            apply_policy(kernel_size, [&](auto policy)
+            {
+                std::for_each
+                (
+                    policy,
+                    faceIndices.begin(), faceIndices.end(),
+                    kernel
+                );
+            });
+        }
 
         // Adjust source for every non-fixed cell that has at least one
         // fixed neighbour.  Each cell writes only to source_[celli], so
@@ -517,93 +537,108 @@ void Foam::fvMatrix<Type>::setValuesFromList
         const scalarField& Upper = upper();
         const scalarField& Lower = symmetric() ? upper() : lower();
 
-        labelRange cellIndices(nCells);
-
-        apply_policy(nCells, [&](auto policy)
+        if (const label kernel_size = nCells; kernel_size > 0)
         {
-            std::for_each
-            (
-                policy,
-                cellIndices.begin(),
-                cellIndices.end(),
-                [&](const label celli)
+            const auto kernel = [&](const label celli)
+            {
+                if (cellMask[celli])
+                    return;
+
+                // Faces where celli is the owner: fixed cell would be nei.
+                const label oStart = ownStart[celli];
+                const label oEnd   = ownStart[celli + 1];
+
+                for (label facei = oStart; facei < oEnd; ++facei)
                 {
-                    if (cellMask[celli])
-                        return;
-
-                    // Faces where celli is the owner: fixed cell would be nei.
-                    const label oStart = ownStart[celli];
-                    const label oEnd   = ownStart[celli + 1];
-
-                    for (label facei = oStart; facei < oEnd; ++facei)
+                    if (neiMask[facei])
                     {
-                        if (neiMask[facei])
-                        {
-                            source_[celli] -=
-                                Upper[facei] * cellValues[nei[facei]];
-                        }
-                    }
-
-                    // Faces where celli is the neighbour: fixed cell is own.
-                    const label nStart = losortStart[celli];
-                    const label nEnd   = losortStart[celli + 1];
-
-                    for (label i = nStart; i < nEnd; ++i)
-                    {
-                        const label facei = losort[i];
-
-                        if (ownMask[facei])
-                        {
-                            source_[celli] -=
-                                Lower[facei] * cellValues[own[facei]];
-                        }
+                        source_[celli] -= Upper[facei] * cellValues[nei[facei]];
                     }
                 }
-            );
-        });
+
+                // Faces where celli is the neighbour: fixed cell is own.
+                const label nStart = losortStart[celli];
+                const label nEnd   = losortStart[celli + 1];
+
+                for (label i = nStart; i < nEnd; ++i)
+                {
+                    const label facei = losort[i];
+
+                    if (ownMask[facei])
+                    {
+                        source_[celli] -=
+                            Lower[facei] * cellValues[own[facei]];
+                    }
+                }
+            };
+
+            const labelRange cellIndices(kernel_size);
+
+            apply_policy(kernel_size, [&](auto policy)
+            {
+                std::for_each
+                (
+                    policy,
+                    cellIndices.begin(), cellIndices.end(),
+                    kernel
+                );
+            });
+        }
 
         // Zero upper (and lower for asymmetric) on every face that touches
         // a fixed cell.  Each face has its own slot - no races.
 
         scalarField& Upper_rw = upper();
 
-        apply_policy(nInternalFaces, [&](auto policy)
+        if (const label kernel_size = nInternalFaces; kernel_size > 0)
         {
-            std::for_each
-            (
-                policy,
-                faceIndices.begin(),
-                faceIndices.end(),
-                [&](const label facei)
+            const auto kernel = [&](const label facei)
+            {
+                if (ownMask[facei] || neiMask[facei])
                 {
-                    if (ownMask[facei] || neiMask[facei])
-                    {
-                        Upper_rw[facei] = 0.0;
-                    }
+                    Upper_rw[facei] = 0.0;
                 }
-            );
-        });
+            };
+
+            const labelRange faceIndices(kernel_size);
+
+            apply_policy(kernel_size, [&](auto policy)
+            {
+                std::for_each
+                (
+                    policy,
+                    faceIndices.begin(), faceIndices.end(),
+                    kernel
+                );
+            });
+        }
 
         if (asymmetric())
         {
             scalarField& Lower_rw = lower();
 
-            apply_policy(nInternalFaces, [&](auto policy)
+            if (const label kernel_size = nInternalFaces; kernel_size > 0)
             {
-                std::for_each
-                (
-                    policy,
-                    faceIndices.begin(),
-                    faceIndices.end(),
-                    [&](const label facei)
+                const auto kernel = [&](const label facei)
+                {
+                    if (ownMask[facei] || neiMask[facei])
                     {
-                        if (ownMask[facei] || neiMask[facei])
-                        {
-                            Lower_rw[facei] = 0.0;
-                        }
+                        Lower_rw[facei] = 0.0;
                     }
-                );
-            });
+                };
+
+                const labelRange faceIndices(kernel_size);
+
+                apply_policy(kernel_size, [&](auto policy)
+                {
+                    std::for_each
+                    (
+                        policy,
+                        faceIndices.begin(), faceIndices.end(),
+                        kernel
+                    );
+                });
+            }
         }
 
         // Boundary patches: zero internalCoeffs / boundaryCoeffs for faces
@@ -622,7 +657,6 @@ void Foam::fvMatrix<Type>::setValuesFromList
             const labelUList& pcells = mesh.boundary()[patchi].faceCells();
             const label nPatchFaces = pcells.size();
 
-            const labelRange patchIndices(nPatchFaces);
 
             // Resolve the PtrList element references on the host. Indexing
             // internalCoeffs_[patchi] inside the device lambda would invoke
@@ -633,21 +667,26 @@ void Foam::fvMatrix<Type>::setValuesFromList
             const label* const pcellsPtr = pcells.cdata();
             const label* const maskPtr = cellMask.cdata();
 
-            apply_policy(nPatchFaces, [&](auto policy)
+            const label kernel_size = nPatchFaces;
+
+            const auto kernel = [=](const label patchFacei)
+            {
+                if (maskPtr[pcellsPtr[patchFacei]])
+                {
+                    intPtr[patchFacei] = Zero;
+                    bndPtr[patchFacei] = Zero;
+                }
+            };
+
+            const labelRange patchIndices(kernel_size);
+
+            apply_policy(kernel_size, [&](auto policy)
             {
                 std::for_each
                 (
                     policy,
-                    patchIndices.begin(),
-                    patchIndices.end(),
-                    [=](const label patchFacei)
-                    {
-                        if (maskPtr[pcellsPtr[patchFacei]])
-                        {
-                            intPtr[patchFacei] = Zero;
-                            bndPtr[patchFacei] = Zero;
-                        }
-                    }
+                    patchIndices.begin(), patchIndices.end(),
+                    kernel
                 );
             });
         }
@@ -1429,33 +1468,37 @@ void Foam::fvMatrix<Type>::setReferences
 {
     if (forceReference || psi_.needReference())
     {
-        labelRange cellRange(0, cellLabels.size());
-
         Field<Type>& src = source();
         scalarField& d = diag();
 
         Type* srcPtr = src.begin();
         scalar* dPtr = d.begin();
 
-        apply_policy(cellLabels.size(), [&](auto policy)
+        if (const label kernel_size = cellLabels.size(); kernel_size > 0)
         {
-            std::for_each
-            (
-                policy,
-                cellRange.begin(),
-                cellRange.end(),
-                [=, &cellLabels](const label celli)
-                {
-                    const label cellId = cellLabels[celli];
+            const auto kernel = [=, &cellLabels](const label celli)
+            {
+                const label cellId = cellLabels[celli];
 
-                    if (cellId >= 0)
-                    {
-                        srcPtr[cellId] += dPtr[cellId]*value;
-                        dPtr[cellId] += dPtr[cellId];
-                    }
+                if (cellId >= 0)
+                {
+                    srcPtr[cellId] += dPtr[cellId]*value;
+                    dPtr[cellId] += dPtr[cellId];
                 }
-            );
-        });
+            };
+
+            const labelRange cellRange(kernel_size);
+
+            apply_policy(kernel_size, [&](auto policy)
+            {
+                std::for_each
+                (
+                    policy,
+                    cellRange.begin(), cellRange.end(),
+                    kernel
+                );
+            });
+        }
     }
 }
 
@@ -1470,8 +1513,6 @@ void Foam::fvMatrix<Type>::setReferences
 {
     if (forceReference || psi_.needReference())
     {
-        labelRange cellRange(0, cellLabels.size());
-
         Field<Type>& src = source();
         scalarField& d = diag();
 
@@ -1480,25 +1521,31 @@ void Foam::fvMatrix<Type>::setReferences
 
         const Type* valuesPtr = values.begin();
 
-        apply_policy(cellLabels.size(), [&](auto policy)
+        if (const label kernel_size = cellLabels.size(); kernel_size > 0)
         {
-            std::for_each
-            (
-                policy,
-                cellRange.begin(),
-                cellRange.end(),
-                [=, &cellLabels](const label celli)
-                {
-                    const label cellId = cellLabels[celli];
+            const auto kernel = [=, &cellLabels](const label celli)
+            {
+                const label cellId = cellLabels[celli];
 
-                    if (cellId >= 0)
-                    {
-                        srcPtr[cellId] += dPtr[cellId]*valuesPtr[celli];
-                        dPtr[cellId] += dPtr[cellId];
-                    }
+                if (cellId >= 0)
+                {
+                    srcPtr[cellId] += dPtr[cellId]*valuesPtr[celli];
+                    dPtr[cellId] += dPtr[cellId];
                 }
-            );
-        });
+            };
+
+            const labelRange cellRange(kernel_size);
+
+            apply_policy(kernel_size, [&](auto policy)
+            {
+                std::for_each
+                (
+                    policy,
+                    cellRange.begin(), cellRange.end(),
+                    kernel
+                );
+            });
+        }
     }
 }
 
@@ -1578,6 +1625,8 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                 const labelUList& patchSort =
                     lduAddr().patchSortAddr(patchi);
 
+                const label kernel_size = patchSortCells.size();
+
                 auto dFun = [iCoeffs](const label, const label facei)
                 {
                     return component(iCoeffs[facei], 0);
@@ -1588,15 +1637,15 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                     return mag(component(pCoeffs[facei], 0));
                 };
 
-                labelRange cells(patchSortCells.size());
+                const labelRange cells(kernel_size);
 
-                apply_policy(cells.size(), [&](auto policy)
+                apply_policy(kernel_size, [&](auto policy)
                 {
                     std::for_each
                     (
                         policy,
-                        cells.begin(),
-                        cells.end(),
+                        cells.begin(), cells.end(),
+
                         patchCellReduceFunctor
                         <
                             scalar,
@@ -1616,8 +1665,8 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                     std::for_each
                     (
                         policy,
-                        cells.begin(),
-                        cells.end(),
+                        cells.begin(), cells.end(),
+
                         patchCellReduceFunctor
                         <
                             scalar,
@@ -1658,20 +1707,22 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                 const labelUList& patchSort =
                     lduAddr().patchSortAddr(patchi);
 
+                const label kernel_size = patchSortCells.size();
+
                 auto faceOp = [iCoeffs](const label, const label facei)
                 {
                     return cmptMax(cmptMag(iCoeffs[facei]));
                 };
 
-                labelRange cells(patchSortCells.size());
+                const labelRange cells(kernel_size);
 
-                apply_policy(cells.size(), [&](auto policy)
+                apply_policy(kernel_size, [&](auto policy)
                 {
                     std::for_each
                     (
                         policy,
-                        cells.begin(),
-                        cells.end(),
+                        cells.begin(), cells.end(),
+
                         patchCellReduceFunctor
                         <
                             scalar,
@@ -1753,21 +1804,25 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
 
     // Ensure the matrix is diagonally dominant...
     // Assumes that the central coefficient is positive and ensures it is
-    labelRange cells(D.size());
-
-    apply_policy(cells.size(), [&](auto policy)
+    if (const label kernel_size = D.size(); kernel_size > 0)
     {
-        std::for_each
-        (
-            policy,
-            cells.begin(),
-            cells.end(),
-            [&](const label celli)
-            {
-                D[celli] = max(mag(D[celli]), sumOff[celli]);
-            }
-        );
-    });
+        const auto kernel = [&](const label celli)
+        {
+            D[celli] = max(mag(D[celli]), sumOff[celli]);
+        };
+
+        const labelRange cells(kernel_size);
+
+        apply_policy(kernel_size, [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                cells.begin(), cells.end(),
+                kernel
+            );
+        });
+    }
 
     // ... then relax
     D /= alpha;
@@ -1793,20 +1848,22 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                 const labelUList& patchSort =
                     lduAddr().patchSortAddr(patchi);
 
+                const label kernel_size = patchSortCells.size();
+
                 auto faceOp = [iCoeffs](const label, const label facei)
                 {
                     return component(iCoeffs[facei], 0);
                 };
 
-                labelRange cells(patchSortCells.size());
+                const labelRange cells(kernel_size);
 
-                apply_policy(cells.size(), [&](auto policy)
+                apply_policy(kernel_size, [&](auto policy)
                 {
                     std::for_each
                     (
                         policy,
-                        cells.begin(),
-                        cells.end(),
+                        cells.begin(), cells.end(),
+
                         patchCellReduceFunctor
                         <
                             scalar,
@@ -1844,20 +1901,22 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                 const labelUList& patchSort =
                     lduAddr().patchSortAddr(patchi);
 
+                const label kernel_size = patchSortCells.size();
+
                 auto faceOp = [iCoeffs](const label, const label facei)
                 {
                     return cmptMin(iCoeffs[facei]);
                 };
 
-                labelRange cells(patchSortCells.size());
+                labelRange cells(kernel_size);
 
-                apply_policy(cells.size(), [&](auto policy)
+                apply_policy(kernel_size, [&](auto policy)
                 {
                     std::for_each
                     (
                         policy,
-                        cells.begin(),
-                        cells.end(),
+                        cells.begin(), cells.end(),
+
                         patchCellReduceFunctor
                         <
                             scalar,

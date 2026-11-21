@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2015 OpenFOAM Foundation
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -56,18 +57,19 @@ Foam::diagonalPreconditioner::diagonalPreconditioner
 {
     const auto& diag = solver_.matrix().diag();
 
+    const auto kernel = [](const solveScalar value)
+    {
+        return solveScalar(1)/value;
+    };
+
     apply_policy(static_cast<std::size_t>(diag.size()), [&](auto policy)
     {
         std::transform
         (
             policy,
-            diag.cbegin(),
-            diag.cend(),
+            diag.cbegin(), diag.cend(),
             rD.begin(),
-            [](const solveScalar value)
-            {
-                return solveScalar(1)/value;
-            }
+            kernel
         );
     });
 }
@@ -82,19 +84,20 @@ void Foam::diagonalPreconditioner::precondition
     const direction
 ) const
 {
+    const auto kernel = [](const solveScalar dValue, const solveScalar aValue)
+    {
+        return dValue*aValue;
+    };
+
     apply_policy(static_cast<std::size_t>(rD.size()), [&](auto policy)
     {
         std::transform
         (
             policy,
-            rD.cbegin(),
-            rD.cend(),
+            rD.cbegin(), rD.cend(),
             rA.cbegin(),
             wA.begin(),
-            [](const solveScalar dValue, const solveScalar aValue)
-            {
-                return dValue*aValue;
-            }
+            kernel
         );
     });
 }

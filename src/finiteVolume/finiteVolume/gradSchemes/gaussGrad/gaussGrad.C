@@ -80,51 +80,54 @@ Foam::fv::gaussGrad<Type>::gradf
     const Field<Type>& issf = ssf;
 
     #ifdef FOAM_OFFLOAD
-    auto fun = [&] (const label, const label facei) -> GradType
+    if (const label kernel_size = igGrad.size(); kernel_size > 0)
     {
-        return Sf[facei]*issf[facei];
-    };
+        const auto fun = [&](const label, const label facei) -> GradType
+        {
+            return Sf[facei]*issf[facei];
+        };
 
-    auto ownOp = [](GradType& result, const GradType& value)
-    {
-        result += value;
-    };
+        const auto ownOp = [](GradType& result, const GradType& value)
+        {
+            result += value;
+        };
 
-    auto neiOp = [](GradType& result, const GradType& value)
-    {
-        result -= value;
-    };
+        const auto neiOp = [](GradType& result, const GradType& value)
+        {
+            result -= value;
+        };
 
-    labelRange cellRange(igGrad.size());
+        const labelRange cellRange(kernel_size);
 
-    apply_policy(igGrad.size(), [&](auto policy)
-    {
-        std::transform
-        (
-            policy,
-            cellRange.begin(),
-            cellRange.end(),
-            igGrad.begin(),   // d = old igGrad[celli]
-            cellReduceFunctor
-            <
-                GradType,
-                decltype(fun),
-                decltype(fun),
-                decltype(ownOp),
-                decltype(neiOp)
-            >
+        apply_policy(kernel_size, [&](auto policy)
+        {
+            std::transform
             (
-                pTraits<GradType>::zero,
-                mesh.lduAddr().ownerStartAddr(),
-                mesh.lduAddr().losortStartAddr(),
-                mesh.lduAddr().losortAddr(),
-                fun,
-                fun,
-                ownOp,
-                neiOp
-            )
-        );
-    });
+                policy,
+                cellRange.begin(), cellRange.end(),
+                igGrad.begin(),
+
+                cellReduceFunctor
+                <
+                    GradType,
+                    decltype(fun),
+                    decltype(fun),
+                    decltype(ownOp),
+                    decltype(neiOp)
+                >
+                (
+                    pTraits<GradType>::zero,
+                    mesh.lduAddr().ownerStartAddr(),
+                    mesh.lduAddr().losortStartAddr(),
+                    mesh.lduAddr().losortAddr(),
+                    fun,
+                    fun,
+                    ownOp,
+                    neiOp
+                )
+            );
+        });
+    }
     #else
     const labelUList& owner = mesh.owner();
     const labelUList& neighbour = mesh.neighbour();
@@ -152,25 +155,28 @@ Foam::fv::gaussGrad<Type>::gradf
         const labelUList& sort = mesh.lduAddr().patchSortAddr(patchi);
         const labelUList& sortStart = mesh.lduAddr().patchSortStartAddr(patchi);
 
-        const labelRange cellRange(patchCells.size());
+        const label kernel_size = patchCells.size();
 
-        auto neiFun = [&](const label, const label facei) -> GradType
+        const auto neiFun = [&](const label, const label facei) -> GradType
         {
             return pSf[facei]*pssf[facei];
         };
 
-        auto neiOp = [](GradType& result, const GradType& value)
+        const auto neiOp = [](GradType& result, const GradType& value)
         {
             result += value;
         };
 
-        apply_policy(cellRange.size(), [&](auto policy)
+
+        const labelRange cellRange(kernel_size);
+
+        apply_policy(kernel_size, [&](auto policy)
         {
             std::for_each
             (
                 policy,
-                cellRange.begin(),
-                cellRange.end(),
+                cellRange.begin(), cellRange.end(),
+
                 patchCellReduceFunctor
                 <
                     GradType,

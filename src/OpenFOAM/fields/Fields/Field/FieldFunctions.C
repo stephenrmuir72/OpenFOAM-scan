@@ -833,8 +833,10 @@ void clamp
     }
     else
     {
+        const label loopLen = std::min(f1.size(), result.size());
+
         #ifdef FOAM_OFFLOAD
-        apply_policy(f1.size(), [&](auto policy)
+        apply_policy(loopLen, [&](auto policy)
         #endif
         {
             std::transform
@@ -842,8 +844,7 @@ void clamp
                 #ifdef FOAM_OFFLOAD
                 policy,
                 #endif
-                f1.cbegin(),
-                f1.cbegin(result.size()),
+                f1.cbegin(), f1.cbegin() + loopLen,
                 result.begin(),
                 clampOp<Type>(range)
             );
@@ -869,8 +870,10 @@ void clamp
     }
     else
     {
+        const label loopLen = std::min(f1.size(), result.size());
+
         #ifdef FOAM_OFFLOAD
-        apply_policy(f1.size(), [&](auto policy)
+        apply_policy(loopLen, [&](auto policy)
         #endif
         {
             std::transform
@@ -878,8 +881,7 @@ void clamp
                 #ifdef FOAM_OFFLOAD
                 policy,
                 #endif
-                f1.cbegin(),
-                f1.cbegin(result.size()),
+                f1.cbegin(), f1.cbegin() + loopLen,
                 result.begin(),
                 clampOp<Type>(Foam::zero_one{})
             );

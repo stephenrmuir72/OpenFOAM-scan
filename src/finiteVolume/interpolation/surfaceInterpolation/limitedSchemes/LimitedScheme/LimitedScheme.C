@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2020-2024 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -61,35 +62,40 @@ void Foam::LimitedScheme<Type, Limiter, LimitFunc>::calcLimiter
 
     const vectorField& C = mesh.C();
 
-    scalarField& pLim = limiterField.primitiveFieldRef();
-
-    labelRange faceRange(pLim.size());
-
-    apply_policy(pLim.size(), [&](auto policy)
+    // Internal field
+    if (const label kernel_size = limiterField.size(); kernel_size > 0)
     {
-        std::for_each
-        (
-            policy,
-            faceRange.begin(),
-            faceRange.end(),
-            [&](const label face)
-            {
-                const label own = owner[face];
-                const label nei = neighbour[face];
+        scalarField& pLim = limiterField.primitiveFieldRef();
 
-                pLim[face] = Limiter::limiter
-                (
-                    CDweights[face],
-                    this->faceFlux_[face],
-                    lPhi[own],
-                    lPhi[nei],
-                    gradc[own],
-                    gradc[nei],
-                    C[nei] - C[own]
-                );
-            }
-        );
-    });
+        const auto kernel = [&](const label face)
+        {
+            const label own = owner[face];
+            const label nei = neighbour[face];
+
+            pLim[face] = Limiter::limiter
+            (
+                CDweights[face],
+                this->faceFlux_[face],
+                lPhi[own],
+                lPhi[nei],
+                gradc[own],
+                gradc[nei],
+                C[nei] - C[own]
+            );
+        };
+
+        const labelRange faceRange(kernel_size);
+
+        apply_policy(kernel_size, [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                faceRange.begin(), faceRange.end(),
+                kernel
+            )
+        });
+    }
 
     surfaceScalarField::Boundary& bLim = limiterField.boundaryFieldRef();
 
@@ -123,28 +129,31 @@ void Foam::LimitedScheme<Type, Limiter, LimitFunc>::calcLimiter
             // Build the d-vectors
             vectorField pd(CDweights.boundaryField()[patchi].patch().delta());
 
-            labelRange faceRange(pLim.size());
+            const label kernel_size = pLim.size();
 
-            apply_policy(pLim.size(), [&](auto policy)
+            const auto kernel = [&](const label face)
+            {
+                pLim[face] = Limiter::limiter
+                (
+                    pCDweights[face],
+                    pFaceFlux[face],
+                    plPhiP[face],
+                    plPhiN[face],
+                    pGradcP[face],
+                    pGradcN[face],
+                    pd[face]
+                );
+            };
+
+            const labelRange faceRange(kernel_size);
+
+            apply_policy(kernel_size, [&](auto policy)
             {
                 std::for_each
                 (
                     policy,
-                    faceRange.begin(),
-                    faceRange.end(),
-                    [&](const label face)
-                    {
-                        pLim[face] = Limiter::limiter
-                        (
-                            pCDweights[face],
-                            pFaceFlux[face],
-                            plPhiP[face],
-                            plPhiN[face],
-                            pGradcP[face],
-                            pGradcN[face],
-                            pd[face]
-                        );
-                    }
+                    faceRange.begin(), faceRange.end(),
+                    kernel
                 );
             });
         }

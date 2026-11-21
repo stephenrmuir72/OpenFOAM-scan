@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2013-2015 OpenFOAM Foundation
     Copyright (C) 2017-2019 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -66,34 +67,36 @@ void Foam::GAMGSolver::interpolate
         cmpt
     );
 
-    const label nFaces = m.upper().size();
     #ifdef FOAM_OFFLOAD
-    auto rfun = [](const scalar x)
     {
-        return x;
-    };
+        const auto rfun = [](const scalar x)
+        {
+            return x;
+        };
 
-    matrixOperation
-    (
-        Apsi.begin(),
-        Apsi,
-        m.lduAddr(),
-        matrixCoeffsMultiplyFunctor<solveScalar, scalar, decltype(rfun)>
+        matrixOperation
         (
-            psi,
-            m.upper(),
-            m.lduAddr().upperAddr(),
-            rfun
-        ),
-        matrixCoeffsMultiplyFunctor<solveScalar, scalar, decltype(rfun)>
-        (
-            psi,
-            m.lower(),
-            m.lduAddr().lowerAddr(),
-            rfun
-        )
-    );
+            Apsi.begin(),
+            Apsi,
+            m.lduAddr(),
+            matrixCoeffsMultiplyFunctor<solveScalar, scalar, decltype(rfun)>
+            (
+                psi,
+                m.upper(),
+                m.lduAddr().upperAddr(),
+                rfun
+            ),
+            matrixCoeffsMultiplyFunctor<solveScalar, scalar, decltype(rfun)>
+            (
+                psi,
+                m.lower(),
+                m.lduAddr().lowerAddr(),
+                rfun
+            )
+        );
+    }
     #else
+    const label nFaces = m.upper().size();
     for (label face=0; face<nFaces; face++)
     {
         ApsiPtr[uPtr[face]] += lowerPtr[face]*psiPtr[lPtr[face]];
@@ -113,23 +116,25 @@ void Foam::GAMGSolver::interpolate
         startRequest
     );
 
-    const label nCells = m.diag().size();
-
-    const labelRange cellRange(nCells);
-
-    apply_policy(nCells, [&](auto policy)
+    if (const label nCells = m.diag().size(); nCells > 0)
     {
-        std::for_each
-        (
-            policy,
-            cellRange.begin(),
-            cellRange.end(),
-            [&](const label celli)
-            {
-                psiPtr[celli] = -ApsiPtr[celli]/(diagPtr[celli]);
-            }
-        );
-    });
+        const auto kernel = [&](const label celli)
+        {
+            psiPtr[celli] = -ApsiPtr[celli]/(diagPtr[celli]);
+        };
+
+        const labelRange cellRange(nCells);
+
+        apply_policy(nCells, [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                cellRange.begin(), cellRange.end(),
+                kernel
+            );
+        });
+    }
 }
 
 
@@ -179,72 +184,77 @@ void Foam::GAMGSolver::interpolate
     const label nTargets = restrictTargetStartAddressing.size() - 1;
 
     const labelRange fineCellRange(nTargets);
-
-    apply_policy(nTargets, [&](auto policy)
     {
-        std::for_each
-        (
-            policy,
-            fineCellRange.begin(),
-            fineCellRange.end(),
-            [&](const label i)
+        const auto kernel = [&](const label i)
+        {
+            const label ccelli = restrictTargetAddressing[i];
+
+            solveScalar corr = Zero;
+            solveScalar diag = Zero;
+
+            const label start = restrictTargetStartAddressing[i];
+            const label end = restrictTargetStartAddressing[i+1];
+
+            for (label j = start; j < end; ++j)
             {
-                const label ccelli = restrictTargetAddressing[i];
+                const label celli = restrictSortAddressing[j];
 
-                solveScalar corr = Zero;
-                solveScalar diag = Zero;
-
-                const label start = restrictTargetStartAddressing[i];
-                const label end = restrictTargetStartAddressing[i+1];
-
-                for (label j = start; j < end; ++j)
-                {
-                    const label celli = restrictSortAddressing[j];
-
-                    corr += diagPtr[celli]*psiPtr[celli];
-                    diag += diagPtr[celli];
-                }
-
-                corrCPtr[ccelli] = corr;
-                diagCPtr[ccelli] = diag;
+                corr += diagPtr[celli]*psiPtr[celli];
+                diag += diagPtr[celli];
             }
-        );
-    });
 
+            corrCPtr[ccelli] = corr;
+            diagCPtr[ccelli] = diag;
+        };
 
-    const labelRange coarseCellRange(nCCells);
+        apply_policy(nTargets, [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                fineCellRange.begin(), fineCellRange.end(),
+                kernel
+            );
+        });
+    }
 
-    apply_policy(nCCells, [&](auto policy)
     {
-        std::for_each
-        (
-            policy,
-            coarseCellRange.begin(),
-            coarseCellRange.end(),
-            [&](const label ccelli)
-            {
-                corrCPtr[ccelli] =
-                    psiCPtr[ccelli] - corrCPtr[ccelli]/diagCPtr[ccelli];
-            }
-        );
-    });
+        const auto kernel = [&](const label ccelli)
+        {
+            corrCPtr[ccelli] =
+                psiCPtr[ccelli] - corrCPtr[ccelli]/diagCPtr[ccelli];
+        };
 
+        const labelRange coarseCellRange(nCCells);
 
-    apply_policy(nCells, [&](auto policy)
+        apply_policy(nCCells, [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                coarseCellRange.begin(), coarseCellRange.end(),
+                kernel
+            );
+        });
+    }
+
     {
-        std::for_each
-        (
-            policy,
-            fineCellRange.begin(),
-            fineCellRange.end(),
-            [&](const label celli)
-            {
-                const label ccelli = restrictTargetAddressing[celli];
+        const auto kernel = [&](const label celli)
+        {
+            const label ccelli = restrictTargetAddressing[celli];
+            psiPtr[celli] += corrCPtr[ccelli];
+        };
 
-                psiPtr[celli] += corrCPtr[ccelli];
-            }
-        );
-    });
+        apply_policy(nTargets, [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                fineCellRange.begin(), fineCellRange.end(),
+                kernel
+            );
+        });
+    }
     #else
     for (label celli=0; celli<nCells; celli++)
     {

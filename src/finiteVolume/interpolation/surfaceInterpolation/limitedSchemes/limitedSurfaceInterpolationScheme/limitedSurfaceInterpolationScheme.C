@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2019-2021 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -144,25 +145,32 @@ Foam::limitedSurfaceInterpolationScheme<Type>::weights
     // from which the weight is calculated using the limiter value
     surfaceScalarField& Weights = tLimiter.ref();
 
-    scalarField& pWeights = Weights.primitiveFieldRef();
-
-    labelRange faceRange(pWeights.size());
-
-    apply_policy(pWeights.size(), [&](auto policy)
+    // Internal field
+    if (const label kernel_size = Weights.size(); kernel_size > 0)
     {
-        std::for_each
-        (
-            policy,
-            faceRange.begin(),
-            faceRange.end(),
-            [&](const label face)
-            {
-                pWeights[face] =
-                    pWeights[face]*CDweights[face]
-                  + (1.0 - pWeights[face])*pos0(faceFlux_[face]);
-            }
-        );
-    });
+        scalarField& pWeights = Weights.primitiveFieldRef();
+
+        const auto kernel = [&](const label face)
+        {
+            pWeights[face] =
+            (
+                pWeights[face]*CDweights[face]
+              + (1.0 - pWeights[face])*pos0(faceFlux_[face])
+            );
+        };
+
+        const labelRange faceRange(kernel_size);
+
+        apply_policy(kernel_size, [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                faceRange.begin(), faceRange.end(),
+                kernel
+            );
+        });
+    }
 
     surfaceScalarField::Boundary& bWeights =
         Weights.boundaryFieldRef();
@@ -174,21 +182,26 @@ Foam::limitedSurfaceInterpolationScheme<Type>::weights
         const scalarField& pCDweights = CDweights.boundaryField()[patchi];
         const scalarField& pFaceFlux = faceFlux_.boundaryField()[patchi];
 
-        labelRange faceRange(pWeights.size());
+        const label kernel_size = pWeights.size();
 
-        apply_policy(pWeights.size(), [&](auto policy)
+        const auto kernel = [&](const label face)
+        {
+            pWeights[face] =
+            (
+                pWeights[face]*pCDweights[face]
+              + (1.0 - pWeights[face])*pos0(pFaceFlux[face])
+            );
+        };
+
+        const labelRange faceRange(kernel_size);
+
+        apply_policy(kernel_size, [&](auto policy)
         {
             std::for_each
             (
                 policy,
-                faceRange.begin(),
-                faceRange.end(),
-                [&](const label face)
-                {
-                    pWeights[face] =
-                        pWeights[face]*pCDweights[face]
-                    + (1.0 - pWeights[face])*pos0(pFaceFlux[face]);
-                }
+                faceRange.begin(), faceRange.end(),
+                kernel
             );
         });
     }

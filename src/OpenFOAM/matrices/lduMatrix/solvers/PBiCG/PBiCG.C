@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2019-2022 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -86,7 +87,7 @@ Foam::solverPerformance Foam::PBiCG::solve
     );
 
     const label nCells = psi.size();
-    const labelRange cellRange(0, nCells);
+    const labelRange cellRange(nCells);
 
     solveScalarField pA(nCells);
 
@@ -169,18 +170,19 @@ Foam::solverPerformance Foam::PBiCG::solve
 
             if (solverPerf.nIterations() == 0)
             {
-                apply_policy(static_cast<std::size_t>(nCells), [&](auto policy)
+                const auto kernel = [&](const label cell)
+                {
+                    pA[cell] = wA[cell];
+                    pT[cell] = wT[cell];
+                };
+
+                apply_policy(nCells, [&](auto policy)
                 {
                     std::for_each
                     (
                         policy,
-                        cellRange.begin(),
-                        cellRange.end(),
-                        [&](const label cell)
-                        {
-                            pA[cell] = wA[cell];
-                            pT[cell] = wT[cell];
-                        }
+                        cellRange.begin(), cellRange.end(),
+                        kernel
                     );
                 });
             }
@@ -188,18 +190,19 @@ Foam::solverPerformance Foam::PBiCG::solve
             {
                 const solveScalar beta = wArT/wArTold;
 
-                apply_policy(static_cast<std::size_t>(nCells), [&](auto policy)
+                const auto kernel = [&](const label cell)
+                {
+                    pA[cell] = wA[cell] + beta*pA[cell];
+                    pT[cell] = wT[cell] + beta*pT[cell];
+                };
+
+                apply_policy(nCells, [&](auto policy)
                 {
                     std::for_each
                     (
                         policy,
-                        cellRange.begin(),
-                        cellRange.end(),
-                        [&](const label cell)
-                        {
-                            pA[cell] = wA[cell] + beta*pA[cell];
-                            pT[cell] = wT[cell] + beta*pT[cell];
-                        }
+                        cellRange.begin(), cellRange.end(),
+                        kernel
                     );
                 });
             }
@@ -222,21 +225,24 @@ Foam::solverPerformance Foam::PBiCG::solve
 
             const solveScalar alpha = wArT/wApT;
 
-            apply_policy(static_cast<std::size_t>(nCells), [&](auto policy)
             {
-                std::for_each
-                (
-                    policy,
-                    cellRange.begin(),
-                    cellRange.end(),
-                    [&](const label cell)
-                    {
-                        psi[cell] += alpha*pA[cell];
-                        rA[cell] -= alpha*wA[cell];
-                        rT[cell] -= alpha*wT[cell];
-                    }
-                );
-            });
+                const auto kernel = [&](const label cell)
+                {
+                    psi[cell] += alpha*pA[cell];
+                    rA[cell] -= alpha*wA[cell];
+                    rT[cell] -= alpha*wT[cell];
+                };
+
+                apply_policy(nCells, [&](auto policy)
+                {
+                    std::for_each
+                    (
+                        policy,
+                        cellRange.begin(), cellRange.end(),
+                        kernel
+                    );
+                });
+            }
 
             solverPerf.finalResidual() =
                 gSumMag(rA, matrix().mesh().comm())

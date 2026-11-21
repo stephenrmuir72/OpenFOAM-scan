@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2023-2025 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -48,25 +49,28 @@ void Foam::GAMGAgglomeration::restrictField
 {
     cf = pTraits<Type>::zero;
 
-    labelRange cellRange(targetStart.size()-1);
-
-    apply_policy(cellRange.size(), [&](auto policy)
+    if (const label loop_len = (targetStart.size()-1); loop_len > 0)
     {
-        std::for_each
-        (
-            policy,
-            cellRange.begin(),
-            cellRange.end(),
-            GAMG::restrictT<Type, false>
+        const labelRange cellRange(loop_len);
+
+        apply_policy(loop_len, [&](auto policy)
+        {
+            std::for_each
             (
-                cf,
-                ff,
-                sort,
-                target,
-                targetStart
-            )
-        );
-    });
+                policy,
+                cellRange.begin(), cellRange.end(),
+
+                GAMG::restrictT<Type, false>
+                (
+                    cf,
+                    ff,
+                    sort,
+                    target,
+                    targetStart
+                )
+            );
+        });
+    }
 }
 #endif
 
@@ -171,25 +175,28 @@ void Foam::GAMGAgglomeration::restrictFaceField
     const labelList& targetStart =
         faceRestrictTargetStartAddressing_[fineLevelIndex];
 
-    labelRange cellRange(targetStart.size()-1);
-
-    apply_policy(cellRange.size(), [&](auto policy)
+    if (const label loop_len = (targetStart.size()-1); loop_len > 0)
     {
-        std::for_each
-        (
-            policy,
-            cellRange.begin(),
-            cellRange.end(),
-            GAMG::restrictT<Type, true>
+        const labelRange cellRange(loop_len);
+
+        apply_policy(loop_len, [&](auto policy)
+        {
+            std::for_each
             (
-                cf,
-                ff,
-                sort,
-                target,
-                targetStart
-            )
-        );
-    });
+                policy,
+                cellRange.begin(), cellRange.end(),
+
+                GAMG::restrictT<Type, true>
+                (
+                    cf,
+                    ff,
+                    sort,
+                    target,
+                    targetStart
+                )
+            );
+        });
+    }
     #else
     forAll(fineToCoarse, ffacei)
     {
@@ -239,39 +246,47 @@ void Foam::GAMGAgglomeration::prolongField
             UPstream::commsTypes::nonBlocking
         );
 
-        labelRange cellRange(fineToCoarse.size());
-
-        apply_policy(cellRange.size(), [&](auto policy)
+        if (const label loop_len = fineToCoarse.size(); loop_len > 0)
         {
-            std::for_each
-            (
-                policy,
-                cellRange.begin(),
-                cellRange.end(),
-                [&](const auto& i)
-                {
-                    ff[i] = allCf[fineToCoarse[i]];
-                }
-            );
-        });
+            const auto kernel = [&](const label i)
+            {
+                ff[i] = allCf[fineToCoarse[i]];
+            };
+
+            const labelRange cellRange(loop_len);
+
+            apply_policy(loop_len, [&](auto policy)
+            {
+                std::for_each
+                (
+                    policy,
+                    cellRange.begin(), cellRange.end(),
+                    kernel
+                );
+            });
+        }
     }
     else
     {
-        labelRange cellRange(fineToCoarse.size());
-
-        apply_policy(cellRange.size(), [&](auto policy)
+        if (const label loop_len = fineToCoarse.size(); loop_len > 0)
         {
-            std::for_each
-            (
-                policy,
-                cellRange.begin(),
-                cellRange.end(),
-                [&](const auto& i)
-                {
-                    ff[i] = cf[fineToCoarse[i]];
-                }
-            );
-        });
+            const auto kernel = [&](const label i)
+            {
+                ff[i] = cf[fineToCoarse[i]];
+            };
+
+            const labelRange cellRange(loop_len);
+
+            apply_policy(loop_len, [&](auto policy)
+            {
+                std::for_each
+                (
+                    policy,
+                    cellRange.begin(), cellRange.end(),
+                    kernel
+                );
+            });
+        }
     }
 }
 
@@ -311,40 +326,48 @@ const Foam::Field<Type>& Foam::GAMGAgglomeration::prolongField
             UPstream::commsTypes::nonBlocking
         );
 
-        labelRange cellRange(fineToCoarse.size());
-
-        apply_policy(cellRange.size(), [&](auto policy)
+        if (const label loop_len = fineToCoarse.size(); loop_len > 0)
         {
-            std::for_each
-            (
-                policy,
-                cellRange.begin(),
-                cellRange.end(),
-                [&](const auto& i)
-                {
-                    ff[i] = allCf[fineToCoarse[i]];
-                }
-            );
-        });
+            const auto kernel = [&](const label i)
+            {
+                ff[i] = allCf[fineToCoarse[i]];
+            };
+
+            const labelRange cellRange(loop_len);
+
+            apply_policy(loop_len, [&](auto policy)
+            {
+                std::for_each
+                (
+                    policy,
+                    cellRange.begin(), cellRange.end(),
+                    kernel
+                );
+            });
+        }
         return allCf;
     }
     else
     {
-        labelRange cellRange(fineToCoarse.size());
-
-        apply_policy(cellRange.size(), [&](auto policy)
+        if (const label loop_len = fineToCoarse.size(); loop_len > 0)
         {
-            std::for_each
-            (
-                policy,
-                cellRange.begin(),
-                cellRange.end(),
-                [&](const auto& i)
-                {
-                    ff[i] = cf[fineToCoarse[i]];
-                }
-            );
-        });
+            const auto kernel = [&](const label i)
+            {
+                ff[i] = cf[fineToCoarse[i]];
+            };
+
+            const labelRange cellRange(loop_len);
+
+            apply_policy(loop_len, [&](auto policy)
+            {
+                std::for_each
+                (
+                    policy,
+                    cellRange.begin(), cellRange.end(),
+                    kernel
+                );
+            });
+        }
         return cf;
     }
 }

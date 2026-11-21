@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2023-2024 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -181,15 +182,17 @@ void Foam::GAMGSolver::agglomerateMatrix
             scalarField& coarseLower = coarseMatrix.lower(nCoarseFaces);
 
             #ifdef FOAM_OFFLOAD
-            labelRange faceRange(0, faceRestrictTargetAddr.size());
+            const label kernel_size = faceRestrictTargetAddr.size();
 
-            apply_policy(faceRange.size(), [&](auto policy)
+            const labelRange faceRange(kernel_size);
+
+            apply_policy(kernel_size, [&](auto policy)
             {
                 std::for_each
                 (
                     policy,
-                    faceRange.begin(),
-                    faceRange.end(),
+                    faceRange.begin(), faceRange.end(),
+
                     GAMG::asymAgglomerate
                     (
                         coarseUpper,
@@ -204,13 +207,13 @@ void Foam::GAMGSolver::agglomerateMatrix
                 );
             });
 
-            apply_policy(faceRange.size(), [&](auto policy)
+            apply_policy(kernel_size, [&](auto policy)
             {
                 std::for_each
                 (
                     policy,
-                    faceRange.begin(),
-                    faceRange.end(),
+                    faceRange.begin(), faceRange.end(),
+
                     GAMG::diagAsymAgglomerate
                     (
                         coarseDiag,
@@ -260,15 +263,17 @@ void Foam::GAMGSolver::agglomerateMatrix
             scalarField& coarseUpper = coarseMatrix.upper(nCoarseFaces);
 
             #ifdef FOAM_OFFLOAD
-            labelRange faceRange(0, faceRestrictTargetAddr.size());
+            const label kernel_size = faceRestrictTargetAddr.size();
 
-            apply_policy(faceRange.size(), [&](auto policy)
+            const labelRange faceRange(kernel_size);
+
+            apply_policy(kernel_size, [&](auto policy)
             {
                 std::for_each
                 (
                     policy,
-                    faceRange.begin(),
-                    faceRange.end(),
+                    faceRange.begin(), faceRange.end(),
+
                     GAMG::symAgglomerate
                     (
                         coarseUpper,
@@ -280,13 +285,13 @@ void Foam::GAMGSolver::agglomerateMatrix
                 );
             });
 
-            apply_policy(faceRange.size(), [&](auto policy)
+            apply_policy(kernel_size, [&](auto policy)
             {
                 std::for_each
                 (
                     policy,
-                    faceRange.begin(),
-                    faceRange.end(),
+                    faceRange.begin(), faceRange.end(),
+
                     GAMG::diagSymAgglomerate
                     (
                         coarseDiag,

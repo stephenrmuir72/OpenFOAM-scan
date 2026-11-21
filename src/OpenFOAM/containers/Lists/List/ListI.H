@@ -114,16 +114,14 @@ inline void Foam::List<T>::copyList
     #ifdef FOAM_OFFLOAD
     else
     {
-        labelList addr(n);
-        std::iota(addr.begin(), addr.end(), label(0));
+        const labelRange addr(n);
 
         apply_policy(n, [&](auto policy)
         {
             std::transform
             (
                 policy,
-                addr.begin(),
-                addr.end(),
+                addr.begin(), addr.end(),
                 dst,
                 [&](const label i)
                 {

@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2016-2024 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -28,6 +29,7 @@ License
 
 #include "lduAddressing.H"
 #include "scalarField.H"
+
 // * * * * * * * * * * * * * Private Member Functions  * * * * * * * * * * * //
 
 void Foam::lduAddressing::calcPatchSort() const
@@ -49,7 +51,7 @@ void Foam::lduAddressing::calcPatchSort() const
             continue;
         }
 
-        const labelList& nbr = patchAddr(i);
+        const labelUList& nbr = patchAddr(i);
         labelList* sortPtr_ = new labelList(nbr.size(), -1);
         patchSortAddr_.set(i, sortPtr_);
 
@@ -57,15 +59,14 @@ void Foam::lduAddressing::calcPatchSort() const
 
         labelList nbrTmp(nbr);
 
-        const labelRange indices(0, label(nbr.size()));
+        const labelRange indices(nbr.size());
 
         apply_policy(static_cast<std::size_t>(nbr.size()), [&](auto policy)
         {
             std::copy
             (
                 policy,
-                indices.begin(),
-                indices.end(),
+                indices.begin(), indices.end(),
                 lst.begin()
             );
         });
@@ -75,8 +76,7 @@ void Foam::lduAddressing::calcPatchSort() const
             std::stable_sort
             (
                 policy,
-                lst.begin(),
-                lst.end(),
+                lst.begin(), lst.end(),
                 [&](label a, label b)
                 {
                     return nbrTmp[a] < nbrTmp[b];
@@ -93,8 +93,7 @@ void Foam::lduAddressing::calcPatchSort() const
             std::transform
             (
                 policy,
-                lst.begin(),
-                lst.end(),
+                lst.begin(), lst.end(),
                 cellsSort.begin(),
                 [&](label idx)
                 {
@@ -126,9 +125,8 @@ void Foam::lduAddressing::calcPatchSortStart() const
             continue;
         }
 
-        const labelList& nbr = patchAddr(i);
-        // assuming this returns std::vector<label>
-        const labelList& lsrt = patchSortAddr(i);
+        const labelUList& nbr = patchAddr(i);
+        const labelUList& lsrt = patchSortAddr(i);
 
         // 1. Permutation: fill nbrSort with nbr[idx] based on lsrt
         std::vector<label> nbrSort(nbr.size());
@@ -138,8 +136,7 @@ void Foam::lduAddressing::calcPatchSortStart() const
             std::transform
             (
                 policy,
-                lsrt.begin(),
-                lsrt.end(),
+                lsrt.begin(), lsrt.end(),
                 nbrSort.begin(),
                 [&](label idx)
                 {
@@ -149,7 +146,7 @@ void Foam::lduAddressing::calcPatchSortStart() const
         });
 
         std::vector<size_t> tmpSum;
-        if (!nbrSort.empty()) 
+        if (!nbrSort.empty())
         {
             size_t count = 1;
             for (size_t i=1; i<nbrSort.size(); i++)
@@ -166,7 +163,7 @@ void Foam::lduAddressing::calcPatchSortStart() const
             }
             tmpSum.push_back(count); // last group
         }
-  
+
         // (nbrsize+1)
         labelList* patchSortStartAddr = new labelList(tmpSum.size() + 1);
         patchSortStartAddr_.set(i, patchSortStartAddr);
@@ -177,8 +174,7 @@ void Foam::lduAddressing::calcPatchSortStart() const
             std::exclusive_scan
             (
                 policy,
-                tmpSum.begin(),
-                tmpSum.end(),
+                tmpSum.begin(), tmpSum.end(),
                 lsrtStart.begin(),
                 label(0)
             );

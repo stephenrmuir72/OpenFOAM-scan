@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2018 OpenFOAM Foundation
     Copyright (C) 2021 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -49,26 +50,30 @@ void Foam::fv::cellLimitedGrad<Type, Limiter>::limitGradient
     Field<tensor>& gIf
 ) const
 {
-    labelRange cellRange(gIf.size());
+    if (const label kernel_size = gIf.size(); kernel_size > 0)
+    {
+        const auto kernel = [&](label celli)
+        {
+            gIf[celli] = tensor
+            (
+                cmptMultiply(limiter[celli], gIf[celli].x()),
+                cmptMultiply(limiter[celli], gIf[celli].y()),
+                cmptMultiply(limiter[celli], gIf[celli].z())
+            );
+        };
 
-    apply_policy(gIf.size(), [&](auto policy)
-    {   
-        std::for_each
-        (
-            policy,
-            cellRange.begin(),
-            cellRange.end(),
-            [&](label celli)
-            {
-                gIf[celli] = tensor
-                (
-                    cmptMultiply(limiter[celli], gIf[celli].x()),
-                    cmptMultiply(limiter[celli], gIf[celli].y()),
-                    cmptMultiply(limiter[celli], gIf[celli].z())
-                );
-            }
-        );
-    });
+        const labelRange cellRange(kernel_size);
+
+        apply_policy(kernel_size, [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                cellRange.begin(), cellRange.end(),
+                kernel
+            );
+        });
+    }
 }
 
 
@@ -107,52 +112,57 @@ void Foam::fv::cellLimitedGrad<Type, Limiter>::calcGrad
     const labelUList& neiStart = mesh.lduAddr().losortStartAddr();
     const labelUList& losort = mesh.lduAddr().losortAddr();
 
-    labelRange ownerRange(vsf.size());
-
-    apply_policy(ownerRange.size(), [&](auto policy)
+    if (const label kernel_size = vsf.size(); kernel_size > 0)
     {
-        std::for_each
-        (
-            policy,
-            ownerRange.begin(),
-            ownerRange.end(),
-            [&](const label celli)
+        const auto kernel = [&](const label celli)
+        {
+            Type maxVal(vsf[celli]);
+            Type minVal(vsf[celli]);
+
+            for
+            (
+                label facei = ownStart[celli];
+                facei < ownStart[celli + 1];
+                ++facei
+            )
             {
-                Type maxVal(vsf[celli]);
-                Type minVal(vsf[celli]);
+                const label nei = neighbour[facei];
 
-                for
-                (
-                    label facei = ownStart[celli];
-                    facei < ownStart[celli + 1];
-                    ++facei
-                )
-                {
-                    const label nei = neighbour[facei];
-
-                    maxVal = max(maxVal, vsf[nei]);
-                    minVal = min(minVal, vsf[nei]);
-                }
-
-                for
-                (
-                    label i = neiStart[celli];
-                    i < neiStart[celli + 1];
-                    ++i
-                )
-                {
-                    const label facei = losort[i];
-                    const label own = owner[facei];
-
-                    maxVal = max(maxVal, vsf[own]);
-                    minVal = min(minVal, vsf[own]);
-                }
-
-                maxVsf[celli] = maxVal;
-                minVsf[celli] = minVal;
+                maxVal = max(maxVal, vsf[nei]);
+                minVal = min(minVal, vsf[nei]);
             }
-        );
-    });
+
+            for
+            (
+                label i = neiStart[celli];
+                i < neiStart[celli + 1];
+                ++i
+            )
+            {
+                const label facei = losort[i];
+                const label own = owner[facei];
+
+                maxVal = max(maxVal, vsf[own]);
+                minVal = min(minVal, vsf[own]);
+            }
+
+            maxVsf[celli] = maxVal;
+            minVsf[celli] = minVal;
+        };
+
+
+        const labelRange ownerRange(kernel_size);
+
+        apply_policy(kernel_size, [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                ownerRange.begin(), ownerRange.end(),
+                kernel
+            );
+        });
+    }
     #else
     forAll(owner, facei)
     {
@@ -181,45 +191,51 @@ void Foam::fv::cellLimitedGrad<Type, Limiter>::calcGrad
         {
             const Field<Type> psfNei(psf.patchNeighbourField());
 
-            labelRange pOwnerRange(pOwner.size());
+            const label kernel_size = pOwner.size();
 
-            apply_policy(pOwnerRange.size(), [&](auto policy)
+            const auto kernel = [&](label pFacei)
+            {
+                const label own = pOwner[pFacei];
+                const Type& vsfNei = psfNei[pFacei];
+
+                maxVsf[own] = max(maxVsf[own], vsfNei);
+                minVsf[own] = min(minVsf[own], vsfNei);
+            };
+
+            const labelRange pOwnerRange(kernel_size);
+
+            apply_policy(kernel_size, [&](auto policy)
             {
                 std::for_each
                 (
                     policy,
-                    pOwnerRange.begin(),
-                    pOwnerRange.end(),
-                    [&](label pFacei)
-                    {
-                        const label own = pOwner[pFacei];
-                        const Type& vsfNei = psfNei[pFacei];
-
-                        maxVsf[own] = max(maxVsf[own], vsfNei);
-                        minVsf[own] = min(minVsf[own], vsfNei);
-                    }
+                    pOwnerRange.begin(), pOwnerRange.end(),
+                    kernel
                 );
             });
         }
         else
         {
-            labelRange pOwnerRange(pOwner.size());
+            const label kernel_size = pOwner.size();
 
-            apply_policy(pOwnerRange.size(), [&](auto policy)
+            const auto kernel = [&](label pFacei)
+            {
+                const label own = pOwner[pFacei];
+                const Type& vsfNei = psf[pFacei];
+
+                maxVsf[own] = max(maxVsf[own], vsfNei);
+                minVsf[own] = min(minVsf[own], vsfNei);
+            };
+
+            const labelRange pOwnerRange(kernel_size));
+
+            apply_policy(kernel_size, [&](auto policy)
             {
                 std::for_each
                 (
                     policy,
-                    pOwnerRange.begin(),
-                    pOwnerRange.end(),
-                    [&](label pFacei)
-                    {
-                        const label own = pOwner[pFacei];
-                        const Type& vsfNei = psf[pFacei];
-
-                        maxVsf[own] = max(maxVsf[own], vsfNei);
-                        minVsf[own] = min(minVsf[own], vsfNei);
-                    }
+                    pOwnerRange.begin(), pOwnerRange.end(),
+                    kernel
                 );
             });
         }
@@ -241,59 +257,62 @@ void Foam::fv::cellLimitedGrad<Type, Limiter>::calcGrad
     Field<Type> limiter(vsf.primitiveField().size(), pTraits<Type>::one);
 
     #ifdef FOAM_OFFLOAD
-    labelRange cellRange(limiter.size());
-
     for (direction cmpt = 0; cmpt < pTraits<Type>::nComponents; ++cmpt)
     {
-        apply_policy(cellRange.size(), [&](auto policy)
+        const label kernel_size = limiter.size();
+
+        const auto kernel =
+            [=, &limiter, &maxVsf, &minVsf, &Cf, &C, &g,
+                &ownStart, &neiStart, &losort](const label celli)
+        {
+            Type lim(limiter[celli]);
+
+            for
+            (
+                label facei = ownStart[celli];
+                facei < ownStart[celli + 1];
+                ++facei
+            )
+            {
+                limitFaceCmpt
+                (
+                    setComponent(lim, cmpt),
+                    component(maxVsf[celli], cmpt),
+                    component(minVsf[celli], cmpt),
+                    component((Cf[facei] - C[celli]) & g[celli], cmpt)
+                );
+            }
+
+            for
+            (
+                label i = neiStart[celli];
+                i < neiStart[celli + 1];
+                ++i
+            )
+            {
+                const label facei = losort[i];
+
+                limitFaceCmpt
+                (
+                    setComponent(lim, cmpt),
+                    component(maxVsf[celli], cmpt),
+                    component(minVsf[celli], cmpt),
+                    component((Cf[facei] - C[celli]) & g[celli], cmpt)
+                );
+            }
+
+            limiter[celli] = lim;
+        };
+
+        const labelRange cellRange(kernel_size);
+
+        apply_policy(kernel_size, [&](auto policy)
         {
             std::for_each
             (
                 policy,
-                cellRange.begin(),
-                cellRange.end(),
-                [=, &limiter, &maxVsf, &minVsf, &Cf, &C, &g,
-                &ownStart, &neiStart, &losort]
-                (const label celli)
-                {
-                    Type lim(limiter[celli]);
-
-                    for
-                    (
-                        label facei = ownStart[celli];
-                        facei < ownStart[celli + 1];
-                        ++facei
-                    )
-                    {
-                        limitFaceCmpt
-                        (
-                            setComponent(lim, cmpt),
-                            component(maxVsf[celli], cmpt),
-                            component(minVsf[celli], cmpt),
-                            component((Cf[facei] - C[celli]) & g[celli], cmpt)
-                        );
-                    }
-
-                    for
-                    (
-                        label i = neiStart[celli];
-                        i < neiStart[celli + 1];
-                        ++i
-                    )
-                    {
-                        const label facei = losort[i];
-
-                        limitFaceCmpt
-                        (
-                            setComponent(lim, cmpt),
-                            component(maxVsf[celli], cmpt),
-                            component(minVsf[celli], cmpt),
-                            component((Cf[facei] - C[celli]) & g[celli], cmpt)
-                        );
-                    }
-
-                    limiter[celli] = lim;
-                }
+                cellRange.begin(), cellRange.end(),
+                kernel
             );
         });
     }
@@ -334,45 +353,48 @@ void Foam::fv::cellLimitedGrad<Type, Limiter>::calcGrad
         const labelUList& sort = mesh.lduAddr().patchSortAddr(patchi);
         const labelUList& sortStart = mesh.lduAddr().patchSortStartAddr(patchi);
 
-        labelRange patchCellsRange(patchCells.size());
-
         for (direction cmpt = 0; cmpt < pTraits<Type>::nComponents; ++cmpt)
         {
-            apply_policy(patchCellsRange.size(), [&](auto policy)
+            const label kernel_size = patchCells.size();
+
+            const auto kernel =
+                [=, &limiter, &maxVsf, &minVsf, &pCf, &C, &g,
+                    &patchCells, &sort, &sortStart](const label patchCelli)
+            {
+                const label own = patchCells[patchCelli];
+
+                Type lim(limiter[own]);
+
+                for
+                (
+                    label i = sortStart[patchCelli];
+                    i < sortStart[patchCelli + 1];
+                    ++i
+                )
+                {
+                    const label pFacei = sort[i];
+
+                    limitFaceCmpt
+                    (
+                        setComponent(lim, cmpt),
+                        component(maxVsf[own], cmpt),
+                        component(minVsf[own], cmpt),
+                        component((pCf[pFacei] - C[own]) & g[own], cmpt)
+                    );
+                }
+
+                limiter[own] = lim;
+            };
+
+            const labelRange patchCellsRange(kernel_size);
+
+            apply_policy(kernel_size, [&](auto policy)
             {
                 std::for_each
                 (
                     policy,
-                    patchCellsRange.begin(),
-                    patchCellsRange.end(),
-                    [=, &limiter, &maxVsf, &minVsf, &pCf, &C, &g,
-                    &patchCells, &sort, &sortStart]
-                    (const label patchCelli)
-                    {
-                        const label own = patchCells[patchCelli];
-
-                        Type lim(limiter[own]);
-
-                        for
-                        (
-                            label i = sortStart[patchCelli];
-                            i < sortStart[patchCelli + 1];
-                            ++i
-                        )
-                        {
-                            const label pFacei = sort[i];
-
-                            limitFaceCmpt
-                            (
-                                setComponent(lim, cmpt),
-                                component(maxVsf[own], cmpt),
-                                component(minVsf[own], cmpt),
-                                component((pCf[pFacei] - C[own]) & g[own], cmpt)
-                            );
-                        }
-
-                        limiter[own] = lim;
-                    }
+                    patchCellsRange.begin(), patchCellsRange.end(),
+                    kernel
                 );
             });
         }
@@ -447,7 +469,7 @@ Foam::fv::cellLimitedGrad<Type, Limiter>::calcGrad
             fvPatchFieldBase::extrapolatedCalculatedType()
         )
     );
-    
+
     calcGrad(tGrad.ref(), vsf);
 
     return tGrad;

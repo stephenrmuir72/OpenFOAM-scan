@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2019-2023 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -167,24 +168,27 @@ Foam::surfaceInterpolationScheme<Type>::interpolate
     GeometricField<Type, fvsPatchField, surfaceMesh>& sf = tsf.ref();
 
     Field<Type>& sfi = sf.primitiveFieldRef();
-    
-    labelRange faceRange(P.size());
 
-    apply_policy(P.size(), [&](auto policy)
+    if (const label kernel_size = P.size(); kernel_size > 0)
     {
-        std::for_each
-        (
-            policy,
-            faceRange.begin(),
-            faceRange.end(),
-            [&](const label fi)
-            {
-                sfi[fi] = lambda[fi]*vfi[P[fi]] + y[fi]*vfi[N[fi]];
-            }
-        );
-    });
+        const auto kernel = [&](const label fi)
+        {
+            sfi[fi] = lambda[fi]*vfi[P[fi]] + y[fi]*vfi[N[fi]];
+        };
 
-   
+        const labelRange faceRange(kernel_size);
+
+        apply_policy(kernel_size, [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                faceRange.begin(), faceRange.end(),
+                kernel
+            );
+        });
+    }
+
 
     // Interpolate across coupled patches using given lambdas and ys
     typename GeometricField<Type, fvsPatchField, surfaceMesh>::
@@ -274,25 +278,32 @@ Foam::surfaceInterpolationScheme<Type>::dotInterpolate
 
     const typename SFType::Internal& Sfi = Sf.internalField();
 
-    labelRange faceRange(P.size());
-
-    apply_policy(P.size(), [&](auto policy)
+    if (const label kernel_size = P.size(); kernel_size > 0)
     {
         // Same as:
         // sfi[fi] = Sfi[fi] & lerp(vfi[N[fi]], vfi[P[fi]], lambda[fi]);
         // but maybe the compiler notices the fused multiply add form
-        std::for_each
-        (
-            policy,
-            faceRange.begin(),
-            faceRange.end(),
-            [&](const label fi)
-            {
-                sfi[fi] = Sfi[fi] & (lambda[fi]*(vfi[P[fi]] - vfi[N[fi]])
-                    + vfi[N[fi]]);
-            }
-        );
-    });
+
+        const auto kernel = [&](const label fi)
+        {
+            sfi[fi] =
+            (
+                Sfi[fi] & (lambda[fi]*(vfi[P[fi]] - vfi[N[fi]]) + vfi[N[fi]])
+            );
+        };
+
+        const labelRange faceRange(kernel_size);
+
+        apply_policy(kernel_size, [&](auto policy)
+        {
+            std::for_each
+            (
+                policy,
+                faceRange.begin(), faceRange.end(),
+                kernel
+            );
+        });
+    }
 
     // Interpolate across coupled patches using given lambdas
 

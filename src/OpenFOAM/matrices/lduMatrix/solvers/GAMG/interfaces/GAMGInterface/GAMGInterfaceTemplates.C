@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2019 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -51,20 +52,23 @@ Foam::tmp<Foam::Field<Type>> Foam::GAMGInterface::interfaceInternalField
 {
     auto tresult = tmp<Field<Type>>::New(faceCells.size());
     auto& result = tresult.ref();
+
+    const auto kernel = [&](const label faceCellIndex)
+    {
+        return iF[faceCellIndex];
+    };
+
     apply_policy(faceCells.size(), [&](auto policy)
     {
         std::transform
         (
             policy,
-            faceCells.begin(),
-            faceCells.end(),
+            faceCells.begin(), faceCells.end(),
             result.begin(),
-            [&](const auto& faceCellIndex) 
-            {
-                return iF[faceCellIndex];
-            }
+            kernel
         );
     });
+
     return tresult;
 }
 
@@ -78,18 +82,19 @@ void Foam::GAMGInterface::interfaceInternalField
 {
     result.resize(size());
 
+    const auto kernel = [&](const label faceCellIndex)
+    {
+        return iF[faceCellIndex];
+    };
+
     apply_policy(faceCells_.size(), [&](auto policy)
     {
         std::transform
         (
             policy,
-            faceCells_.begin(),
-            faceCells_.end(),
+            faceCells_.begin(), faceCells_.end(),
             result.begin(),
-            [&](const auto& faceCellIndex) 
-            {
-                return iF[faceCellIndex];
-            }
+            kernel
         );
     });
 }

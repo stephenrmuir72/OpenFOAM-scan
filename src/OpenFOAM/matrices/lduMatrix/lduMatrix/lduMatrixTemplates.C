@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2026 UKRI-STFC.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -38,6 +39,7 @@ Description
 #include "lduMatrixFunctors.H"
 #include "lduAddressingFunctors.H"
 #endif
+
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 template<class Type>
@@ -48,7 +50,7 @@ Foam::tmp<Foam::Field<Type>> Foam::lduMatrix::H(const Field<Type>& psi) const
     if (lowerPtr_ || upperPtr_)
     {
         #ifdef FOAM_OFFLOAD
-        labelRange indices(tHpsi.ref().size());
+        // const labelRange indices(tHpsi.ref().size());
         matrixOperation
         (
             tHpsi.ref().begin(),
@@ -120,24 +122,27 @@ Foam::lduMatrix::faceH(const Field<Type>& psi) const
         auto tfaceHpsi = tmp<Field<Type>>::New(Lower.size());
         auto& faceHpsi = tfaceHpsi.ref();
 
-        const label nFaces = Lower.size();
-        const labelRange faceIndices(nFaces);
-
-        apply_policy(static_cast<std::size_t>(nFaces), [&](auto policy)
+        if (const label loop_len = Lower.size(); loop_len > 0)
         {
-            std::transform
-            (
-                policy,
-                faceIndices.begin(),
-                faceIndices.end(),
-                faceHpsi.begin(),
-                [&](const label face)
-                {
-                    return Upper[face]*psi[u[face]]
-                         - Lower[face]*psi[l[face]];
-                }
-            );
-        });
+            const auto kernel = [&](const label face)
+            {
+                return Upper[face]*psi[u[face]]
+                     - Lower[face]*psi[l[face]];
+            };
+
+            const labelRange faceIndices(loop_len);
+
+            apply_policy(loop_len, [&](auto policy)
+            {
+                std::transform
+                (
+                    policy,
+                    faceIndices.begin(), faceIndices.end(),
+                    faceHpsi.begin(),
+                    kernel
+                );
+            });
+        }
 
         return tfaceHpsi;
     }
