@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2016-2024 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -120,6 +121,16 @@ protected:
 
 
 public:
+
+    //- Geometric category of a topoSet
+    enum class topoSetGeometry : char
+    {
+        CELL,      //!< Cell-type sets
+        FACE,      //!< Face-type sets
+        POINT,     //!< Point-type sets
+        UNKNOWN
+    };
+
 
     //- Runtime type information
     TypeName("topoSet");
@@ -344,6 +355,12 @@ public:
 
 
     // Member Functions
+
+        //- Geometric category of the set labels
+        virtual topoSetGeometry geometricType() const noexcept
+        {
+            return topoSetGeometry::UNKNOWN;
+        }
 
         //- Has the given index?
         virtual bool contains(const label id) const;

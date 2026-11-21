@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2018 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -79,6 +80,12 @@ public:
 
 
     // Member Functions
+
+        //- Geometric category of the set labels
+        virtual topoSetGeometry geometricType() const noexcept
+        {
+            return topoSetGeometry::FACE;
+        }
 
         //- Sync faceBoolSet across coupled patches.
         virtual void sync(const polyMesh& mesh);
