@@ -1,5 +1,5 @@
 {
-    for (int nonOrth=0; nonOrth<=nNonOrthCorr; ++nonOrth)
+    if (coupled)
     {
         fvScalarMatrix hEqn
         (
@@ -12,12 +12,23 @@
 
         fvOptions.constrain(hEqn);
 
-        if (coupled)
+        fvMatrixAssemblyPtr->addFvMatrix(hEqn);
+    }
+    else
+    {
+        for (int nonOrth=0; nonOrth<=nNonOrthCorr; ++nonOrth)
         {
-            fvMatrixAssemblyPtr->addFvMatrix(hEqn);
-        }
-        else
-        {
+            fvScalarMatrix hEqn
+            (
+                -thermo.heatDiffusion(betav, h)
+              ==
+                fvOptions(rho, h)
+            );
+
+            hEqn.relax();
+
+            fvOptions.constrain(hEqn);
+
             Info<< "\nSolving for solid region "
                 << solidRegions[i].name() << endl;
 
