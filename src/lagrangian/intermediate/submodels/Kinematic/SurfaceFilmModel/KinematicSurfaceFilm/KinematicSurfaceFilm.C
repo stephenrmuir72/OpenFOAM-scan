@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2021-2025 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -161,14 +162,15 @@ void Foam::KinematicSurfaceFilm<CloudType>::absorbInteraction
     // Parcel tangential velocity
     const vector Ut(Urel - Un);
 
-    film.addSources
+    film.addParcelImpact
     (
         pp.index(),
         facei,
         mass,                             // mass
         mass*Ut,                          // tangential momentum
         mass*mag(Un),                     // impingement pressure
-        0                                 // energy
+        0,                                // energy
+        p.d()                             // diameter
     );
 
     this->nParcelsTransferred()++;

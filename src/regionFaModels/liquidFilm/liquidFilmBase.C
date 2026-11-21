@@ -205,6 +205,69 @@ liquidFilmBase::liquidFilmBase
         Foam::fa::options::New(primaryMesh(), regionFaModel::areaName())
     )
 {
+    if (dict.found("spatialSpreading"))
+    {
+        massDiameterSourcePtr_.reset
+        (
+            new volScalarField
+            (
+                IOobject
+                (
+                    "massDiameterSource",
+                    primaryMesh().time().timeName(),
+                    primaryMesh().thisDb()
+                ),
+                primaryMesh(),
+                dimensionedScalar(dimMass*dimLength, zero{})
+            )
+        );
+
+        filmToLagMassSourcePtr_.reset
+        (
+            new volScalarField
+            (
+                IOobject
+                (
+                    "filmToLagMassSource",
+                    primaryMesh().time().timeName(),
+                    primaryMesh().thisDb()
+                ),
+                primaryMesh(),
+                dimensionedScalar(dimMass, zero{})
+            )
+        );
+
+        filmToLagMomentumSourcePtr_.reset
+        (
+            new volVectorField
+            (
+                IOobject
+                (
+                    "filmToLagMomentumSource",
+                    primaryMesh().time().timeName(),
+                    primaryMesh().thisDb()
+                ),
+                primaryMesh(),
+                dimensionedVector(dimMass*dimVelocity, zero{})
+            )
+        );
+
+        filmToLagPnSourcePtr_.reset
+        (
+            new volScalarField
+            (
+                IOobject
+                (
+                    "filmToLagPnSource",
+                    primaryMesh().time().timeName(),
+                    primaryMesh().thisDb()
+                ),
+                primaryMesh(),
+                dimensionedScalar(dimMass*dimVelocity, zero{})
+            )
+        );
+    }
+
     const areaVectorField& ns = regionMesh().faceAreaNormals();
 
     gn_ = g_ & ns;
@@ -429,9 +492,82 @@ void liquidFilmBase::addSources
     const scalar energySource
 )
 {
+    if (massSource < 0)  // mass is leaving from film to Lagrangian parcels
+    {
+        cacheFilmToLagrangianSources
+        (
+            patchi,
+            facei,
+            massSource,
+            momentumSource,
+            pressureSource,
+            energySource
+        );
+        return;
+    }
+
     massSource_.boundaryFieldRef()[patchi][facei] += massSource;
     pnSource_.boundaryFieldRef()[patchi][facei] += pressureSource;
     momentumSource_.boundaryFieldRef()[patchi][facei] += momentumSource;
+}
+
+
+void liquidFilmBase::cacheFilmToLagrangianSources
+(
+    const label patchi,
+    const label facei,
+    const scalar massSource,
+    const vector& momentumSource,
+    const scalar pressureSource,
+    const scalar energySource
+)
+{
+    if (filmToLagMassSourcePtr_)
+    {
+        filmToLagMassSourcePtr_->boundaryFieldRef()[patchi][facei]
+            += massSource;
+        filmToLagPnSourcePtr_->boundaryFieldRef()[patchi][facei]
+            += pressureSource;
+        filmToLagMomentumSourcePtr_->boundaryFieldRef()[patchi][facei]
+            += momentumSource;
+    }
+    else
+    {
+        massSource_.boundaryFieldRef()[patchi][facei] += massSource;
+        pnSource_.boundaryFieldRef()[patchi][facei] += pressureSource;
+        momentumSource_.boundaryFieldRef()[patchi][facei] += momentumSource;
+    }
+}
+
+
+void liquidFilmBase::addMassDiameterSource
+(
+    const label patchi,
+    const label facei,
+    const scalar mass,
+    const scalar diameter
+)
+{
+    if (mass > 0 && massDiameterSourcePtr_)
+    {
+        massDiameterSourcePtr_->boundaryFieldRef()[patchi][facei]
+            += mass*diameter;
+    }
+}
+
+void liquidFilmBase::addParcelImpact
+(
+    const label patchi,
+    const label facei,
+    const scalar mass,
+    const vector& momentum,
+    const scalar normalImpulse,
+    const scalar energy,
+    const scalar diameter
+)
+{
+    addSources(patchi, facei, mass, momentum, normalImpulse, energy);
+    addMassDiameterSource(patchi, facei, mass, diameter);
 }
 
 
@@ -448,11 +584,25 @@ void liquidFilmBase::postEvolveRegion()
         massSource_.write();
         pnSource_.write();
         momentumSource_.write();
+
+        if (filmToLagMassSourcePtr_)
+        {
+            filmToLagMassSourcePtr_->write();
+            filmToLagPnSourcePtr_->write();
+            filmToLagMomentumSourcePtr_->write();
+        }
     }
 
     massSource_.boundaryFieldRef() = Zero;
     pnSource_.boundaryFieldRef() = Zero;
     momentumSource_.boundaryFieldRef() = Zero;
+
+    if (filmToLagMassSourcePtr_)
+    {
+        filmToLagMassSourcePtr_->boundaryFieldRef() = zero{};
+        filmToLagPnSourcePtr_->boundaryFieldRef() = zero{};
+        filmToLagMomentumSourcePtr_->boundaryFieldRef() = zero{};
+    }
 
     regionFaModel::postEvolveRegion();
 }
