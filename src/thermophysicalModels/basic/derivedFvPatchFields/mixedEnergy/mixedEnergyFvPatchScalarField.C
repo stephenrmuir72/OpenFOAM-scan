@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2012 OpenFOAM Foundation
     Copyright (C) 2021 OpenCFD Ltd.
+    Copyright (C) 2026 Patrick Wilhelm, Data Lab Hell
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -165,6 +166,12 @@ void Foam::mixedEnergyFvPatchScalarField::manipulateMatrix
     const labelList& nbrCells =
         matrix.lduMeshAssembly().cellBoundMap()[mat][index];
 
+    // Sub-face to patch-face map: the cell maps are in assembly sub-face
+    // order while the coefficient and source fields are in patch-face
+    // order (cf. mapContributions)
+    const labelList& patchFaceMap =
+        matrix.lduMeshAssembly().facePatchFaceMap()[mat][index];
+
     forAll(faceMap, j)
     {
         label globalFaceI = faceMap[j];
@@ -172,8 +179,10 @@ void Foam::mixedEnergyFvPatchScalarField::manipulateMatrix
         label myCellI = myCells[j];
         label nbrCellI = nbrCells[j];
 
-        const scalar intCorr = -intCoeffsCmpt[j];
-        const scalar srcCorr = -sourceCorr[j];
+        const label patchFaceI = patchFaceMap[j];
+
+        const scalar intCorr = -intCoeffsCmpt[patchFaceI];
+        const scalar srcCorr = -sourceCorr[patchFaceI];
 
         if (this->patch().patch().masterImplicit())
         {
