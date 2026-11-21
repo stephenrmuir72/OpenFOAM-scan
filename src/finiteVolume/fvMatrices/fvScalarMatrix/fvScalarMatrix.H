@@ -62,7 +62,11 @@ template<>
 autoPtr<fvMatrix<scalar>::fvSolver> fvMatrix<scalar>::solver(const dictionary&);
 
 template<>
-solverPerformance fvMatrix<scalar>::fvSolver::solve(const dictionary&);
+solverPerformance fvMatrix<scalar>::fvSolver::solve
+(
+    const dictionary&,
+    const Field<scalar>& source
+);
 
 template<>
 solverPerformance fvMatrix<scalar>::solveSegregated(const dictionary&);

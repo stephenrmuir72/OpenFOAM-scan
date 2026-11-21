@@ -271,11 +271,20 @@ public:
     {
         fvMatrix<Type>& fvMat_;
 
+        // Optional storage for the solver instance
+        FieldField<Field, scalar> bouCoeffsCmpt_;
+        FieldField<Field, scalar> intCoeffsCmpt_;
+
         autoPtr<lduMatrix::solver> solver_;
 
     public:
 
         // Constructors
+
+            fvSolver(fvMatrix<Type>& fvMat)
+            :
+                fvMat_(fvMat)
+            {}
 
             fvSolver(fvMatrix<Type>& fvMat, autoPtr<lduMatrix::solver>&& sol)
             :
@@ -288,11 +297,19 @@ public:
 
             //- Solve returning the solution statistics.
             //  Solver controls read from dictionary
-            SolverPerformance<Type> solve(const dictionary& solverControls);
+            SolverPerformance<Type> solve
+            (
+                const dictionary& solverControls,
+                const Field<Type>& source
+            );
 
             //- Solve returning the solution statistics.
             //  Solver controls read from fvSolution
             SolverPerformance<Type> solve();
+
+            // //- Solve returning the solution statistics.
+            // //  Solver controls read from fvSolution
+            // SolverPerformance<Type> solve(const Field<Type>& source);
     };
 
 
@@ -623,6 +640,15 @@ public:
             //- Solve segregated returning the solution statistics.
             //  Use the given solver controls
             SolverPerformance<Type> solveSegregated(const dictionary&);
+
+            //- Solve segregated returning the solution statistics.
+            //  Use the given solver controls and scalar solver
+            SolverPerformance<Type> solveSegregated
+            (
+                const dictionary&,
+                const lduMatrix::solver&,
+                const Field<Type>& source
+            );
 
             //- Solve coupled returning the solution statistics.
             //  Use the given solver controls

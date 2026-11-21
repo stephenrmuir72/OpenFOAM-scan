@@ -115,7 +115,8 @@ Foam::fvMatrix<Foam::scalar>::solver
 template<>
 Foam::solverPerformance Foam::fvMatrix<Foam::scalar>::fvSolver::solve
 (
-    const dictionary& solverControls
+    const dictionary& solverControls,
+    const Field<scalar>& addSource
 )
 {
     const int logLevel =
@@ -131,10 +132,32 @@ Foam::solverPerformance Foam::fvMatrix<Foam::scalar>::fvSolver::solve
     fvMat_.addBoundaryDiag(fvMat_.diag(), 0);
 
     scalarField totalSource(fvMat_.source());
+    if (addSource.size())
+    {
+        totalSource += addSource; // Add the additional source term
+    }
     fvMat_.addBoundarySource(totalSource, false);
 
     // Assign new solver controls
-    solver_->read(solverControls);
+    if (!solver_)
+    {
+        solver_ = autoPtr<lduMatrix::solver>
+        (
+            lduMatrix::solver::New
+            (
+                fvMat_.psi().name(),
+                fvMat_,
+                fvMat_.boundaryCoeffs_,
+                fvMat_.internalCoeffs_,
+                fvMat_.psi().boundaryField().scalarInterfaces(),
+                solverControls
+            )
+        );
+    }
+    else
+    {
+        solver_->read(solverControls);
+    }
 
     solverPerformance solverPerf = solver_->solve
     (
