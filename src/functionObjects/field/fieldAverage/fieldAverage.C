@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2015-2017 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -47,34 +48,69 @@ namespace functionObjects
 
 void Foam::functionObjects::fieldAverage::initialize()
 {
+    prevTimeIndex_ = -1;
+
     for (fieldAverageItem& item : faItems_)
     {
-        // Note: not clearing data needed for restart
-        item.clear(obr(), false);
+        item.active() = false;
     }
 
-    Log << type() << " " << name() << ":" << nl;
+    initialize(true);
+}
 
-    // Add mean fields to the field lists
+
+void Foam::functionObjects::fieldAverage::initialize(bool clearFields)
+{
+    if (clearFields)
+    {
+        for (fieldAverageItem& item : faItems_)
+        {
+            // Note: not clearing data needed for restart
+            item.clear(obr(), false);
+        }
+
+        Log << type() << " " << name() << ":" << nl;
+    }
+
+    bool initialised = true;
+
     for (fieldAverageItem& item : faItems_)
     {
+        // Preserve registered averages while retrying deferred operands
+        if (item.active())
+        {
+            continue;
+        }
+
+        if (!item.mean() && !item.prime2Mean())
+        {
+            item.active() = true;
+            continue;
+        }
+
         addMeanField<scalar>(item);
         addMeanField<vector>(item);
         addMeanField<sphericalTensor>(item);
         addMeanField<symmTensor>(item);
         addMeanField<tensor>(item);
-    }
 
-    // Add prime-squared mean fields to the field lists
-    for (fieldAverageItem& item : faItems_)
-    {
         addPrime2MeanField<scalar, scalar>(item);
         addPrime2MeanField<vector, symmTensor>(item);
-    }
 
-    // Add window fields to the field lists
-    for (const fieldAverageItem& item : faItems_)
-    {
+        if (!item.active())
+        {
+            initialised = false;
+
+            if (clearFields)
+            {
+                Log << "    Field " << item.fieldName()
+                    << " not currently available; initialisation deferred"
+                    << nl;
+            }
+
+            continue;
+        }
+
         restoreWindowFields<scalar>(item);
         restoreWindowFields<vector>(item);
         restoreWindowFields<sphericalTensor>(item);
@@ -82,22 +118,12 @@ void Foam::functionObjects::fieldAverage::initialize()
         restoreWindowFields<tensor>(item);
     }
 
+    initialised_ = initialised;
 
-    for (const fieldAverageItem& item : faItems_)
+    if (clearFields)
     {
-        if (!item.active())
-        {
-            WarningInFunction
-                << "Field " << item.fieldName()
-                << " not found in database for averaging";
-        }
+        Log << endl;
     }
-
-    // Ensure first averaging works unconditionally
-    prevTimeIndex_ = -1;
-
-    Log << endl;
-    initialised_ = true;
 }
 
 
@@ -110,9 +136,11 @@ void Foam::functionObjects::fieldAverage::restart()
     for (fieldAverageItem& item : faItems_)
     {
         item.clear(obr(), true);
+        item.active() = false;
     }
 
-    initialize();
+    prevTimeIndex_ = -1;
+    initialize(false);
 }
 
 
@@ -120,7 +148,7 @@ void Foam::functionObjects::fieldAverage::calcAverages()
 {
     if (!initialised_)
     {
-        initialize();
+        initialize(false);
     }
 
     const label currentTimeIndex = obr().time().timeIndex();
@@ -162,9 +190,12 @@ void Foam::functionObjects::fieldAverage::calcAverages()
     Log << type() << " " << name() << " write:" << nl
         << "    Calculating averages" << nl;
 
-    forAll(faItems_, fieldi)
+    for (fieldAverageItem& item : faItems_)
     {
-        faItems_[fieldi].evolve(obr());
+        if (item.active())
+        {
+            item.evolve(obr());
+        }
     }
 
     storeWindowFields<scalar>();
@@ -297,6 +328,7 @@ bool Foam::functionObjects::fieldAverage::read(const dictionary& dict)
 
     // Make certain that the values are consistent with the defaults:
     initialised_ = false;
+    prevTimeIndex_ = -1;
     restartOnRestart_ = false;
     restartOnOutput_ = false;
     periodicRestart_ = false;
@@ -383,6 +415,10 @@ bool Foam::functionObjects::fieldAverage::read(const dictionary& dict)
     readAveragingProperties();
 
     Info<< endl;
+
+    // Register available mean fields before mesh changes. Missing fields are
+    // initialised lazily once they become available.
+    initialize(true);
 
     return true;
 }
