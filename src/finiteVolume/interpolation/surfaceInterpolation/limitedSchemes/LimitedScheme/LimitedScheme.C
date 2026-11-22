@@ -84,17 +84,7 @@ void Foam::LimitedScheme<Type, Limiter, LimitFunc>::calcLimiter
             );
         };
 
-        const labelRange faceRange(kernel_size);
-
-        apply_policy(kernel_size, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                faceRange.begin(), faceRange.end(),
-                kernel
-            )
-        });
+        ListPolicy::for_each_n(kernel_size, kernel);
     }
 
     surfaceScalarField::Boundary& bLim = limiterField.boundaryFieldRef();
@@ -145,17 +135,7 @@ void Foam::LimitedScheme<Type, Limiter, LimitFunc>::calcLimiter
                 );
             };
 
-            const labelRange faceRange(kernel_size);
-
-            apply_policy(kernel_size, [&](auto policy)
-            {
-                std::for_each
-                (
-                    policy,
-                    faceRange.begin(), faceRange.end(),
-                    kernel
-                );
-            });
+            ListPolicy::for_each_n(kernel_size, kernel);
         }
         else
         {

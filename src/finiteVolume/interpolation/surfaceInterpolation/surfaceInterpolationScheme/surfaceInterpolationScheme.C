@@ -176,17 +176,7 @@ Foam::surfaceInterpolationScheme<Type>::interpolate
             sfi[fi] = lambda[fi]*vfi[P[fi]] + y[fi]*vfi[N[fi]];
         };
 
-        const labelRange faceRange(kernel_size);
-
-        apply_policy(kernel_size, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                faceRange.begin(), faceRange.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(kernel_size, kernel);
     }
 
 
@@ -292,17 +282,7 @@ Foam::surfaceInterpolationScheme<Type>::dotInterpolate
             );
         };
 
-        const labelRange faceRange(kernel_size);
-
-        apply_policy(kernel_size, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                faceRange.begin(), faceRange.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(kernel_size, kernel);
     }
 
     // Interpolate across coupled patches using given lambdas

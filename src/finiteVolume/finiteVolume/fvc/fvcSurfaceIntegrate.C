@@ -69,36 +69,30 @@ void surfaceIntegrate
             return issf[facei];
         };
 
-        const labelRange cellRange(kernel_size);
+        ListPolicy::transform_n
+        (
+            kernel_size,
+            ivf.begin(),
 
-        apply_policy(kernel_size, [&](auto policy)
-        {
-            std::transform
+            cellReduceFunctor
+            <
+                Type,
+                decltype(faceOp),
+                decltype(faceOp),
+                plusEqOp<Type>,
+                minusEqOp<Type>
+            >
             (
-                policy,
-                cellRange.begin(), cellRange.end(),
-                ivf.begin(),
-
-                cellReduceFunctor
-                <
-                    Type,
-                    decltype(faceOp),
-                    decltype(faceOp),
-                    plusEqOp<Type>,
-                    minusEqOp<Type>
-                >
-                (
-                    pTraits<Type>::zero,
-                    ownStart,
-                    neiStart,
-                    losort,
-                    faceOp,
-                    faceOp,
-                    plusEqOp<Type>(),
-                    minusEqOp<Type>()
-                )
-            );
-        });
+                pTraits<Type>::zero,
+                ownStart,
+                neiStart,
+                losort,
+                faceOp,
+                faceOp,
+                plusEqOp<Type>(),
+                minusEqOp<Type>()
+            )
+        );
     }
     #else
     const labelUList& owner = mesh.owner();
@@ -123,8 +117,6 @@ void surfaceIntegrate
         const labelUList& neiStart = mesh.lduAddr().patchSortStartAddr(patchi);
         const labelUList& losort = mesh.lduAddr().patchSortAddr(patchi);
 
-        const label kernel_size = patchCells.size();
-
         const auto neiFun = [&pssf](const label, const label facei)
         {
             return pssf[facei];
@@ -135,26 +127,19 @@ void surfaceIntegrate
             result += value;
         };
 
-        const labelRange indices(kernel_size);
-
-        apply_policy(kernel_size, [&](auto policy)
-        {
-            std::for_each
+        ListPolicy::for_each_n
+        (
+            patchCells.size(),
+            patchCellReduceFunctor<Type, decltype(neiFun), decltype(neiOp)>
             (
-                policy,
-                indices.begin(), indices.end(),
-
-                patchCellReduceFunctor<Type, decltype(neiFun), decltype(neiOp)>
-                (
-                    ivf,
-                    neiStart,
-                    losort,
-                    patchCells,
-                    neiFun,
-                    neiOp
-                )
-            );
-        });
+                ivf,
+                neiStart,
+                losort,
+                patchCells,
+                neiFun,
+                neiOp
+            )
+        );
         #else
         forAll(mesh.boundary()[patchi], facei)
         {
@@ -260,36 +245,30 @@ surfaceSum
             return ssf[facei];
         };
 
-        const labelRange cellRange(kernel_size);
+        ListPolicy::transform_n
+        (
+            kernel_size,
+            vf.begin(),
 
-        apply_policy(kernel_size, [&](auto policy)
-        {
-            std::transform
+            cellReduceFunctor
+            <
+                Type,
+                decltype(faceOp),
+                decltype(faceOp),
+                plusEqOp<Type>,
+                plusEqOp<Type>
+            >
             (
-                policy,
-                cellRange.begin(), cellRange.end(),
-                vf.begin(),
-
-                cellReduceFunctor
-                <
-                    Type,
-                    decltype(faceOp),
-                    decltype(faceOp),
-                    plusEqOp<Type>,
-                    plusEqOp<Type>
-                >
-                (
-                    pTraits<Type>::zero,
-                    ownStart,
-                    neiStart,
-                    losort,
-                    faceOp,
-                    faceOp,
-                    plusEqOp<Type>(),
-                    plusEqOp<Type>()
-                )
-            );
-        });
+                pTraits<Type>::zero,
+                ownStart,
+                neiStart,
+                losort,
+                faceOp,
+                faceOp,
+                plusEqOp<Type>(),
+                plusEqOp<Type>()
+            )
+        );
     }
     #else
     const labelUList& owner = mesh.owner();
@@ -319,7 +298,6 @@ surfaceSum
         const labelUList& losort =
             mesh.lduAddr().patchSortAddr(patchi);
 
-        const label kernel_size = patchCells.size();
 
         const auto neiFun = [&pssf](const label, const label facei)
         {
@@ -331,26 +309,19 @@ surfaceSum
             result += value;
         };
 
-        const labelRange indices(kernel_size);
-
-        apply_policy(kernel_size, [&](auto policy)
-        {
-            std::for_each
+        ListPolicy::for_each_n
+        (
+            patchCells.size(),
+            patchCellReduceFunctor<Type, decltype(neiFun), decltype(neiOp)>
             (
-                policy,
-                indices.begin(), indices.end(),
-
-                patchCellReduceFunctor<Type, decltype(neiFun), decltype(neiOp)>
-                (
-                    vf,
-                    neiStart,
-                    losort,
-                    patchCells,
-                    neiFun,
-                    neiOp
-                )
-            );
-        });
+                vf,
+                neiStart,
+                losort,
+                patchCells,
+                neiFun,
+                neiOp
+            )
+        );
         #else
         forAll(mesh.boundary()[patchi], facei)
         {

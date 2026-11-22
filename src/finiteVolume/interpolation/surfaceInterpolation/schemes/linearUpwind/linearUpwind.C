@@ -95,17 +95,7 @@ Foam::linearUpwind<Type>::correction
                     (Cf[facei] - C[celli]) & gradVf[celli];
             };
 
-            const labelRange faceRange(kernel_size);
-
-            apply_policy(kernel_size, [&](auto policy)
-            {
-                std::for_each
-                (
-                    policy,
-                    faceRange.begin(), faceRange.end(),
-                    kernel
-                );
-            });
+            ListPolicy::for_each_n(kernel_size, kernel);
         }
 
         typename GeometricField<Type, fvsPatchField, surfaceMesh>::
@@ -155,17 +145,7 @@ Foam::linearUpwind<Type>::correction
                     }
                 };
 
-                const labelRange faceRange(kernel_size);
-
-                apply_policy(kernel_size, [&](auto policy)
-                {
-                    std::for_each
-                    (
-                        policy,
-                        faceRange.begin(), faceRange.end(),
-                        kernel
-                    );
-                });
+                ListPolicy::for_each_n(kernel_size, kernel);
             }
         }
     }
@@ -233,17 +213,7 @@ Foam::linearUpwind<Foam::vector>::correction
             sfCorr[facei] = (Cf[facei] - C[celli]) & gradVf[celli];
         };
 
-        const labelRange faceRange(kernel_size);
-
-        apply_policy(kernel_size, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                faceRange.begin(), faceRange.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(kernel_size, kernel);
     }
 
 
@@ -286,17 +256,7 @@ Foam::linearUpwind<Foam::vector>::correction
                 }
             };
 
-            const labelRange faceRange(kernel_size);
-
-            apply_policy(kernel_size, [&](auto policy)
-            {
-                std::for_each
-                (
-                    policy,
-                    faceRange.begin(), faceRange.end(),
-                    kernel
-                );
-            });
+            ListPolicy::for_each_n(kernel_size, kernel);
         }
     }
 

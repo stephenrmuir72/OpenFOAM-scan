@@ -239,18 +239,8 @@ void Foam::fvPatchField<Type>::snGrad(UList<Type>& result) const
             result[i] = dc[i]*(pfld[i] - pif[i]);
         };
 
-        const labelRange faceRange(kernel_size);
-
-        apply_policy(kernel_size, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                faceRange.begin(), faceRange.end(),
-                kernel
-            );
-        });
-        }
+        ListPolicy::for_each_n(kernel_size, kernel);
+    }
 }
 
 template<class Type>

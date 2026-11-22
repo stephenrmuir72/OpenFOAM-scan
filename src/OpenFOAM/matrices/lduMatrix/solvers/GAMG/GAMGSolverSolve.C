@@ -489,17 +489,7 @@ void Foam::GAMGSolver::Vcycle
             psi[i] += finestCorrection[i];
         };
 
-        const labelRange cellRange(kernel_size);
-
-        apply_policy(kernel_size, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                cellRange.begin(), cellRange.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(kernel_size, kernel);
     }
 
     smoothers[0].smooth

@@ -137,17 +137,7 @@ Foam::tmp<Foam::surfaceScalarField> Foam::basicFvGeometryScheme::weights() const
             }
         };
 
-        const labelRange faceRange(kernel_size);
-
-        apply_policy(kernel_size, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                faceRange.begin(), faceRange.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(kernel_size, kernel);
     }
 
     auto& wBf = weights.boundaryFieldRef();
@@ -213,17 +203,7 @@ Foam::basicFvGeometryScheme::deltaCoeffs() const
             deltaCoeffs[facei] = 1.0/mag(C[neighbour[facei]] - C[owner[facei]]);
         };
 
-        const labelRange faceRange(kernel_size);
-
-        apply_policy(kernel_size, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                faceRange.begin(), faceRange.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(kernel_size, kernel);
     }
 
     auto& deltaCoeffsBf = deltaCoeffs.boundaryFieldRef();
@@ -326,17 +306,7 @@ Foam::basicFvGeometryScheme::nonOrthDeltaCoeffs() const
                     1.0/max(unitArea & delta, 0.05*mag(delta));
             };
 
-            const labelRange faceRange(kernel_size);
-
-            apply_policy(kernel_size, [&](auto policy)
-            {
-                std::for_each
-                (
-                    policy,
-                    faceRange.begin(), faceRange.end(),
-                    kernel
-                );
-            });
+            ListPolicy::for_each_n(kernel_size, kernel);
         }
 
         // Optionally correct
@@ -394,17 +364,7 @@ Foam::basicFvGeometryScheme::nonOrthCorrectionVectors() const
             corrVecs[facei] = unitArea - delta*NonOrthDeltaCoeffs[facei];
         };
 
-        const labelRange faceRange(kernel_size);
-
-        apply_policy(kernel_size, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                faceRange.begin(), faceRange.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(kernel_size, kernel);
     }
 
     // Boundary correction vectors set to zero for boundary patches
@@ -447,17 +407,7 @@ Foam::basicFvGeometryScheme::nonOrthCorrectionVectors() const
                     unitArea - delta*patchNonOrthDeltaCoeffs[patchFacei];
             };
 
-            const labelRange faceRange(kernel_size);
-
-            apply_policy(kernel_size, [&](auto policy)
-            {
-                std::for_each
-                (
-                    policy,
-                    faceRange.begin(), faceRange.end(),
-                    kernel
-                );
-            });
+            ListPolicy::for_each_n(kernel_size, kernel);
         }
 
         // Optionally correct

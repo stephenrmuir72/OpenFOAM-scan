@@ -62,17 +62,7 @@ void Foam::fv::cellLimitedGrad<Type, Limiter>::limitGradient
             );
         };
 
-        const labelRange cellRange(kernel_size);
-
-        apply_policy(kernel_size, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                cellRange.begin(), cellRange.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(kernel_size, kernel);
     }
 }
 
@@ -150,18 +140,7 @@ void Foam::fv::cellLimitedGrad<Type, Limiter>::calcGrad
             minVsf[celli] = minVal;
         };
 
-
-        const labelRange ownerRange(kernel_size);
-
-        apply_policy(kernel_size, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                ownerRange.begin(), ownerRange.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(kernel_size, kernel);
     }
     #else
     forAll(owner, facei)
@@ -202,42 +181,7 @@ void Foam::fv::cellLimitedGrad<Type, Limiter>::calcGrad
                 minVsf[own] = min(minVsf[own], vsfNei);
             };
 
-            const labelRange pOwnerRange(kernel_size);
-
-            apply_policy(kernel_size, [&](auto policy)
-            {
-                std::for_each
-                (
-                    policy,
-                    pOwnerRange.begin(), pOwnerRange.end(),
-                    kernel
-                );
-            });
-        }
-        else
-        {
-            const label kernel_size = pOwner.size();
-
-            const auto kernel = [&](label pFacei)
-            {
-                const label own = pOwner[pFacei];
-                const Type& vsfNei = psf[pFacei];
-
-                maxVsf[own] = max(maxVsf[own], vsfNei);
-                minVsf[own] = min(minVsf[own], vsfNei);
-            };
-
-            const labelRange pOwnerRange(kernel_size));
-
-            apply_policy(kernel_size, [&](auto policy)
-            {
-                std::for_each
-                (
-                    policy,
-                    pOwnerRange.begin(), pOwnerRange.end(),
-                    kernel
-                );
-            });
+            ListPolicy::for_each_n(kernel_size, kernel);
         }
     }
 
@@ -304,17 +248,7 @@ void Foam::fv::cellLimitedGrad<Type, Limiter>::calcGrad
             limiter[celli] = lim;
         };
 
-        const labelRange cellRange(kernel_size);
-
-        apply_policy(kernel_size, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                cellRange.begin(), cellRange.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(kernel_size, kernel);
     }
     #else
     forAll(owner, facei)
@@ -386,17 +320,7 @@ void Foam::fv::cellLimitedGrad<Type, Limiter>::calcGrad
                 limiter[own] = lim;
             };
 
-            const labelRange patchCellsRange(kernel_size);
-
-            apply_policy(kernel_size, [&](auto policy)
-            {
-                std::for_each
-                (
-                    policy,
-                    patchCellsRange.begin(), patchCellsRange.end(),
-                    kernel
-                );
-            });
+            ListPolicy::for_each_n(kernel_size, kernel);
         }
         #else
         forAll(pOwner, pFacei)

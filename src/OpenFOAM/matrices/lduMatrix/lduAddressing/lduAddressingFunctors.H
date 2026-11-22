@@ -169,28 +169,23 @@ namespace Foam
         NeiOp no
     )
     {
-        const labelRange indices(out.size());
-        apply_policy(out.size(), [&](auto policy)
-        {
-            std::transform
-            (
-                policy,
-                indices.begin(), indices.end(),
-                in,
-                out.begin(),
+        ListPolicy::transform_n
+        (
+            out.size(),
+            in,
+            out.begin(),
 
-                lduAddressingFunctor<Type, OwnFun, NeiFun, OwnOp, NeiOp>
-                (
-                    addr.ownerStartAddr(),
-                    addr.losortStartAddr(),
-                    addr.losortAddr(),
-                    o,
-                    n,
-                    oo,
-                    no
-                )
-            );
-        });
+            lduAddressingFunctor<Type, OwnFun, NeiFun, OwnOp, NeiOp>
+            (
+                addr.ownerStartAddr(),
+                addr.losortStartAddr(),
+                addr.losortAddr(),
+                o,
+                n,
+                oo,
+                no
+            )
+        );
     }
 
 

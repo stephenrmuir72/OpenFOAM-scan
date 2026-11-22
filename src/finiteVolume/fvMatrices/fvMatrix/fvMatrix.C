@@ -81,26 +81,19 @@ void Foam::fvMatrix<Type>::addToInternalField
             result += value;
         };
 
-        const labelRange indices(kernel_size);
-
-        apply_policy(kernel_size, [&](auto policy)
-        {
-            std::for_each
+        ListPolicy::for_each_n
+        (
+            kernel_size,
+            patchCellReduceFunctor<Type2, decltype(neiFun), decltype(neiOp)>
             (
-                policy,
-                indices.begin(), indices.end(),
-
-                patchCellReduceFunctor<Type2, decltype(neiFun), decltype(neiOp)>
-                (
-                    intf,
-                    sortStart,
-                    sort,
-                    addr,
-                    neiFun,
-                    neiOp
-                )
-            );
-        });
+                intf,
+                sortStart,
+                sort,
+                addr,
+                neiFun,
+                neiOp
+            )
+        );
     }
     #else
     if (addr.size() != pf.size())
@@ -183,26 +176,19 @@ void Foam::fvMatrix<Type>::subtractFromInternalField
             result -= value;
         };
 
-        const labelRange indices(kernel_size);
-
-        apply_policy(kernel_size, [&](auto policy)
-        {
-            std::for_each
+        ListPolicy::for_each_n
+        (
+            kernel_size,
+            patchCellReduceFunctor<Type2, decltype(neiFun), decltype(neiOp)>
             (
-                policy,
-                indices.begin(), indices.end(),
-
-                patchCellReduceFunctor<Type2, decltype(neiFun), decltype(neiOp)>
-                (
-                    intf,
-                    sortStart,
-                    sort,
-                    addr,
-                    neiFun,
-                    neiOp
-                )
-            );
-        });
+                intf,
+                sortStart,
+                sort,
+                addr,
+                neiFun,
+                neiOp
+            )
+        );
     }
     #else
     if (addr.size() != pf.size())
@@ -379,31 +365,24 @@ void Foam::fvMatrix<Type>::addBoundarySource
                         result += value;
                     };
 
-                    const labelRange indices(kernel_size);
-
-                    apply_policy(kernel_size, [&](auto policy)
-                    {
-                        std::for_each
+                    ListPolicy::for_each_n
+                    (
+                        kernel_size,
+                        patchCellReduceFunctor
+                        <
+                            Type,
+                            decltype(neiFun),
+                            decltype(neiOp)
+                        >
                         (
-                            policy,
-                            indices.begin(), indices.end(),
-
-                            patchCellReduceFunctor
-                            <
-                                Type,
-                                decltype(neiFun),
-                                decltype(neiOp)
-                            >
-                            (
-                                source,
-                                sortStart,
-                                sort,
-                                patchCells,
-                                neiFun,
-                                neiOp
-                            )
-                        );
-                    });
+                            source,
+                            sortStart,
+                            sort,
+                            patchCells,
+                            neiFun,
+                            neiOp
+                        )
+                    );
                     #else
                     const labelUList& addr = lduAddr().patchAddr(patchi);
 
@@ -467,17 +446,7 @@ void Foam::fvMatrix<Type>::setValuesFromList
             source_[celli]    = values[i] * Diag[celli];
         };
 
-        const labelRange indices(kernel_size);
-
-        apply_policy(kernel_size, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                indices.begin(), indices.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(kernel_size, kernel);
     }
 
     // Following actions for the matrix connectivity:
@@ -500,17 +469,7 @@ void Foam::fvMatrix<Type>::setValuesFromList
                 neiMask[facei] = cellMask[nei[facei]];
             };
 
-            const labelRange faceIndices(kernel_size);
-
-            apply_policy(kernel_size, [&](auto policy)
-            {
-                std::for_each
-                (
-                    policy,
-                    faceIndices.begin(), faceIndices.end(),
-                    kernel
-                );
-            });
+            ListPolicy::for_each_n(kernel_size, kernel);
         }
 
         // Adjust source for every non-fixed cell that has at least one
@@ -572,17 +531,7 @@ void Foam::fvMatrix<Type>::setValuesFromList
                 }
             };
 
-            const labelRange cellIndices(kernel_size);
-
-            apply_policy(kernel_size, [&](auto policy)
-            {
-                std::for_each
-                (
-                    policy,
-                    cellIndices.begin(), cellIndices.end(),
-                    kernel
-                );
-            });
+            ListPolicy::for_each_n(kernel_size, kernel);
         }
 
         // Zero upper (and lower for asymmetric) on every face that touches
@@ -600,17 +549,7 @@ void Foam::fvMatrix<Type>::setValuesFromList
                 }
             };
 
-            const labelRange faceIndices(kernel_size);
-
-            apply_policy(kernel_size, [&](auto policy)
-            {
-                std::for_each
-                (
-                    policy,
-                    faceIndices.begin(), faceIndices.end(),
-                    kernel
-                );
-            });
+            ListPolicy::for_each_n(kernel_size, kernel);
         }
 
         if (asymmetric())
@@ -627,17 +566,7 @@ void Foam::fvMatrix<Type>::setValuesFromList
                     }
                 };
 
-                const labelRange faceIndices(kernel_size);
-
-                apply_policy(kernel_size, [&](auto policy)
-                {
-                    std::for_each
-                    (
-                        policy,
-                        faceIndices.begin(), faceIndices.end(),
-                        kernel
-                    );
-                });
+                ListPolicy::for_each_n(kernel_size, kernel);
             }
         }
 
@@ -678,17 +607,7 @@ void Foam::fvMatrix<Type>::setValuesFromList
                 }
             };
 
-            const labelRange patchIndices(kernel_size);
-
-            apply_policy(kernel_size, [&](auto policy)
-            {
-                std::for_each
-                (
-                    policy,
-                    patchIndices.begin(), patchIndices.end(),
-                    kernel
-                );
-            });
+            ListPolicy::for_each_n(kernel_size, kernel);
         }
     }
     #else
@@ -1487,17 +1406,7 @@ void Foam::fvMatrix<Type>::setReferences
                 }
             };
 
-            const labelRange cellRange(kernel_size);
-
-            apply_policy(kernel_size, [&](auto policy)
-            {
-                std::for_each
-                (
-                    policy,
-                    cellRange.begin(), cellRange.end(),
-                    kernel
-                );
-            });
+            ListPolicy::for_each_n(kernel_size, kernel);
         }
     }
 }
@@ -1534,17 +1443,7 @@ void Foam::fvMatrix<Type>::setReferences
                 }
             };
 
-            const labelRange cellRange(kernel_size);
-
-            apply_policy(kernel_size, [&](auto policy)
-            {
-                std::for_each
-                (
-                    policy,
-                    cellRange.begin(), cellRange.end(),
-                    kernel
-                );
-            });
+            ListPolicy::for_each_n(kernel_size, kernel);
         }
     }
 }
@@ -1637,52 +1536,43 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                     return mag(component(pCoeffs[facei], 0));
                 };
 
-                const labelRange cells(kernel_size);
-
-                apply_policy(kernel_size, [&](auto policy)
-                {
-                    std::for_each
+                ListPolicy::for_each_n
+                (
+                    kernel_size,
+                    patchCellReduceFunctor
+                    <
+                        scalar,
+                        decltype(dFun),
+                        plusEqOp<scalar>
+                    >
                     (
-                        policy,
-                        cells.begin(), cells.end(),
+                        D,
+                        patchSortStart,
+                        patchSort,
+                        patchSortCells,
+                        dFun,
+                        plusEqOp<scalar>()
+                    )
+                );
 
-                        patchCellReduceFunctor
-                        <
-                            scalar,
-                            decltype(dFun),
-                            plusEqOp<scalar>
-                        >
-                        (
-                            D,
-                            patchSortStart,
-                            patchSort,
-                            patchSortCells,
-                            dFun,
-                            plusEqOp<scalar>()
-                        )
-                    );
-
-                    std::for_each
+                ListPolicy::for_each_n
+                (
+                    kernel_size,
+                    patchCellReduceFunctor
+                    <
+                        scalar,
+                        decltype(sumOffFun),
+                        plusEqOp<scalar>
+                    >
                     (
-                        policy,
-                        cells.begin(), cells.end(),
-
-                        patchCellReduceFunctor
-                        <
-                            scalar,
-                            decltype(sumOffFun),
-                            plusEqOp<scalar>
-                        >
-                        (
-                            sumOff,
-                            patchSortStart,
-                            patchSort,
-                            patchSortCells,
-                            sumOffFun,
-                            plusEqOp<scalar>()
-                        )
-                    );
-                });
+                        sumOff,
+                        patchSortStart,
+                        patchSort,
+                        patchSortCells,
+                        sumOffFun,
+                        plusEqOp<scalar>()
+                    )
+                );
                 #else
                 const labelUList& pa = lduAddr().patchAddr(patchi);
 
@@ -1714,31 +1604,24 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                     return cmptMax(cmptMag(iCoeffs[facei]));
                 };
 
-                const labelRange cells(kernel_size);
-
-                apply_policy(kernel_size, [&](auto policy)
-                {
-                    std::for_each
+                ListPolicy::for_each_n
+                (
+                    kernel_size,
+                    patchCellReduceFunctor
+                    <
+                        scalar,
+                        decltype(faceOp),
+                        plusEqOp<scalar>
+                    >
                     (
-                        policy,
-                        cells.begin(), cells.end(),
-
-                        patchCellReduceFunctor
-                        <
-                            scalar,
-                            decltype(faceOp),
-                            plusEqOp<scalar>
-                        >
-                        (
-                            D,
-                            patchSortStart,
-                            patchSort,
-                            patchSortCells,
-                            faceOp,
-                            plusEqOp<scalar>()
-                        )
-                    );
-                });
+                        D,
+                        patchSortStart,
+                        patchSort,
+                        patchSortCells,
+                        faceOp,
+                        plusEqOp<scalar>()
+                    )
+                );
                 #else
                 const labelUList& pa = lduAddr().patchAddr(patchi);
 
@@ -1811,17 +1694,7 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
             D[celli] = max(mag(D[celli]), sumOff[celli]);
         };
 
-        const labelRange cells(kernel_size);
-
-        apply_policy(kernel_size, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                cells.begin(), cells.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(kernel_size, kernel);
     }
 
     // ... then relax
@@ -1855,31 +1728,24 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                     return component(iCoeffs[facei], 0);
                 };
 
-                const labelRange cells(kernel_size);
-
-                apply_policy(kernel_size, [&](auto policy)
-                {
-                    std::for_each
+                ListPolicy::for_each_n
+                (
+                    kernel_size,
+                    patchCellReduceFunctor
+                    <
+                        scalar,
+                        decltype(faceOp),
+                        minusEqOp<scalar>
+                    >
                     (
-                        policy,
-                        cells.begin(), cells.end(),
-
-                        patchCellReduceFunctor
-                        <
-                            scalar,
-                            decltype(faceOp),
-                            minusEqOp<scalar>
-                        >
-                        (
-                            D,
-                            patchSortStart,
-                            patchSort,
-                            patchSortCells,
-                            faceOp,
-                            minusEqOp<scalar>()
-                        )
-                    );
-                });
+                        D,
+                        patchSortStart,
+                        patchSort,
+                        patchSortCells,
+                        faceOp,
+                        minusEqOp<scalar>()
+                    )
+                );
                 #else
                 const labelUList& pa = lduAddr().patchAddr(patchi);
 
@@ -1908,31 +1774,24 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                     return cmptMin(iCoeffs[facei]);
                 };
 
-                labelRange cells(kernel_size);
-
-                apply_policy(kernel_size, [&](auto policy)
-                {
-                    std::for_each
+                ListPolicy::for_each_n
+                (
+                    kernel_size,
+                    patchCellReduceFunctor
+                    <
+                        scalar,
+                        decltype(faceOp),
+                        minusEqOp<scalar>
+                    >
                     (
-                        policy,
-                        cells.begin(), cells.end(),
-
-                        patchCellReduceFunctor
-                        <
-                            scalar,
-                            decltype(faceOp),
-                            minusEqOp<scalar>
-                        >
-                        (
-                            D,
-                            patchSortStart,
-                            patchSort,
-                            patchSortCells,
-                            faceOp,
-                            minusEqOp<scalar>()
-                        )
-                    );
-                });
+                        D,
+                        patchSortStart,
+                        patchSort,
+                        patchSortCells,
+                        faceOp,
+                        minusEqOp<scalar>()
+                    )
+                );
                 #else
                 const labelUList& pa = lduAddr().patchAddr(patchi);
 

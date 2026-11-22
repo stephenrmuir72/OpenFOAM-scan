@@ -103,17 +103,7 @@ Foam::solverPerformance Foam::PCG::scalarSolve
             rA[cell] = source[cell] - wA[cell];
         };
 
-        const labelRange cellRange(nCells);
-
-        apply_policy(nCells, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                cellRange.begin(), cellRange.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(nCells, kernel);
     }
 
     matrix().setResidualField
@@ -173,17 +163,7 @@ Foam::solverPerformance Foam::PCG::scalarSolve
                     pA[cell] = wA[cell];
                 };
 
-                const labelRange cellRange(nCells);
-
-                apply_policy(nCells, [&](auto policy)
-                {
-                    std::for_each
-                    (
-                        policy,
-                        cellRange.begin(), cellRange.end(),
-                        kernel
-                    );
-                });
+                ListPolicy::for_each_n(nCells, kernel);
             }
             else
             {
@@ -194,17 +174,7 @@ Foam::solverPerformance Foam::PCG::scalarSolve
                     pA[cell] = wA[cell] + beta*pA[cell];
                 };
 
-                const labelRange cellRange(nCells);
-
-                apply_policy(nCells, [&](auto policy)
-                {
-                    std::for_each
-                    (
-                        policy,
-                        cellRange.begin(), cellRange.end(),
-                        kernel
-                    );
-                });
+                ListPolicy::for_each_n(nCells, kernel);
             }
 
 
@@ -227,17 +197,7 @@ Foam::solverPerformance Foam::PCG::scalarSolve
                     rA[cell] -= alpha*wA[cell];
                 };
 
-                const labelRange cellRange(nCells);
-
-                apply_policy(nCells, [&](auto policy)
-                {
-                    std::for_each
-                    (
-                        policy,
-                        cellRange.begin(), cellRange.end(),
-                        kernel
-                    );
-                });
+                ListPolicy::for_each_n(nCells, kernel);
             }
 
             solverPerf.finalResidual() =

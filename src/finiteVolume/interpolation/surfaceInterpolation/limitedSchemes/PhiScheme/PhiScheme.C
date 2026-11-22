@@ -104,17 +104,7 @@ Foam::PhiScheme<Type, PhiLimiter>::limiter
             );
         };
 
-        const labelRange faceRange(kernel_size);
-
-        apply_policy(kernel_size, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                faceRange.begin(), faceRange.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(kernel_size, kernel);
     }
 
     surfaceScalarField::Boundary& bLimiter =
@@ -140,7 +130,6 @@ Foam::PhiScheme<Type, PhiLimiter>::limiter
                 phi.boundaryField()[patchi].patchNeighbourField()
             );
 
-
             const label kernel_size = pLimiter.size();
 
             const auto kernel = [&](const label face)
@@ -156,17 +145,7 @@ Foam::PhiScheme<Type, PhiLimiter>::limiter
                 );
             };
 
-            const labelRange faceRange(kernel_size);
-
-            apply_policy(kernel_size, [&](auto policy)
-            {
-                std::for_each
-                (
-                    policy,
-                    faceRange.begin(), faceRange.end(),
-                    kernel
-                );
-            });
+            ListPolicy::for_each_n(kernel_size, kernel);
         }
         else
         {

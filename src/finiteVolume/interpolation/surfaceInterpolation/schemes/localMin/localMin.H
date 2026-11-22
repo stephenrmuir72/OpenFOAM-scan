@@ -153,17 +153,7 @@ public:
                     vff[facei] = min(vf[own[facei]], vf[nei[facei]]);
                 };
 
-                const labelRange faceRange(kernel_size);
-
-                apply_policy(kernel_size, [&](auto policy)
-                {
-                    std::for_each
-                    (
-                        policy,
-                        faceRange.begin(), faceRange.end(),
-                        body,
-                    );
-                });
+                ListPolicy::for_each_n(kernel_size, kernel);
             }
 
             typename GeometricField<Type, fvsPatchField, surfaceMesh>::
@@ -189,17 +179,7 @@ public:
                         pff[i] = min(pif[i], pnf[i]);
                     };
 
-                    const labelRange faceRange(kernel_size);
-
-                    apply_policy(kernel_size, [&](auto policy)
-                    {
-                        std::for_each
-                        (
-                            policy,
-                            faceRange.begin(), faceRange.end(),
-                            kernel
-                        );
-                    });
+                    ListPolicy::for_each_n(kernel_size, kernel);
                 }
                 else
                 {

@@ -385,17 +385,7 @@ void Foam::lduMatrix::operator*=(const scalarField& sf)
                 upper[face] *= sf[l[face]];
             };
 
-            const labelRange upperFaces(kernel_size);
-
-            apply_policy(kernel_size, [&](auto policy)
-            {
-                std::for_each
-                (
-                    policy,
-                    upperFaces.begin(), upperFaces.end(),
-                    kernel
-                );
-            });
+            ListPolicy::for_each_n(kernel_size, kernel);
         }
 
         if (const label kernel_size = lower.size(); kernel_size > 0)
@@ -405,17 +395,7 @@ void Foam::lduMatrix::operator*=(const scalarField& sf)
                 lower[face] *= sf[u[face]];
             };
 
-            const labelRange lowerFaces(kernel_size);
-
-            apply_policy(kernel_size, [&](auto policy)
-            {
-                std::for_each
-                (
-                    policy,
-                    lowerFaces.begin(), lowerFaces.end(),
-                    kernel
-                );
-            });
+            ListPolicy::for_each_n(kernel_size, kernel);
         }
     }
 }

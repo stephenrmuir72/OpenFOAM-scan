@@ -96,7 +96,6 @@ void Foam::twoStageGaussSeidelSmoother::smooth
 )
 {
     const label nCells = psi.size();
-    const labelRange indices(nCells);
 
     //solveScalarField bPrime(nCells);
     solveScalarField& bPrime = matrix_.work(nCells);
@@ -206,15 +205,7 @@ void Foam::twoStageGaussSeidelSmoother::smooth
                 r_ptr[cell] = val;
             };
 
-            apply_policy(nCells, [&](auto policy)
-            {
-                std::for_each
-                (
-                    policy,
-                    indices.begin(), indices.end(),
-                    kernel
-                );
-            });
+            ListPolicy::for_each_n(nCells, kernel);
         }
 
         if (polynomialExpansionOrder <= 0)
@@ -228,15 +219,7 @@ void Foam::twoStageGaussSeidelSmoother::smooth
             };
 
             // 1) z = r/D, u = u + relax_weight * z
-            apply_policy(nCells, [&](auto policy)
-            {
-                std::for_each
-                (
-                    policy,
-                    indices.begin(), indices.end(),
-                    kernel
-                );
-            });
+            ListPolicy::for_each_n(nCells, kernel);
         }
         else
         {
@@ -249,15 +232,7 @@ void Foam::twoStageGaussSeidelSmoother::smooth
                 };
 
                 // 1) z = r/D, u = u + z
-                apply_policy(nCells, [&](auto policy)
-                {
-                    std::for_each
-                    (
-                        policy,
-                        indices.begin(), indices.end(),
-                        kernel
-                    );
-                });
+                ListPolicy::for_each_n(nCells, kernel);
             }
 
             scalar multiplier = -1.0;
@@ -297,41 +272,17 @@ void Foam::twoStageGaussSeidelSmoother::smooth
             )
             {
                 // 2) r = U * z
-                apply_policy(nCells, [&](auto policy)
-                {
-                    std::for_each
-                    (
-                        policy,
-                        indices.begin(), indices.end(),
-                        upper_kernel
-                    );
-                });
+                ListPolicy::for_each_n(nCells, upper_kernel);
 
                 // 3) z = r/D, u = u + m * z
                 if (sweepID < polynomialExpansionOrder-1)
                 {
-                    apply_policy(nCells, [&](auto policy)
-                    {
-                        std::for_each
-                        (
-                            policy,
-                            indices.begin(), indices.end(),
-                            saveZ_kernel
-                        );
-                    });
+                    ListPolicy::for_each_n(nCells, saveZ_kernel);
                 }
                 else
                 {
                     //no need to save "Z"
-                    apply_policy(nCells, [&](auto policy)
-                    {
-                        std::for_each
-                        (
-                            policy,
-                            indices.begin(), indices.end(),
-                            nosaveZ_kernel
-                        );
-                    });
+                    ListPolicy::for_each_n(nCells, nosaveZ_kernel);
                 }
                 multiplier *= -1.0;
             }

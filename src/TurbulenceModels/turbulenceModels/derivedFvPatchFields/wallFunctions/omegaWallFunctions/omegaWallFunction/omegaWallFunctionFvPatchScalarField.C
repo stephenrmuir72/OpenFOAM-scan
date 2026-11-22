@@ -123,16 +123,7 @@ void Foam::omegaWallFunctionFvPatchScalarField::createAveragingWeights()
                 weights[pcells[i]] += static_cast<scalar>(delta);
             };
 
-            const labelRange cellRange(kernel_size);
-
-            apply_policy(kernel_size, [&](auto policy)
-            {
-                std::for_each
-                (
-                    policy,
-                    cellRange.begin(), cellRange.end(),
-                    kernel
-            });
+            ListPolicy::for_each_n(kernel_size, kernel);
             #else
             for (const auto& celli : faceCells)
             {
@@ -266,9 +257,6 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
     const auto& sort =
         patch.boundaryMesh().mesh().lduAddr().patchSortAddr(patchi);
 
-    const label kernel_size = patchCells.size();
-    const labelRange cellRange(patchCells.size());
-
     const auto neiOp = [](scalar& result, const scalar value)
     {
         result += value;
@@ -290,29 +278,24 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
                 return cornerWeights[facei]*omegaVis(facei);
             };
 
-            apply_policy(kernel_size, [&](auto policy)
-            {
-                std::for_each
+            ListPolicy::for_each_n
+            (
+                patchCells.size(),
+                patchCellReduceFunctor
+                <
+                    scalar,
+                    decltype(neiFun),
+                    decltype(neiOp)
+                >
                 (
-                    policy,
-                    cellRange.begin(), cellRange.end(),
-
-                    patchCellReduceFunctor
-                    <
-                        scalar,
-                        decltype(neiFun),
-                        decltype(neiOp)
-                    >
-                    (
-                        omega0,
-                        sortStart,
-                        sort,
-                        patchCells,
-                        neiFun,
-                        neiOp
-                    )
-                );
-            });
+                    omega0,
+                    sortStart,
+                    sort,
+                    patchCells,
+                    neiFun,
+                    neiOp
+                )
+            );
             #else
             forAll(faceCells, facei)
             {
@@ -345,29 +328,24 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
                 );
             };
 
-            apply_policy(kernel_size, [&](auto policy)
-            {
-                std::for_each
+            ListPolicy::for_each_n
+            (
+                patchCells.size(),
+                patchCellReduceFunctor
+                <
+                    scalar,
+                    decltype(neiFun),
+                    decltype(neiOp)
+                >
                 (
-                    policy,
-                    cellRange.begin(), cellRange.end(),
-
-                    patchCellReduceFunctor
-                    <
-                        scalar,
-                        decltype(neiFun),
-                        decltype(neiOp)
-                    >
-                    (
-                        omega0,
-                        sortStart,
-                        sort,
-                        patchCells,
-                        neiFun,
-                        neiOp
-                    )
-                );
-            });
+                    omega0,
+                    sortStart,
+                    sort,
+                    patchCells,
+                    neiFun,
+                    neiOp
+                )
+            );
             #else
             forAll(faceCells, facei)
             {
@@ -392,29 +370,24 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
                     * max(omegaVis(facei), omegaLog(facei));
             };
 
-            apply_policy(kernel_size, [&](auto policy)
-            {
-                std::for_each
+            ListPolicy::for_each_n
+            (
+                patchCells.size(),
+                patchCellReduceFunctor
+                <
+                    scalar,
+                    decltype(neiFun),
+                    decltype(neiOp)
+                >
                 (
-                    policy,
-                    cellRange.begin(), cellRange.end(),
-
-                    patchCellReduceFunctor
-                    <
-                        scalar,
-                        decltype(neiFun),
-                        decltype(neiOp)
-                    >
-                    (
-                        omega0,
-                        sortStart,
-                        sort,
-                        patchCells,
-                        neiFun,
-                        neiOp
-                    )
-                );
-            });
+                    omega0,
+                    sortStart,
+                    sort,
+                    patchCells,
+                    neiFun,
+                    neiOp
+                )
+            );
             #else
             forAll(faceCells, facei)
             {
@@ -443,29 +416,24 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
                     );
             };
 
-            apply_policy(kernel_size, [&](auto policy)
-            {
-                std::for_each
+            ListPolicy::for_each_n
+            (
+                patchCells.size(),
+                patchCellReduceFunctor
+                <
+                    scalar,
+                    decltype(neiFun),
+                    decltype(neiOp)
+                >
                 (
-                    policy,
-                    cellRange.begin(), cellRange.end(),
-
-                    patchCellReduceFunctor
-                    <
-                        scalar,
-                        decltype(neiFun),
-                        decltype(neiOp)
-                    >
-                    (
-                        omega0,
-                        sortStart,
-                        sort,
-                        patchCells,
-                        neiFun,
-                        neiOp
-                    )
-                );
-            });
+                    omega0,
+                    sortStart,
+                    sort,
+                    patchCells,
+                    neiFun,
+                    neiOp
+                )
+            );
             #else
             forAll(faceCells, facei)
             {
@@ -508,29 +476,24 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
                 *(phiTanh*b1 + (1 - phiTanh)*b2);
             };
 
-            apply_policy(kernel_size, [&](auto policy)
-            {
-                std::for_each
+            ListPolicy::for_each_n
+            (
+                patchCells.size(),
+                patchCellReduceFunctor
+                <
+                    scalar,
+                    decltype(neiFun),
+                    decltype(neiOp)
+                >
                 (
-                    policy,
-                    cellRange.begin(), cellRange.end(),
-
-                    patchCellReduceFunctor
-                    <
-                        scalar,
-                        decltype(neiFun),
-                        decltype(neiOp)
-                    >
-                    (
-                        omega0,
-                        sortStart,
-                        sort,
-                        patchCells,
-                        neiFun,
-                        neiOp
-                    )
-                );
-            });
+                    omega0,
+                    sortStart,
+                    sort,
+                    patchCells,
+                    neiFun,
+                    neiOp
+                )
+            );
             #else
             forAll(faceCells, facei)
             {
@@ -578,29 +541,19 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
             return scalar(0);
         };
 
-        apply_policy(kernel_size, [&](auto policy)
-        {
-            std::for_each
+        ListPolicy::for_each_n
+        (
+            patchCells.size(),
+            patchCellReduceFunctor<scalar, decltype(neiFun), decltype(neiOp)>
             (
-                policy,
-                cellRange.begin(), cellRange.end(),
-
-                patchCellReduceFunctor
-                <
-                    scalar,
-                    decltype(neiFun),
-                    decltype(neiOp)
-                >
-                (
-                    omega0,
-                    sortStart,
-                    sort,
-                    patchCells,
-                    neiFun,
-                    neiOp
-                )
-            );
-        });
+                omega0,
+                sortStart,
+                sort,
+                patchCells,
+                neiFun,
+                neiOp
+            )
+        );
     }
     #else
     forAll(faceCells, facei)
@@ -795,17 +748,7 @@ void Foam::omegaWallFunctionFvPatchScalarField::updateCoeffs()
             omega[celli] = omega0[celli];
         };
 
-        const labelRange faceRange(kernel_size);
-
-        apply_policy(kernel_size, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                faceRange.begin(), faceRange.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(kernel_size, kernel);
     }
 
     fvPatchField<scalar>::updateCoeffs();
@@ -922,17 +865,7 @@ void Foam::omegaWallFunctionFvPatchScalarField::updateWeightedCoeffs
             omegaPtr[celli] = omegaval;
         };
 
-        const labelRange patchCellRange(kernel_size);
-
-        apply_policy(kernel_size, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                patchCellRange.begin(), patchCellRange.end(),
-
-            );
-        });
+        ListPolicy::for_each_n(kernel_size, kernel);
     }
 
     #endif  /* [FOAM_OFFLOAD] */
@@ -995,18 +928,7 @@ void Foam::omegaWallFunctionFvPatchScalarField::manipulateMatrix
             return label(-1);
         };
 
-        const labelRange faceRange(kernel_size);
-
-        apply_policy(kernel_size, [&](auto policy)
-        {
-            std::transform
-            (
-                policy,
-                faceRange.begin(), faceRange.end(),
-                selectedPtr,
-                kernel
-            );
-        });
+        ListPolicy::transform_n(kernel_size, selectedPtr, kernel);
     }
 
     // Compaction step. Keep this on CPU unless you have a proper parallel

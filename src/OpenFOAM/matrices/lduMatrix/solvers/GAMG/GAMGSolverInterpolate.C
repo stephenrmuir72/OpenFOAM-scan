@@ -123,17 +123,7 @@ void Foam::GAMGSolver::interpolate
             psiPtr[celli] = -ApsiPtr[celli]/(diagPtr[celli]);
         };
 
-        const labelRange cellRange(nCells);
-
-        apply_policy(nCells, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                cellRange.begin(), cellRange.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(nCells, kernel);
     }
 }
 
@@ -183,7 +173,6 @@ void Foam::GAMGSolver::interpolate
     #ifdef FOAM_OFFLOAD
     const label nTargets = restrictTargetStartAddressing.size() - 1;
 
-    const labelRange fineCellRange(nTargets);
     {
         const auto kernel = [&](const label i)
         {
@@ -207,15 +196,7 @@ void Foam::GAMGSolver::interpolate
             diagCPtr[ccelli] = diag;
         };
 
-        apply_policy(nTargets, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                fineCellRange.begin(), fineCellRange.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(nTargets, kernel);
     }
 
     {
@@ -225,17 +206,7 @@ void Foam::GAMGSolver::interpolate
                 psiCPtr[ccelli] - corrCPtr[ccelli]/diagCPtr[ccelli];
         };
 
-        const labelRange coarseCellRange(nCCells);
-
-        apply_policy(nCCells, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                coarseCellRange.begin(), coarseCellRange.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(nCCells, kernel);
     }
 
     {
@@ -245,15 +216,7 @@ void Foam::GAMGSolver::interpolate
             psiPtr[celli] += corrCPtr[ccelli];
         };
 
-        apply_policy(nTargets, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                fineCellRange.begin(), fineCellRange.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(nTargets, kernel);
     }
     #else
     for (label celli=0; celli<nCells; celli++)

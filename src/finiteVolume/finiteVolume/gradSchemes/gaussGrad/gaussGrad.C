@@ -97,36 +97,30 @@ Foam::fv::gaussGrad<Type>::gradf
             result -= value;
         };
 
-        const labelRange cellRange(kernel_size);
+        ListPolicy::transform_n
+        (
+            kernel_size,
+            igGrad.begin(),
 
-        apply_policy(kernel_size, [&](auto policy)
-        {
-            std::transform
+            cellReduceFunctor
+            <
+                GradType,
+                decltype(fun),
+                decltype(fun),
+                decltype(ownOp),
+                decltype(neiOp)
+            >
             (
-                policy,
-                cellRange.begin(), cellRange.end(),
-                igGrad.begin(),
-
-                cellReduceFunctor
-                <
-                    GradType,
-                    decltype(fun),
-                    decltype(fun),
-                    decltype(ownOp),
-                    decltype(neiOp)
-                >
-                (
-                    pTraits<GradType>::zero,
-                    mesh.lduAddr().ownerStartAddr(),
-                    mesh.lduAddr().losortStartAddr(),
-                    mesh.lduAddr().losortAddr(),
-                    fun,
-                    fun,
-                    ownOp,
-                    neiOp
-                )
-            );
-        });
+                pTraits<GradType>::zero,
+                mesh.lduAddr().ownerStartAddr(),
+                mesh.lduAddr().losortStartAddr(),
+                mesh.lduAddr().losortAddr(),
+                fun,
+                fun,
+                ownOp,
+                neiOp
+            )
+        );
     }
     #else
     const labelUList& owner = mesh.owner();
@@ -155,8 +149,6 @@ Foam::fv::gaussGrad<Type>::gradf
         const labelUList& sort = mesh.lduAddr().patchSortAddr(patchi);
         const labelUList& sortStart = mesh.lduAddr().patchSortStartAddr(patchi);
 
-        const label kernel_size = patchCells.size();
-
         const auto neiFun = [&](const label, const label facei) -> GradType
         {
             return pSf[facei]*pssf[facei];
@@ -167,32 +159,24 @@ Foam::fv::gaussGrad<Type>::gradf
             result += value;
         };
 
-
-        const labelRange cellRange(kernel_size);
-
-        apply_policy(kernel_size, [&](auto policy)
-        {
-            std::for_each
+        ListPolicy::for_each_n
+        (
+            patchCells.size(),
+            patchCellReduceFunctor
+            <
+                GradType,
+                decltype(neiFun),
+                decltype(neiOp)
+            >
             (
-                policy,
-                cellRange.begin(), cellRange.end(),
-
-                patchCellReduceFunctor
-                <
-                    GradType,
-                    decltype(neiFun),
-                    decltype(neiOp)
-                >
-                (
-                    igGrad,
-                    sortStart,
-                    sort,
-                    patchCells,
-                    neiFun,
-                    neiOp
-                )
-            );
-        });
+                igGrad,
+                sortStart,
+                sort,
+                patchCells,
+                neiFun,
+                neiOp
+            )
+        );
         #else
         forAll(mesh.boundary()[patchi], facei)
         {

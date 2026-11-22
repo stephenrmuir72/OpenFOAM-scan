@@ -159,15 +159,7 @@ void Foam::GAMGSolver::scale
                 sf*fieldPtr[i] + (sourcePtr[i] - sf*AcfPtr[i])/DPtr[i];
         };
 
-        apply_policy(nCells, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                cellRange.begin(), cellRange.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(nCells, kernel);
     }
 }
 

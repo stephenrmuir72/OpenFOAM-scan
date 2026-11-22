@@ -189,17 +189,7 @@ Foam::tmp<Foam::scalarField> Foam::GAMGInterface::agglomerateCoeffs
             coarseCoeffs[targetFacei] = sum;
         };
 
-        const labelRange coarseFaceRange(loop_len);
-
-        apply_policy(loop_len, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                coarseFaceRange.begin(), coarseFaceRange.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(loop_len, kernel);
     }
     #else
     forAll(faceRestrictAddressing_, ffi)

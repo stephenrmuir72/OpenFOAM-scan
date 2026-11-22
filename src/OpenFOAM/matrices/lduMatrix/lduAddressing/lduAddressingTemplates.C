@@ -56,17 +56,7 @@ void Foam::lduAddressing::map
             }
         };
 
-        const labelRange cellIndices(loop_len);
-
-        apply_policy(loop_len, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                cellIndices.begin(), cellIndices.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(loop_len, kernel);
     }
 }
 

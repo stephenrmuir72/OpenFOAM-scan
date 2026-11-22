@@ -117,17 +117,7 @@ void Foam::aDICPreconditioner::calcReciprocalD
             sumDPtr[celli] = sum;
         };
 
-        const labelRange cellRange(nCells);
-
-        apply_policy(nCells, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                cellRange.begin(), cellRange.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(nCells, kernel);
     }
 
     // Calculate the reciprocal of the preconditioned diagonal
@@ -191,17 +181,7 @@ void Foam::aDICPreconditioner::precondition
             wAPtr[celli] = rDPtr[celli]*rAPtr[celli];
         };
 
-        const labelRange cellRange(nCells);
-
-        apply_policy(nCells, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                cellRange.begin(), cellRange.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(nCells, kernel);
     }
 
     tmp<solveScalarField> wATmp = tmp<solveScalarField>::New(wA);
@@ -228,17 +208,7 @@ void Foam::aDICPreconditioner::precondition
             wAtmpPtr[celli] = val;
         };
 
-        const labelRange cellRange(nCells);
-
-        apply_policy(nCells, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                cellRange.begin(), cellRange.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(nCells, kernel);
     }
 
     wA = wAtmp;
@@ -262,17 +232,7 @@ void Foam::aDICPreconditioner::precondition
             wAtmpPtr[celli] = val;
         };
 
-        const labelRange cellRange(nCells);
-
-        apply_policy(nCells, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                cellRange.begin(), cellRange.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(nCells, kernel);
     }
     wA = wAtmp;
 }
@@ -315,17 +275,7 @@ void Foam::aDICPreconditioner::preconditionT
             wTPtr[celli] = rDPtr[celli]*rTPtr[celli];
         };
 
-        const labelRange cellRange(nCells);
-
-        apply_policy(nCells, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                cellRange.begin(), cellRange.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(nCells, kernel);
     }
 
     tmp<solveScalarField> wTTmp = tmp<solveScalarField>::New(wT);
@@ -349,17 +299,7 @@ void Foam::aDICPreconditioner::preconditionT
             wTtmpPtr[celli] = val;
         };
 
-        const labelRange cellRange(nCells);
-
-        apply_policy(nCells, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                cellRange.begin(), cellRange.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(nCells, kernel);
     }
 
     wT = wTtmp;
@@ -380,17 +320,7 @@ void Foam::aDICPreconditioner::preconditionT
             wTtmpPtr[celli] = val;
         };
 
-        const labelRange cellRange(nCells);
-
-        apply_policy(nCells, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                cellRange.begin(), cellRange.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(nCells, kernel);
     }
 
     wT = wTtmp;

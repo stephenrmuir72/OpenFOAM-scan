@@ -182,49 +182,37 @@ void Foam::GAMGSolver::agglomerateMatrix
             scalarField& coarseLower = coarseMatrix.lower(nCoarseFaces);
 
             #ifdef FOAM_OFFLOAD
-            const label kernel_size = faceRestrictTargetAddr.size();
+            ListPolicy::for_each_n
+            (
+                faceRestrictTargetAddr.size(),
 
-            const labelRange faceRange(kernel_size);
-
-            apply_policy(kernel_size, [&](auto policy)
-            {
-                std::for_each
+                GAMG::asymAgglomerate
                 (
-                    policy,
-                    faceRange.begin(), faceRange.end(),
+                    coarseUpper,
+                    coarseLower,
+                    fineUpper,
+                    fineLower,
+                    faceFlipMap,
+                    faceRestrictSortAddr,
+                    faceRestrictTargetAddr,
+                    faceRestrictTargetStartAddr
+                )
+            );
 
-                    GAMG::asymAgglomerate
-                    (
-                        coarseUpper,
-                        coarseLower,
-                        fineUpper,
-                        fineLower,
-                        faceFlipMap,
-                        faceRestrictSortAddr,
-                        faceRestrictTargetAddr,
-                        faceRestrictTargetStartAddr
-                    )
-                );
-            });
-
-            apply_policy(kernel_size, [&](auto policy)
-            {
-                std::for_each
+            ListPolicy::for_each_n
+            (
+                faceRestrictTargetAddr.size(),
+                GAMG::diagAsymAgglomerate
                 (
-                    policy,
-                    faceRange.begin(), faceRange.end(),
+                    coarseDiag,
+                    fineUpper,
+                    fineLower,
+                    faceRestrictSortAddr,
+                    faceRestrictTargetAddr,
+                    faceRestrictTargetStartAddr
+                )
+            );
 
-                    GAMG::diagAsymAgglomerate
-                    (
-                        coarseDiag,
-                        fineUpper,
-                        fineLower,
-                        faceRestrictSortAddr,
-                        faceRestrictTargetAddr,
-                        faceRestrictTargetStartAddr
-                    )
-                );
-            });
             #else
             forAll(faceRestrictAddr, fineFacei)
             {
@@ -263,45 +251,31 @@ void Foam::GAMGSolver::agglomerateMatrix
             scalarField& coarseUpper = coarseMatrix.upper(nCoarseFaces);
 
             #ifdef FOAM_OFFLOAD
-            const label kernel_size = faceRestrictTargetAddr.size();
-
-            const labelRange faceRange(kernel_size);
-
-            apply_policy(kernel_size, [&](auto policy)
-            {
-                std::for_each
+            ListPolicy::for_each_n
+            (
+                faceRestrictTargetAddr.size(),
+                GAMG::symAgglomerate
                 (
-                    policy,
-                    faceRange.begin(), faceRange.end(),
-
-                    GAMG::symAgglomerate
-                    (
-                        coarseUpper,
-                        fineUpper,
-                        faceRestrictSortAddr,
-                        faceRestrictTargetAddr,
-                        faceRestrictTargetStartAddr
+                    coarseUpper,
+                    fineUpper,
+                    faceRestrictSortAddr,
+                    faceRestrictTargetAddr,
+                    faceRestrictTargetStartAddr
                     )
-                );
-            });
+            );
 
-            apply_policy(kernel_size, [&](auto policy)
-            {
-                std::for_each
+            ListPolicy::for_each_n
+            (
+                faceRestrictTargetAddr.size(),
+                GAMG::diagSymAgglomerate
                 (
-                    policy,
-                    faceRange.begin(), faceRange.end(),
-
-                    GAMG::diagSymAgglomerate
-                    (
-                        coarseDiag,
-                        fineUpper,
-                        faceRestrictSortAddr,
-                        faceRestrictTargetAddr,
-                        faceRestrictTargetStartAddr
-                    )
-                );
-            });
+                    coarseDiag,
+                    fineUpper,
+                    faceRestrictSortAddr,
+                    faceRestrictTargetAddr,
+                    faceRestrictTargetStartAddr
+                )
+            );
             #else
             forAll(faceRestrictAddr, fineFacei)
             {

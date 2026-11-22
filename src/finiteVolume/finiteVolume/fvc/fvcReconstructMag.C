@@ -115,36 +115,30 @@ tmp<volScalarField> reconstructMag(const surfaceScalarField& ssf)
             result += value;
         };
 
-        const labelRange cells(kernel_size);
+        ListPolicy::transform_n
+        (
+            kernel_size,
+            rf.begin(),
 
-        apply_policy(kernel_size, [&](auto policy)
-        {
-            std::transform
+            cellReduceFunctor
+            <
+                scalar,
+                decltype(ownFun),
+                decltype(neiFun),
+                decltype(plusOp),
+                decltype(plusOp)
+            >
             (
-                policy,
-                cells.begin(), cells.end(),
-                rf.begin(),
-
-                cellReduceFunctor
-                <
-                    scalar,
-                    decltype(ownFun),
-                    decltype(neiFun),
-                    decltype(plusOp),
-                    decltype(plusOp)
-                >
-                (
-                    pTraits<scalar>::zero,
-                    ownStart,
-                    neiStart,
-                    losort,
-                    ownFun,
-                    neiFun,
-                    plusOp,
-                    plusOp
-                )
-            );
-        });
+                pTraits<scalar>::zero,
+                ownStart,
+                neiStart,
+                losort,
+                ownFun,
+                neiFun,
+                plusOp,
+                plusOp
+            )
+        );
     }
     #else
     forAll(owner, facei)
@@ -176,8 +170,6 @@ tmp<volScalarField> reconstructMag(const surfaceScalarField& ssf)
         // patch-local views (avoid repeated boundaryField() inside kernel)
         const auto& pssf = ssf.boundaryField()[patchi];
 
-        const label kernel_size = pOwner.size();
-
         // device-callable lambda
         const auto neiFun = [&](const label id, const label facei) -> scalar
         {
@@ -187,31 +179,19 @@ tmp<volScalarField> reconstructMag(const surfaceScalarField& ssf)
                 *pssf[facei]/pMagSf[facei];
         };
 
-        const labelRange indices(kernel_size);
-
-        apply_policy(kernel_size, [&](auto policy)
-        {
-            std::for_each
+        ListPolicy::for_each_n
+        (
+            pOwner.size(),
+            patchCellReduceFunctor<scalar, decltype(neiFun), plusEqOp<scalar>>
             (
-                policy,
-                indices.begin(), indices.end(),
-
-                patchCellReduceFunctor
-                <
-                    scalar,
-                    decltype(neiFun),
-                    plusEqOp<scalar>
-                >
-                (
-                    rf,
-                    sortStart,
-                    sort,
-                    patchCells,
-                    neiFun,
-                    plusEqOp<scalar>()
-                )
-            );
-        });
+                rf,
+                sortStart,
+                sort,
+                patchCells,
+                neiFun,
+                plusEqOp<scalar>()
+            )
+        );
         #else
         forAll(pOwner, pFacei)
         {

@@ -130,17 +130,7 @@ Foam::linearUpwindV<Type>::correction
             }
         };
 
-        const labelRange faceRange(faceFlux.size());
-
-        apply_policy(kernel_size, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                faceRange.begin(), faceRange.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(kernel_size, kernel);
     }
 
     typename GeometricField<Type, fvsPatchField, surfaceMesh>::
@@ -211,17 +201,7 @@ Foam::linearUpwindV<Type>::correction
                 }
             };
 
-            const labelRange faceRange(kernel_size);
-
-            apply_policy(kernel_size, [&](auto policy)
-            {
-                std::for_each
-                (
-                    policy,
-                    faceRange.begin(), faceRange.end(),
-                    kernel
-                );
-            });
+            ListPolicy::for_each_n(kernel_size, kernel);
         }
     }
 

@@ -101,7 +101,6 @@ void Foam::GAMGAgglomeration::createTarget
     labelList listSort(n);
     labelList flags(n);
     labelList offsets(n);
-    const labelRange range(n);
 
     // Sort list
     {
@@ -110,16 +109,7 @@ void Foam::GAMGAgglomeration::createTarget
             return list[sort[i]];
         };
 
-        apply_policy(n, [&](auto policy)
-        {
-            std::transform
-            (
-                policy,
-                range.begin(), range.end(),
-                listSort.begin(),
-                kernel
-            );
-        });
+        ListPolicy::transform_n(n, listSort.begin(), kernel);
     }
 
     // Mark the first entry of every unique target group
@@ -129,16 +119,7 @@ void Foam::GAMGAgglomeration::createTarget
             return (i == 0 || listSort[i] != listSort[i - 1]) ? 1 : 0;
         };
 
-        apply_policy(n, [&](auto policy)
-        {
-            std::transform
-            (
-                policy,
-                range.begin(), range.end(),
-                flags.begin(),
-                kernel
-            );
-        });
+        ListPolicy::transform_n(n, flags.begin(), kernel);
     }
 
     // find total flags to get target size and offsets for scatter
@@ -182,15 +163,7 @@ void Foam::GAMGAgglomeration::createTarget
             }
         };
 
-        apply_policy(n, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                range.begin(), range.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(n, kernel);
     }
     targetStart[targetSize] = n;
  }

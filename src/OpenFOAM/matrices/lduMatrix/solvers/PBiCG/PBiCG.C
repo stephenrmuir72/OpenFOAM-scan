@@ -87,7 +87,6 @@ Foam::solverPerformance Foam::PBiCG::solve
     );
 
     const label nCells = psi.size();
-    const labelRange cellRange(nCells);
 
     solveScalarField pA(nCells);
 
@@ -176,15 +175,7 @@ Foam::solverPerformance Foam::PBiCG::solve
                     pT[cell] = wT[cell];
                 };
 
-                apply_policy(nCells, [&](auto policy)
-                {
-                    std::for_each
-                    (
-                        policy,
-                        cellRange.begin(), cellRange.end(),
-                        kernel
-                    );
-                });
+                ListPolicy::for_each_n(nCells, kernel);
             }
             else
             {
@@ -196,15 +187,7 @@ Foam::solverPerformance Foam::PBiCG::solve
                     pT[cell] = wT[cell] + beta*pT[cell];
                 };
 
-                apply_policy(nCells, [&](auto policy)
-                {
-                    std::for_each
-                    (
-                        policy,
-                        cellRange.begin(), cellRange.end(),
-                        kernel
-                    );
-                });
+                ListPolicy::for_each_n(nCells, kernel);
             }
 
 
@@ -233,15 +216,7 @@ Foam::solverPerformance Foam::PBiCG::solve
                     rT[cell] -= alpha*wT[cell];
                 };
 
-                apply_policy(nCells, [&](auto policy)
-                {
-                    std::for_each
-                    (
-                        policy,
-                        cellRange.begin(), cellRange.end(),
-                        kernel
-                    );
-                });
+                ListPolicy::for_each_n(nCells, kernel);
             }
 
             solverPerf.finalResidual() =

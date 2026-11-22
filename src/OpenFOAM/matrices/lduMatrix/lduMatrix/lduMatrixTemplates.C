@@ -130,18 +130,12 @@ Foam::lduMatrix::faceH(const Field<Type>& psi) const
                      - Lower[face]*psi[l[face]];
             };
 
-            const labelRange faceIndices(loop_len);
-
-            apply_policy(loop_len, [&](auto policy)
-            {
-                std::transform
-                (
-                    policy,
-                    faceIndices.begin(), faceIndices.end(),
-                    faceHpsi.begin(),
-                    kernel
-                );
-            });
+            ListPolicy::transform_n
+            (
+                loop_len,
+                faceHpsi.begin(),
+                kernel
+            );
         }
 
         return tfaceHpsi;

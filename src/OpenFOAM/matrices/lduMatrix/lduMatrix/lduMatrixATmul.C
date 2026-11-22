@@ -228,31 +228,16 @@ void Foam::lduMatrix::Amul
             }
         };
 
-        const labelRange cellIndices(nCells);
-
-        apply_policy(nCells, [&](auto policy)
-        {
-            std::for_each
-            (
-                policy,
-                cellIndices.begin(), cellIndices.end(),
-                kernel
-            );
-        });
+        ListPolicy::for_each_n(nCells, kernel);
     }
     else
     {
         #ifdef FOAM_OFFLOAD
-        const labelRange indices(nCells);
-
-        apply_policy(nCells, [&](auto policy)
         {
-            std::transform
+            ListPolicy::transform_n
             (
-                policy,
-                indices.begin(), indices.end(),
+                nCells,
                 Apsi.begin(),
-
                 matrixMultiplyFunctor<3>
                 (
                     tpsi,
@@ -266,7 +251,7 @@ void Foam::lduMatrix::Amul
                     lduAddr().losortAddr()
                 )
             );
-        });
+        }
         #else
         for (label cell=0; cell<nCells; cell++)
         {
@@ -433,17 +418,7 @@ void Foam::lduMatrix::sumA
                 sumAPtr[pa[face]] -= pCoeffs[face];
             };
 
-            const labelRange faceIndices(kernel_size);
-
-            apply_policy(kernel_size, [&](auto policy)
-            {
-                std::for_each
-                (
-                    policy,
-                    faceIndices.begin(), faceIndices.end(),
-                    kernel
-                );
-            });
+            ListPolicy::for_each_n(kernel_size, kernel);
         }
     }
 }
@@ -506,18 +481,7 @@ void Foam::lduMatrix::residual
             return source[i] - diagPtr[i]*psi[i];
         };
 
-        const labelRange cellIndices(nCells);
-
-        apply_policy(nCells, [&](auto policy)
-        {
-            std::transform
-            (
-                policy,
-                cellIndices.begin(), cellIndices.end(),
-                rAPtr,
-                kernel
-            );
-        });
+        ListPolicy::transform_n(nCells, rAPtr, kernel);
     }
 
     //const label nFaces = upper().size();
