@@ -47,9 +47,9 @@ inline void Foam::List<T>::copyList(const ListType& list)
 {
     // NB: operator[] for list read access (eg, an indirect list)
     // cannot necessarily replace with std::copy
- 
+
     const label len = this->size_;
- 
+
     // For noncontiguous element types or std::string, use sequential loop
     #ifdef FOAM_OFFLOAD
     if constexpr (!is_contiguous_v<T>)
@@ -96,10 +96,10 @@ inline void Foam::List<T>::copyList
 {
     const label n = this->size_;
     if (n == 0) return;
- 
- 
+
+
     T* dst = this->v_;
- 
+
     // For noncontiguous element types or std::string, use sequential loop
     #ifdef FOAM_OFFLOAD
     if constexpr (!is_contiguous_v<T>)
@@ -134,7 +134,7 @@ inline void Foam::List<T>::copyList
     }
     #endif
 }
- 
+
 
 template<class T>
 template<class InputIterator>

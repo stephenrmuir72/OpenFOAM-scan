@@ -65,9 +65,6 @@ namespace Foam
 {
 
 // Forward Declarations
-template <typename Func>
-void apply_policy(size_t loop_length, Func&& f);
-
 class labelRange;
 
 template<class T> class List;

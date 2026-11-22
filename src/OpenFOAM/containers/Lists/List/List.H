@@ -475,7 +475,7 @@ labelList identity(const label len, label start=0);
 
 //- Return an identity map corresponding to the index range (start, size)
 template<class IntType>
-labelList identity(const IntRange<IntType>& range)
+labelList identity(IntRange<IntType> range)
 {
     return Foam::identity(label(range.size()), label(range.start()));
 }

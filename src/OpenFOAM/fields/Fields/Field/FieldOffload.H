@@ -28,7 +28,7 @@ Description
     be offloaded to GPU.
 
 SourceFiles
-    FieldOffload.C
+    FieldOffload.cxx
 
 \*---------------------------------------------------------------------------*/
 
@@ -62,8 +62,10 @@ namespace Foam
     typename scalarProduct<Type, Type>::type
     sumProdOffload(const UList<Type>& f1, const UList<Type>& f2);
 
-    float sumProdScalarOffload(const UList<float>& f1, const UList<float>& f2);
-    double sumProdScalarOffload(const UList<double>& f1, const UList<double>& f2);
+    float sumProdScalarOffload
+    (const UList<float>& f1, const UList<float>& f2);
+    double sumProdScalarOffload
+    (const UList<double>& f1, const UList<double>& f2);
 
     template<class Type>
     Type sumCmptProdOffload(const UList<Type>& f1, const UList<Type>& f2);
@@ -86,7 +88,10 @@ namespace Foam
     template<class Type>
     void gWeightedSumOffload
     (const UList<scalar>& weights, const UList<Type>& fld, Type& result);
-}
+
+} // End namespace Foam
+
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 #endif
 

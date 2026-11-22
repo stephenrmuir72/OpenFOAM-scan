@@ -37,6 +37,9 @@ Description
 
 #include "MemoryPool.H"  // Also includes <cstddef>
 #include "contiguous.H"  // Also includes <type_traits>
+#include "IntRange.H"
+#include <algorithm>
+#include <utility>
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -374,6 +377,213 @@ struct has_uniformity
 
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+} // End namespace ListPolicy
+} // End namespace Foam
+
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// Device offloading
+
+namespace Foam
+{
+namespace ListPolicy
+{
+
+#ifdef FOAM_OFFLOAD
+//- Compile-time switch for device offloading.
+inline constexpr bool offload_enabled = true;
+
+//- True if offloading is enabled and all types (after decay)
+//- are trivially copyable
+template<class... Ts>
+inline constexpr bool can_offload =
+    (std::is_trivially_copyable_v<std::decay_t<Ts>> && ...);
+
+#else
+//- Compile-time switch for device offloading.
+inline constexpr bool offload_enabled = false;
+
+//- Offloading disabled: always false, without evaluating the types
+template<class... Ts>
+inline constexpr bool can_offload = false;
+
+#endif
+
+} // End namespace ListPolicy
+} // End namespace Foam
+
+
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// Execution policies
+
+#if __has_include(<execution>)
+    #include <execution>
+#else
+    // Fallbacks for older compilers, incomplete installations
+    #include "ListPolicy_legacy.H"
+#endif
+
+namespace Foam
+{
+
+//- Dispatch \tparam Func with \c par_unseq or \c seq
+//- (depending on offloading and \p loop_length)
+template<typename Func>
+void apply_policy(size_t loop_length, Func&& f)
+{
+    #ifdef FOAM_OFFLOAD
+    if (ListPolicy::use_offload(loop_length))
+    {
+        f(std::execution::par_unseq);
+    }
+    else
+    #endif
+    {
+        f(std::execution::seq);
+    }
+}
+
+
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// <algorithm> wrappers
+
+// These build an IntRange of [0, count) indices and use those for the
+// first begin/end inputs of regular algorithms.
+//
+// The offloading dispatch is handled directly, without an additional
+// apply_policy wrapper.
+
+namespace ListPolicy
+{
+
+//- Apply \a func to each index in the range [0,count).
+//- Uses \c par_unseq when offloading is enabled and \a count
+//- is sufficiently enough, otherwise sequential.
+template<class IntType, class UnaryFunc>
+void for_each_n
+(
+    IntType count,      //!< Number of indices
+    UnaryFunc func      //!< Unary function, called as func(index)
+)
+{
+    if (count <= 0) return;  // sanity gaurd, micro-optimization
+
+    const IntRange<IntType> indices(count);
+
+    #ifdef FOAM_OFFLOAD
+    if (ListPolicy::use_offload(count))
+    {
+        std::for_each
+        (
+            std::execution::par_unseq,
+            indices.begin(), indices.end(),
+            func
+        );
+    }
+    else
+    #endif
+    {
+        std::for_each
+        (
+            #if defined(__cpp_lib_execution) && (__cpp_lib_execution >= 201902L)
+            std::execution::seq,
+            #endif
+            indices.begin(), indices.end(),
+            func
+        );
+    }
+}
+
+
+//- Transform each index in [0,count) with \a unary_op, writing the results
+//- to \a d_first (like std::transform on an index range).
+//- Uses par_unseq when offloading is enabled and \a count is large enough.
+//  \param count     Number of indices
+template<class IntType, class OutputIt, class UnaryOp>
+void transform_n
+(
+    IntType count,      //!< Number of indices
+    OutputIt d_first,   //!< Start of the output range
+    UnaryOp unary_op    //!< Called as unary_op(index)
+)
+{
+    if (count <= 0) return;  // sanity gaurd, micro-optimization
+
+    const IntRange<IntType> indices(count);
+
+    #ifdef FOAM_OFFLOAD
+    if (ListPolicy::use_offload(count))
+    {
+        std::transform
+        (
+            std::execution::par_unseq,
+            indices.begin(), indices.end(),
+            d_first,
+            unary_op
+        );
+    }
+    else
+    #endif
+    {
+        std::transform
+        (
+            #if defined(__cpp_lib_execution) && (__cpp_lib_execution >= 201902L)
+            std::execution::seq,
+            #endif
+            indices.begin(), indices.end(),
+            d_first,
+            unary_op
+        );
+    }
+}
+
+
+//- Transform each index in [0,count) and the corresponding element
+//- of the second input range with \a binary_op, writing to \a d_first.
+//- Uses par_unseq when offloading is enabled and \a count is large enough.
+template<class IntType, class InputIt2, class OutputIt, class BinaryOp>
+void transform_n
+(
+    IntType count,      //!< Number of indices
+    InputIt2 first2,    //!< Start of the second input range
+    OutputIt d_first,   //!< Start of the output range
+    BinaryOp binary_op  //!< Called as binary_op(index, *first2)
+)
+{
+    if (count <= 0) return;  // sanity gaurd and micro-optimization
+
+    const IntRange<IntType> indices(count);
+
+    #ifdef FOAM_OFFLOAD
+    if (ListPolicy::use_offload(count))
+    {
+        std::transform
+        (
+            std::execution::par_unseq,
+            indices.begin(), indices.end(),
+            first2,
+            d_first,
+            binary_op
+        );
+    }
+    else
+    #endif
+    {
+        std::transform
+        (
+            #if defined(__cpp_lib_execution) && (__cpp_lib_execution >= 201902L)
+            std::execution::seq,
+            #endif
+            indices.begin(), indices.end(),
+            first2,
+            d_first,
+            binary_op
+        );
+    }
+}
 
 } // End namespace ListPolicy
 } // End namespace Foam

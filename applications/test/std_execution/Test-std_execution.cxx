@@ -36,6 +36,7 @@ Description
 #include "clockTime.H"
 #include "Random.H"
 #include "vectorField.H"
+#include "ListPolicy.H"
 
 using namespace Foam;
 
@@ -44,15 +45,23 @@ using namespace Foam;
 // Main program:
 int main(int argc, char *argv[])
 {
-    #include "setRootCase.H"
-    #include "createTime.H"
+    constexpr label defaultCount = 10000000;
 
-    const label nCells = 10000000;
-    const label nIntFaces = nCells-1;
+    argList::noCheckProcessorDirectories();
+
+    argList::addOption("count", "number of 'cells'");
+
+    #include "setRootCase.H"
+
+    const label nCells = args.getOrDefault<label>("count", defaultCount);
+    const label nIntFaces = (nCells-1);
 
     List<label> cellVals(nCells);
 
-    Info<< "Testing fill of large list" << nl;
+    Info<< "offload_enabled: "
+        << Switch(ListPolicy::offload_enabled) << nl << nl;
+
+    Info<< "Testing fill of large list (" << nCells << ")" << nl;
     {
         clockTime timing;
         for (label i = 0; i < 1000; ++i)
@@ -68,7 +77,11 @@ int main(int argc, char *argv[])
             // test to allow for attaching a profiler, etc.
             std::fill_n
             (
+                #ifdef __cpp_lib_execution
                 std::execution::par_unseq,
+                #else
+                std::execution::seq,
+                #endif
                 cellVals.begin(),
                 cellVals.size(),
                 123
@@ -137,7 +150,11 @@ int main(int argc, char *argv[])
             // test to allow for attaching a profiler, etc.
             std::for_each
             (
+                #ifdef __cpp_lib_execution
                 std::execution::par_unseq,
+                #else
+                std::execution::seq,
+                #endif
                 faceRange.begin(),
                 faceRange.end(),
                 dotInterpolate
@@ -145,6 +162,32 @@ int main(int argc, char *argv[])
         }
         Info<< "Parallel interpolation took " << timing.timeIncrement()
             << "s" << nl;
+    }
+
+    // Sanity check: ListPolicy::for_each_n, transform_n
+    {
+        const label n = 1000;
+        labelList a(n, 0), b(n, 0), c(n, 0);
+
+        ListPolicy::for_each_n(n, [&](label i) { a[i] = i; });
+        ListPolicy::transform_n
+        (
+            n, b.begin(), [](label i) { return 2*i; }
+        );
+        ListPolicy::transform_n
+        (
+            n, a.cbegin(), c.begin(),
+            [](label i, label x) { return i + x; }
+        );
+
+        bool ok = true;
+        forAll(a, i)
+        {
+            ok = ok && (a[i] == i) && (b[i] == 2*i) && (c[i] == 2*i);
+        }
+        Info<< nl
+            << "ListPolicy for_each_n/transform_n: "
+            << (ok ? "ok" : "FAILED") << nl;
     }
 
     Info<< "\nEnd\n" << endl;

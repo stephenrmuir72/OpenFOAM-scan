@@ -2080,7 +2080,8 @@ void Foam::argList::parse
     if (UPstream::master() && bannerEnabled())
     {
         Info<< "Case   : " << (rootPath_/globalCase_).c_str() << nl
-            << "nProcs : " << nProcs << nl;
+            << "nProcs : " << nProcs << nl
+            << "offloading : " << Switch(ListPolicy::offload_enabled) << nl;
 
         if (runControl_.parRun())
         {
