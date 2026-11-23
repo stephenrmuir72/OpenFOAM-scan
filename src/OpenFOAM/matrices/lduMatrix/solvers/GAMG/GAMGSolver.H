@@ -135,7 +135,7 @@ class GAMGSolver
         PtrList<scalarField> interfaceLevelsIntCoeffs_;
 
         //- Hierarchy of interface coefficient offsets
-        PtrList<labelList> interfaceLevelsOffsets_;
+        PtrList<labelUList> interfaceLevelsOffsets_;
 
         //- LU decomposed coarsest matrix
         autoPtr<LUscalarMatrix> coarsestLUMatrixPtr_;
@@ -165,7 +165,7 @@ class GAMGSolver
         const scalarField& interfaceIntCoeffsLevelData(const label i) const;
 
         //- Simplified access to interface coeffs offsets
-        const labelList& interfaceCoeffsLevelOffsets(const label i) const;
+        const labelUList& interfaceCoeffsLevelOffsets(const label i) const;
 
         //- Agglomerate coarse matrix. Supply mesh to use - so we can
         //  construct temporary matrix on the fine mesh (instead of the coarse
