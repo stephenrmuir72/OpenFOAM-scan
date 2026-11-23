@@ -625,7 +625,7 @@ void turbulentTemperatureRadCoupledMixedFvPatchScalarField::updateCoeffs()
             alphaSfDelta()*
             (
                 valueFraction()*deltaH()
-              + (qr + qrNbr)/beta()
+              - (qr + qrNbr)/beta()
             );
     }
 
