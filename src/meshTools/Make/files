@@ -190,6 +190,7 @@ $(faceSources)/boundaryToFace/boundaryToFace.C
 $(faceSources)/boxToFace/boxToFace.C
 $(faceSources)/cellToFace/cellToFace.C
 $(faceSources)/clipPlaneToFace/clipPlaneToFace.C
+$(faceSources)/conformalFaceToFace/conformalFaceToFace.C
 $(faceSources)/cylinderAnnulusToFace/cylinderAnnulusToFace.C
 $(faceSources)/cylinderToFace/cylinderToFace.C
 $(faceSources)/faceToFace/faceToFace.C

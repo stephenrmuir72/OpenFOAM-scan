@@ -1,0 +1,23 @@
+#!/bin/sh
+cd "${0%/*}" || exit                                # Run from this directory
+. ${WM_PROJECT_DIR:?}/bin/tools/RunFunctions        # Tutorial run functions
+#------------------------------------------------------------------------------
+
+runApplication blockMesh
+
+# A conductor column piercing the mid-plane, and the mid-plane faceZone
+runApplication topoSet
+
+# Extrude the mid-plane into a baffle region
+runApplication extrudeToRegionMesh -overwrite
+
+# The conductor faces on each interface side
+runApplication -s coupled topoSet -dict system/topoSetDict.coupled
+
+# Transfer both interface faceSets onto the conformal baffle faces
+runApplication -s baffle topoSet -region baffle
+
+runApplication createPatch -overwrite
+runApplication -s baffle createPatch -region baffle -overwrite
+
+#------------------------------------------------------------------------------

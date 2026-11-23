@@ -1,0 +1,35 @@
+#!/bin/sh
+cd "${0%/*}" || exit                                # Run from this directory
+. ${WM_PROJECT_DIR:?}/bin/tools/RunFunctions        # Tutorial run functions
+#------------------------------------------------------------------------------
+
+runApplication blockMesh
+
+# The mid-radius shell of internal faces
+runApplication topoSet
+
+# Extrude the shell into a curved baffle region
+runApplication extrudeToRegionMesh -overwrite
+
+# Reset the outer shell patch to a uniform offset
+runApplication changeDictionary
+runApplication -s baffle changeDictionary -region baffle
+
+# The conductor faces on each shell side
+runApplication -s coupled topoSet -dict system/topoSetDict.coupled
+
+runApplication decomposePar
+runApplication -s baffle decomposePar -region baffle \
+    -decomposeParDict system/decomposeParDict
+
+# Transfer both shell faceSets onto the conformal baffle faces
+runParallel -s baffle topoSet -region baffle
+
+runParallel createPatch -overwrite
+runParallel -s baffle createPatch -region baffle -overwrite
+
+# Rebuild the coupled mesh in place for a serial follow-on
+runApplication reconstructParMesh -constant
+runApplication -s baffle reconstructParMesh -region baffle -constant
+
+#------------------------------------------------------------------------------

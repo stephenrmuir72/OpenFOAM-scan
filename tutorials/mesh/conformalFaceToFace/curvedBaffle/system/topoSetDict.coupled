@@ -1,0 +1,63 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      topoSetDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+actions
+(
+    {
+        name    conductor;
+        type    cellSet;
+        action  new;
+        source  zoneToCell;
+        zone    conductor;
+    }
+
+    // Conductor faces on the inner shell, coincident with the baffle
+    {
+        name    coupledInner;
+        type    faceSet;
+        action  new;
+        source  patchToFace;
+        patch   region0_to_baffle_midShell_bottom;
+    }
+    {
+        name    coupledInner;
+        type    faceSet;
+        action  subset;
+        source  cellToFace;
+        set     conductor;
+        option  all;
+    }
+
+    // Conductor faces on the outer shell, one baffle thickness out
+    {
+        name    coupledOuter;
+        type    faceSet;
+        action  new;
+        source  patchToFace;
+        patch   region0_to_baffle_midShell_top;
+    }
+    {
+        name    coupledOuter;
+        type    faceSet;
+        action  subset;
+        source  cellToFace;
+        set     conductor;
+        option  all;
+    }
+);
+
+
+// ************************************************************************* //

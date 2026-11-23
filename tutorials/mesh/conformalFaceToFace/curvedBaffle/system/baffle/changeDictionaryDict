@@ -1,0 +1,30 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      changeDictionaryDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// Extrude gives the outer shell patch a per-face offset
+// createPatch cannot resize that list, so reset the patch to a uniform offset
+
+boundary
+{
+    region0_to_baffle_midShell_top
+    {
+        offsetMode      uniform;
+        offset          (0 0 0);
+    }
+}
+
+
+// ************************************************************************* //
