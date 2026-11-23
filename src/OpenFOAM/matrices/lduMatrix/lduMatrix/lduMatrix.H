@@ -140,14 +140,14 @@ public:
             word fieldName_;
             const lduMatrix& matrix_;
 
-            //- Flat storage for boundary interface coefficients (may be owned or ref)
-            scalarField interfaceBouCoeffsData_;
+            //- Flat storage for boundary interface coefficients (non-owning references)
+            const scalarField& interfaceBouCoeffsData_;
 
-            //- Flat storage for internal interface coefficients (may be owned or ref)
-            scalarField interfaceIntCoeffsData_;
+            //- Flat storage for internal interface coefficients (non-owning references)
+            const scalarField& interfaceIntCoeffsData_;
 
             //- Per-interface offsets into flat storage (size nInterfaces+1)
-            labelList coeffsOffsets_;
+            const labelUList& coeffsOffsets_;
 
             lduInterfaceFieldPtrsList interfaces_;
 
@@ -315,7 +315,7 @@ public:
             }
 
             //- Return per-interface offsets into flat coefficient storage
-            const labelList& coeffsOffsets() const noexcept
+            const labelUList& coeffsOffsets() const noexcept
             {
                 return coeffsOffsets_;
             }
@@ -529,7 +529,7 @@ public:
             }
 
             //- Return per-interface offsets into flat coefficient storage
-            const labelList& coeffsOffsets() const noexcept
+            const labelUList& coeffsOffsets() const noexcept
             {
                 return coeffsOffsets_;
             }

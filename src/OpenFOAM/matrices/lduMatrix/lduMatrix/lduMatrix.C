@@ -387,7 +387,10 @@ const Foam::scalarField& Foam::lduMatrix::lowerCSR() const
     {
         const label nLower = lduAddr().losortAddr().size();
 
-        lowerCSRPtr_ = std::make_unique<DynamicField<scalar>>(nLower);
+        lowerCSRPtr_ = std::make_unique<DynamicField<scalar>>
+        (
+            std::pair<label, label>(nLower, nLower)
+        );
 
         if (lowerPtr_)
         {
@@ -415,7 +418,10 @@ Foam::scalarField& Foam::lduMatrix::lowerCSR()
     {
         const label nLower = lduAddr().losortAddr().size();
 
-        lowerCSRPtr_ = std::make_unique<DynamicField<scalar>>(nLower);
+        lowerCSRPtr_ = std::make_unique<DynamicField<scalar>>
+        (
+            std::pair<label, label>(nLower, nLower)
+        );
 
         if (lowerPtr_)
         {

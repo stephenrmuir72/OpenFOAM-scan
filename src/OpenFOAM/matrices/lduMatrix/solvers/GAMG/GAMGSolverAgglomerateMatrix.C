@@ -110,7 +110,7 @@ void Foam::GAMGSolver::agglomerateMatrix
             fineLevelIndex,
             new labelList(fineInterfaces.size() + 1, 0)
         );
-        labelList& coeffsOffsets = interfaceLevelsOffsets_[fineLevelIndex];
+        labelUList& coeffsOffsets = interfaceLevelsOffsets_[fineLevelIndex];
 
         label totalSize = 0;
         forAll(nPatchFaces, inti)
@@ -340,7 +340,7 @@ void Foam::GAMGSolver::agglomerateInterfaceCoefficients
     const scalarField& fineInterfaceIntCoeffs =
         interfaceIntCoeffsLevelData(fineLevelIndex);
 
-    const labelList& fineCoeffsOffsets =
+    const labelUList& fineCoeffsOffsets =
         interfaceCoeffsLevelOffsets(fineLevelIndex);
 
     const labelListList& patchFineToCoarse =

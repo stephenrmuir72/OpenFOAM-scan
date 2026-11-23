@@ -272,7 +272,7 @@ Foam::GAMGSolver::GAMGSolver
             {
                 // Create temporary FieldField wrapper for LUscalarMatrix
                 const scalarField& bouData = interfaceLevelsBouCoeffs_[coarsestLevel];
-                const labelList& offsets = interfaceLevelsOffsets_[coarsestLevel];
+                const labelUList& offsets = interfaceLevelsOffsets_[coarsestLevel];
                 const label nInterfaces = offsets.size() - 1;
 
                 FieldField<Field, scalar> bouCoeffsFF(nInterfaces);
@@ -455,7 +455,7 @@ Foam::GAMGSolver::interfaceIntCoeffsLevelData
 }
 
 
-const Foam::labelList&
+const Foam::labelUList&
 Foam::GAMGSolver::interfaceCoeffsLevelOffsets
 (
     const label i
