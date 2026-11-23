@@ -132,7 +132,7 @@ class decomposedBlockData
         const int comm_;
 
         //- The block content
-        List<char> contentData_;
+        std::vector<char> contentData_;
 
 
     // Protected Member Functions
@@ -140,7 +140,7 @@ class decomposedBlockData
         //- A view of the block content
         std::string_view contentView() const
         {
-            return std::string_view(contentData_.cdata(), contentData_.size());
+            return std::string_view(contentData_.data(), contentData_.size());
         }
 
         //- Helper: skip a block of (binary) character data
