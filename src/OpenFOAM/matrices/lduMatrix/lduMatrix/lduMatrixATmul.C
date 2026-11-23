@@ -392,15 +392,15 @@ void Foam::lduMatrix::sumA
         diag().begin(),
         sumA,
         lduAddr(),
-        matrixCoeffsFunctor<scalar, unityOp<scalar>>
+        matrixCoeffsFunctor<scalar, Foam::identityOp>
         (
             upper(),
-            unityOp<scalar>()
+            identityOp{}
         ),
-        matrixCoeffsFunctor<scalar, unityOp<scalar>>
+        matrixCoeffsFunctor<scalar, Foam::identityOp>
         (
             lower(),
-            unityOp<scalar>()
+            identityOp{}
         )
     );
     #else
@@ -434,7 +434,7 @@ void Foam::lduMatrix::sumA
                     policy,
                     faceIndices.begin(),
                     faceIndices.end(),
-                    [&](const auto& face)
+                    [&, pCoeffs](const auto& face)
                     {
                         sumAPtr[pa[face]] -= pCoeffs[face];
                     }
