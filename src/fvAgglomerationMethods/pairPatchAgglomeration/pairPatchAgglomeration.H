@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2016-2020,2023 OpenCFD Ltd.
+    Copyright (C) 2026 Patrick Wilhelm, Data Lab Hell
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -29,6 +30,53 @@ Class
 
 Description
     Primitive patch pair agglomerate method.
+
+    Agglomeration stops when the local and the global limit on the number of
+    coarse faces are both satisfied, when the global count stops changing, or
+    after \c maxLevels levels. The global limit is floored by
+    \c minGlobalFacesInCoarsestLevel and can be derived from a coarse face
+    area density instead of as a count.
+
+Usage
+    Example of the agglomeration controls in \c constant/viewFactorsDict:
+    \verbatim
+    patchAgglomeration
+    {
+        "wall.*"
+        {
+            nFacesInCoarsestLevel         10;
+            //densityFacesInCoarsestLevel 0.02;
+            featureAngle                  45;
+        }
+    }
+    \endverbatim
+
+    where the entries mean:
+    \table
+      Property     | Description                       | Type  | Reqd | Deflt
+      nFacesInCoarsestLevel | Local coarse face limit           | label <!--
+                   -->                                        | no | labelMax
+      nGlobalFacesInCoarsestLevel | Global coarse face limit    | label <!--
+                   -->                                        | no | labelMax
+      densityFacesInCoarsestLevel | Coarse faces per unit patch area   <!--
+                   -->                               | scalar | no   | 0
+      minGlobalFacesInCoarsestLevel | Lower bound of the global coarse <!--
+                   --> face count                      | label  | no   | 1
+      featureAngle | Angle between the fine face normals above which a  <!--
+                   --> pair is a feature edge [deg]   | scalar | no   | 0
+      featureAngleCoarse | The same on the coarse levels [deg]         <!--
+                   -->                               | scalar | no   | 180
+      mergeLevels  | Pair levels merged into one stored level; 1 keeps  <!--
+                   --> every pairing                    | label | no  | 2
+      writeObj     | Write the coarsest level to agglomPatch_<patch>.obj <!--
+                   --> in the run directory            | bool | no  | false
+      writeLevelObj | Every level, to agglomPatch_<patch>_level<n>.obj   <!--
+                   --> in the run directory            | bool | no  | false
+    \endtable
+
+    At least one of \c nFacesInCoarsestLevel, \c nGlobalFacesInCoarsestLevel
+    or \c densityFacesInCoarsestLevel is required. Where a count and a
+    density are both given, the smaller global limit applies.
 
 SourceFiles
     pairPatchAgglomeration.C
@@ -72,8 +120,17 @@ protected:
         //- Global number of faces in coarsest level
         label nGlobalFacesInCoarsestLevel_;
 
+        //- Coarse face area density in coarsest level
+        scalar densityFacesInCoarsestLevel_;
+
+        //- Lower limit for the global coarse face count
+        label minGlobalFacesInCoarsestLevel_;
+
         //- Feature angle
         scalar featureAngle_;
+
+        //- Feature angle for coarse levels
+        scalar featureAngleCoarse_;
 
         //- The number of faces in each level
         labelList nFaces_;
@@ -90,6 +147,15 @@ protected:
 
         //- Edge weights
         EdgeMap<scalar> facePairWeight_;
+
+        //- Write the coarsest level in OBJ format
+        bool writeObj_;
+
+        //- Write all levels in OBJ format
+        bool writeLevelObj_;
+
+        //- Patch name (for messages and OBJ file names)
+        word patchName_;
 
 
 private:
@@ -154,6 +220,23 @@ private:
 
         //- Maps current level with base patch
         void mapBaseToTopAgglom(const label fineLevelIndex);
+
+        //- Set the base patch, the density-derived global face limit and
+        //  the level 0 edge weights
+        void initLevel0(const faceList& faces, const pointField& points);
+
+        //- Print edge statistics of given level
+        void printLevelInfo
+        (
+            const label level,
+            const bPatch& patch,
+            const scalar angle,
+            const label nNonManif,
+            const label nFeat
+        ) const;
+
+        //- Write patch of given level in OBJ format
+        void writeOBJ(const label level, const bool finalLevel) const;
 
         //- No copy construct
         pairPatchAgglomeration(const pairPatchAgglomeration&) = delete;

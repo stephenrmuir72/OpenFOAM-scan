@@ -1,0 +1,41 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      viewFactorsDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+writeViewFactorMatrix       false;
+writeFacesAgglomeration     false;
+
+patchAgglomeration
+{
+    curvedWall
+    {
+        densityFacesInCoarsestLevel   3;
+
+        // The angle between neighbouring fine faces is below
+        // featureAngle, so the base level marks no feature edges
+        featureAngle            30;
+
+        // Coarse levels stop merging once a coarse pair spans more
+        // than this angle, so the coarse faces follow the wall curvature
+        featureAngleCoarse      15;
+
+        // Write the coarsest level
+        writeObj                true;
+    }
+}
+
+maxDynListLength          200000;
+
+// ************************************************************************* //

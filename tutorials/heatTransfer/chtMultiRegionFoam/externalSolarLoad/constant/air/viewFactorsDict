@@ -32,6 +32,10 @@ patchAgglomeration
     {
         nFacesInCoarsestLevel   10;
         featureAngle            45;
+
+        // Bound by a coarse face density (faces per unit area)
+        //densityFacesInCoarsestLevel     0.02;
+        //minGlobalFacesInCoarsestLevel   4;
     }
 }
 
