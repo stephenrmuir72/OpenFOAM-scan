@@ -62,7 +62,8 @@ Foam::temperatureCoupledBase::temperatureCoupledBase
     alphaName_(),
     alphaAniName_(),
     kappaFunction1_(nullptr),
-    alphaFunction1_(nullptr)
+    alphaFunction1_(nullptr),
+    warnedAnisotropicCoupling_(false)
 {
     switch (method_)
     {
@@ -99,7 +100,8 @@ Foam::temperatureCoupledBase::temperatureCoupledBase
     alphaName_(alphaName),
     alphaAniName_(alphaAniName),
     kappaFunction1_(nullptr),
-    alphaFunction1_(nullptr)
+    alphaFunction1_(nullptr),
+    warnedAnisotropicCoupling_(false)
 {
     switch (method_)
     {
@@ -131,7 +133,8 @@ Foam::temperatureCoupledBase::temperatureCoupledBase
     alphaName_(dict.getOrDefault<word>("alpha", word::null)),
     alphaAniName_(dict.getOrDefault<word>("alphaAni", word::null)),
     kappaFunction1_(nullptr),
-    alphaFunction1_(nullptr)
+    alphaFunction1_(nullptr),
+    warnedAnisotropicCoupling_(false)
 {
     switch (method_)
     {
@@ -212,7 +215,8 @@ Foam::temperatureCoupledBase::temperatureCoupledBase
     alphaName_(base.alphaName_),
     alphaAniName_(base.alphaAniName_),
     kappaFunction1_(base.kappaFunction1_.clone(patch_.patch())),
-    alphaFunction1_(base.alphaFunction1_.clone(patch_.patch()))
+    alphaFunction1_(base.alphaFunction1_.clone(patch_.patch())),
+    warnedAnisotropicCoupling_(base.warnedAnisotropicCoupling_)
 {}
 
 
@@ -253,6 +257,82 @@ void Foam::temperatureCoupledBase::rmap
             alphaFunction1_().rmap(tcb->alphaFunction1_(), addr);
         }
     }
+}
+
+
+Foam::temperatureCoupledBase::coupledFlux
+Foam::temperatureCoupledBase::wallCoupledFlux
+(
+    const scalarField& Tp
+) const
+{
+    const fvMesh& mesh = patch_.boundaryMesh().mesh();
+    const auto* thermo =
+        mesh.cfindObject<solidThermo>(solidThermo::dictName);
+
+    if (thermo && !thermo->isotropic())
+    {
+        if (method_ == mtDirectionalSolidThermo)
+        {
+            if (alphaAniName_ != thermo->aniAlpha().name())
+            {
+                FatalErrorInFunction
+                    << "Patch " << patch_.name()
+                    << " must use alphaAni " << thermo->aniAlpha().name()
+                    << " to couple this anisotropic solid"
+                    << exit(FatalError);
+            }
+
+            const word schemeName
+            (
+                thermo->isZoneMixture()
+              ? "laplacian(kappa,T)" : "laplacian(alpha,h)"
+            );
+            Istream& schemeData = mesh.laplacianScheme(schemeName);
+            const word schemeType(schemeData);
+
+            if (schemeType == "Gauss")
+            {
+                const auto* betav =
+                    mesh.cfindObject<volScalarField>("betavSolid");
+                auto flux = thermo->wallFlux(patch_.index(), betav);
+                return
+                {
+                    flux.normalCoeffArea*patch_.deltaCoeffs()/patch_.magSf(),
+                    flux.correctionFlux/patch_.magSf(),
+                    true
+                };
+            }
+            if (!warnedAnisotropicCoupling_)
+            {
+                warnedAnisotropicCoupling_ = true;
+                WarningInFunction
+                    << "Patch " << patch_.name() << " uses "
+                    << schemeType << " for " << schemeName
+                    << "; falling back to scalar coupled heat flux" << endl;
+            }
+        }
+        else if (!warnedAnisotropicCoupling_)
+        {
+            warnedAnisotropicCoupling_ = true;
+            WarningInFunction
+                << "Patch " << patch_.name() << " uses kappaMethod "
+                << KMethodTypeNames_[method_]
+                << " for an anisotropic solid; retaining scalar coupled "
+                << "heat flux. Select directionalSolidThermo to include "
+                << "the tensor correction" << endl;
+        }
+    }
+
+    return
+    {
+        scalarField
+        (
+            temperatureCoupledBase::kappa(Tp)*patch_.deltaCoeffs()
+        ),
+        scalarField(Tp.size(), Zero),
+        false
+    };
 }
 
 

@@ -111,8 +111,7 @@ Foam::wallHeatFluxModels::wall::wall
     functionObjects::stateFunctionObject& state
 )
 :
-    wallHeatFluxModel(dict, mesh, name, objName, state),
-    warnedAnisotropic_(false)
+    wallHeatFluxModel(dict, mesh, name, objName, state)
 {
     auto* wallHeatFluxPtr
     (
@@ -249,18 +248,37 @@ bool Foam::wallHeatFluxModels::wall::execute()
             // at convergence heatDiffusion reduces to laplacian(kappa, T)
             calcHeatFlux(thermo.kappa()(), thermo.T(), wallHeatFlux);
         }
-        else
+        else if (!thermo.isotropic())
         {
-            if (!thermo.isotropic() && !warnedAnisotropic_)
-            {
-                warnedAnisotropic_ = true;
+            const auto* betav =
+                mesh().cfindObject<volScalarField>("betavSolid");
+            auto& heatFluxBf = wallHeatFlux.boundaryFieldRef();
 
-                WarningInFunction
-                    << "Region " << mesh().name() << " is anisotropic: "
-                    << "reported flux uses mag(kappa) for n & kappa & n"
-                    << endl;
+            for (const label patchi : patchIDs_)
+            {
+                const auto flux = thermo.wallFlux(patchi, betav);
+                const tmp<scalarField> tSnGrad =
+                    thermo.T().boundaryField()[patchi].snGrad();
+
+                heatFluxBf[patchi] =
+                    (
+                        flux.normalCoeffArea*tSnGrad()
+                      + flux.correctionFlux
+                    )/mesh().magSf().boundaryField()[patchi];
             }
 
+            if (const auto* qrPtr =
+                mesh().cfindObject<volScalarField>(qrName_))
+            {
+                for (const label patchi : patchIDs_)
+                {
+                    heatFluxBf[patchi] -=
+                        qrPtr->boundaryField()[patchi];
+                }
+            }
+        }
+        else
+        {
             calcHeatFlux(thermo.alpha(), thermo.he(), wallHeatFlux);
         }
     }

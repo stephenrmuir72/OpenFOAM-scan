@@ -126,6 +126,9 @@ class turbulentTemperatureCoupledBaffleMixedFvPatchScalarField
 
     // Private member functions
 
+        //- Additional series resistance on this side [m2 K/W]
+        scalarField layerResistance() const;
+
         //- Calculate coefficients for assembly matrix
         tmp<Field<scalar>> coeffs
         (

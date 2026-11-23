@@ -31,6 +31,9 @@ License
 #include "fvPatchFieldMapper.H"
 #include "volFields.H"
 #include "physicoChemicalConstants.H"
+#include "solidThermo.H"
+
+#include <utility>
 
 using Foam::constant::physicoChemical::sigma;
 
@@ -286,6 +289,38 @@ void Foam::externalWallHeatFluxTemperatureFvPatchScalarField::updateCoeffs()
     const scalarField valueFraction0(valueFraction());
     const scalarField refValue0(refValue());
 
+    scalarField normalCoeffArea;
+    scalarField correctionFlux;
+    bool anisotropic = false;
+
+    const fvMesh& mesh = patch().boundaryMesh().mesh();
+    if
+    (
+        const auto* thermo =
+            mesh.cfindObject<solidThermo>(solidThermo::dictName);
+        thermo && !thermo->isotropic()
+    )
+    {
+        if
+        (
+            method_ != KMethodType::mtDirectionalSolidThermo
+         || alphaAniName_ != thermo->aniAlpha().name()
+        )
+        {
+            FatalErrorInFunction
+                << "Anisotropic solid wall " << patch().name()
+                << " requires kappaMethod directionalSolidThermo and "
+                << "alphaAni " << thermo->aniAlpha().name()
+                << exit(FatalError);
+        }
+
+        const auto* betav = mesh.cfindObject<volScalarField>("betavSolid");
+        auto flux = thermo->wallFlux(patch().index(), betav);
+        normalCoeffArea = std::move(flux.normalCoeffArea);
+        correctionFlux = std::move(flux.correctionFlux);
+        anisotropic = true;
+    }
+
     scalarField qr(Tp.size(), Zero);
     if (qrName_ != "none")
     {
@@ -305,7 +340,19 @@ void Foam::externalWallHeatFluxTemperatureFvPatchScalarField::updateCoeffs()
             const scalar heatPower =
                 Q_->value(this->db().time().timeOutputValue());
 
-            refGrad() = (heatPower/gSum(patch().magSf()) + qr)/kappa(Tp);
+            if (anisotropic)
+            {
+                refGrad() =
+                    (
+                        (heatPower/gSum(patch().magSf()) + qr)
+                       *patch().magSf() - correctionFlux
+                    )/normalCoeffArea;
+            }
+            else
+            {
+                refGrad() =
+                    (heatPower/gSum(patch().magSf()) + qr)/kappa(Tp);
+            }
             refValue() = 293.15;  // prevents FPE, no impact on condition
             valueFraction() = 0;
 
@@ -316,7 +363,17 @@ void Foam::externalWallHeatFluxTemperatureFvPatchScalarField::updateCoeffs()
             tmp<scalarField> heatFlux =
                 q_->value(this->db().time().timeOutputValue());
 
-            refGrad() = (heatFlux + qr)/kappa(Tp);
+            if (anisotropic)
+            {
+                refGrad() =
+                    (
+                        (heatFlux + qr)*patch().magSf() - correctionFlux
+                    )/normalCoeffArea;
+            }
+            else
+            {
+                refGrad() = (heatFlux + qr)/kappa(Tp);
+            }
             refValue() = 293.15;  // prevents FPE, no impact on condition
             valueFraction() = 0;
 
@@ -402,10 +459,16 @@ void Foam::externalWallHeatFluxTemperatureFvPatchScalarField::updateCoeffs()
 
             const scalarField kappaDeltaCoeffs
             (
-                this->kappa(Tp)*patch().deltaCoeffs()
+                anisotropic
+              ? normalCoeffArea*patch().deltaCoeffs()/patch().magSf()
+              : this->kappa(Tp)*patch().deltaCoeffs()
             );
 
             refGrad() = 0;
+            if (anisotropic)
+            {
+                refGrad() = -correctionFlux/normalCoeffArea;
+            }
 
             forAll(Tp, i)
             {
@@ -435,7 +498,13 @@ void Foam::externalWallHeatFluxTemperatureFvPatchScalarField::updateCoeffs()
     DebugInfo
         << patch().boundaryMesh().mesh().name() << ':' << patch().name() << ':'
         << internalField().name() << " :"
-        << " heat transfer rate:" << gSum(kappa(Tp)*patch().magSf()*snGrad())
+        << " heat transfer rate:"
+        <<
+        (
+            anisotropic
+          ? gSum(normalCoeffArea*snGrad() + correctionFlux)
+          : gSum(kappa(Tp)*patch().magSf()*snGrad())
+        )
         << " wall temperature "
         << " min:" << gMin(*this)
         << " max:" << gMax(*this)
