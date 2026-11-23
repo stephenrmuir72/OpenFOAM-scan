@@ -1,0 +1,54 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      topoSetDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// Two cell zones either side of x = 0.05, which splitMeshRegions turns into
+// two meshes joined by a conformal pair of patches
+
+actions
+(
+    {
+        name    left;
+        type    cellSet;
+        action  new;
+        source  boxToCell;
+        box     (-1 -1 -1) (0.05 1 1);
+    }
+    {
+        name    left;
+        type    cellZoneSet;
+        action  new;
+        source  setToCellZone;
+        set     left;
+    }
+
+    {
+        name    right;
+        type    cellSet;
+        action  new;
+        source  boxToCell;
+        box     (0.05 -1 -1) (1 1 1);
+    }
+    {
+        name    right;
+        type    cellZoneSet;
+        action  new;
+        source  setToCellZone;
+        set     right;
+    }
+);
+
+
+// ************************************************************************* //

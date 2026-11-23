@@ -1,0 +1,15 @@
+#!/bin/sh
+cd "${0%/*}" || exit                                # Run from this directory
+. ${WM_PROJECT_DIR:?}/bin/tools/RunFunctions        # Tutorial run functions
+#------------------------------------------------------------------------------
+
+# Like Allrun, weights the balance by region via regionWeights
+
+runApplication blockMesh
+runApplication topoSet
+runApplication splitMeshRegions -cellZones -overwrite
+
+runApplication decomposePar -allRegions \
+    -decomposeParDict system/decomposeParDict.regionWeights
+
+#------------------------------------------------------------------------------

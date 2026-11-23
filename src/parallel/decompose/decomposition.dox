@@ -88,6 +88,7 @@ available will thus depend on your particular installation.
     scotch              | #Foam::scotchDecomp
     structured          | #Foam::structuredDecomp
     multiLevel          | #Foam::multiLevelDecomp
+    multiRegionCoupled  | #Foam::multiRegionCoupledDecomp
 \endtable
 
 If a decomposition method requires any additional configuration controls,

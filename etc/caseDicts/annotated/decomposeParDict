@@ -26,6 +26,7 @@ method          scotch;
 // method          manual;
 // method          multiLevel;
 // method          structured;  // does 2D decomposition of structured mesh
+// method          multiRegionCoupled;  // welds coupled cells across regions
 
 
 //- Optional region-wise decomposition.
@@ -166,9 +167,44 @@ structuredCoeffs
 }
 
 
+// For multiRegionCoupled, using multiRegionCoupledCoeffs only.
+// Welds the cells either side of every coupled (mapped) face onto one
+// processor, so an implicitly coupled multi-region matrix keeps each such
+// face local. Serial only, for decomposePar -allRegions.
+
+multiRegionCoupledCoeffs
+{
+    // Sub-method balancing the welded super-cells (mandatory)
+    method          scotch;
+
+    // Weld only patches matching these names (default: all mapped)
+    // implicitPatches ( "solid_to_.*" );
+
+    // Never weld patches matching these names (default: none)
+    // explicitPatches ( inlet );
+
+    // Per-region cost factors (default: all 1)
+    // regionWeights
+    // {
+    //     solid       0.4;
+    // }
+
+    // Per-face cost factors, charged to the owning cell (default: none)
+    // patchWeights
+    // {
+    //     solid
+    //     {
+    //         "solid_to_.*"   20;
+    //     }
+    // }
+}
+
+
 //- Use the volScalarField named here as a weight for each cell in the
 //  decomposition.  For example, use a particle population field to decompose
 //  for a balanced number of particles in a lagrangian simulation.
+//  Not used by multiRegionCoupled, which weights through its own
+//  coefficients and rejects this entry.
 // weightField dsmcRhoNMean;
 
 
