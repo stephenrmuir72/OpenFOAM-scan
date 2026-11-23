@@ -52,7 +52,7 @@ Usage
     \table
       Property    | Description                       | Type | Reqd | Deflt
       nRayPerFace | Number of rays issued per face    | label | yes | -
-      nRayPerFace | Target number of triangles per voxel | label | no | 50
+      nTriPerVoxelMax | Target number of triangles per voxel | label | no | 50
       depthMax    | Maximum voxel refinement depth    | label | no  | 5
     \endtable
 
