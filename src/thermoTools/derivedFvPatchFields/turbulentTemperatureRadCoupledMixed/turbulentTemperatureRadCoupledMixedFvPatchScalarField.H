@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2017-2023 OpenCFD Ltd.
+    Copyright (C) 2026 Patrick Wilhelm, Data Lab Hell
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -63,6 +64,8 @@ Usage
             thicknessLayer  <PatchFunction1<scalar>>;
             kappaLayer      <PatchFunction1<scalar>>;
 
+            kappaLayerTolerance <scalar>;
+
         // Inherited entries
         kappaMethod         <word>;
         kappa               <word>;
@@ -110,6 +113,8 @@ Usage
               -->                   | PatchFunction1\<scalar\>| choice | -
       kappaLayer     | Corresponding thermal conductivity [W/m/K]      <!--
               -->                   | PatchFunction1\<scalar\>| choice | -
+      kappaLayerTolerance | Relative tolerance on the layer conductance <!--
+              -->                                      | scalar | no | SMALL
     \endtable
 
     The inherited entries are elaborated in:
@@ -120,6 +125,10 @@ Usage
 
 Note
   - Needs to be on underlying \c mapped(Wall)FvPatch.
+  - \c thermalInertia is refused with a contact layer, which the inertia
+    branch does not read.
+  - The two patches' contact layers must give the same conductance: each side
+    uses only its own, so a mismatch unbalances the flux and is refused.
 
 SourceFiles
     turbulentTemperatureRadCoupledMixedFvPatchScalarField.C
@@ -175,6 +184,9 @@ class turbulentTemperatureRadCoupledMixedFvPatchScalarField
         scalarList kappaLayers_;
         autoPtr<PatchFunction1<scalar>> kappaLayer_;
 
+        //- Relative tolerance on the layer conductance
+        const scalar kappaLayerTolerance_;
+
         //- Log-file output frequency
         scalar logInterval_;
 
@@ -192,6 +204,10 @@ class turbulentTemperatureRadCoupledMixedFvPatchScalarField
 
 
      // Private Functions
+
+        //- Return the series conductance of the contact layers,
+        //- GREAT where no layer is given
+        tmp<scalarField> KDeltaLayers(const scalar t) const;
 
         //- Return local alphaSfDelta
         tmp<scalarField> alphaSfDelta() const;
