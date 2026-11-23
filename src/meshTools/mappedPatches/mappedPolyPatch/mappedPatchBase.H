@@ -75,7 +75,14 @@ Description
         // According to offsetMode (see above) supply one of
         // offset, offsets or distance
         offset  (1 0 0);
+
+        // If sampleMode is nearestPatchFaceAMI : optional AMI method
+        // (default is faceAreaWeightAMI)
+        AMIMethod faceAreaWeightAMI;
     \endverbatim
+
+    Note: if sampleMode is \c nearestPatchFaceAMI the AMI entry
+    \c lowWeightCorrection is not supported.
 
     Note: if offsetMode is \c normal it uses outwards pointing normals. So
     supply a negative distance if sampling inside the domain.
