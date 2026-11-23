@@ -392,15 +392,15 @@ void Foam::lduMatrix::sumA
         diag().begin(),
         sumA,
         lduAddr(),
-        matrixCoeffsFunctor<scalar, unityOp<scalar>>
+        matrixCoeffsFunctor<scalar, Foam::identityOp>
         (
             upper(),
-            unityOp<scalar>()
+            identityOp{}
         ),
-        matrixCoeffsFunctor<scalar, unityOp<scalar>>
+        matrixCoeffsFunctor<scalar, Foam::identityOp>
         (
             lower(),
-            unityOp<scalar>()
+            identityOp{}
         )
     );
     #else
