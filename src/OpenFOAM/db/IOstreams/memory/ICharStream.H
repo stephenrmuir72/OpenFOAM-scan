@@ -278,7 +278,7 @@ public:
 class ICharStream
 :
     public Foam::Detail::StreamAllocator
-    <Foam::Detail::icharstream<Foam::memorybuf::in_dynamic>>,
+    <Foam::Detail::icharstream<Foam::memorybuf::in_vector>>,
     public Foam::ISstream
 {
     //- The wrapped stream type (eg, icharstream)

@@ -530,7 +530,7 @@ Foam::decomposedBlockData::readBlock
     unsigned scalarWidth = is.scalarByteSize();
 
     // Read master for header
-    List<char> blockChars;
+    std::vector<char> blockChars;
     decomposedBlockData::readBlockEntry(is, blockChars);
 
     if (blocki == 0)  // ie, UPstream::masterNo()
@@ -741,9 +741,12 @@ Foam::decomposedBlockData::readBlocks
 
     // Read data on master and transmit. Always non-blocking
     bool ok = false;
-    List<char> localData;
+    std::vector<char> localData;
     List<List<char>> procBuffers;
     autoPtr<ISstream> blockIsPtr;
+
+    // Note: currently still use List<char> for procBuffers
+    // in case we have compoundToken etc. (NOV-2026)
 
     // Some unique tag for this read/write/probe grouping
     const int messageTag = (UPstream::msgType() + 256);
