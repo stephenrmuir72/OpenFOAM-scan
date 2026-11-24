@@ -116,7 +116,8 @@ Foam::vector Foam::waveModels::Boussinesq::Uf
     const scalar z
 ) const
 {
-    scalar C = sqrt(mag(g_)*(H + h));
+    // scalar C = sqrt(mag(g_)*(H + h));
+    scalar C = sqrt(mag(g_)*(h));
     scalar eta = this->eta(H, h, x, y, theta, t, X0);
     vector Deta = this->Deta(H, h, x, y, theta, t, X0);
 

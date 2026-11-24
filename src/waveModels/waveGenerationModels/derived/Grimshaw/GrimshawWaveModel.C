@@ -124,6 +124,7 @@ Foam::vector Foam::waveModels::Grimshaw::Uf
     const scalar s2 = s*s;
     const scalar s4 = s2*s2;
     const scalar s6 = s2*s4;
+    const scalar T = tanh(alfa*(xa/h));
 
     const scalar zbyh = z/h;
     const scalar zbyh2 = zbyh*zbyh;
@@ -141,7 +142,7 @@ Foam::vector Foam::waveModels::Grimshaw::Uf
     outc = zbyh2*((-13.0/16.0)*s2 -(25.0/16.0)*s4 + 7.5*s6);
     outd = zbyh4*(-0.075*s2 -1.125*s4 - (27.0/16.0)*s6);
 
-    const scalar w = sqrt(mag(g_)*h)*(outa - eps3*(outb + outc + outd));
+    const scalar w = sqrt(mag(g_)*h) * (sqrt(3.0*eps)*(zbyh)*T) * (outa - eps3*(outb + outc + outd));
 
     const scalar v = u*sin(waveAngle_);
     u *= cos(waveAngle_);
