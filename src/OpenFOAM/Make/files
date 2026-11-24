@@ -836,6 +836,20 @@ $(interpolationWeights)/interpolationWeights/interpolationWeights.C
 $(interpolationWeights)/linearInterpolationWeights/linearInterpolationWeights.C
 $(interpolationWeights)/splineInterpolationWeights/splineInterpolationWeights.C
 
+RBFinterpolation = interpolations/rbf
+
+$(RBFinterpolation)/RBFFunction.cxx
+$(RBFinterpolation)/functions/IMQB/RBF_IMQB.cxx
+$(RBFinterpolation)/functions/ThinPlateSpline/RBF_ThinPlateSpline.cxx
+$(RBFinterpolation)/functions/WendlandC0/RBF_WendlandC0.cxx
+$(RBFinterpolation)/functions/WendlandC2/RBF_WendlandC2.cxx
+$(RBFinterpolation)/functions/WendlandC4/RBF_WendlandC4.cxx
+$(RBFinterpolation)/functions/WendlandC6/RBF_WendlandC6.cxx
+$(RBFinterpolation)/functions/cosine/RBF_Cosine.cxx
+$(RBFinterpolation)/functions/gauss/RBF_Gauss.cxx
+$(RBFinterpolation)/functions/gauss/RBF_invGauss.cxx
+$(RBFinterpolation)/functions/linear/RBF_Linear.cxx
+
 
 algorithms/AABBTree/AABBTree.cxx
 
