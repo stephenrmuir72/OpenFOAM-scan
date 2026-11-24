@@ -839,6 +839,7 @@ $(interpolationWeights)/splineInterpolationWeights/splineInterpolationWeights.C
 RBFinterpolation = interpolations/rbf
 
 $(RBFinterpolation)/RBFFunction.cxx
+$(RBFinterpolation)/RBFInterpolation.cxx
 $(RBFinterpolation)/functions/IMQB/RBF_IMQB.cxx
 $(RBFinterpolation)/functions/ThinPlateSpline/RBF_ThinPlateSpline.cxx
 $(RBFinterpolation)/functions/WendlandC0/RBF_WendlandC0.cxx
