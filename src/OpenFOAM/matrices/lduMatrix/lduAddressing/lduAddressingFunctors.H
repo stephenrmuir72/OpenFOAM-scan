@@ -27,17 +27,19 @@ License
     repository https://github.com/SimFlowCFD/RapidCFD-dev
 
 Description
-    functors for LDU-level offloading
+    Functors for LDU-level offloading
 
 \*---------------------------------------------------------------------------*/
 
 #ifdef FOAM_OFFLOAD
 
-#ifndef lduAddressingFunctors_H
-#define lduAddressingFunctors_H
+#ifndef Foam_lduAddressingFunctors_H
+#define Foam_lduAddressingFunctors_H
 
 #include "lduAddressing.H"
 #include "ops.H"
+
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
 namespace Foam
 {
@@ -78,16 +80,16 @@ namespace Foam
             Type out = d;
             label oStart = ownStart_[id];
             label oSize = ownStart_[id+1] - oStart;
-    
+
             label nStart = neiStart_[id];
             label nSize = neiStart_[id+1] - nStart;
-    
+
             for(label i = 0; i<oSize; i++)
             {
                 label face = oStart + i;
                 out = ownOp_(out, ownFun_(id, face));
             }
-    
+
             for(label i = 0; i<nSize; i++)
             {
                 label face = losort_[nStart + i];
@@ -150,8 +152,12 @@ namespace Foam
     };
 
 
-    template<class Type, class Input, class OwnFun, class NeiFun, class OwnOp, 
-        class NeiOp>
+    template
+    <
+        class Type, class Input,
+        class OwnFun, class NeiFun,
+        class OwnOp, class NeiOp
+    >
     inline void matrixOperation
     (
         Input in,
@@ -163,28 +169,23 @@ namespace Foam
         NeiOp no
     )
     {
-        const labelRange indices(out.size());
-        apply_policy(indices.size(), [&](auto policy)
-        {
-            std::transform
+        ListPolicy::transform_n
+        (
+            out.size(),
+            in,
+            out.begin(),
+
+            lduAddressingFunctor<Type, OwnFun, NeiFun, OwnOp, NeiOp>
             (
-                policy,
-                indices.begin(),
-                indices.end(),
-                in,
-                out.begin(),
-                lduAddressingFunctor<Type, OwnFun, NeiFun, OwnOp, NeiOp>
-                (
-                    addr.ownerStartAddr(),
-                    addr.losortStartAddr(),
-                    addr.losortAddr(),
-                    o,
-                    n,
-                    oo,
-                    no
-                )
-            );
-        });
+                addr.ownerStartAddr(),
+                addr.losortStartAddr(),
+                addr.losortAddr(),
+                o,
+                n,
+                oo,
+                no
+            )
+        );
     }
 
 
@@ -211,8 +212,10 @@ namespace Foam
     }
 }
 
-#endif
 
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+#endif
 #endif  // FOAM_OFFLOAD
 
 // ************************************************************************* //

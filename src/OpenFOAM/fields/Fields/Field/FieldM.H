@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2022-2023 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -34,13 +35,8 @@ Description
 
 #include "error.H"
 #include "ListLoopM.H"  // For list access macros
+#include "ListPolicy.H"
 #include <type_traits>
-
-#ifdef FOAM_OFFLOAD
-#define FOAM_OFFLOAD_ENABLED 1
-#else
-#define FOAM_OFFLOAD_ENABLED 0
-#endif
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -170,20 +166,16 @@ void checkFields
     /* Loop: f1 OP FUNC(f2) */                                                 \
     const label loop_len = (f1).size();                                        \
                                                                                \
-    if constexpr (FOAM_OFFLOAD_ENABLED                                         \
-    && std::is_trivially_copyable_v<typeF1>                                    \
-    && std::is_trivially_copyable_v<typeF2>)                                   \
+    if constexpr (ListPolicy::can_offload<typeF1, typeF2>)                     \
     {                                                                          \
+        const auto kernel = [f1P, f2P](typeF1& x)                              \
+        {                                                                      \
+            const auto i = static_cast<std::size_t>(&x - f1P);                 \
+            x OP FUNC(f2P[i]);                                                 \
+        };                                                                     \
         apply_policy(loop_len, [&](auto policy)                                \
         {                                                                      \
-            std::for_each(policy,                                              \
-                f1P, f1P + loop_len,                                           \
-                [f1P, f2P] (typeF1& x)                                         \
-                {                                                              \
-                    const std::size_t i =                                      \
-                        static_cast<std::size_t>(&x - f1P);                    \
-                    x OP FUNC(f2P[i]);                                         \
-                });                                                            \
+            std::for_each(policy, f1P, f1P + loop_len, kernel);                \
         });                                                                    \
     }                                                                          \
     else                                                                       \
@@ -211,19 +203,16 @@ void checkFields
     /* Loop: f1 OP f2.FUNC() */                                                \
     const label loop_len = (f1).size();                                        \
                                                                                \
-    if constexpr (FOAM_OFFLOAD_ENABLED                                         \
-    && std::is_trivially_copyable_v<typeF1>                                    \
-    && std::is_trivially_copyable_v<typeF2>)                                   \
+    if constexpr (ListPolicy::can_offload<typeF1, typeF2>)                     \
     {                                                                          \
+        const auto kernel = [f1P, f2P](typeF1& x)                              \
+        {                                                                      \
+            const auto i = static_cast<std::size_t>(&x - f1P);                 \
+            x OP (f2P[i]).FUNC();                                              \
+        };                                                                     \
         apply_policy(loop_len, [&](auto policy)                                \
         {                                                                      \
-            std::for_each(policy,                                              \
-            f1P, f1P + loop_len,                                               \
-            [f1P, f2P](typeF1& x)                                              \
-            {                                                                  \
-                const std::size_t i = static_cast<std::size_t>(&x - f1P);      \
-                x OP (f2P[i]).FUNC();                                          \
-            });                                                                \
+            std::for_each(policy, f1P, f1P + loop_len, kernel);                \
         });                                                                    \
     }                                                                          \
     else                                                                       \
@@ -252,20 +241,16 @@ void checkFields
     /* Loop: f1 OP FUNC(f2, f3) */                                             \
     const label loop_len = (f1).size();                                        \
                                                                                \
-    if constexpr (FOAM_OFFLOAD_ENABLED                                         \
-    && std::is_trivially_copyable_v<typeF1>                                    \
-    && std::is_trivially_copyable_v<typeF2>                                    \
-    && std::is_trivially_copyable_v<typeF3>)                                   \
+    if constexpr (ListPolicy::can_offload<typeF1, typeF2, typeF3>)             \
     {                                                                          \
+        const auto kernel = [f1P, f2P, f3P](typeF1& x)                         \
+        {                                                                      \
+            const auto i = static_cast<std::size_t>(&x - f1P);                 \
+            x OP FUNC((f2P[i]), (f3P[i]));                                     \
+        };                                                                     \
         apply_policy(loop_len, [&](auto policy)                                \
         {                                                                      \
-            std::for_each(policy,                                              \
-            f1P, f1P + loop_len,                                               \
-            [f1P, f2P, f3P](typeF1& x)                                         \
-            {                                                                  \
-                const std::size_t i = static_cast<std::size_t>(&x - f1P);      \
-                x OP FUNC((f2P[i]), (f3P[i]));                                 \
-            });                                                                \
+            std::for_each(policy, f1P, f1P + loop_len, kernel);                \
         });                                                                    \
     }                                                                          \
     else                                                                       \
@@ -317,21 +302,17 @@ void checkFields
                                                                                \
     using SVal = std::decay_t<typeS>;                                          \
                                                                                \
-    if constexpr (FOAM_OFFLOAD_ENABLED                                         \
-    && std::is_trivially_copyable_v<typeF1>                                    \
-    && std::is_trivially_copyable_v<typeF2>                                    \
-    && std::is_trivially_copyable_v<SVal>)                                     \
+    if constexpr (ListPolicy::can_offload<typeF1, typeF2, SVal>)               \
     {                                                                          \
         const SVal s_ = (s);                                                   \
+        const auto kernel = [f1P, f2P, s_](typeF1& x)                          \
+        {                                                                      \
+            const auto i = static_cast<std::size_t>(&x - f1P);                 \
+            x OP FUNC(f2P[i], s_);                                             \
+        };                                                                     \
         apply_policy(loop_len, [&](auto policy)                                \
         {                                                                      \
-            std::for_each(policy,                                              \
-            f1P, f1P + loop_len,                                               \
-            [f1P, f2P, s_](typeF1& x)                                          \
-            {                                                                  \
-                const std::size_t i = static_cast<std::size_t>(&x - f1P);      \
-                x OP FUNC(f2P[i], s_);                                         \
-            });                                                                \
+            std::for_each(policy, f1P, f1P + loop_len, kernel);                \
         });                                                                    \
     }                                                                          \
     else                                                                       \
@@ -379,21 +360,17 @@ void checkFields
                                                                                \
     using SVal = std::decay_t<typeS>;                                          \
                                                                                \
-    if constexpr (FOAM_OFFLOAD_ENABLED                                         \
-    && std::is_trivially_copyable_v<typeF1>                                    \
-    && std::is_trivially_copyable_v<typeF2>                                    \
-    && std::is_trivially_copyable_v<SVal>)                                     \
+    if constexpr (ListPolicy::can_offload<typeF1, typeF2, SVal>)               \
     {                                                                          \
         const SVal s_ = (s);                                                   \
+        const auto kernel = [f1P, f2P, s_](typeF1& x)                          \
+        {                                                                      \
+            const auto i = static_cast<std::size_t>(&x - f1P);                 \
+            x OP FUNC(s_, f2P[i]);                                             \
+        };                                                                     \
         apply_policy(loop_len, [&](auto policy)                                \
         {                                                                      \
-            std::for_each(policy,                                              \
-            f1P, f1P + loop_len,                                               \
-            [f1P, f2P, s_](typeF1& x)                                          \
-            {                                                                  \
-                const std::size_t i = static_cast<std::size_t>(&x - f1P);      \
-                x OP FUNC(s_, f2P[i]);                                         \
-            });                                                                \
+            std::for_each(policy, f1P, f1P + loop_len, kernel);                \
         });                                                                    \
     }                                                                          \
     else                                                                       \
@@ -420,21 +397,17 @@ void checkFields
     using S1Val = std::decay_t<typeS1>;                                        \
     using S2Val = std::decay_t<typeS2>;                                        \
                                                                                \
-    if constexpr (FOAM_OFFLOAD_ENABLED                                         \
-    && std::is_trivially_copyable_v<typeF1>                                    \
-    && std::is_trivially_copyable_v<S1Val>                                     \
-    && std::is_trivially_copyable_v<S2Val>)                                    \
+    if constexpr (ListPolicy::can_offload<typeF1, S1Val, S2Val>)               \
     {                                                                          \
         const S1Val s1_ = (s1);                                                \
         const S2Val s2_ = (s2);                                                \
+        const auto kernel = [s1_, s2_](typeF1& x)                              \
+        {                                                                      \
+            x OP FUNC(s1_, s2_);                                               \
+        };                                                                     \
         apply_policy(loop_len, [&](auto policy)                                \
         {                                                                      \
-            std::for_each(policy,                                              \
-            f1P, f1P + loop_len,                                               \
-            [s1_, s2_](typeF1& x)                                              \
-            {                                                                  \
-                x OP FUNC(s1_, s2_);                                           \
-            });                                                                \
+            std::for_each(policy, f1P, f1P + loop_len, kernel);                \
         });                                                                    \
     }                                                                          \
     else                                                                       \
@@ -464,21 +437,17 @@ void checkFields
                                                                                \
     using SVal = std::decay_t<typeS>;                                          \
                                                                                \
-    if constexpr (FOAM_OFFLOAD_ENABLED                                         \
-    && std::is_trivially_copyable_v<typeF1>                                    \
-    && std::is_trivially_copyable_v<typeF2>                                    \
-    && std::is_trivially_copyable_v<SVal>)                                     \
+    if constexpr (ListPolicy::can_offload<typeF1, typeF2, SVal>)               \
     {                                                                          \
         const SVal s_ = (s);                                                   \
+        const auto kernel = [f1P, f2P, s_](typeF1& x)                          \
+        {                                                                      \
+            const auto i = static_cast<std::size_t>(&x - f1P);                 \
+            x OP f2P[i] FUNC(s_);                                              \
+        };                                                                     \
         apply_policy(loop_len, [&](auto policy)                                \
         {                                                                      \
-            std::for_each(policy,                                              \
-            f1P, f1P + loop_len,                                               \
-            [f1P, f2P, s_](typeF1& x)                                          \
-            {                                                                  \
-                const std::size_t i = static_cast<std::size_t>(&x - f1P);      \
-                x OP f2P[i] FUNC(s_);                                          \
-            });                                                                \
+            std::for_each(policy, f1P, f1P + loop_len, kernel);                \
         });                                                                    \
     }                                                                          \
     else                                                                       \
@@ -511,21 +480,16 @@ void checkFields
     /* Loop: f1 OP FUNC(f2, f3, f4) */                                         \
     const label loop_len = (f1).size();                                        \
                                                                                \
-    if constexpr (FOAM_OFFLOAD_ENABLED                                         \
-    && std::is_trivially_copyable_v<typeF1>                                    \
-    && std::is_trivially_copyable_v<typeF2>                                    \
-    && std::is_trivially_copyable_v<typeF3>                                    \
-    && std::is_trivially_copyable_v<typeF4>)                                   \
+    if constexpr (ListPolicy::can_offload<typeF1, typeF2, typeF3, typeF4>)     \
     {                                                                          \
+        const auto kernel = [f1P, f2P, f3P, f4P](typeF1& x)                    \
+        {                                                                      \
+            const auto i = static_cast<std::size_t>(&x - f1P);                 \
+            x OP FUNC(f2P[i], f3P[i], f4P[i]);                                 \
+        };                                                                     \
         apply_policy(loop_len, [&](auto policy)                                \
         {                                                                      \
-            std::for_each(policy,                                              \
-            f1P, f1P + loop_len,                                               \
-            [f1P, f2P, f3P, f4P](typeF1& x)                                    \
-            {                                                                  \
-                const std::size_t i = static_cast<std::size_t>(&x - f1P);      \
-                x OP FUNC(f2P[i], f3P[i], f4P[i]);                             \
-            });                                                                \
+            std::for_each(policy, f1P, f1P + loop_len, kernel);                \
         });                                                                    \
     }                                                                          \
     else                                                                       \
@@ -556,22 +520,17 @@ void checkFields
                                                                                \
     using S4Val = std::decay_t<typeS4>;                                        \
                                                                                \
-    if constexpr (FOAM_OFFLOAD_ENABLED                                         \
-    && std::is_trivially_copyable_v<typeF1>                                    \
-    && std::is_trivially_copyable_v<typeF2>                                    \
-    && std::is_trivially_copyable_v<typeF3>                                    \
-    && std::is_trivially_copyable_v<S4Val>)                                    \
+    if constexpr (ListPolicy::can_offload<typeF1, typeF2, typeF3, S4Val>)      \
     {                                                                          \
         const S4Val s4_ = (s4);                                                \
+        const auto kernel = [f1P, f2P, f3P, s4_](typeF1& x)                    \
+        {                                                                      \
+            const auto i = static_cast<std::size_t>(&x - f1P);                 \
+            x OP FUNC(f2P[i], f3P[i], s4_);                                    \
+        };                                                                     \
         apply_policy(loop_len, [&](auto policy)                                \
         {                                                                      \
-            std::for_each(policy,                                              \
-            f1P, f1P + loop_len,                                               \
-            [f1P, f2P, f3P, s4_](typeF1& x)                                    \
-            {                                                                  \
-                const std::size_t i = static_cast<std::size_t>(&x - f1P);      \
-                x OP FUNC(f2P[i], f3P[i], s4_);                                \
-            });                                                                \
+            std::for_each(policy, f1P, f1P + loop_len, kernel);                \
         });                                                                    \
     }                                                                          \
     else                                                                       \
@@ -602,21 +561,16 @@ void checkFields
     /* Loop: f1 OP1 f2 OP2 f3 */                                               \
     const label loop_len = (f1).size();                                        \
                                                                                \
-    if constexpr (FOAM_OFFLOAD_ENABLED                                         \
-    && std::is_trivially_copyable_v<typeF1>                                    \
-    && std::is_trivially_copyable_v<typeF2>                                    \
-    && std::is_trivially_copyable_v<typeF3>)                                   \
+    if constexpr (ListPolicy::can_offload<typeF1, typeF2, typeF3>)             \
     {                                                                          \
-        /* Parallelize over contiguous memory; compute matching index */       \
+        const auto kernel = [f1P, f2P, f3P](typeF1& x)                         \
+        {                                                                      \
+            const auto i = static_cast<std::size_t>(&x - f1P);                 \
+            x OP1 f2P[i] OP2 f3P[i];                                           \
+        };                                                                     \
         apply_policy(loop_len, [&](auto policy)                                \
         {                                                                      \
-            std::for_each(policy,                                              \
-            f1P, f1P + loop_len,                                               \
-            [f1P, f2P, f3P](typeF1& x)                                         \
-            {                                                                  \
-                const std::size_t i = static_cast<std::size_t>(&x - f1P);      \
-                x OP1 f2P[i] OP2 f3P[i];                                       \
-            });                                                                \
+            std::for_each(policy, f1P, f1P + loop_len, kernel);                \
         });                                                                    \
     }                                                                          \
     else                                                                       \
@@ -646,21 +600,17 @@ void checkFields
                                                                                \
     using SVal = std::decay_t<typeS>;                                          \
                                                                                \
-    if constexpr (FOAM_OFFLOAD_ENABLED                                         \
-    && std::is_trivially_copyable_v<typeF1>                                    \
-    && std::is_trivially_copyable_v<typeF2>                                    \
-    && std::is_trivially_copyable_v<SVal>)                                     \
+    if constexpr (ListPolicy::can_offload<typeF1, typeF2, SVal>)               \
     {                                                                          \
         const SVal s_ = (s);                                                   \
+        const auto kernel = [f1P, f2P, s_](typeF1& x)                          \
+        {                                                                      \
+            const auto i = static_cast<std::size_t>(&x - f1P);                 \
+            x OP1 s_ OP2 f2P[i];                                               \
+        };                                                                     \
         apply_policy(loop_len, [&](auto policy)                                \
         {                                                                      \
-            std::for_each(policy,                                              \
-            f1P, f1P + loop_len,                                               \
-            [f1P, f2P, s_](typeF1& x)                                          \
-            {                                                                  \
-                const std::size_t i = static_cast<std::size_t>(&x - f1P);      \
-                x OP1 s_ OP2 f2P[i];                                           \
-            });                                                                \
+            std::for_each(policy, f1P, f1P + loop_len, kernel);                \
         });                                                                    \
     }                                                                          \
     else                                                                       \
@@ -690,21 +640,17 @@ void checkFields
                                                                                \
     using SVal = std::decay_t<typeS>;                                          \
                                                                                \
-    if constexpr (FOAM_OFFLOAD_ENABLED                                         \
-    && std::is_trivially_copyable_v<typeF1>                                    \
-    && std::is_trivially_copyable_v<typeF2>                                    \
-    && std::is_trivially_copyable_v<SVal>)                                     \
+    if constexpr (ListPolicy::can_offload<typeF1, typeF2, SVal>)               \
     {                                                                          \
         const SVal s_ = (s);                                                   \
+        const auto kernel = [f1P, f2P, s_](typeF1& x)                          \
+        {                                                                      \
+            const auto i = static_cast<std::size_t>(&x - f1P);                 \
+            x OP1 f2P[i] OP2 s_;                                               \
+        };                                                                     \
         apply_policy(loop_len, [&](auto policy)                                \
         {                                                                      \
-            std::for_each(policy,                                              \
-            f1P, f1P + loop_len,                                               \
-            [f1P, f2P, s_](typeF1& x)                                          \
-            {                                                                  \
-                const std::size_t i = static_cast<std::size_t>(&x - f1P);      \
-                x OP1 f2P[i] OP2 s_;                                           \
-            });                                                                \
+            std::for_each(policy, f1P, f1P + loop_len, kernel);                \
         });                                                                    \
     }                                                                          \
     else                                                                       \
@@ -732,19 +678,16 @@ void checkFields
     /* Loop: f1 OP f2 */                                                       \
     const label loop_len = (f1).size();                                        \
                                                                                \
-    if constexpr (FOAM_OFFLOAD_ENABLED                                         \
-    && std::is_trivially_copyable_v<typeF1>                                    \
-    && std::is_trivially_copyable_v<typeF2>)                                   \
+    if constexpr (ListPolicy::can_offload<typeF1, typeF2>)                     \
     {                                                                          \
+        const auto kernel = [f1P, f2P](typeF1& x)                              \
+        {                                                                      \
+            const auto i = static_cast<std::size_t>(&x - f1P);                 \
+            x OP f2P[i];                                                       \
+        };                                                                     \
         apply_policy(loop_len, [&](auto policy)                                \
         {                                                                      \
-            std::for_each(policy,                                              \
-            f1P, f1P + loop_len,                                               \
-            [f1P, f2P](typeF1& x)                                              \
-            {                                                                  \
-                const std::size_t i = static_cast<std::size_t>(&x - f1P);      \
-                x OP f2P[i];                                                   \
-            });                                                                \
+            std::for_each(policy, f1P, f1P + loop_len, kernel);                \
         });                                                                    \
     }                                                                          \
     else                                                                       \
@@ -772,19 +715,16 @@ void checkFields
     /* Loop: f1 OP1 OP2 f2 */                                                  \
     const label loop_len = (f1).size();                                        \
                                                                                \
-    if constexpr (FOAM_OFFLOAD_ENABLED                                         \
-    && std::is_trivially_copyable_v<typeF1>                                    \
-    && std::is_trivially_copyable_v<typeF2>)                                   \
+    if constexpr (ListPolicy::can_offload<typeF1, typeF2>)                     \
     {                                                                          \
+        const auto kernel = [f1P, f2P](typeF1& x)                              \
+        {                                                                      \
+            const auto i = static_cast<std::size_t>(&x - f1P);                 \
+            x OP1 OP2 f2P[i];                                                  \
+        };                                                                     \
         apply_policy(loop_len, [&](auto policy)                                \
         {                                                                      \
-            std::for_each(policy,                                              \
-            f1P, f1P + loop_len,                                               \
-            [f1P, f2P](typeF1& x)                                              \
-            {                                                                  \
-                const std::size_t i = static_cast<std::size_t>(&x - f1P);      \
-                x OP1 OP2 f2P[i];                                              \
-            });                                                                \
+            std::for_each(policy, f1P, f1P + loop_len, kernel);                \
         });                                                                    \
     }                                                                          \
     else                                                                       \
@@ -808,19 +748,15 @@ void checkFields
     /* Loop: f OP s */                                                         \
     const label loop_len = (f).size();                                         \
                                                                                \
-                                                                               \
     using SVal = std::decay_t<typeS>;                                          \
                                                                                \
-    if constexpr (FOAM_OFFLOAD_ENABLED                                         \
-    && std::is_trivially_copyable_v<typeF>                                     \
-    && std::is_trivially_copyable_v<SVal>)                                     \
+    if constexpr (ListPolicy::can_offload<typeF, SVal>)                        \
     {                                                                          \
         const SVal s_ = (s);                                                   \
+        const auto kernel = [s_](typeF& x) { x OP s_; };                       \
         apply_policy(loop_len, [&](auto policy)                                \
         {                                                                      \
-            std::for_each(policy,                                              \
-            fP, fP + static_cast<std::size_t>(loop_len),                       \
-            [s_](typeF& x) { x OP s_; });                                      \
+            std::for_each(policy, fP, fP + loop_len, kernel);                  \
         });                                                                    \
     }                                                                          \
     else                                                                       \

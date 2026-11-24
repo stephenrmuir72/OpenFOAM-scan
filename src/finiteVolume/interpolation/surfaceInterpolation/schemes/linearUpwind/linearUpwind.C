@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -83,25 +84,19 @@ Foam::linearUpwind<Type>::correction
 
         const volVectorField& gradVf = tgradVf();
 
-        labelRange faceRange(faceFlux.size());
-
-        apply_policy(faceFlux.size(), [&](auto policy)
+        if (const label kernel_size = faceFlux.size(); kernel_size > 0)
         {
-            std::for_each
-            (
-                policy,
-                faceRange.begin(),
-                faceRange.end(),
-                [&](size_t facei)
-                {
-                    const label celli =
-                        (faceFlux[facei] > 0) ? owner[facei] : neighbour[facei];
+            const auto kernel = [&](const label facei)
+            {
+                const label celli =
+                    (faceFlux[facei] > 0) ? owner[facei] : neighbour[facei];
 
-                    setComponent(sfCorr[facei], cmpt) =
-                        (Cf[facei] - C[celli]) & gradVf[celli];
-                }
-            );
-        });
+                setComponent(sfCorr[facei], cmpt) =
+                    (Cf[facei] - C[celli]) & gradVf[celli];
+            };
+
+            ListPolicy::for_each_n(kernel_size, kernel);
+        }
 
         typename GeometricField<Type, fvsPatchField, surfaceMesh>::
             Boundary& bSfCorr = sfCorr.boundaryFieldRef();
@@ -127,34 +122,30 @@ Foam::linearUpwind<Type>::correction
                     Cf.boundaryField()[patchi].patch().delta()
                 );
 
-                labelRange faceRange(pOwner.size());
+                const label kernel_size = pOwner.size();
 
-                apply_policy(pOwner.size(), [&](auto policy)
+                const auto kernel = [&](const label facei)
                 {
-                    std::for_each
-                    (
-                        policy,
-                        faceRange.begin(),
-                        faceRange.end(),
-                        [&](size_t facei)
-                        {
-                            label own = pOwner[facei];
+                    const label own = pOwner[facei];
 
-                            if (pFaceFlux[facei] > 0)
-                            {
-                                setComponent(pSfCorr[facei], cmpt) =
-                                    (pCf[facei] - C[own])
-                                  & gradVf[own];
-                            }
-                            else
-                            {
-                                setComponent(pSfCorr[facei], cmpt) =
-                                    (pCf[facei] - pd[facei] - C[own])
-                                  & pGradVfNei[facei];
-                            }
-                        }
-                    );
-                });
+                    if (pFaceFlux[facei] > 0)
+                    {
+                        setComponent(pSfCorr[facei], cmpt) =
+                        (
+                            (pCf[facei] - C[own]) & gradVf[own]
+                        );
+                    }
+                    else
+                    {
+                        setComponent(pSfCorr[facei], cmpt) =
+                        (
+                            (pCf[facei] - pd[facei] - C[own])
+                          & pGradVfNei[facei]
+                        );
+                    }
+                };
+
+                ListPolicy::for_each_n(kernel_size, kernel);
             }
         }
     }
@@ -212,23 +203,18 @@ Foam::linearUpwind<Foam::vector>::correction
     tmp<volTensorField> tgradVf = gradScheme_().grad(vf, gradSchemeName_);
     const volTensorField& gradVf = tgradVf();
 
-    labelRange faceRange(faceFlux.size());
-
-    apply_policy(faceFlux.size(), [&](auto policy)
+    if (const label kernel_size = faceFlux.size(); kernel_size > 0)
     {
-        std::for_each
-        (
-            policy,
-            faceRange.begin(),
-            faceRange.end(),
-            [&](size_t facei)
-            {
-                const label celli =
-                    (faceFlux[facei] > 0) ? owner[facei] : neighbour[facei];
-                sfCorr[facei] = (Cf[facei] - C[celli]) & gradVf[celli];
-            }
-        );
-    });
+        const auto kernel = [&](const label facei)
+        {
+            const label celli =
+                (faceFlux[facei] > 0) ? owner[facei] : neighbour[facei];
+
+            sfCorr[facei] = (Cf[facei] - C[celli]) & gradVf[celli];
+        };
+
+        ListPolicy::for_each_n(kernel_size, kernel);
+    }
 
 
     typename surfaceVectorField::Boundary& bSfCorr = sfCorr.boundaryFieldRef();
@@ -251,34 +237,26 @@ Foam::linearUpwind<Foam::vector>::correction
             // Build the d-vectors
             vectorField pd(Cf.boundaryField()[patchi].patch().delta());
 
-            labelRange faceRange(pOwner.size());
+            const label kernel_size = pOwner.size();
 
-            apply_policy(pOwner.size(), [&](auto policy)
+            const auto kernel = [&](const label facei)
             {
-                std::for_each
-                (
-                    policy,
-                    faceRange.begin(),
-                    faceRange.end(),
-                    [&](size_t facei)
-                    {
-                        label own = pOwner[facei];
+                const label own = pOwner[facei];
 
-                        if (pFaceFlux[facei] > 0)
-                        {
-                            pSfCorr[facei] =
-                                (pCf[facei] - C[own])
-                              & gradVf[own];
-                        }
-                        else
-                        {
-                            pSfCorr[facei] =
-                                (pCf[facei] - pd[facei] - C[own])
-                              & pGradVfNei[facei];
-                        }
-                    }
-                );
-            });
+                if (pFaceFlux[facei] > 0)
+                {
+                    pSfCorr[facei] = (pCf[facei] - C[own]) & gradVf[own];
+                }
+                else
+                {
+                    pSfCorr[facei] =
+                    (
+                        (pCf[facei] - pd[facei] - C[own]) & pGradVfNei[facei]
+                    );
+                }
+            };
+
+            ListPolicy::for_each_n(kernel_size, kernel);
         }
     }
 

@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2024 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -39,32 +40,24 @@ void Foam::lduAddressing::map
     const auto& offsets = losortStartAddr();
     const auto& indexToFace = losortAddr();
 
-    const label n = offsets.size()-1;
-
     vals.resize_nocopy(faceVals.size());
 
-    const labelRange cellIndices(n);
-
-    apply_policy(static_cast<std::size_t>(n), [&](auto policy)
+    if (const label loop_len(offsets.size()-1); loop_len > 0)
     {
-        std::for_each
-        (
-            policy,
-            cellIndices.begin(),
-            cellIndices.end(),
-            [&](const label celli)
-            {
-                const label start = offsets[celli];
-                const label end = offsets[celli+1];
+        const auto kernel = [&](const label celli)
+        {
+            const label start = offsets[celli];
+            const label end = offsets[celli+1];
 
-                for (label i = start; i < end; i++)
-                {
-                    const label facei = indexToFace[i];
-                    vals[i] = faceVals[facei];
-                }
+            for (label i = start; i < end; i++)
+            {
+                const label facei = indexToFace[i];
+                vals[i] = faceVals[facei];
             }
-        );
-    });
+        };
+
+        ListPolicy::for_each_n(loop_len, kernel);
+    }
 }
 
 

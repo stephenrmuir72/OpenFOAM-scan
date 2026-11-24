@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2019-2025 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -41,21 +42,21 @@ void Foam::GAMGAgglomeration::createSort
     labelList& sort
 )
 {
-    sort.setSize(list.size());
+    const label loop_len = list.size();
 
-    const label n = list.size();
-
-    labelRange range(n);
+    const labelRange range(loop_len);
 
     // Initialize:
     // sort[i] = i
-    apply_policy(n, [&](auto policy)
+
+    sort.resize_nocopy(list.size());
+
+    apply_policy(loop_len, [&](auto policy)
     {
         std::copy
         (
             policy,
-            range.begin(),
-            range.end(),
+            range.begin(), range.end(),
             sort.begin()
         );
     });
@@ -64,17 +65,18 @@ void Foam::GAMGAgglomeration::createSort
     labelList listTmp(list);
 
     // Sort keys and permute indices together
-    apply_policy(n, [&](auto policy)
+    const auto compareKeys = [&](const label a, const label b)
+    {
+        return listTmp[a] < listTmp[b];
+    };
+
+    apply_policy(loop_len, [&](auto policy)
     {
         std::stable_sort
         (
             policy,
-            sort.begin(),
-            sort.end(),
-            [&](const label a, const label b)
-            {
-                return listTmp[a] < listTmp[b];
-            }
+            sort.begin(), sort.end(),
+            compareKeys
         );
     });
 }
@@ -92,47 +94,33 @@ void Foam::GAMGAgglomeration::createTarget
     if (!n)
     {
         target.clear();
-        targetStart.resize_nocopy(1);
-        targetStart[0] = 0;
+        targetStart.resize_fill(1, 0);
         return;
     }
 
     labelList listSort(n);
     labelList flags(n);
     labelList offsets(n);
-    labelRange range(n);
 
-    //  Sort list
-    apply_policy(n, [&](auto policy)
+    // Sort list
     {
-        std::transform
-        (
-            policy,
-            range.begin(),
-            range.end(),
-            listSort.begin(),
-            [&](const label i)
-            {
-                return list[sort[i]];
-            }
-        );
-    });
+        const auto kernel = [&](const label i)
+        {
+            return list[sort[i]];
+        };
+
+        ListPolicy::transform_n(n, listSort.begin(), kernel);
+    }
 
     // Mark the first entry of every unique target group
-    apply_policy(n, [&](auto policy)
     {
-        std::transform
-        (
-            policy,
-            range.begin(),
-            range.end(),
-            flags.begin(),
-            [&](const label i)
-            {
-                return (i == 0 || listSort[i] != listSort[i - 1]) ? 1 : 0;
-            }
-        );
-    });
+        const auto kernel = [&](const label i)
+        {
+            return (i == 0 || listSort[i] != listSort[i - 1]) ? 1 : 0;
+        };
+
+        ListPolicy::transform_n(n, flags.begin(), kernel);
+    }
 
     // find total flags to get target size and offsets for scatter
     label targetSize = 0;
@@ -164,24 +152,19 @@ void Foam::GAMGAgglomeration::createTarget
     targetStart.setSize(targetSize + 1);
 
     // Scatter unique target values and their start offsets
-    apply_policy(n, [&](auto policy)
     {
-        std::for_each
-        (
-            policy,
-            range.begin(),
-            range.end(),
-            [&](const label i)
+        const auto kernel = [&](const label i)
+        {
+            if (flags[i])
             {
-                if (flags[i])
-                {
-                    const label compacti = offsets[i];
-                    target[compacti] = listSort[i];
-                    targetStart[compacti] = i;
-                }
+                const label compacti = offsets[i];
+                target[compacti] = listSort[i];
+                targetStart[compacti] = i;
             }
-        );
-    });
+        };
+
+        ListPolicy::for_each_n(n, kernel);
+    }
     targetStart[targetSize] = n;
  }
 

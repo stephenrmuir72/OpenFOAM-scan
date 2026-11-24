@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -54,30 +55,22 @@ void Foam::nearWallDistNoSearch::doAll()
             const fvsPatchScalarField& magApatch
                 = mesh_.magSf().boundaryField()[patchi];
 
-            const label len = faceCells.size();
 
-            labelRange faceRange(0, len);
+            const label kernel_size = faceCells.size();
 
-            apply_policy(static_cast<std::size_t>(len), [&](auto policy)
+            const auto kernel = [&](const label facei)
             {
-                std::for_each
+                ypatch[facei] =
                 (
-                    policy,
-                    faceRange.begin(),
-                    faceRange.end(),
-                    [&](const label facei)
-                    {
-                        ypatch[facei] =
-                        (
-                            Apatch[facei] &
-                            (
-                                patchCentres[facei]
-                              - cellCentres[faceCells[facei]]
-                            )
-                        )/magApatch[facei];
-                    }
-                );
-            });
+                    Apatch[facei] &
+                    (
+                        patchCentres[facei]
+                      - cellCentres[faceCells[facei]]
+                    )
+                )/magApatch[facei];
+            };
+
+            ListPolicy::for_each_n(kernel_size, kernel);
         }
         else
         {

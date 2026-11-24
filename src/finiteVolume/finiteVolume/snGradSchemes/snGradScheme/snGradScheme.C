@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2019-2021 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -125,22 +126,17 @@ snGradScheme<Type>::snGrad
     const labelUList& owner = mesh.owner();
     const labelUList& neighbour = mesh.neighbour();
 
-    labelRange faceRange(0, owner.size());
-
-    apply_policy(static_cast<std::size_t>(owner.size()), [&](auto policy)
+    // Internal field
+    if (const label kernel_size = owner.size(); kernel_size > 0)
     {
-        std::for_each
-        (
-            policy,
-            faceRange.begin(),
-            faceRange.end(),
-            [&](const label facei)
-            {
-                ssf[facei] =
-                   deltaCoeffs[facei]*(vf[neighbour[facei]] - vf[owner[facei]]);
-            }
-        );
-    });
+        const auto kernel = [&](const label facei)
+        {
+            ssf[facei] =
+                deltaCoeffs[facei]*(vf[neighbour[facei]] - vf[owner[facei]]);
+        };
+
+        ListPolicy::for_each_n(kernel_size, kernel);
+    }
 
     typename GeometricField<Type, fvsPatchField, surfaceMesh>::
         Boundary& ssfbf = ssf.boundaryFieldRef();

@@ -80,31 +80,28 @@ Foam::fv::gaussGrad<Type>::gradf
     const Field<Type>& issf = ssf;
 
     #ifdef FOAM_OFFLOAD
-    auto fun = [&] (const label, const label facei) -> GradType
+    if (const label kernel_size = igGrad.size(); kernel_size > 0)
     {
-        return Sf[facei]*issf[facei];
-    };
+        const auto fun = [&](const label, const label facei) -> GradType
+        {
+            return Sf[facei]*issf[facei];
+        };
 
-    auto ownOp = [](GradType& result, const GradType& value)
-    {
-        result += value;
-    };
+        const auto ownOp = [](GradType& result, const GradType& value)
+        {
+            result += value;
+        };
 
-    auto neiOp = [](GradType& result, const GradType& value)
-    {
-        result -= value;
-    };
+        const auto neiOp = [](GradType& result, const GradType& value)
+        {
+            result -= value;
+        };
 
-    labelRange cellRange(igGrad.size());
-
-    apply_policy(igGrad.size(), [&](auto policy)
-    {
-        std::transform
+        ListPolicy::transform_n
         (
-            policy,
-            cellRange.begin(),
-            cellRange.end(),
-            igGrad.begin(),   // d = old igGrad[celli]
+            kernel_size,
+            igGrad.begin(),
+
             cellReduceFunctor
             <
                 GradType,
@@ -124,7 +121,7 @@ Foam::fv::gaussGrad<Type>::gradf
                 neiOp
             )
         );
-    });
+    }
     #else
     const labelUList& owner = mesh.owner();
     const labelUList& neighbour = mesh.neighbour();
@@ -152,41 +149,34 @@ Foam::fv::gaussGrad<Type>::gradf
         const labelUList& sort = mesh.lduAddr().patchSortAddr(patchi);
         const labelUList& sortStart = mesh.lduAddr().patchSortStartAddr(patchi);
 
-        const labelRange cellRange(patchCells.size());
-
-        auto neiFun = [&](const label, const label facei) -> GradType
+        const auto neiFun = [&](const label, const label facei) -> GradType
         {
             return pSf[facei]*pssf[facei];
         };
 
-        auto neiOp = [](GradType& result, const GradType& value)
+        const auto neiOp = [](GradType& result, const GradType& value)
         {
             result += value;
         };
 
-        apply_policy(cellRange.size(), [&](auto policy)
-        {
-            std::for_each
+        ListPolicy::for_each_n
+        (
+            patchCells.size(),
+            patchCellReduceFunctor
+            <
+                GradType,
+                decltype(neiFun),
+                decltype(neiOp)
+            >
             (
-                policy,
-                cellRange.begin(),
-                cellRange.end(),
-                patchCellReduceFunctor
-                <
-                    GradType,
-                    decltype(neiFun),
-                    decltype(neiOp)
-                >
-                (
-                    igGrad,
-                    sortStart,
-                    sort,
-                    patchCells,
-                    neiFun,
-                    neiOp
-                )
-            );
-        });
+                igGrad,
+                sortStart,
+                sort,
+                patchCells,
+                neiFun,
+                neiOp
+            )
+        );
         #else
         forAll(mesh.boundary()[patchi], facei)
         {

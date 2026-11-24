@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2016-2017 OpenFOAM Foundation
     Copyright (C) 2019-2021 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -86,7 +87,6 @@ Foam::solverPerformance Foam::PBiCGStab::scalarSolve
     );
 
     const label nCells = psi.size();
-    const labelRange cellRange(0, nCells);
 
     solveScalarField pA(nCells);
     solveScalarField yA(nCells);
@@ -97,19 +97,14 @@ Foam::solverPerformance Foam::PBiCGStab::scalarSolve
     // --- Calculate initial residual field
     solveScalarField rA(source.size());
 
-    apply_policy(static_cast<std::size_t>(source.size()), [&](auto policy)
     {
-        std::for_each
-        (
-            policy,
-            cellRange.begin(),
-            cellRange.end(),
-            [&](const label cell)
-            {
-                rA[cell] = source[cell] - yA[cell];
-            }
-        );
-    });
+        const auto kernel = [&](const label cell)
+        {
+            rA[cell] = source[cell] - yA[cell];
+        };
+
+        ListPolicy::for_each_n(nCells, kernel);
+    }
 
     matrix().setResidualField
     (
@@ -187,8 +182,7 @@ Foam::solverPerformance Foam::PBiCGStab::scalarSolve
                     std::copy
                     (
                         policy,
-                        rA.begin(),
-                        rA.end(),
+                        rA.begin(), rA.end(),
                         pA.begin()
                     );
                 });
@@ -203,20 +197,13 @@ Foam::solverPerformance Foam::PBiCGStab::scalarSolve
 
                 const solveScalar beta = (rA0rA/rA0rAold)*(alpha/omega);
 
-                apply_policy(static_cast<std::size_t>(nCells), [&](auto policy)
+                const auto kernel = [&](const label cell)
                 {
-                    std::for_each
-                    (
-                        policy,
-                        cellRange.begin(),
-                        cellRange.end(),
-                        [&](const label cell)
-                        {
-                            pA[cell] =
-                                rA[cell] + beta*(pA[cell] - omega*AyA[cell]);
-                        }
-                    );
-                });
+                    pA[cell] =
+                        rA[cell] + beta*(pA[cell] - omega*AyA[cell]);
+                };
+
+                ListPolicy::for_each_n(nCells, kernel);
             }
 
             // --- Precondition pA
@@ -231,19 +218,14 @@ Foam::solverPerformance Foam::PBiCGStab::scalarSolve
             alpha = rA0rA/rA0AyA;
 
             // --- Calculate sA
-            apply_policy(static_cast<std::size_t>(nCells), [&](auto policy)
             {
-                std::for_each
-                (
-                    policy,
-                    cellRange.begin(),
-                    cellRange.end(),
-                    [&](const label cell)
-                    {
-                        sA[cell] = rA[cell] - alpha*AyA[cell];
-                    }
-                );
-            });
+                const auto kernel = [&](const label cell)
+                {
+                    sA[cell] = rA[cell] - alpha*AyA[cell];
+                };
+
+                ListPolicy::for_each_n(nCells, kernel);
+            }
 
             // --- Test sA for convergence
             solverPerf.finalResidual() =
@@ -255,19 +237,12 @@ Foam::solverPerformance Foam::PBiCGStab::scalarSolve
              && solverPerf.checkConvergence(tolerance_, relTol_, log_)
             )
             {
-                apply_policy(static_cast<std::size_t>(nCells), [&](auto policy)
+                const auto kernel = [&](const label cell)
                 {
-                    std::for_each
-                    (
-                        policy,
-                        cellRange.begin(),
-                        cellRange.end(),
-                        [&](const label cell)
-                        {
-                            psi[cell] += alpha*yA[cell];
-                        }
-                    );
-                }); 
+                    psi[cell] += alpha*yA[cell];
+                };
+
+                ListPolicy::for_each_n(nCells, kernel);
 
                 solverPerf.nIterations()++;
 
@@ -287,20 +262,15 @@ Foam::solverPerformance Foam::PBiCGStab::scalarSolve
             omega = gSumProd(tA, sA, matrix().mesh().comm())/tAtA;
 
             // --- Update solution and residual
-            apply_policy(static_cast<std::size_t>(nCells), [&](auto policy)
             {
-                std::for_each
-                (
-                    policy,
-                    cellRange.begin(),
-                    cellRange.end(),
-                    [&](const label cell)
-                    {
-                        psi[cell] += alpha*yA[cell] + omega*zA[cell];
-                        rA[cell] = sA[cell] - omega*tA[cell];
-                    }
-                );
-            });
+                const auto kernel = [&](const label cell)
+                {
+                    psi[cell] += alpha*yA[cell] + omega*zA[cell];
+                    rA[cell] = sA[cell] - omega*tA[cell];
+                };
+
+                ListPolicy::for_each_n(nCells, kernel);
+            }
 
             solverPerf.finalResidual() =
                 gSumMag(rA, matrix().mesh().comm())

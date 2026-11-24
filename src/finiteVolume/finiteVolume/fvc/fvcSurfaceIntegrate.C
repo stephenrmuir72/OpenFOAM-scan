@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2026 UKRI-STFC.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -61,21 +62,18 @@ void surfaceIntegrate
     const labelUList& neiStart = addr.losortStartAddr();
     const labelUList& losort = addr.losortAddr();
 
-    auto faceOp = [&](const label, const label facei)
+    if (const label kernel_size = ivf.size(); kernel_size > 0)
     {
-        return issf[facei];
-    };
+        const auto faceOp = [&](const label, const label facei)
+        {
+            return issf[facei];
+        };
 
-    labelRange cellRange(0, ivf.size());
-
-    apply_policy(cellRange.size(), [&](auto policy)
-    {
-        std::transform
+        ListPolicy::transform_n
         (
-            policy,
-            cellRange.begin(),
-            cellRange.end(),
+            kernel_size,
             ivf.begin(),
+
             cellReduceFunctor
             <
                 Type,
@@ -95,7 +93,7 @@ void surfaceIntegrate
                 minusEqOp<Type>()
             )
         );
-    });
+    }
     #else
     const labelUList& owner = mesh.owner();
     const labelUList& neighbour = mesh.neighbour();
@@ -119,37 +117,29 @@ void surfaceIntegrate
         const labelUList& neiStart = mesh.lduAddr().patchSortStartAddr(patchi);
         const labelUList& losort = mesh.lduAddr().patchSortAddr(patchi);
 
-        labelRange indices(patchCells.size());
-
-        auto neiFun = [&pssf](const label, const label facei)
+        const auto neiFun = [&pssf](const label, const label facei)
         {
             return pssf[facei];
         };
 
-        auto neiOp = [](Type& result, const Type& value)
+        const auto neiOp = [](Type& result, const Type& value)
         {
             result += value;
         };
 
-        apply_policy(indices.size(), [&](auto policy)
-        {
-            std::for_each
+        ListPolicy::for_each_n
+        (
+            patchCells.size(),
+            patchCellReduceFunctor<Type, decltype(neiFun), decltype(neiOp)>
             (
-                policy,
-                indices.begin(),
-                indices.end(),
-                patchCellReduceFunctor<Type, decltype(neiFun),
-                    decltype(neiOp)>
-                (
-                    ivf,
-                    neiStart,
-                    losort,
-                    patchCells,
-                    neiFun,
-                    neiOp
-                )
-            );
-        });
+                ivf,
+                neiStart,
+                losort,
+                patchCells,
+                neiFun,
+                neiOp
+            )
+        );
         #else
         forAll(mesh.boundary()[patchi], facei)
         {
@@ -248,21 +238,18 @@ surfaceSum
     const labelUList& neiStart = addr.losortStartAddr();
     const labelUList& losort = addr.losortAddr();
 
-    auto faceOp = [&](const label, const label facei)
+    if (const label kernel_size = vf.size(); kernel_size > 0)
     {
-        return ssf[facei];
-    };
+        const auto faceOp = [&](const label, const label facei)
+        {
+            return ssf[facei];
+        };
 
-    labelRange cellRange(0, vf.size());
-
-    apply_policy(cellRange.size(), [&](auto policy)
-    {
-        std::transform
+        ListPolicy::transform_n
         (
-            policy,
-            cellRange.begin(),
-            cellRange.end(),
+            kernel_size,
             vf.begin(),
+
             cellReduceFunctor
             <
                 Type,
@@ -282,7 +269,7 @@ surfaceSum
                 plusEqOp<Type>()
             )
         );
-    });
+    }
     #else
     const labelUList& owner = mesh.owner();
     const labelUList& neighbour = mesh.neighbour();
@@ -311,37 +298,30 @@ surfaceSum
         const labelUList& losort =
             mesh.lduAddr().patchSortAddr(patchi);
 
-        auto neiFun = [&pssf](const label, const label facei)
+
+        const auto neiFun = [&pssf](const label, const label facei)
         {
             return pssf[facei];
         };
 
-        auto neiOp = [](Type& result, const Type& value)
+        const auto neiOp = [](Type& result, const Type& value)
         {
             result += value;
         };
 
-        labelRange indices(patchCells.size());
-
-        apply_policy(indices.size(), [&](auto policy)
-        {
-            std::for_each
+        ListPolicy::for_each_n
+        (
+            patchCells.size(),
+            patchCellReduceFunctor<Type, decltype(neiFun), decltype(neiOp)>
             (
-                policy,
-                indices.begin(),
-                indices.end(),
-                patchCellReduceFunctor<Type, decltype(neiFun),
-                    decltype(neiOp)>
-                (
-                    vf,
-                    neiStart,
-                    losort,
-                    patchCells,
-                    neiFun,
-                    neiOp
-                )
-            );
-        });
+                vf,
+                neiStart,
+                losort,
+                patchCells,
+                neiFun,
+                neiOp
+            )
+        );
         #else
         forAll(mesh.boundary()[patchi], facei)
         {

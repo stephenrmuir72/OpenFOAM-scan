@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2019-2025 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -57,21 +58,15 @@ void Foam::fvPatch::patchInternalField
     }
     #endif
 
-    labelRange faceRange(0, len);
-
-    apply_policy(static_cast<std::size_t>(len), [&](auto policy)
+    if (const label kernel_size = len; kernel_size > 0)
     {
-        std::for_each
-        (
-            policy,
-            faceRange.begin(),
-            faceRange.end(),
-            [&](const label i)
-            {
-                pfld[i] = internalData[addressing[i]];
-            }
-        );
-    });
+        const auto kernel = [&](const label i)
+        {
+            pfld[i] = internalData[addressing[i]];
+        };
+
+        ListPolicy::for_each_n(kernel_size, kernel);
+    }
 }
 
 

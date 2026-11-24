@@ -114,23 +114,12 @@ inline void Foam::List<T>::copyList
     #ifdef FOAM_OFFLOAD
     else
     {
-        labelList addr(n);
-        std::iota(addr.begin(), addr.end(), label(0));
-
-        apply_policy(n, [&](auto policy)
-        {
-            std::transform
-            (
-                policy,
-                addr.begin(),
-                addr.end(),
-                dst,
-                [&](const label i)
-                {
-                    return list[indices[i]];
-                }
-            );
-        });
+        ListPolicy::transform_n
+        (
+            n,
+            dst,
+            [&](const label i) { return list[indices[i]]; }
+        );
     }
     #endif
 }

@@ -8,6 +8,7 @@
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2019 OpenCFD Ltd.
     Copyright (C) 2026 UKRI-STFC.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -160,38 +161,36 @@ Foam::tmp<Foam::scalarField> Foam::GAMGInterface::agglomerateCoeffs
     }
 
     #ifdef FOAM_OFFLOAD
-    labelRange coarseFaceRange(faceRestrictTargetStartAddressing_.size() - 1);
-
-    apply_policy(coarseFaceRange.size(), [&](auto policy)
+    if
+    (
+        const label loop_len = (faceRestrictTargetStartAddressing_.size()-1);
+        loop_len > 0
+    )
     {
-        std::for_each
-        (
-            policy,
-            coarseFaceRange.begin(),
-            coarseFaceRange.end(),
-            [&](const label coarseFacei)
+        const auto kernel = [&](const label coarseFacei)
+        {
+            const label start =
+                faceRestrictTargetStartAddressing_[coarseFacei];
+            const label end =
+                faceRestrictTargetStartAddressing_[coarseFacei + 1];
+
+            auto sum = 0.0;
+
+            for (label i = start; i < end; ++i)
             {
-                const label start =
-                    faceRestrictTargetStartAddressing_[coarseFacei];
-                const label end =
-                    faceRestrictTargetStartAddressing_[coarseFacei + 1];
+                const label fineFacei = faceRestrictSortAddressing_[i];
 
-                auto sum = 0.0;
-
-                for (label i = start; i < end; ++i)
-                {
-                    const label fineFacei = faceRestrictSortAddressing_[i];
-
-                    sum += fineCoeffs[fineFacei];
-                }
-
-                const label targetFacei =
-                    faceRestrictTargetAddressing_[coarseFacei];
-
-                coarseCoeffs[targetFacei] = sum;
+                sum += fineCoeffs[fineFacei];
             }
-        );
-    });
+
+            const label targetFacei =
+                faceRestrictTargetAddressing_[coarseFacei];
+
+            coarseCoeffs[targetFacei] = sum;
+        };
+
+        ListPolicy::for_each_n(loop_len, kernel);
+    }
     #else
     forAll(faceRestrictAddressing_, ffi)
     {

@@ -8,8 +8,8 @@
     Copyright (C) 2011-2015 OpenFOAM Foundation
     Copyright (C) 2017-2019 OpenCFD Ltd.
     Copyright (C) 2024 Advanced Micro Devices, Inc. All rights reserved.
-    Copyright (C) 2025 Science and Technology Facility Council. All rights
-                       reserved.
+    Copyright (C) 2025-2026 UKRI-STFC.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -96,7 +96,6 @@ void Foam::twoStageGaussSeidelSmoother::smooth
 )
 {
     const label nCells = psi.size();
-    const labelRange indices(nCells);
 
     //solveScalarField bPrime(nCells);
     solveScalarField& bPrime = matrix_.work(nCells);
@@ -176,146 +175,114 @@ void Foam::twoStageGaussSeidelSmoother::smooth
         const scalar* const __restrict__ lowercsrPtr =
             matrix_.lowerCSR().begin();
 
-        apply_policy(nCells, [&](auto policy)
         {
-            std::for_each
-            (
-                policy,
-                indices.begin(),
-                indices.end(),
-                [&](label cell)
+            const auto kernel = [&](label cell)
+            {
+                auto val = diagPtr[cell] * u_ptr[cell];
+
+                // Lower contributions
                 {
-                    auto val = diagPtr[cell] * u_ptr[cell];
-
-                    // Lower contributions
+                    const label start = losortStartAddrPtr[cell];
+                    const label end = losortStartAddrPtr[cell + 1];
+                    #pragma unroll 2
+                    for (label i = start; i < end; ++i)
                     {
-                        const label start = losortStartAddrPtr[cell];
-                        const label end = losortStartAddrPtr[cell + 1];
-                        #pragma unroll 2
-                        for (label i = start; i < end; ++i)
-                        {
-                            val += lowercsrPtr[i] * u_ptr[lcsrPtr[i]];
-                        }
+                        val += lowercsrPtr[i] * u_ptr[lcsrPtr[i]];
                     }
-
-                    // Upper contributions
-                    {
-                        const label start = ownStartPtr[cell];
-                        const label end = ownStartPtr[cell + 1];
-                        #pragma unroll 4
-                        for (label i = start; i < end; ++i)
-                        {
-                            val += upperPtr[i] * u_ptr[uPtr[i]];
-                        }
-                    }
-
-                    r_ptr[cell] = val;
                 }
-            );
-        });
 
-        if (0 == polynomialExpansionOrder)
+                // Upper contributions
+                {
+                    const label start = ownStartPtr[cell];
+                    const label end = ownStartPtr[cell + 1];
+                    #pragma unroll 4
+                    for (label i = start; i < end; ++i)
+                    {
+                        val += upperPtr[i] * u_ptr[uPtr[i]];
+                    }
+                }
+
+                r_ptr[cell] = val;
+            };
+
+            ListPolicy::for_each_n(nCells, kernel);
+        }
+
+        if (polynomialExpansionOrder <= 0)
         {
-            scalar relax_weight = 0.8;
+            constexpr scalar relax_weight = 0.8;
+
+            const auto kernel = [&](const label i)
+            {
+                scalar r = rhs_ptr[i] - r_ptr[i];
+                u_ptr[i] += relax_weight * r / diagPtr[i];
+            };
 
             // 1) z = r/D, u = u + relax_weight * z
-            apply_policy(nCells, [&](auto policy)
-            {
-                std::for_each
-                (
-                    policy,
-                    indices.begin(),
-                    indices.end(),
-                    [&](size_t i)
-                    {
-                        scalar r = rhs_ptr[i] - r_ptr[i];
-                        u_ptr[i] += relax_weight * r / diagPtr[i];
-                    }
-                );
-            });
+            ListPolicy::for_each_n(nCells, kernel);
         }
         else
         {
-            // 1) z = r/D, u = u + z
-            apply_policy(nCells, [&](auto policy)
             {
-                std::for_each
-                (
-                    policy,
-                    indices.begin(),
-                    indices.end(),
-                    [&](size_t i)
-                    {
-                        scalar r = rhs_ptr[i] - r_ptr[i]; // residual
-                        z_ptr[i] = r / diagPtr[i];
-                        u_ptr[i] += z_ptr[i];
-                    }
-                );
-            });
+                const auto kernel = [&](const label i)
+                {
+                    scalar r = rhs_ptr[i] - r_ptr[i]; // residual
+                    z_ptr[i] = r / diagPtr[i];
+                    u_ptr[i] += z_ptr[i];
+                };
+
+                // 1) z = r/D, u = u + z
+                ListPolicy::for_each_n(nCells, kernel);
+            }
 
             scalar multiplier = -1.0;
-            for (label sweepID = 0; sweepID < polynomialExpansionOrder;
-                sweepID++)
+
+            const auto upper_kernel = [&](label celli)
+            {
+                const label start = ownStartPtr[celli];
+                const label end   = ownStartPtr[celli + 1];
+
+                scalar tmp = 0.0;
+                #pragma unroll 4
+                for (label facei = start; facei < end; ++facei)
+                {
+                    tmp += upperPtr[facei] * z_ptr[uPtr[facei]];
+                }
+
+                r_ptr[celli] = tmp;
+            };
+
+            const auto saveZ_kernel = [&](label celli)
+            {
+                z_ptr[celli] = r_ptr[celli] / diagPtr[celli];
+                u_ptr[celli] += multiplier * z_ptr[celli];
+            };
+
+            const auto nosaveZ_kernel = [&](label celli)
+            {
+                u_ptr[celli] += multiplier*r_ptr[celli]
+                    /diagPtr[celli];
+            };
+
+            for
+            (
+                label sweepID = 0;
+                sweepID < polynomialExpansionOrder;
+                ++sweepID
+            )
             {
                 // 2) r = U * z
-                apply_policy(nCells, [&](auto policy)
-                {
-                    std::for_each
-                    (
-                        policy,
-                        indices.begin(),
-                        indices.end(),
-                        [&](label celli)
-                        {
-                            const label start = ownStartPtr[celli];
-                            const label end   = ownStartPtr[celli + 1];
-
-                            scalar tmp = 0.0;
-                            #pragma unroll 4
-                            for (label facei = start; facei < end; ++facei)
-                            {
-                                tmp += upperPtr[facei] * z_ptr[uPtr[facei]];
-                            }
-
-                            r_ptr[celli] = tmp;
-                        }
-                    );
-                });
+                ListPolicy::for_each_n(nCells, upper_kernel);
 
                 // 3) z = r/D, u = u + m * z
                 if (sweepID < polynomialExpansionOrder-1)
                 {
-                    apply_policy(nCells, [&](auto policy)
-                    {
-                        std::for_each
-                        (
-                            policy,
-                            indices.begin(),
-                            indices.end(),
-                            [&](label celli)
-                            {
-                                z_ptr[celli] = r_ptr[celli] / diagPtr[celli];
-                                u_ptr[celli] += multiplier * z_ptr[celli];
-                            }
-                        );
-                    });
+                    ListPolicy::for_each_n(nCells, saveZ_kernel);
                 }
                 else
                 {
                     //no need to save "Z"
-                    apply_policy(nCells, [&](auto policy)
-                    {
-                        std::for_each
-                        (
-                            policy,
-                            indices.begin(), indices.end(),
-                            [&](label celli)
-                            {
-                                u_ptr[celli] += multiplier*r_ptr[celli]
-                                    /diagPtr[celli];
-                            }
-                        );
-                    });
+                    ListPolicy::for_each_n(nCells, nosaveZ_kernel);
                 }
                 multiplier *= -1.0;
             }
@@ -343,7 +310,7 @@ void Foam::twoStageGaussSeidelSmoother::smooth
         interfaces_,
         cmpt,
         nSweeps,
-	    polynomialExpansionOrder_
+        polynomialExpansionOrder_
     );
 }
 
@@ -367,7 +334,7 @@ void Foam::twoStageGaussSeidelSmoother::scalarSmooth
         interfaces_,
         cmpt,
         nSweeps,
-	    polynomialExpansionOrder_
+        polynomialExpansionOrder_
     );
 }
 

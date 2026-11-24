@@ -113,37 +113,32 @@ Foam::tmp<Foam::surfaceScalarField> Foam::basicFvGeometryScheme::weights() const
     // ... and reference to the internal field of the weighting factors
     scalarField& w = weights.primitiveFieldRef();
 
-    const labelRange faceRange(owner.size());
-
-    apply_policy(owner.size(), [&](auto policy)
+    // Internal
+    if (const label kernel_size = owner.size(); kernel_size > 0)
     {
-        std::for_each
-        (
-            policy, // Use parallel, vectorized execution
-            faceRange.begin(),
-            faceRange.end(),  // Iterate over all faces
-            [&](const auto& facei)
-            {
-                // Note: mag in the dot-product.
-                // For all valid meshes, the non-orthogonality will be less than
-                // 90 deg and the dot-product will be positive.  For invalid
-                // meshes (d & s <= 0), this will stabilise the calculation
-                // but the result will be poor.
-                scalar SfdOwn = mag(Sf[facei] & (Cf[facei] - C[owner[facei]]));
-                scalar SfdNei =
-                    mag(Sf[facei] & (C[neighbour[facei]] - Cf[facei]));
+        const auto kernel = [&](const label facei)
+        {
+            // Note: mag in the dot-product.
+            // For all valid meshes, the non-orthogonality will be less than
+            // 90 deg and the dot-product will be positive.  For invalid
+            // meshes (d & s <= 0), this will stabilise the calculation
+            // but the result will be poor.
+            scalar SfdOwn = mag(Sf[facei] & (Cf[facei] - C[owner[facei]]));
+            scalar SfdNei =
+                mag(Sf[facei] & (C[neighbour[facei]] - Cf[facei]));
 
-                if (mag(SfdOwn + SfdNei) > ROOTVSMALL)
-                {
-                    w[facei] = SfdNei/(SfdOwn + SfdNei);
-                }
-                else
-                {
-                    w[facei] = 0.5;
-                }
+            if (mag(SfdOwn + SfdNei) > ROOTVSMALL)
+            {
+                w[facei] = SfdNei/(SfdOwn + SfdNei);
             }
-        );
-    });
+            else
+            {
+                w[facei] = 0.5;
+            }
+        };
+
+        ListPolicy::for_each_n(kernel_size, kernel);
+    }
 
     auto& wBf = weights.boundaryFieldRef();
 
@@ -201,22 +196,15 @@ Foam::basicFvGeometryScheme::deltaCoeffs() const
     const labelUList& owner = mesh_.owner();
     const labelUList& neighbour = mesh_.neighbour();
 
-    const labelRange faceRange(owner.size());
-
-    apply_policy(owner.size(), [&](auto policy)
+    if (const label kernel_size = owner.size(); kernel_size > 0)
     {
-        std::for_each
-        (
-            policy, // Use parallel, vectorized execution
-            faceRange.begin(),
-            faceRange.end(),  // Iterate over all faces
-            [&](const auto& facei)
-            {
-                deltaCoeffs[facei] =
-                    1.0/mag(C[neighbour[facei]] - C[owner[facei]]);
-            }
-        );
-    });
+        const auto kernel = [&](const label facei)
+        {
+            deltaCoeffs[facei] = 1.0/mag(C[neighbour[facei]] - C[owner[facei]]);
+        };
+
+        ListPolicy::for_each_n(kernel_size, kernel);
+    }
 
     auto& deltaCoeffsBf = deltaCoeffs.boundaryFieldRef();
 
@@ -305,29 +293,21 @@ Foam::basicFvGeometryScheme::nonOrthDeltaCoeffs() const
         const vectorField& pSf = Sf.boundaryField()[patchi];
         const scalarField& pMagSf = magSf.boundaryField()[patchi];
 
-        const label len = p.size();
-
-        labelRange faceRange(0, len);
-
-        apply_policy(static_cast<std::size_t>(len), [&](auto policy)
+        if (const label kernel_size = p.size(); kernel_size > 0)
         {
-            std::for_each
-            (
-                policy,
-                faceRange.begin(),
-                faceRange.end(),
-                [&](const label patchFacei)
-                {
-                    const vector unitArea =
-                        pSf[patchFacei]/pMagSf[patchFacei];
+            const auto kernel = [&](const label patchFacei)
+            {
+                const vector unitArea =
+                    pSf[patchFacei]/pMagSf[patchFacei];
 
-                    const vector& delta = patchDeltas[patchFacei];
+                const vector& delta = patchDeltas[patchFacei];
 
-                    patchDeltaCoeffs[patchFacei] =
-                        1.0/max(unitArea & delta, 0.05*mag(delta));
-                }
-            );
-        });
+                patchDeltaCoeffs[patchFacei] =
+                    1.0/max(unitArea & delta, 0.05*mag(delta));
+            };
+
+            ListPolicy::for_each_n(kernel_size, kernel);
+        }
 
         // Optionally correct
         p.makeNonOrthoDeltaCoeffs(patchDeltaCoeffs);
@@ -374,26 +354,19 @@ Foam::basicFvGeometryScheme::nonOrthCorrectionVectors() const
     tmp<surfaceScalarField> tNonOrthDeltaCoeffs(nonOrthDeltaCoeffs());
     const surfaceScalarField& NonOrthDeltaCoeffs = tNonOrthDeltaCoeffs();
 
-    const label len = owner.size();
-
-    const labelRange faceRange(len);
-
-    apply_policy(static_cast<std::size_t>(len), [&](auto policy)
+    if (const label kernel_size = owner.size(); kernel_size > 0)
     {
-        std::for_each
-        (
-            policy,
-            faceRange.begin(),
-            faceRange.end(),
-            [&](const label facei)
-            {
-                vector unitArea(Sf[facei]/magSf[facei]);
-                vector delta(C[neighbour[facei]] - C[owner[facei]]);
+        const auto kernel = [&](const label facei)
+        {
+            vector unitArea(Sf[facei]/magSf[facei]);
+            vector delta(C[neighbour[facei]] - C[owner[facei]]);
 
-                corrVecs[facei] = unitArea - delta*NonOrthDeltaCoeffs[facei];
-            }
-        );
-    });
+            corrVecs[facei] = unitArea - delta*NonOrthDeltaCoeffs[facei];
+        };
+
+        ListPolicy::for_each_n(kernel_size, kernel);
+    }
+
     // Boundary correction vectors set to zero for boundary patches
     // and calculated consistently with internal corrections for
     // coupled patches
@@ -420,29 +393,21 @@ Foam::basicFvGeometryScheme::nonOrthCorrectionVectors() const
             const vectorField& pSf = Sf.boundaryField()[patchi];
             const scalarField& pMagSf = magSf.boundaryField()[patchi];
 
-            const label len = p.size();
 
-            const labelRange faceRange(len);
+            const label kernel_size = p.size();
 
-            apply_policy(static_cast<std::size_t>(len), [&](auto policy)
+            const auto kernel = [&](const label patchFacei)
             {
-                std::for_each
-                (
-                    policy,
-                    faceRange.begin(),
-                    faceRange.end(),
-                    [&](const label patchFacei)
-                    {
-                        vector unitArea =
-                            pSf[patchFacei]/pMagSf[patchFacei];
+                vector unitArea =
+                    pSf[patchFacei]/pMagSf[patchFacei];
 
-                        const vector& delta = patchDeltas[patchFacei];
+                const vector& delta = patchDeltas[patchFacei];
 
-                        patchCorrVecs[patchFacei] =
-                           unitArea - delta*patchNonOrthDeltaCoeffs[patchFacei];
-                    }
-                );
-            });
+                patchCorrVecs[patchFacei] =
+                    unitArea - delta*patchNonOrthDeltaCoeffs[patchFacei];
+            };
+
+            ListPolicy::for_each_n(kernel_size, kernel);
         }
 
         // Optionally correct

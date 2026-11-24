@@ -8,6 +8,7 @@
     Copyright (C) 2011-2016 OpenFOAM Foundation
     Copyright (C) 2019-2024 OpenCFD Ltd.
     Copyright (C) 2026 UKRI-STFC.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -38,7 +39,6 @@ Description
 #ifdef FOAM_OFFLOAD
 #include "lduMatrixFunctors.H"
 #endif
-
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -378,38 +378,25 @@ void Foam::lduMatrix::operator*=(const scalarField& sf)
         const labelUList& l = lduAddr().lowerAddr();
         const labelUList& u = lduAddr().upperAddr();
 
-        const labelRange upperFaces(upper.size());
-
-        apply_policy(static_cast<std::size_t>(upper.size()), [&](auto policy)
+        if (const label kernel_size = upper.size(); kernel_size > 0)
         {
-            std::for_each
-            (
-                policy,
-                upperFaces.begin(),
-                upperFaces.end(),
-                [&](const label face)
-                {
-                    upper[face] *= sf[l[face]];
-                }
-            );
-        });
+            const auto kernel = [&](const label face)
+            {
+                upper[face] *= sf[l[face]];
+            };
 
-        const labelRange lowerFaces(lower.size());
+            ListPolicy::for_each_n(kernel_size, kernel);
+        }
 
-        apply_policy(static_cast<std::size_t>(lower.size()), [&](auto policy)
+        if (const label kernel_size = lower.size(); kernel_size > 0)
         {
-            std::for_each
-            (
-                policy,
-                lowerFaces.begin(),
-                lowerFaces.end(),
-                [&](const label face)
-                {
-                    lower[face] *= sf[u[face]];
-                }
-            );
-        });
-    
+            const auto kernel = [&](const label face)
+            {
+                lower[face] *= sf[u[face]];
+            };
+
+            ListPolicy::for_each_n(kernel_size, kernel);
+        }
     }
 }
 

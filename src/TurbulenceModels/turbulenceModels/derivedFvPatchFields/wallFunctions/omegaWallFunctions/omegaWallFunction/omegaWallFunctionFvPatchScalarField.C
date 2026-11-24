@@ -8,6 +8,7 @@
     Copyright (C) 2011-2016, 2019 OpenFOAM Foundation
     Copyright (C) 2017-2024 OpenCFD Ltd.
     Copyright (C) 2026 UKRI-STFC.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -109,25 +110,20 @@ void Foam::omegaWallFunctionFvPatchScalarField::createAveragingWeights()
             omegaPatches.append(patchi);
 
             const labelUList& faceCells = bf[patchi].patch().faceCells();
+
             #ifdef FOAM_OFFLOAD
             const auto& pcells = mesh.lduAddr().patchSortCells(patchi);
             const auto& losortStart = mesh.lduAddr().patchSortStartAddr(patchi);
 
-            labelRange cellRange(0, pcells.size());
+            const label kernel_size = pcells.size();
 
-            apply_policy(cellRange.size(), [&](auto policy)
+            const auto kernel = [&](label i)
             {
-                std::for_each
-                (
-                    policy,
-                    cellRange.begin(),
-                    cellRange.end(),
-                    [&](label i)
-                    {
-                        label delta = losortStart[i + 1] - losortStart[i];
-                        weights[pcells[i]] += static_cast<scalar>(delta);
-                    });
-            });
+                label delta = losortStart[i + 1] - losortStart[i];
+                weights[pcells[i]] += static_cast<scalar>(delta);
+            };
+
+            ListPolicy::for_each_n(kernel_size, kernel);
             #else
             for (const auto& celli : faceCells)
             {
@@ -261,9 +257,7 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
     const auto& sort =
         patch.boundaryMesh().mesh().lduAddr().patchSortAddr(patchi);
 
-    const labelRange cellRange(patchCells.size());
-
-    auto neiOp = [](scalar& result, const scalar value)
+    const auto neiOp = [](scalar& result, const scalar value)
     {
         result += value;
     };
@@ -274,7 +268,7 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
         case blenderType::STEPWISE:
         {
             #ifdef FOAM_OFFLOAD
-            auto neiFun = [&](const label, const label facei) -> scalar
+            const auto neiFun = [&](const label, const label facei) -> scalar
             {
                 if (yPlus(facei) > yPlusLam)
                 {
@@ -284,29 +278,24 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
                 return cornerWeights[facei]*omegaVis(facei);
             };
 
-            apply_policy(cellRange.size(), [&](auto policy)
-            {
-                std::for_each
+            ListPolicy::for_each_n
+            (
+                patchCells.size(),
+                patchCellReduceFunctor
+                <
+                    scalar,
+                    decltype(neiFun),
+                    decltype(neiOp)
+                >
                 (
-                    policy,
-                    cellRange.begin(),
-                    cellRange.end(),
-                    patchCellReduceFunctor
-                    <
-                        scalar,
-                        decltype(neiFun),
-                        decltype(neiOp)
-                    >
-                    (
-                        omega0,
-                        sortStart,
-                        sort,
-                        patchCells,
-                        neiFun,
-                        neiOp
-                    )
-                );
-            });
+                    omega0,
+                    sortStart,
+                    sort,
+                    patchCells,
+                    neiFun,
+                    neiOp
+                )
+            );
             #else
             forAll(faceCells, facei)
             {
@@ -330,38 +319,33 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
         case blenderType::BINOMIAL:
         {
             #ifdef FOAM_OFFLOAD
-            auto neiFun = [&](const label, const label facei) -> scalar
+            const auto neiFun = [&](const label, const label facei) -> scalar
             {
                 return cornerWeights[facei] * pow
-                    (
-                        pow(omegaVis(facei), n_) + pow(omegaLog(facei), n_),
-                        scalar(1)/n_
-                    );
+                (
+                    pow(omegaVis(facei), n_) + pow(omegaLog(facei), n_),
+                    scalar(1)/n_
+                );
             };
 
-            apply_policy(cellRange.size(), [&](auto policy)
-            {
-                std::for_each
+            ListPolicy::for_each_n
+            (
+                patchCells.size(),
+                patchCellReduceFunctor
+                <
+                    scalar,
+                    decltype(neiFun),
+                    decltype(neiOp)
+                >
                 (
-                    policy,
-                    cellRange.begin(),
-                    cellRange.end(),
-                    patchCellReduceFunctor
-                    <
-                        scalar,
-                        decltype(neiFun),
-                        decltype(neiOp)
-                    >
-                    (
-                        omega0,
-                        sortStart,
-                        sort,
-                        patchCells,
-                        neiFun,
-                        neiOp
-                    )
-                );
-            });
+                    omega0,
+                    sortStart,
+                    sort,
+                    patchCells,
+                    neiFun,
+                    neiOp
+                )
+            );
             #else
             forAll(faceCells, facei)
             {
@@ -380,35 +364,30 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
         case blenderType::MAX:
         {
             #ifdef FOAM_OFFLOAD
-            auto neiFun = [&](const label, const label facei) -> scalar
+            const auto neiFun = [&](const label, const label facei) -> scalar
             {
                 return cornerWeights[facei]
                     * max(omegaVis(facei), omegaLog(facei));
             };
 
-            apply_policy(cellRange.size(), [&](auto policy)
-            {
-                std::for_each
+            ListPolicy::for_each_n
+            (
+                patchCells.size(),
+                patchCellReduceFunctor
+                <
+                    scalar,
+                    decltype(neiFun),
+                    decltype(neiOp)
+                >
                 (
-                    policy,
-                    cellRange.begin(),
-                    cellRange.end(),
-                    patchCellReduceFunctor
-                    <
-                        scalar,
-                        decltype(neiFun),
-                        decltype(neiOp)
-                    >
-                    (
-                        omega0,
-                        sortStart,
-                        sort,
-                        patchCells,
-                        neiFun,
-                        neiOp
-                    )
-                );
-            });
+                    omega0,
+                    sortStart,
+                    sort,
+                    patchCells,
+                    neiFun,
+                    neiOp
+                )
+            );
             #else
             forAll(faceCells, facei)
             {
@@ -424,7 +403,7 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
         case blenderType::EXPONENTIAL:
         {
             #ifdef FOAM_OFFLOAD
-            auto neiFun = [&](const label, const label facei) -> scalar
+            const auto neiFun = [&](const label, const label facei) -> scalar
             {
                 const scalar yPlusFace = yPlus(facei);
                 const scalar Gamma = 0.01*pow4(yPlusFace)/(1 + 5*yPlusFace);
@@ -437,29 +416,24 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
                     );
             };
 
-            apply_policy(cellRange.size(), [&](auto policy)
-            {
-                std::for_each
+            ListPolicy::for_each_n
+            (
+                patchCells.size(),
+                patchCellReduceFunctor
+                <
+                    scalar,
+                    decltype(neiFun),
+                    decltype(neiOp)
+                >
                 (
-                    policy,
-                    cellRange.begin(),
-                    cellRange.end(),
-                    patchCellReduceFunctor
-                    <
-                        scalar,
-                        decltype(neiFun),
-                        decltype(neiOp)
-                    >
-                    (
-                        omega0,
-                        sortStart,
-                        sort,
-                        patchCells,
-                        neiFun,
-                        neiOp
-                    )
-                );
-            });
+                    omega0,
+                    sortStart,
+                    sort,
+                    patchCells,
+                    neiFun,
+                    neiOp
+                )
+            );
             #else
             forAll(faceCells, facei)
             {
@@ -482,7 +456,7 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
         case blenderType::TANH:
         {
             #ifdef FOAM_OFFLOAD
-            auto neiFun = [&](const label, const label facei) -> scalar
+            const auto neiFun = [&](const label, const label facei) -> scalar
             {
                 const scalar omegaVisFace = omegaVis(facei);
                 const scalar omegaLogFace = omegaLog(facei);
@@ -502,29 +476,24 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
                 *(phiTanh*b1 + (1 - phiTanh)*b2);
             };
 
-            apply_policy(cellRange.size(), [&](auto policy)
-            {
-                std::for_each
+            ListPolicy::for_each_n
+            (
+                patchCells.size(),
+                patchCellReduceFunctor
+                <
+                    scalar,
+                    decltype(neiFun),
+                    decltype(neiOp)
+                >
                 (
-                    policy,
-                    cellRange.begin(),
-                    cellRange.end(),
-                    patchCellReduceFunctor
-                    <
-                        scalar,
-                        decltype(neiFun),
-                        decltype(neiOp)
-                    >
-                    (
-                        omega0,
-                        sortStart,
-                        sort,
-                        patchCells,
-                        neiFun,
-                        neiOp
-                    )
-                );
-            });
+                    omega0,
+                    sortStart,
+                    sort,
+                    patchCells,
+                    neiFun,
+                    neiOp
+                )
+            );
             #else
             forAll(faceCells, facei)
             {
@@ -553,35 +522,29 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
     const scalarField magGradUw(mag(Uw.snGrad()));
 
     #ifdef FOAM_OFFLOAD
-    auto neiFun = [&](const label, const label facei) -> scalar
     {
-        const label celli = faceCells[facei];
-
-        if (!(blender_ == blenderType::STEPWISE) || yPlus(facei) > yPlusLam)
+        const auto neiFun = [&](const label, const label facei) -> scalar
         {
-            return cornerWeights[facei]
-            *(nutw[facei] + nuw[facei])
-            *magGradUw[facei]
-            *Cmu25*sqrt(k[celli])
-            /(kappa*y[facei]);
-        }
+            const label celli = faceCells[facei];
 
-        return Zero;
-    };
+            if (!(blender_ == blenderType::STEPWISE) || yPlus(facei) > yPlusLam)
+            {
+                return
+                (
+                    cornerWeights[facei]
+                  * (nutw[facei] + nuw[facei])
+                  * magGradUw[facei]
+                  * Cmu25*sqrt(k[celli])/(kappa*y[facei])
+                );
+            }
 
-    apply_policy(cellRange.size(), [&](auto policy)
-    {
-        std::for_each
+            return scalar(0);
+        };
+
+        ListPolicy::for_each_n
         (
-            policy,
-            cellRange.begin(),
-            cellRange.end(),
-            patchCellReduceFunctor
-            <
-                scalar,
-                decltype(neiFun),
-                decltype(neiOp)
-            >
+            patchCells.size(),
+            patchCellReduceFunctor<scalar, decltype(neiFun), decltype(neiOp)>
             (
                 omega0,
                 sortStart,
@@ -591,7 +554,7 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
                 neiOp
             )
         );
-    });
+    }
     #else
     forAll(faceCells, facei)
     {
@@ -775,24 +738,18 @@ void Foam::omegaWallFunctionFvPatchScalarField::updateCoeffs()
 
     const labelUList& faceCells = patch().faceCells();
 
-    labelRange faceRange(faceCells.size());
-
-    apply_policy(faceCells.size(), [&](auto policy)
+    if (const label kernel_size = faceCells.size(); kernel_size > 0)
     {
-        std::for_each
-        (
-            policy,
-            faceRange.begin(),
-            faceRange.end(),
-            [&](const label facei)
-            {
-                const label celli = faceCells[facei];
+        const auto kernel = [&](const label facei)
+        {
+            const label celli = faceCells[facei];
 
-                G[celli] = G0[celli];
-                omega[celli] = omega0[celli];
-            }
-        );
-    });
+            G[celli] = G0[celli];
+            omega[celli] = omega0[celli];
+        };
+
+        ListPolicy::for_each_n(kernel_size, kernel);
+    }
 
     fvPatchField<scalar>::updateCoeffs();
 }
@@ -837,7 +794,7 @@ void Foam::omegaWallFunctionFvPatchScalarField::updateWeightedCoeffs
 
     const labelUList& faceCells = patch().faceCells();
 
-#ifndef FOAM_OFFLOAD
+    #ifndef FOAM_OFFLOAD
 
     forAll(weights, facei)
     {
@@ -853,7 +810,7 @@ void Foam::omegaWallFunctionFvPatchScalarField::updateWeightedCoeffs
         }
     }
 
-#else
+    #else   /* [FOAM_OFFLOAD] */
 
     // only set the values if the weights are > tolerance
 
@@ -867,8 +824,6 @@ void Foam::omegaWallFunctionFvPatchScalarField::updateWeightedCoeffs
     const label* const __restrict__ neiStartPtr = neiStart.begin();
     const label* const __restrict__ losortPtr = losort.begin();
 
-    const labelRange patchCellRange(weights.size());
-
     const scalar* const __restrict__ weightsPtr = weights.begin();
     const label* const __restrict__ faceCellsPtr = faceCells.begin();
 
@@ -879,47 +834,41 @@ void Foam::omegaWallFunctionFvPatchScalarField::updateWeightedCoeffs
     const scalar* const __restrict__ G0Ptr = G0.begin();
     const scalar* const __restrict__ omega0Ptr = omega0.begin();
 
-    apply_policy(patchCellRange.size(), [&](auto policy)
+    if (const label kernel_size = weights.size(); kernel_size > 0)
     {
-        std::for_each
-        (
-            policy,
-            patchCellRange.begin(),
-            patchCellRange.end(),
-            [=](const label id)
+        const auto kernel = [=](const label id)
+        {
+            const label celli = patchCellsPtr[id];
+
+            scalar Gval = GPtr[celli];
+            scalar omegaval = omegaPtr[celli];
+
+            const label start = neiStartPtr[id];
+            const label end = neiStartPtr[id + 1];
+
+            for (label i = start; i < end; ++i)
             {
-                const label celli = patchCellsPtr[id];
+                const label facei = losortPtr[i];
+                const scalar w = weightsPtr[facei];
 
-                scalar Gval = GPtr[celli];
-                scalar omegaval = omegaPtr[celli];
-
-                const label start = neiStartPtr[id];
-                const label end = neiStartPtr[id + 1];
-
-                for (label i = start; i < end; ++i)
+                if (w > tolerance)
                 {
-                    const label facei = losortPtr[i];
-                    const scalar w = weightsPtr[facei];
+                    Gval = (1.0 - w)*Gval + w*G0Ptr[celli];
 
-                    if (w > tolerance)
-                    {
-                        Gval =
-                            (1.0 - w)*Gval + w*G0Ptr[celli];
+                    omegaval = (1.0 - w)*omegaval + w*omega0Ptr[celli];
 
-                        omegaval =
-                            (1.0 - w)*omegaval + w*omega0Ptr[celli];
-
-                        omegafPtr[facei] = omegaval;
-                    }
+                    omegafPtr[facei] = omegaval;
                 }
-
-                GPtr[celli] = Gval;
-                omegaPtr[celli] = omegaval;
             }
-        );
-    });
 
-#endif
+            GPtr[celli] = Gval;
+            omegaPtr[celli] = omegaval;
+        };
+
+        ListPolicy::for_each_n(kernel_size, kernel);
+    }
+
+    #endif  /* [FOAM_OFFLOAD] */
 
     fvPatchField<scalar>::updateCoeffs();
 }
@@ -959,8 +908,6 @@ void Foam::omegaWallFunctionFvPatchScalarField::manipulateMatrix
     const DimensionedField<scalar, volMesh>& fld = internalField();
 
     #ifdef FOAM_OFFLOAD
-    const labelRange faceRange(weights.size());
-
     List<label> selected(weights.size(), -1);
 
     const scalar tolerance = tolerance_;
@@ -969,25 +916,20 @@ void Foam::omegaWallFunctionFvPatchScalarField::manipulateMatrix
     const label* const __restrict__ faceCellsPtr = faceCells.begin();
     label* const __restrict__ selectedPtr = selected.begin();
 
-    apply_policy(faceRange.size(), [&](auto policy)
+    if (const label kernel_size = weights.size(); kernel_size > 0)
     {
-        std::transform
-        (
-            policy,
-            faceRange.begin(),
-            faceRange.end(),
-            selectedPtr,
-            [=](const label facei) -> label
+        const auto kernel = [=](const label facei) -> label
+        {
+            if (tolerance < weightsPtr[facei])
             {
-                if (tolerance < weightsPtr[facei])
-                {
-                    return faceCellsPtr[facei];
-                }
-
-                return label(-1);
+                return faceCellsPtr[facei];
             }
-        );
-    });
+
+            return label(-1);
+        };
+
+        ListPolicy::transform_n(kernel_size, selectedPtr, kernel);
+    }
 
     // Compaction step. Keep this on CPU unless you have a proper parallel
     // compact.

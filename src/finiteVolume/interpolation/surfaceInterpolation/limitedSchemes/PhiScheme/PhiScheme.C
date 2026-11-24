@@ -6,6 +6,7 @@
      \\/     M anipulation  |
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2016 OpenFOAM Foundation
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -85,31 +86,26 @@ Foam::PhiScheme<Type, PhiLimiter>::limiter
 
     const surfaceScalarField& Uflux = tUflux();
 
-    scalarField& pLimiter = Limiter.primitiveFieldRef();
-
-    labelRange faceRange(owner.size());
-
-    apply_policy(owner.size(), [&](auto policy)
+    // Internal field
+    if (const label kernel_size = owner.size(); kernel_size > 0)
     {
-        std::for_each
-        (
-            policy,
-            faceRange.begin(),
-            faceRange.end(),
-            [&](const label face)
-            {
-                pLimiter[face] = PhiLimiter::limiter
-                (
-                    CDweights[face],
-                    Uflux[face],
-                    phi[owner[face]],
-                    phi[neighbour[face]],
-                    Sf[face],
-                    magSf[face]
-                );
-            }
-         );
-    });
+        scalarField& pLimiter = Limiter.primitiveFieldRef();
+
+        const auto kernel = [&](const label face)
+        {
+            pLimiter[face] = PhiLimiter::limiter
+            (
+                CDweights[face],
+                Uflux[face],
+                phi[owner[face]],
+                phi[neighbour[face]],
+                Sf[face],
+                magSf[face]
+            );
+        };
+
+        ListPolicy::for_each_n(kernel_size, kernel);
+    }
 
     surfaceScalarField::Boundary& bLimiter =
         Limiter.boundaryFieldRef();
@@ -134,29 +130,22 @@ Foam::PhiScheme<Type, PhiLimiter>::limiter
                 phi.boundaryField()[patchi].patchNeighbourField()
             );
 
-            labelRange faceRange(pLimiter.size());
+            const label kernel_size = pLimiter.size();
 
-            apply_policy(pLimiter.size(), [&](auto policy)
+            const auto kernel = [&](const label face)
             {
-                std::for_each
+                pLimiter[face] = PhiLimiter::limiter
                 (
-                    policy,
-                    faceRange.begin(),
-                    faceRange.end(),
-                    [&](const label face)
-                    {
-                        pLimiter[face] = PhiLimiter::limiter
-                        (
-                            pCDweights[face],
-                            pFaceFlux[face],
-                            pphiP[face],
-                            pphiN[face],
-                            pSf[face],
-                            pmagSf[face]
-                        );
-                    }
+                    pCDweights[face],
+                    pFaceFlux[face],
+                    pphiP[face],
+                    pphiN[face],
+                    pSf[face],
+                    pmagSf[face]
                 );
-            });
+            };
+
+            ListPolicy::for_each_n(kernel_size, kernel);
         }
         else
         {

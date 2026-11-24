@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2011-2017 OpenFOAM Foundation
     Copyright (C) 2023-2024 OpenCFD Ltd.
+    Copyright (C) 2026 Keysight Technologies
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -181,47 +182,37 @@ void Foam::GAMGSolver::agglomerateMatrix
             scalarField& coarseLower = coarseMatrix.lower(nCoarseFaces);
 
             #ifdef FOAM_OFFLOAD
-            labelRange faceRange(0, faceRestrictTargetAddr.size());
+            ListPolicy::for_each_n
+            (
+                faceRestrictTargetAddr.size(),
 
-            apply_policy(faceRange.size(), [&](auto policy)
-            {
-                std::for_each
+                GAMG::asymAgglomerate
                 (
-                    policy,
-                    faceRange.begin(),
-                    faceRange.end(),
-                    GAMG::asymAgglomerate
-                    (
-                        coarseUpper,
-                        coarseLower,
-                        fineUpper,
-                        fineLower,
-                        faceFlipMap,
-                        faceRestrictSortAddr,
-                        faceRestrictTargetAddr,
-                        faceRestrictTargetStartAddr
-                    )
-                );
-            });
+                    coarseUpper,
+                    coarseLower,
+                    fineUpper,
+                    fineLower,
+                    faceFlipMap,
+                    faceRestrictSortAddr,
+                    faceRestrictTargetAddr,
+                    faceRestrictTargetStartAddr
+                )
+            );
 
-            apply_policy(faceRange.size(), [&](auto policy)
-            {
-                std::for_each
+            ListPolicy::for_each_n
+            (
+                faceRestrictTargetAddr.size(),
+                GAMG::diagAsymAgglomerate
                 (
-                    policy,
-                    faceRange.begin(),
-                    faceRange.end(),
-                    GAMG::diagAsymAgglomerate
-                    (
-                        coarseDiag,
-                        fineUpper,
-                        fineLower,
-                        faceRestrictSortAddr,
-                        faceRestrictTargetAddr,
-                        faceRestrictTargetStartAddr
-                    )
-                );
-            });
+                    coarseDiag,
+                    fineUpper,
+                    fineLower,
+                    faceRestrictSortAddr,
+                    faceRestrictTargetAddr,
+                    faceRestrictTargetStartAddr
+                )
+            );
+
             #else
             forAll(faceRestrictAddr, fineFacei)
             {
@@ -260,43 +251,31 @@ void Foam::GAMGSolver::agglomerateMatrix
             scalarField& coarseUpper = coarseMatrix.upper(nCoarseFaces);
 
             #ifdef FOAM_OFFLOAD
-            labelRange faceRange(0, faceRestrictTargetAddr.size());
-
-            apply_policy(faceRange.size(), [&](auto policy)
-            {
-                std::for_each
+            ListPolicy::for_each_n
+            (
+                faceRestrictTargetAddr.size(),
+                GAMG::symAgglomerate
                 (
-                    policy,
-                    faceRange.begin(),
-                    faceRange.end(),
-                    GAMG::symAgglomerate
-                    (
-                        coarseUpper,
-                        fineUpper,
-                        faceRestrictSortAddr,
-                        faceRestrictTargetAddr,
-                        faceRestrictTargetStartAddr
+                    coarseUpper,
+                    fineUpper,
+                    faceRestrictSortAddr,
+                    faceRestrictTargetAddr,
+                    faceRestrictTargetStartAddr
                     )
-                );
-            });
+            );
 
-            apply_policy(faceRange.size(), [&](auto policy)
-            {
-                std::for_each
+            ListPolicy::for_each_n
+            (
+                faceRestrictTargetAddr.size(),
+                GAMG::diagSymAgglomerate
                 (
-                    policy,
-                    faceRange.begin(),
-                    faceRange.end(),
-                    GAMG::diagSymAgglomerate
-                    (
-                        coarseDiag,
-                        fineUpper,
-                        faceRestrictSortAddr,
-                        faceRestrictTargetAddr,
-                        faceRestrictTargetStartAddr
-                    )
-                );
-            });
+                    coarseDiag,
+                    fineUpper,
+                    faceRestrictSortAddr,
+                    faceRestrictTargetAddr,
+                    faceRestrictTargetStartAddr
+                )
+            );
             #else
             forAll(faceRestrictAddr, fineFacei)
             {
