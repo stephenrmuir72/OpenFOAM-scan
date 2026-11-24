@@ -154,7 +154,8 @@ inline constexpr bool use_alignment(IntType n) noexcept
 template<class IntType>
 inline constexpr bool use_memory_pool(IntType n) noexcept
 {
-    return (n >= IntType(3000));
+    // return (n >= IntType(3000));
+    return true;
 }
 
 

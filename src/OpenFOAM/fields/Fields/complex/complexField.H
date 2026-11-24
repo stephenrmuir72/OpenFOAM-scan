@@ -166,9 +166,16 @@ UNARY_FUNCTION(complex, complex, log10)
 UNARY_FUNCTION(complex, complex, sin)
 UNARY_FUNCTION(complex, complex, cos)
 UNARY_FUNCTION(complex, complex, tan)
+#ifdef FOAM_OFFLOAD_GFX1152
+// gfx1151/gfx1152: device-side asin/acos/atan not available
+inline complex asin(const complex& z);
+inline complex acos(const complex& z);
+inline complex atan(const complex& z);
+#else
 UNARY_FUNCTION(complex, complex, asin)
 UNARY_FUNCTION(complex, complex, acos)
 UNARY_FUNCTION(complex, complex, atan)
+#endif
 UNARY_FUNCTION(complex, complex, sinh)
 UNARY_FUNCTION(complex, complex, cosh)
 UNARY_FUNCTION(complex, complex, tanh)

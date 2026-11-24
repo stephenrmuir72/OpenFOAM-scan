@@ -88,10 +88,10 @@ void Foam::fvMatrix<Type>::addToInternalField
             indices.end(),
             patchCellReduceFunctor<Type2, decltype(neiFun), decltype(neiOp)>
             (
-                intf,
-                sortStart,
-                sort,
-                addr,
+                intf.data(),
+                sortStart.cdata(),
+                sort.cdata(),
+                addr.cdata(),
                 neiFun,
                 neiOp
             )
@@ -187,10 +187,10 @@ void Foam::fvMatrix<Type>::subtractFromInternalField
             indices.end(),
             patchCellReduceFunctor<Type2, decltype(neiFun), decltype(neiOp)>
             (
-                intf,
-                sortStart,
-                sort,
-                addr,
+                intf.data(),
+                sortStart.cdata(),
+                sort.cdata(),
+                addr.cdata(),
                 neiFun,
                 neiOp
             )
@@ -381,10 +381,10 @@ void Foam::fvMatrix<Type>::addBoundarySource
                             patchCellReduceFunctor<Type, decltype(neiFun),
                                 decltype(neiOp)>
                             (
-                                source,
-                                sortStart,
-                                sort,
-                                patchCells,
+                                source.data(),
+                                sortStart.cdata(),
+                                sort.cdata(),
+                                patchCells.cdata(),
                                 neiFun,
                                 neiOp
                             )
@@ -1608,10 +1608,10 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                             plusEqOp<scalar>
                         >
                         (
-                            D,
-                            patchSortStart,
-                            patchSort,
-                            patchSortCells,
+                            D.data(),
+                            patchSortStart.cdata(),
+                            patchSort.cdata(),
+                            patchSortCells.cdata(),
                             dFun,
                             plusEqOp<scalar>()
                         )
@@ -1629,10 +1629,10 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                             plusEqOp<scalar>
                         >
                         (
-                            sumOff,
-                            patchSortStart,
-                            patchSort,
-                            patchSortCells,
+                            sumOff.data(),
+                            patchSortStart.cdata(),
+                            patchSort.cdata(),
+                            patchSortCells.cdata(),
                             sumOffFun,
                             plusEqOp<scalar>()
                         )
@@ -1683,10 +1683,10 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                             plusEqOp<scalar>
                         >
                         (
-                            D,
-                            patchSortStart,
-                            patchSort,
-                            patchSortCells,
+                            D.data(),
+                            patchSortStart.cdata(),
+                            patchSort.cdata(),
+                            patchSortCells.cdata(),
                             faceOp,
                             plusEqOp<scalar>()
                         )
@@ -1757,16 +1757,20 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
 
     // Ensure the matrix is diagonally dominant...
     // Assumes that the central coefficient is positive and ensures it is
-    labelRange cells(D.size());
+    const labelRange cells(D.size());
 
-    apply_policy(cells.size(), [&](auto policy)
+    apply_policy
+    (
+        cells.size(),
+        [&, D = D.data(), sumOff = sumOff.cdata()]
+        (auto policy)
     {
         std::for_each
         (
             policy,
             cells.begin(),
             cells.end(),
-            [&](const label celli)
+            [&, D, sumOff](const label celli)
             {
                 D[celli] = max(mag(D[celli]), sumOff[celli]);
             }
@@ -1802,9 +1806,17 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                     return component(iCoeffs[facei], 0);
                 };
 
-                labelRange cells(patchSortCells.size());
+                const labelRange cells(patchSortCells.size());
 
-                apply_policy(cells.size(), [&](auto policy)
+                apply_policy
+                (
+                    cells.size(),
+                    [&, D = D.data(), patchSortStart = patchSortStart.cdata(),
+                    patchSort = patchSort.cdata(),
+                    patchSortCells = patchSortCells.cdata(),
+                    iCoeffs = iCoeffs.cdata()
+                    ]
+                    (auto policy)
                 {
                     std::for_each
                     (
@@ -1853,9 +1865,19 @@ void Foam::fvMatrix<Type>::relax(const scalar alpha)
                     return cmptMin(iCoeffs[facei]);
                 };
 
-                labelRange cells(patchSortCells.size());
+                const labelRange cells(patchSortCells.size());
 
-                apply_policy(cells.size(), [&](auto policy)
+                apply_policy
+                (
+                    cells.size(),
+                    [&, D = D.data(),
+                    patchSortStart = patchSortStart.cdata(),
+                    patchSort = patchSort.cdata(),
+                    patchSortCells = patchSortCells.cdata(),
+                    iCoeffs = iCoeffs.cdata()
+                    ]
+
+                    (auto policy)
                 {
                     std::for_each
                     (

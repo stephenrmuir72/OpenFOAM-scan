@@ -284,9 +284,31 @@ UNARY_FUNCTION(complex, complex, log10)
 UNARY_FUNCTION(complex, complex, sin)
 UNARY_FUNCTION(complex, complex, cos)
 UNARY_FUNCTION(complex, complex, tan)
+// #ifdef FOAM_OFFLOAD_GFX1152
+// gfx1151/gfx1152: device-side asin/acos/atan not available — use atan2 fallback
+// asin(z) = atan2(z, sqrt(1 - z*z))
+// acos(z) = atan2(sqrt(1 - z*z), z)
+// atan(z) = atan2(z, 1)
+// inline Foam::complex Foam::asin(const Foam::complex& z)
+// {
+//     return Foam::atan2(z, Foam::sqrt(Foam::complex(1) - z*z));
+// }
+
+// inline Foam::complex Foam::acos(const Foam::complex& z)
+// {
+//     return Foam::atan2(Foam::sqrt(Foam::complex(1) - z*z), z);
+// }
+
+// inline Foam::complex Foam::atan(const Foam::complex& z)
+// {
+//     return Foam::atan2(z, Foam::complex(1));
+// }
+// #else
+#ifndef FOAM_OFFLOAD
 UNARY_FUNCTION(complex, complex, asin)
 UNARY_FUNCTION(complex, complex, acos)
 UNARY_FUNCTION(complex, complex, atan)
+#endif
 UNARY_FUNCTION(complex, complex, sinh)
 UNARY_FUNCTION(complex, complex, cosh)
 UNARY_FUNCTION(complex, complex, tanh)

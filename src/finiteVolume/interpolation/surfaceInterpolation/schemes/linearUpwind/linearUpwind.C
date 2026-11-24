@@ -85,20 +85,43 @@ Foam::linearUpwind<Type>::correction
 
         labelRange faceRange(faceFlux.size());
 
-        apply_policy(faceFlux.size(), [&](auto policy)
+        // Capture raw pointers by value — the GPU kernel must access them
+        // and references to UList/Field point to host memory.
+        const scalar* __restrict__ faceFluxPtr = faceFlux.cdata();
+        const label* __restrict__ ownerPtr = owner.cdata();
+        const label* __restrict__ neighbourPtr = neighbour.cdata();
+        const vector* __restrict__ CfPtr = Cf.cdata();
+        const vector* __restrict__ CPtr = C.cdata();
+        const vector* __restrict__ gradVfPtr = gradVf.cdata();
+        Type* __restrict__ sfCorrPtr = sfCorr.data();
+
+        apply_policy(faceFlux.size(),
+        [
+            &,
+            faceFluxPtr,
+            ownerPtr,
+            neighbourPtr,
+            CfPtr,
+            CPtr,
+            gradVfPtr,
+            cmpt,
+            sfCorrPtr
+        ](auto policy)
         {
             std::for_each
             (
                 policy,
                 faceRange.begin(),
                 faceRange.end(),
-                [&](size_t facei)
+                [faceFluxPtr, ownerPtr, neighbourPtr, CfPtr, CPtr, gradVfPtr, cmpt, sfCorrPtr]
+                (size_t facei)
                 {
                     const label celli =
-                        (faceFlux[facei] > 0) ? owner[facei] : neighbour[facei];
+                        (faceFluxPtr[facei] > 0)
+                      ? ownerPtr[facei] : neighbourPtr[facei];
 
-                    setComponent(sfCorr[facei], cmpt) =
-                        (Cf[facei] - C[celli]) & gradVf[celli];
+                    setComponent(sfCorrPtr[facei], cmpt) =
+                        (CfPtr[facei] - CPtr[celli]) & gradVfPtr[celli];
                 }
             );
         });
@@ -127,30 +150,54 @@ Foam::linearUpwind<Type>::correction
                     Cf.boundaryField()[patchi].patch().delta()
                 );
 
-                labelRange faceRange(pOwner.size());
+                const labelRange faceRange(pOwner.size());
 
-                apply_policy(pOwner.size(), [&](auto policy)
+                // Capture raw pointers by value
+                const label* __restrict__ pOwnerPtr = pOwner.cdata();
+                const vector* __restrict__ pCfPtr = pCf.cdata();
+                const scalar* __restrict__ pFaceFluxPtr = pFaceFlux.cdata();
+                const vector* __restrict__ pdPtr = pd.cdata();
+                const vector* __restrict__ pGradVfNeiPtr = pGradVfNei.cdata();
+                const vector* __restrict__ CPtr = C.cdata();
+                const vector* __restrict__ gradVfPtr = gradVf.cdata();
+                Type* __restrict__ pSfCorrPtr = pSfCorr.data();
+
+                apply_policy(pOwner.size(),
+                [
+                    &,
+                    pOwnerPtr,
+                    pCfPtr,
+                    pFaceFluxPtr,
+                    pdPtr,
+                    pGradVfNeiPtr,
+                    CPtr,
+                    gradVfPtr,
+                    cmpt,
+                    pSfCorrPtr
+                ](auto policy)
                 {
                     std::for_each
                     (
                         policy,
                         faceRange.begin(),
                         faceRange.end(),
-                        [&](size_t facei)
+                        [pOwnerPtr, pCfPtr, pFaceFluxPtr, pdPtr,
+                         pGradVfNeiPtr, CPtr, gradVfPtr, cmpt, pSfCorrPtr]
+                        (size_t facei)
                         {
-                            label own = pOwner[facei];
+                            label own = pOwnerPtr[facei];
 
-                            if (pFaceFlux[facei] > 0)
+                            if (pFaceFluxPtr[facei] > 0)
                             {
-                                setComponent(pSfCorr[facei], cmpt) =
-                                    (pCf[facei] - C[own])
-                                  & gradVf[own];
+                                setComponent(pSfCorrPtr[facei], cmpt) =
+                                    (pCfPtr[facei] - CPtr[own])
+                                  & gradVfPtr[own];
                             }
                             else
                             {
-                                setComponent(pSfCorr[facei], cmpt) =
-                                    (pCf[facei] - pd[facei] - C[own])
-                                  & pGradVfNei[facei];
+                                setComponent(pSfCorrPtr[facei], cmpt) =
+                                    (pCfPtr[facei] - pdPtr[facei] - CPtr[own])
+                                  & pGradVfNeiPtr[facei];
                             }
                         }
                     );
@@ -214,18 +261,39 @@ Foam::linearUpwind<Foam::vector>::correction
 
     labelRange faceRange(faceFlux.size());
 
-    apply_policy(faceFlux.size(), [&](auto policy)
+    // Capture raw pointers by value
+    const scalar* __restrict__ faceFluxPtr = faceFlux.cdata();
+    const label* __restrict__ ownerPtr = owner.cdata();
+    const label* __restrict__ neighbourPtr = neighbour.cdata();
+    const vector* __restrict__ CfPtr = Cf.cdata();
+    const vector* __restrict__ CPtr = C.cdata();
+    const tensor* __restrict__ gradVfPtr = gradVf.cdata();
+    vector* __restrict__ sfCorrPtr = sfCorr.data();
+
+    apply_policy(faceFlux.size(),
+    [
+        faceFluxPtr,
+        ownerPtr,
+        neighbourPtr,
+        CfPtr,
+        CPtr,
+        gradVfPtr,
+        sfCorrPtr,
+        faceRange
+    ](auto policy)
     {
         std::for_each
         (
             policy,
             faceRange.begin(),
             faceRange.end(),
-            [&](size_t facei)
+            [faceFluxPtr, ownerPtr, neighbourPtr, CfPtr, CPtr, gradVfPtr, sfCorrPtr]
+            (size_t facei)
             {
                 const label celli =
-                    (faceFlux[facei] > 0) ? owner[facei] : neighbour[facei];
-                sfCorr[facei] = (Cf[facei] - C[celli]) & gradVf[celli];
+                    (faceFluxPtr[facei] > 0)
+                  ? ownerPtr[facei] : neighbourPtr[facei];
+                sfCorrPtr[facei] = (CfPtr[facei] - CPtr[celli]) & gradVfPtr[celli];
             }
         );
     });
@@ -251,30 +319,53 @@ Foam::linearUpwind<Foam::vector>::correction
             // Build the d-vectors
             vectorField pd(Cf.boundaryField()[patchi].patch().delta());
 
-            labelRange faceRange(pOwner.size());
+            const labelRange faceRange(pOwner.size());
 
-            apply_policy(pOwner.size(), [&](auto policy)
+            // Capture raw pointers by value
+            const label* __restrict__ pOwnerPtr = pOwner.cdata();
+            const vector* __restrict__ pCfPtr = pCf.cdata();
+            const scalar* __restrict__ pFaceFluxPtr = pFaceFlux.cdata();
+            const tensor* __restrict__ pGradVfNeiPtr = pGradVfNei.cdata();
+            const vector* __restrict__ pdPtr = pd.cdata();
+            const vector* __restrict__ CPtr = C.cdata();
+            const tensor* __restrict__ gradVfPtr = gradVf.cdata();
+            vector* __restrict__ pSfCorrPtr = pSfCorr.data();
+
+            apply_policy(pOwner.size(),
+            [
+                pOwnerPtr,
+                pCfPtr,
+                pFaceFluxPtr,
+                pGradVfNeiPtr,
+                pdPtr,
+                CPtr,
+                gradVfPtr,
+                pSfCorrPtr,
+                faceRange
+            ](auto policy)
             {
                 std::for_each
                 (
                     policy,
                     faceRange.begin(),
                     faceRange.end(),
-                    [&](size_t facei)
+                    [pOwnerPtr, pCfPtr, pFaceFluxPtr, pGradVfNeiPtr,
+                     pdPtr, CPtr, gradVfPtr, pSfCorrPtr]
+                    (size_t facei)
                     {
-                        label own = pOwner[facei];
+                        label own = pOwnerPtr[facei];
 
-                        if (pFaceFlux[facei] > 0)
+                        if (pFaceFluxPtr[facei] > 0)
                         {
-                            pSfCorr[facei] =
-                                (pCf[facei] - C[own])
-                              & gradVf[own];
+                            pSfCorrPtr[facei] =
+                                (pCfPtr[facei] - CPtr[own])
+                              & gradVfPtr[own];
                         }
                         else
                         {
-                            pSfCorr[facei] =
-                                (pCf[facei] - pd[facei] - C[own])
-                              & pGradVfNei[facei];
+                            pSfCorrPtr[facei] =
+                                (pCfPtr[facei] - pdPtr[facei] - CPtr[own])
+                              & pGradVfNeiPtr[facei];
                         }
                     }
                 );

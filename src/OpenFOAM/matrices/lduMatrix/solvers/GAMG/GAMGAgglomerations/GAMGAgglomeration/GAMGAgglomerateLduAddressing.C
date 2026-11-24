@@ -64,14 +64,14 @@ void Foam::GAMGAgglomeration::createSort
     labelList listTmp(list);
 
     // Sort keys and permute indices together
-    apply_policy(n, [&](auto policy)
+    apply_policy(n, [&, listTmp = listTmp.cdata()](auto policy)
     {
         std::stable_sort
         (
             policy,
             sort.begin(),
             sort.end(),
-            [&](const label a, const label b)
+            [=](const label a, const label b)
             {
                 return listTmp[a] < listTmp[b];
             }
@@ -100,10 +100,10 @@ void Foam::GAMGAgglomeration::createTarget
     labelList listSort(n);
     labelList flags(n);
     labelList offsets(n);
-    labelRange range(n);
+    const labelRange range(n);
 
     //  Sort list
-    apply_policy(n, [&](auto policy)
+    apply_policy(n, [&, sort = sort.cdata(), list = list.cdata()](auto policy)
     {
         std::transform
         (
@@ -111,7 +111,7 @@ void Foam::GAMGAgglomeration::createTarget
             range.begin(),
             range.end(),
             listSort.begin(),
-            [&](const label i)
+            [=](const label i)
             {
                 return list[sort[i]];
             }
@@ -119,15 +119,15 @@ void Foam::GAMGAgglomeration::createTarget
     });
 
     // Mark the first entry of every unique target group
-    apply_policy(n, [&](auto policy)
+    apply_policy(n, [&, flags = flags.data(), listSort = listSort.cdata()](auto policy)
     {
         std::transform
         (
             policy,
             range.begin(),
             range.end(),
-            flags.begin(),
-            [&](const label i)
+            flags,  //.begin(),
+            [=](const label i)
             {
                 return (i == 0 || listSort[i] != listSort[i - 1]) ? 1 : 0;
             }
@@ -148,30 +148,37 @@ void Foam::GAMGAgglomeration::createTarget
     });
 
     // offsets[i] gives the compressed target index for group starts
-    apply_policy(n, [&](auto policy)
+    apply_policy(n, [&, offsets = offsets.data()](auto policy)
     {
         std::exclusive_scan
         (
             policy,
             flags.begin(),
             flags.end(),
-            offsets.begin(),
+            offsets,    //.begin(),
             label(0)
         );
     });
-
     target.setSize(targetSize);
     targetStart.setSize(targetSize + 1);
 
+
     // Scatter unique target values and their start offsets
-    apply_policy(n, [&](auto policy)
+    apply_policy
+    (
+        n,
+        [=, flags = flags.cdata(), offsets = offsets.cdata(),
+         listSort = listSort.cdata(), target = target.data(),
+         targetStart = targetStart.data()
+        ]
+        (auto policy)
     {
         std::for_each
         (
             policy,
             range.begin(),
             range.end(),
-            [&](const label i)
+            [=](const label i)
             {
                 if (flags[i])
                 {
@@ -183,7 +190,7 @@ void Foam::GAMGAgglomeration::createTarget
         );
     });
     targetStart[targetSize] = n;
- }
+}
 
 
 void Foam::GAMGAgglomeration::buildFullRestrictAddr

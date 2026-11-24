@@ -51,17 +51,17 @@ void Foam::lduMatrix::sumDiag()
     #ifdef FOAM_OFFLOAD
     matrixOperation
     (
-        Diag.begin(),
+        Diag,
         Diag,
         lduAddr(),
         matrixCoeffsFunctor<scalar, unityUnaryOperatorFunctor<scalar, scalar>>
         (
-            Lower,
+            Lower.cdata(),
             unityUnaryOperatorFunctor<scalar, scalar>()
         ),
         matrixCoeffsFunctor<scalar, unityUnaryOperatorFunctor<scalar, scalar>>
         (
-            Upper,
+            Upper.cdata(),
             unityUnaryOperatorFunctor<scalar, scalar>()
         )
     );
@@ -86,17 +86,17 @@ void Foam::lduMatrix::negSumDiag()
     #ifdef FOAM_OFFLOAD
     matrixOperation
     (
-        Diag.begin(),
+        Diag,
         Diag,
         lduAddr(),
         matrixCoeffsFunctor<scalar, negateUnaryOperatorFunctor<scalar, scalar>>
         (
-            Lower,
+            Lower.cdata(),
             negateUnaryOperatorFunctor<scalar, scalar>()
         ),
         matrixCoeffsFunctor<scalar, negateUnaryOperatorFunctor<scalar, scalar>>
         (
-            Upper,
+            Upper.cdata(),
             negateUnaryOperatorFunctor<scalar, scalar>()
         )
     );
@@ -121,17 +121,17 @@ void Foam::lduMatrix::sumMagOffDiag
     #ifdef FOAM_OFFLOAD
     matrixOperation
     (
-        sumOff.begin(),
+        sumOff,
         sumOff,
         lduAddr(),
         matrixCoeffsFunctor<scalar, magUnaryFunctionFunctor<scalar, scalar>>
         (
-            upper(),
+            upper().cdata(),
             magUnaryFunctionFunctor<scalar,scalar>()
         ),
         matrixCoeffsFunctor<scalar, magUnaryFunctionFunctor<scalar, scalar>>
         (
-            lower(),
+            lower().cdata(),
             magUnaryFunctionFunctor<scalar, scalar>()
         )
     );

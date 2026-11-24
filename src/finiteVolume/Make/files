@@ -389,6 +389,7 @@ limitedSchemes = $(surfaceInterpolation)/limitedSchemes
 $(limitedSchemes)/limitedSurfaceInterpolationScheme/limitedSurfaceInterpolationSchemes.C
 $(limitedSchemes)/upwind/upwind.C
 $(limitedSchemes)/blended/blended.C
+/*
 $(limitedSchemes)/Gamma/Gamma.C
 $(limitedSchemes)/SFCD/SFCD.C
 $(limitedSchemes)/Minmod/Minmod.C
@@ -406,12 +407,13 @@ $(limitedSchemes)/filteredLinear/filteredLinear.C
 $(limitedSchemes)/filteredLinear2/filteredLinear2.C
 $(limitedSchemes)/filteredLinear3/filteredLinear3.C
 $(limitedSchemes)/limitWith/limitWith.C
-
+*/
 multivariateSchemes = $(surfaceInterpolation)/multivariateSchemes
 $(multivariateSchemes)/multivariateSurfaceInterpolationScheme/multivariateSurfaceInterpolationSchemes.C
 $(multivariateSchemes)/multivariateSelectionScheme/multivariateSelectionSchemes.C
 $(multivariateSchemes)/multivariateIndependentScheme/multivariateIndependentSchemes.C
 $(multivariateSchemes)/upwind/multivariateUpwind.C
+/*
 $(multivariateSchemes)/Gamma/multivariateGamma.C
 $(multivariateSchemes)/vanLeer/multivariateVanLeer.C
 $(multivariateSchemes)/Minmod/multivariateMinmod.C
@@ -419,6 +421,7 @@ $(multivariateSchemes)/SuperBee/multivariateSuperBee.C
 $(multivariateSchemes)/MUSCL/multivariateMUSCL.C
 $(multivariateSchemes)/limitedLinear/multivariateLimitedLinear.C
 $(multivariateSchemes)/limitedCubic/multivariateLimitedCubic.C
+*/
 
 finiteVolume/fv/fv.C
 

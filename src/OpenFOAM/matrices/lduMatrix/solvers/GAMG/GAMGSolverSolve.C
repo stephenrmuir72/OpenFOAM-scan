@@ -474,16 +474,20 @@ void Foam::GAMGSolver::Vcycle
         );
     }
 
-    labelRange cellRange(psi.size());
+    const labelRange cellRange(psi.size());
 
-    apply_policy(cellRange.size(), [&](auto policy)
+    apply_policy
+    (
+        cellRange.size(),
+        [&, finestCorrection = finestCorrection.cdata(), psi = psi.data()]
+        (auto policy)
     {
         std::for_each
         (
             policy,
             cellRange.begin(),
             cellRange.end(),
-            [&](const auto& i)
+            [=](const auto& i)
             {
                 psi[i] += finestCorrection[i];
             }

@@ -44,9 +44,13 @@ namespace Foam
     template<class Type, class OwnFun, class NeiFun, class OwnOp, class NeiOp>
     struct lduAddressingFunctor
     {
-        const labelUList& ownStart_;
-        const labelUList& neiStart_;
-        const labelUList& losort_;
+        // Store raw pointers (captured by value), not references.
+        // References to UList/Field point to host memory that the GPU
+        // cannot access — the GPU kernel must dereference these pointers
+        // and they must be valid device addresses (or mapped/pinned).
+        const label* __restrict__ ownStartPtr_;
+        const label* __restrict__ neiStartPtr_;
+        const label* __restrict__ losortPtr_;
 
         OwnFun ownFun_;
         NeiFun neiFun_;
@@ -55,42 +59,42 @@ namespace Foam
 
         lduAddressingFunctor
         (
-            const labelUList& ownStart,
-            const labelUList& neiStart,
-            const labelUList& losort,
+            const label* __restrict__ ownStart,
+            const label* __restrict__ neiStart,
+            const label* __restrict__ losort,
             const OwnFun ownFun,
             const NeiFun neiFun,
             const OwnOp ownOp,
             const NeiOp neiOp
         )
         :
-            ownStart_(ownStart),
-            neiStart_(neiStart),
-            losort_(losort),
+            ownStartPtr_(ownStart),
+            neiStartPtr_(neiStart),
+            losortPtr_(losort),
             ownFun_(ownFun),
             neiFun_(neiFun),
             ownOp_(ownOp),
             neiOp_(neiOp)
         {}
 
-        Type operator()(const label& id,const Type& d)
+        Type operator()(const label& id, const Type& d)
         {
             Type out = d;
-            label oStart = ownStart_[id];
-            label oSize = ownStart_[id+1] - oStart;
-    
-            label nStart = neiStart_[id];
-            label nSize = neiStart_[id+1] - nStart;
-    
-            for(label i = 0; i<oSize; i++)
+            label oStart = ownStartPtr_[id];
+            label oSize = ownStartPtr_[id+1] - oStart;
+
+            label nStart = neiStartPtr_[id];
+            label nSize = neiStartPtr_[id+1] - nStart;
+
+            for (label i = 0; i < oSize; ++i)
             {
                 label face = oStart + i;
                 out = ownOp_(out, ownFun_(id, face));
             }
-    
-            for(label i = 0; i<nSize; i++)
+
+            for (label i = 0; i < nSize; ++i)
             {
-                label face = losort_[nStart + i];
+                label face = losortPtr_[nStart + i];
                 out = neiOp_(out, neiFun_(id, face));
             }
             return out;
@@ -101,28 +105,29 @@ namespace Foam
     template<class Type, class LUType, class Op>
     struct matrixCoeffsMultiplyFunctor
     {
-        const Field<Type>& psi_;
-        const scalarField& coeffs_;
-        const labelUList& addr_;
+        // Store raw pointers (captured by value), not references.
+        const Type* __restrict__ psiPtr_;
+        const scalar* __restrict__ coeffsPtr_;
+        const label* __restrict__ addrPtr_;
         Op op_;
 
         matrixCoeffsMultiplyFunctor
         (
-            const Field<Type>& psi,
-            const scalarField& coeffs,
-            const labelUList& addr,
+            const Type* __restrict__ psi,
+            const scalar* __restrict__ coeffs,
+            const label* __restrict__ addr,
             const Op& op
         )
         :
-            psi_(psi),
-            coeffs_(coeffs),
-            addr_(addr),
+            psiPtr_(psi),
+            coeffsPtr_(coeffs),
+            addrPtr_(addr),
             op_(op)
         {}
 
         Type operator()(const label& cell, const label& face)
         {
-            return op_(coeffs_[face]*psi_[addr_[face]]);
+            return op_(coeffsPtr_[face]*psiPtr_[addrPtr_[face]]);
         }
     };
 
@@ -130,31 +135,32 @@ namespace Foam
     template<class Type, class Op>
     struct matrixCoeffsFunctor
     {
-        const scalarField& coeffs_;
+        // Store raw pointer (captured by value), not a reference.
+        const scalar* __restrict__ coeffsPtr_;
         Op op_;
 
         matrixCoeffsFunctor
         (
-            const scalarField& coeffs,
+            const scalar* __restrict__ coeffs,
             const Op& op
         )
         :
-            coeffs_(coeffs),
+            coeffsPtr_(coeffs),
             op_(op)
         {}
 
         Type operator()(const label& cell, const label& face)
         {
-            return op_(coeffs_[face]);
+            return op_(coeffsPtr_[face]);
         }
     };
 
 
-    template<class Type, class Input, class OwnFun, class NeiFun, class OwnOp, 
+    template<class Type, class OwnFun, class NeiFun, class OwnOp,
         class NeiOp>
     inline void matrixOperation
     (
-        Input in,
+        const List<Type>& in,
         List<Type>& out,
         const lduAddressing& addr,
         OwnFun o,
@@ -164,7 +170,25 @@ namespace Foam
     )
     {
         const labelRange indices(out.size());
-        apply_policy(indices.size(), [&](auto policy)
+
+        // Capture raw pointers from the lduAddressing by value.
+        // The lduAddressing object outlives this lambda (it's a reference
+        // passed in), so the cdata() pointers remain valid.
+        apply_policy
+        (
+        indices.size(),
+        [
+            in = in.cbegin(),
+            ownStart = addr.ownerStartAddr().cdata(),
+            neiStart = addr.losortStartAddr().cdata(),
+            losort = addr.losortAddr().cdata(),
+            out = out.begin(),
+            &indices,
+            o,
+            n,
+            oo,
+            no
+        ](auto policy)
         {
             std::transform
             (
@@ -172,12 +196,12 @@ namespace Foam
                 indices.begin(),
                 indices.end(),
                 in,
-                out.begin(),
+                out,
                 lduAddressingFunctor<Type, OwnFun, NeiFun, OwnOp, NeiOp>
                 (
-                    addr.ownerStartAddr(),
-                    addr.losortStartAddr(),
-                    addr.losortAddr(),
+                    ownStart,
+                    neiStart,
+                    losort,
                     o,
                     n,
                     oo,
@@ -188,10 +212,10 @@ namespace Foam
     }
 
 
-    template<class Type, class Input, class OwnFun, class NeiFun>
+    template<class Type, class OwnFun, class NeiFun>
     inline void matrixOperation
     (
-        Input in,
+        const List<Type>& in,
         List<Type>& out,
         const lduAddressing& addr,
         OwnFun o,

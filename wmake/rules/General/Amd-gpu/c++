@@ -3,11 +3,18 @@
 #------------------------------------------------------------------------------
 SUFFIXES   += .C .cc .cpp .cxx
 
+#CC         := amdclang++$(COMPILER_VERSION) -std=c++17 --hipstdpar --offload-arch=$(ROCM_GPU) -DFOAM_OFFLOAD -Wgcc-install-dir-libstdcxx
 CC         := amdclang++$(COMPILER_VERSION) -std=c++17 --hipstdpar --offload-arch=$(ROCM_GPU) -DFOAM_OFFLOAD
 
 c++ARCH    :=
 c++DBUG    :=
 c++OPT     := -O2
+
+# Define architecture-specific macros for device-side fallbacks
+ifeq ($(ROCM_GPU),gfx1152)
+c++OPT += -DFOAM_OFFLOAD_GFX1152
+endif
+
 ptFLAGS    := -DNoRepository -ftemplate-depth-100
 
 c++WARN     = \

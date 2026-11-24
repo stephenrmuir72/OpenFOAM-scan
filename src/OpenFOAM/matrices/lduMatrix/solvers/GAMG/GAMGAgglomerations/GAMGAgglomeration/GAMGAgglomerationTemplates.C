@@ -50,7 +50,14 @@ void Foam::GAMGAgglomeration::restrictField
 
     labelRange cellRange(targetStart.size()-1);
 
-    apply_policy(cellRange.size(), [&](auto policy)
+    apply_policy
+    (
+        cellRange.size(),
+        [
+            &, cf = cf.data(), ff = ff.cdata(), sort = sort.cdata(),
+            target = target.cdata(), targetStart = targetStart.cdata()
+        ]
+        (auto policy)
     {
         std::for_each
         (
@@ -173,7 +180,14 @@ void Foam::GAMGAgglomeration::restrictFaceField
 
     labelRange cellRange(targetStart.size()-1);
 
-    apply_policy(cellRange.size(), [&](auto policy)
+    apply_policy
+    (
+        cellRange.size(),
+        [
+            &, cf = cf.data(), ff = ff.cdata(), sort = sort.cdata(),
+            target = target.cdata(), targetStart = targetStart.cdata()
+        ]
+        (auto policy)
     {
         std::for_each
         (
@@ -241,14 +255,21 @@ void Foam::GAMGAgglomeration::prolongField
 
         labelRange cellRange(fineToCoarse.size());
 
-        apply_policy(cellRange.size(), [&](auto policy)
+        apply_policy
+        (
+            cellRange.size(),
+            [
+                &, ff = ff.data(), allCf = allCf.cdata(),
+                fineToCoarse = fineToCoarse.cdata()
+            ]
+            (auto policy)
         {
             std::for_each
             (
                 policy,
                 cellRange.begin(),
                 cellRange.end(),
-                [&](const auto& i)
+                [=](const auto& i)
                 {
                     ff[i] = allCf[fineToCoarse[i]];
                 }
@@ -259,14 +280,21 @@ void Foam::GAMGAgglomeration::prolongField
     {
         labelRange cellRange(fineToCoarse.size());
 
-        apply_policy(cellRange.size(), [&](auto policy)
+        apply_policy
+        (
+            cellRange.size(),
+            [
+                &, ff = ff.data(), cf = cf.cdata(),
+                fineToCoarse = fineToCoarse.cdata()
+            ]
+            (auto policy)
         {
             std::for_each
             (
                 policy,
                 cellRange.begin(),
                 cellRange.end(),
-                [&](const auto& i)
+                [=](const auto& i)
                 {
                     ff[i] = cf[fineToCoarse[i]];
                 }
@@ -313,14 +341,21 @@ const Foam::Field<Type>& Foam::GAMGAgglomeration::prolongField
 
         labelRange cellRange(fineToCoarse.size());
 
-        apply_policy(cellRange.size(), [&](auto policy)
+        apply_policy
+        (
+            cellRange.size(),
+            [
+                =, ff = ff.data(), allCf = allCf.cdata(),
+                fineToCoarse = fineToCoarse.cdata()
+            ]
+            (auto policy)
         {
             std::for_each
             (
                 policy,
                 cellRange.begin(),
                 cellRange.end(),
-                [&](const auto& i)
+                [=](const auto& i)
                 {
                     ff[i] = allCf[fineToCoarse[i]];
                 }
@@ -332,14 +367,21 @@ const Foam::Field<Type>& Foam::GAMGAgglomeration::prolongField
     {
         labelRange cellRange(fineToCoarse.size());
 
-        apply_policy(cellRange.size(), [&](auto policy)
+        apply_policy
+        (
+            cellRange.size(),
+            [
+                =, ff = ff.data(), cf = cf.cdata(),
+                fineToCoarse = fineToCoarse.cdata()
+            ]
+            (auto policy)
         {
             std::for_each
             (
                 policy,
                 cellRange.begin(),
                 cellRange.end(),
-                [&](const auto& i)
+                [=](const auto& i)
                 {
                     ff[i] = cf[fineToCoarse[i]];
                 }

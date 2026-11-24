@@ -82,18 +82,20 @@ inline void Foam::UList<T>::fill_uniform(const T& val)
     {
         // For arithmetic types, we can use a more efficient fill
         // operation that avoids the overhead of the generic algorithm.
-        apply_policy(this->size_, [&](auto policy)
+        apply_policy(this->size_,
+        [
+            v = this->v_,
+            size = this->size_,
+            val
+        ](auto policy)
         {
-            std::fill_n(policy, this->v_, this->size_, val);
+            std::fill_n(policy, v, size, val);
         });
     }
     else
     #endif
     {
-        std::fill_n
-        (
-            this->v_, this->size_, val
-        );
+        std::fill_n(this->v_, this->size_, val);
     }
 }
 
@@ -101,40 +103,63 @@ inline void Foam::UList<T>::fill_uniform(const T& val)
 template<class T>
 inline void Foam::UList<T>::fill_uniform(Foam::zero)
 {
-    if constexpr (std::is_arithmetic_v<T>)
+    if constexpr (is_contiguous_v<T>)
     {
-        // Can dispatch with
-        // - std::execution::par_unseq
-        // - std::execution::unseq
-        #ifdef FOAM_OFFLOAD
-        apply_policy(this->size_, [&](auto policy)
+        if constexpr (std::is_constructible_v<T, int>)
         {
-            std::fill_n(policy, this->v_, this->size_, T(0));
-        });
-        #else
-        std::fill_n
-        (
-            this->v_, this->size_, T(0)
-        );
-        #endif
-
-    }
-    else if constexpr (is_contiguous_v<T>)
-    {
-        // Can dispatch with
-        // - std::execution::par_unseq
-        // - std::execution::unseq
-        #ifdef FOAM_OFFLOAD
-        apply_policy(this->size_bytes(), [&](auto policy)
+            // Can dispatch with
+            // - std::execution::par_unseq
+            // - std::execution::unseq
+            const T val(0);
+            #ifdef FOAM_OFFLOAD
+            apply_policy(this->size_,
+            [
+                v = this->v_,
+                size = this->size_,
+                val
+            ](auto policy)
+            {
+                std::fill_n(policy, v, size, val);
+            });
+            #else
+            std::fill_n(this->v_, this->size_, val);
+            #endif
+        }
+        else if constexpr (std::is_constructible_v<T, Foam::zero>)
         {
-            std::fill_n(policy, this->data_bytes(), this->size_bytes(), char(0));
-        });
-        #else
-        std::fill_n
-        (
-            this->data_bytes(), this->size_bytes(), char(0)
-        );
-        #endif
+            const T val(Foam::zero{});
+            #ifdef FOAM_OFFLOAD
+            apply_policy(this->size_,
+            [
+                v = this->v_,
+                size = this->size_,
+                val
+            ](auto policy)
+            {
+                std::fill_n(policy, v, size, val);
+            });
+            #else
+            std::fill_n(this->v_, this->size_, val);
+            #endif
+        }
+        else
+        {
+            // Fill as character stream
+            const char val(0);
+            #ifdef FOAM_OFFLOAD
+            apply_policy(this->size_bytes(),
+            [
+                v = this->data_bytes(),
+                size = this->size_bytes(),
+                val
+            ](auto policy)
+            {
+                std::fill_n(policy, v, size, val);
+            });
+            #else
+            std::fill_n(this->data_bytes(), this->size_bytes(), val);
+            #endif
+        }
     }
     else
     {

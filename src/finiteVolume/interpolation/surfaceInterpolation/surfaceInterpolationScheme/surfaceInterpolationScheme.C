@@ -177,7 +177,14 @@ Foam::surfaceInterpolationScheme<Type>::interpolate
             policy,
             faceRange.begin(),
             faceRange.end(),
-            [&](const label fi)
+            [
+                sfi = sfi.data(),
+                lambda = lambda.cdata(),
+                vfi = vfi.cdata(),
+                P = P.cdata(),
+                N = N.cdata(),
+                y = y.cdata()
+            ](const label fi)
             {
                 sfi[fi] = lambda[fi]*vfi[P[fi]] + y[fi]*vfi[N[fi]];
             }
@@ -272,9 +279,9 @@ Foam::surfaceInterpolationScheme<Type>::dotInterpolate
 
     Field<RetType>& sfi = sf.primitiveFieldRef();
 
-    const typename SFType::Internal& Sfi = Sf.internalField();
+    // const typename SFType::Internal& Sfi = Sf.internalField();
 
-    labelRange faceRange(P.size());
+    const labelRange faceRange(P.size());
 
     apply_policy(P.size(), [&](auto policy)
     {
@@ -286,7 +293,14 @@ Foam::surfaceInterpolationScheme<Type>::dotInterpolate
             policy,
             faceRange.begin(),
             faceRange.end(),
-            [&](const label fi)
+            [
+                sfi = sfi.data(),
+                Sfi = Sf.internalField(),
+                lambda = lambda.cdata(),
+                vfi = vfi.cdata(),
+                P = P.cdata(),
+                N = N.cdata()
+            ](const label fi)
             {
                 sfi[fi] = Sfi[fi] & (lambda[fi]*(vfi[P[fi]] - vfi[N[fi]])
                     + vfi[N[fi]]);

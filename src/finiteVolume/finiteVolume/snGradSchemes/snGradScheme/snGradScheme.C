@@ -125,6 +125,13 @@ snGradScheme<Type>::snGrad
     const labelUList& owner = mesh.owner();
     const labelUList& neighbour = mesh.neighbour();
 
+    // Extract raw pointers for GPU offloading
+    const scalar* __restrict__ deltaCoeffsPtr = deltaCoeffs.cdata();
+    const label* __restrict__ ownerPtr = owner.cdata();
+    const label* __restrict__ neighbourPtr = neighbour.cdata();
+    const Type* __restrict__ vfPtr = vf.cdata();
+    Type* __restrict__ ssfPtr = ssf.data();
+
     labelRange faceRange(0, owner.size());
 
     apply_policy(static_cast<std::size_t>(owner.size()), [&](auto policy)
@@ -134,10 +141,12 @@ snGradScheme<Type>::snGrad
             policy,
             faceRange.begin(),
             faceRange.end(),
-            [&](const label facei)
+            [deltaCoeffsPtr, ownerPtr, neighbourPtr, vfPtr, ssfPtr]
+            (const label facei)
             {
-                ssf[facei] =
-                   deltaCoeffs[facei]*(vf[neighbour[facei]] - vf[owner[facei]]);
+                ssfPtr[facei] =
+                   deltaCoeffsPtr[facei]*(
+                       vfPtr[neighbourPtr[facei]] - vfPtr[ownerPtr[facei]]);
             }
         );
     });

@@ -52,8 +52,6 @@ void surfaceIntegrate
 {
     const fvMesh& mesh = ssf.mesh();
 
-    const Field<Type>& issf = ssf;
-
     #ifdef FOAM_OFFLOAD
     const lduAddressing& addr = mesh.lduAddr();
 
@@ -61,7 +59,10 @@ void surfaceIntegrate
     const labelUList& neiStart = addr.losortStartAddr();
     const labelUList& losort = addr.losortAddr();
 
-    auto faceOp = [&](const label, const label facei)
+    auto faceOp =
+    [
+        issf = ssf.internalField().cdata()
+    ](const label, const label facei)
     {
         return issf[facei];
     };
@@ -86,9 +87,9 @@ void surfaceIntegrate
             >
             (
                 pTraits<Type>::zero,
-                ownStart,
-                neiStart,
-                losort,
+                ownStart.cdata(),
+                neiStart.cdata(),
+                losort.cdata(),
                 faceOp,
                 faceOp,
                 plusEqOp<Type>(),
@@ -97,6 +98,7 @@ void surfaceIntegrate
         );
     });
     #else
+    const Field<Type>& issf = ssf;
     const labelUList& owner = mesh.owner();
     const labelUList& neighbour = mesh.neighbour();
 
@@ -109,9 +111,6 @@ void surfaceIntegrate
 
     forAll(mesh.boundary(), patchi)
     {
-        const labelUList& pFaceCells =
-            mesh.boundary()[patchi].faceCells();
-
         const fvsPatchField<Type>& pssf = ssf.boundaryField()[patchi];
 
         #ifdef FOAM_OFFLOAD
@@ -121,9 +120,9 @@ void surfaceIntegrate
 
         labelRange indices(patchCells.size());
 
-        auto neiFun = [&pssf](const label, const label facei)
+        auto neiFun = [pssfData = pssf.cdata()](const label, const label facei)
         {
-            return pssf[facei];
+            return pssfData[facei];
         };
 
         auto neiOp = [](Type& result, const Type& value)
@@ -141,16 +140,19 @@ void surfaceIntegrate
                 patchCellReduceFunctor<Type, decltype(neiFun),
                     decltype(neiOp)>
                 (
-                    ivf,
-                    neiStart,
-                    losort,
-                    patchCells,
+                    ivf.data(),
+                    neiStart.cdata(),
+                    losort.cdata(),
+                    patchCells.cdata(),
                     neiFun,
                     neiOp
                 )
             );
         });
         #else
+        const labelUList& pFaceCells =
+            mesh.boundary()[patchi].faceCells();
+
         forAll(mesh.boundary()[patchi], facei)
         {
             ivf[pFaceCells[facei]] += pssf[facei];
@@ -248,7 +250,10 @@ surfaceSum
     const labelUList& neiStart = addr.losortStartAddr();
     const labelUList& losort = addr.losortAddr();
 
-    auto faceOp = [&](const label, const label facei)
+    auto faceOp =
+    [
+        ssf = ssf.internalField().cdata()
+    ](const label, const label facei)
     {
         return ssf[facei];
     };
@@ -273,9 +278,9 @@ surfaceSum
             >
             (
                 pTraits<Type>::zero,
-                ownStart,
-                neiStart,
-                losort,
+                ownStart.cdata(),
+                neiStart.cdata(),
+                losort.cdata(),
                 faceOp,
                 faceOp,
                 plusEqOp<Type>(),
@@ -296,9 +301,6 @@ surfaceSum
 
     forAll(mesh.boundary(), patchi)
     {
-        const labelUList& pFaceCells =
-            mesh.boundary()[patchi].faceCells();
-
         const fvsPatchField<Type>& pssf = ssf.boundaryField()[patchi];
 
         #ifdef FOAM_OFFLOAD
@@ -311,9 +313,9 @@ surfaceSum
         const labelUList& losort =
             mesh.lduAddr().patchSortAddr(patchi);
 
-        auto neiFun = [&pssf](const label, const label facei)
+        auto neiFun = [pssfData = pssf.cdata()](const label, const label facei)
         {
-            return pssf[facei];
+            return pssfData[facei];
         };
 
         auto neiOp = [](Type& result, const Type& value)
@@ -333,16 +335,19 @@ surfaceSum
                 patchCellReduceFunctor<Type, decltype(neiFun),
                     decltype(neiOp)>
                 (
-                    vf,
-                    neiStart,
-                    losort,
-                    patchCells,
+                    vf.data(),
+                    neiStart.cdata(),
+                    losort.cdata(),
+                    patchCells.cdata(),
                     neiFun,
                     neiOp
                 )
             );
         });
         #else
+        const labelUList& pFaceCells =
+            mesh.boundary()[patchi].faceCells();
+
         forAll(mesh.boundary()[patchi], facei)
         {
             vf[pFaceCells[facei]] += pssf[facei];

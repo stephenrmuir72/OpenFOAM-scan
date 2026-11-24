@@ -130,9 +130,9 @@ tmp<volScalarField> reconstructMag(const surfaceScalarField& ssf)
             >
             (
                 pTraits<scalar>::zero,
-                ownStart,
-                neiStart,
-                losort,
+                ownStart.cdata(),
+                neiStart.cdata(),
+                losort.cdata(),
                 ownFun,
                 neiFun,
                 plusOp,
@@ -191,10 +191,10 @@ tmp<volScalarField> reconstructMag(const surfaceScalarField& ssf)
                 patchCellReduceFunctor<scalar, decltype(neiFun),
                     plusEqOp<scalar>>
                 (
-                    rf,
-                    sortStart,
-                    sort,
-                    patchCells,
+                    rf.data(),
+                    sortStart.cdata(),
+                    sort.cdata(),
+                    patchCells.cdata(),
                     neiFun,
                     plusEqOp<scalar>()
                 )

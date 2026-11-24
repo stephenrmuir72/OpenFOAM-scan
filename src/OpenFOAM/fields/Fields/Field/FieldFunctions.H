@@ -74,9 +74,9 @@ struct cellReduceFunctor
 {
     Type zero_;
 
-    const labelUList& ownStart_;
-    const labelUList& neiStart_;
-    const labelUList& losort_;
+    const label* ownStart_;
+    const label* neiStart_;
+    const label* losort_;
 
     OwnFun ownFun_;
     NeiFun neiFun_;
@@ -86,9 +86,9 @@ struct cellReduceFunctor
     cellReduceFunctor
     (
         const Type& zero,
-        const labelUList& ownStart,
-        const labelUList& neiStart,
-        const labelUList& losort,
+        const label* ownStart,
+        const label* neiStart,
+        const label* losort,
         const OwnFun& ownFun,
         const NeiFun& neiFun,
         const OwnOp& ownOp,
@@ -134,21 +134,21 @@ struct cellReduceFunctor
 template<class Type, class NeiFun, class NeiOp>
 struct patchCellReduceFunctor
 {
-    Field<Type>& field_;
+    Type* field_;
 
-    const labelUList& neiStart_;
-    const labelUList& losort_;
-    const labelUList& patchCells_;
+    const label* neiStart_;
+    const label* losort_;
+    const label* patchCells_;
 
     NeiFun neiFun_;
     NeiOp neiOp_;
 
     patchCellReduceFunctor
     (
-        Field<Type>& field,
-        const labelUList& neiStart,
-        const labelUList& losort,
-        const labelUList& patchCells,
+        Type* field,
+        const label* neiStart,
+        const label* losort,
+        const label* patchCells,
         const NeiFun& neiFun,
         const NeiOp& neiOp
     )

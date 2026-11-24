@@ -51,23 +51,23 @@ Foam::tmp<Foam::Field<Type>> Foam::lduMatrix::H(const Field<Type>& psi) const
         labelRange indices(tHpsi.ref().size());
         matrixOperation
         (
-            tHpsi.ref().begin(),
+            tHpsi(),
             tHpsi.ref(),
             lduAddr(),
             matrixCoeffsMultiplyFunctor<Type, scalar,
             negateUnaryOperatorFunctor<Type,Type>>
             (
-                psi,
-                upper(),
-                lduAddr().upperAddr(),
+                psi.cdata(),
+                upper().cdata(),
+                lduAddr().upperAddr().cdata(),
                 negateUnaryOperatorFunctor<Type,Type>()
             ),
             matrixCoeffsMultiplyFunctor<Type, scalar,
             negateUnaryOperatorFunctor<Type,Type>>
             (
-                psi,
-                lower(),
-                lduAddr().lowerAddr(),
+                psi.cdata(),
+                lower().cdata(),
+                lduAddr().lowerAddr().cdata(),
                 negateUnaryOperatorFunctor<Type,Type>()
             )
         );

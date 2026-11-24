@@ -325,7 +325,6 @@ void Foam::fv::cellLimitedGrad<Type, Limiter>::calcGrad
 
     forAll(bsf, patchi)
     {
-        const labelUList& pOwner = mesh.boundary()[patchi].faceCells();
         const vectorField& pCf = Cf.boundaryField()[patchi];
 
         #ifdef FOAM_OFFLOAD
@@ -377,6 +376,7 @@ void Foam::fv::cellLimitedGrad<Type, Limiter>::calcGrad
             });
         }
         #else
+        const labelUList& pOwner = mesh.boundary()[patchi].faceCells();
         forAll(pOwner, pFacei)
         {
             const label own = pOwner[pFacei];

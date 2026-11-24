@@ -154,7 +154,7 @@ void Foam::GAMGSolver::scale
             policy,
             cellRange.begin(),
             cellRange.end(),
-            [&](const auto& i)
+            [=](const auto& i)
             {
                 fieldPtr[i] =
                     sf*fieldPtr[i] + (sourcePtr[i] - sf*AcfPtr[i])/DPtr[i];

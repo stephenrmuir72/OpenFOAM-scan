@@ -370,13 +370,19 @@ void Foam::List<T>::resize(const label len, const T& val)
         #ifdef FOAM_OFFLOAD
         if constexpr (is_contiguous_v<T>)
         {
-            apply_policy(this->size_ - oldLen, [&](auto policy)
+            apply_policy(this->size_ - oldLen,
+            [
+                v = this->v_,
+                size = this->size_,
+                oldLen = oldLen,
+                val = val
+            ](auto policy)
             {
                 std::fill
                 (
                     policy,
-                    this->v_ + oldLen,
-                    this->v_ + this->size_,
+                    v + oldLen,
+                    v + size,
                     val
                 );
             });

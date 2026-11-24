@@ -51,28 +51,29 @@ namespace Foam
 template<int nUnroll>
 struct matrixMultiplyFunctor
 {
-    const scalarField& psi_;
-    const scalarField& diag_;
-    const scalarField& lower_;
-    const scalarField& upper_;
+    const scalar* const __restrict__ psi_;
+    const scalar* const __restrict__ diag_;
+    const scalar* const __restrict__ lower_;
+    const scalar* const __restrict__ upper_;
 
-    const labelUList& own_;
-    const labelUList& nei_;
-    const labelUList& ownStart_;
-    const labelUList& losortStart_;
-    const labelUList& losort_;
+    const label* const __restrict__ own_;
+    const label* const __restrict__ nei_;
+    const label* const __restrict__ ownStart_;
+    const label* const __restrict__ losortStart_;
+    const label* const __restrict__ losort_;
 
     matrixMultiplyFunctor
     (
-        const scalarField& psi,
-        const scalarField& diag,
-        const scalarField& lower,
-        const scalarField& upper,
-        const labelUList& own,
-        const labelUList& nei,
-        const labelUList& ownStart,
-        const labelUList& losortStart,
-        const labelUList& losort
+        const scalar* const psi,
+        const scalar* const diag,
+        const scalar* const lower,
+        const scalar* const upper,
+
+        const label* const own,
+        const label* const nei,
+        const label* const ownStart,
+        const label* const losortStart,
+        const label* const losort
     )
     :
         psi_(psi),
@@ -242,25 +243,34 @@ void Foam::lduMatrix::Amul
         #ifdef FOAM_OFFLOAD
         const labelRange indices(psi.size());
 
-        apply_policy(static_cast<std::size_t>(psi.size()), [&](auto policy)
+        apply_policy
+        (
+            psi.size(),
+            [
+                &, ApsiPtr, psiPtr, diagPtr, lowerPtr, upperPtr, lPtr, uPtr,
+                ownerStartAddr = lduAddr().ownerStartAddr().cdata(),
+                losortStartAddr = lduAddr().losortStartAddr().cdata(),
+                losortAddr = lduAddr().losortAddr().cdata()
+            ]
+            (auto policy)
         {
             std::transform
             (
                 policy,
                 indices.begin(),
                 indices.end(),
-                Apsi.begin(),
+                ApsiPtr,
                 matrixMultiplyFunctor<3>
                 (
-                    tpsi,
-                    diag(),
-                    lower(),
-                    upper(),
-                    lduAddr().lowerAddr(),
-                    lduAddr().upperAddr(),
-                    lduAddr().ownerStartAddr(),
-                    lduAddr().losortStartAddr(),
-                    lduAddr().losortAddr()
+                    psiPtr,
+                    diagPtr,
+                    lowerPtr,
+                    upperPtr,
+                    lPtr,
+                    uPtr,
+                    ownerStartAddr,
+                    losortStartAddr,
+                    losortAddr
                 )
             );
         });
@@ -382,22 +392,52 @@ void Foam::lduMatrix::sumA
     const label nFaces = upper().size();
 
     #ifdef FOAM_OFFLOAD
-    matrixOperation
+    const labelRange cellIndices(nCells);
+
+    apply_policy
     (
-        diag().begin(),
-        sumA,
-        lduAddr(),
-        matrixCoeffsFunctor<scalar, unityOp<scalar>>
+        nCells,
+        [
+            &, sumAPtr, diagPtr, lowerPtr, upperPtr,
+            ownerStartAddr = lduAddr().ownerStartAddr().cdata(),
+            losortStartAddr = lduAddr().losortStartAddr().cdata(),
+            losortAddr = lduAddr().losortAddr().cdata()
+        ]
+        (auto policy)
+    {
+        std::transform
         (
-            upper(),
-            unityOp<scalar>()
-        ),
-        matrixCoeffsFunctor<scalar, unityOp<scalar>>
-        (
-            lower(),
-            unityOp<scalar>()
-        )
-    );
+            policy,
+            cellIndices.begin(),
+            cellIndices.end(),
+            sumAPtr,
+            [diagPtr, lowerPtr, upperPtr, ownerStartAddr, losortStartAddr, losortAddr]
+            (const label cell)
+            {
+                scalar sum = diagPtr[cell];
+
+                const label oStart = ownerStartAddr[cell];
+                const label oSize = ownerStartAddr[cell+1] - oStart;
+
+                const label nStart = losortStartAddr[cell];
+                const label nSize = losortStartAddr[cell+1] - nStart;
+
+                for (label i = 0; i < oSize; ++i)
+                {
+                    const label face = oStart + i;
+                    sum += upperPtr[face];
+                }
+
+                for (label i = 0; i < nSize; ++i)
+                {
+                    const label face = losortAddr[nStart + i];
+                    sum += lowerPtr[face];
+                }
+
+                return sum;
+            }
+        );
+    });
     #else
     for (label cell=0; cell<nCells; cell++)
     {
@@ -422,7 +462,11 @@ void Foam::lduMatrix::sumA
 
             const labelRange faceIndices(pa.size());
 
-            apply_policy(static_cast<std::size_t>(pa.size()), [&](auto policy)
+            apply_policy
+            (
+                pa.size(),
+                [&, paData = pa.cdata(), pCoeffsData = pCoeffs.cdata(), sumAPtr]
+                (auto policy)
             {
                 std::for_each
                 (
@@ -431,7 +475,7 @@ void Foam::lduMatrix::sumA
                     faceIndices.end(),
                     [&](const auto& face)
                     {
-                        sumAPtr[pa[face]] -= pCoeffs[face];
+                        sumAPtr[paData[face]] -= pCoeffsData[face];
                     }
                 );
             });
@@ -487,48 +531,54 @@ void Foam::lduMatrix::residual
     );
 
     const label nCells = diag().size();
+    const label nFaces = upper().size();
 
     #ifdef FOAM_OFFLOAD
-    const labelRange cellIndices(psi.size());
+    const labelRange cellIndices(nCells);
 
-    apply_policy(static_cast<std::size_t>(nCells), [&](auto policy)
+    apply_policy
+    (
+        static_cast<std::size_t>(nCells),
+        [
+            =,
+            ownerStartAddr = lduAddr().ownerStartAddr().cdata(),
+            losortStartAddr = lduAddr().losortStartAddr().cdata(),
+            upperAddr = lduAddr().upperAddr().cdata(),
+            lowerAddr = lduAddr().lowerAddr().cdata(),
+            upperCoeffs = upper().cdata(),
+            lowerCoeffs = lower().cdata()
+        ](auto policy)
     {
-        std::transform
+        std::for_each
         (
             policy,
             cellIndices.begin(),
             cellIndices.end(),
-            rAPtr,
-            [&](const label i)
+            [=](const label i)
             {
-                return source[i] - diagPtr[i]*psi[i];
+                // Start with source - diag*psi
+                rAPtr[i] = sourcePtr[i] - diagPtr[i]*psiPtr[i];
+
+                // Add contributions from owner faces (upper matrix)
+                const label oStart = ownerStartAddr[i];
+                const label oSize = ownerStartAddr[i+1] - oStart;
+                for (label j = 0; j < oSize; ++j)
+                {
+                    const label facei = oStart + j;
+                    rAPtr[upperAddr[facei]] -= upperCoeffs[facei]*psiPtr[i];
+                }
+
+                // Add contributions from losort faces (lower matrix)
+                const label nStart = losortStartAddr[i];
+                const label nSize = losortStartAddr[i+1] - nStart;
+                for (label j = 0; j < nSize; ++j)
+                {
+                    const label facei = nStart + j;
+                    rAPtr[lowerAddr[facei]] -= lowerCoeffs[facei]*psiPtr[i];
+                }
             }
         );
     });
-
-    //const label nFaces = upper().size();
-    matrixOperation
-    (
-        rA.begin(),
-        rA,
-        lduAddr(),
-        matrixCoeffsMultiplyFunctor<scalar, scalar,
-        negateUnaryOperatorFunctor<scalar, scalar>>
-        (
-            psi,
-            upper(),
-            lduAddr().upperAddr(),
-            negateUnaryOperatorFunctor<scalar,scalar>()
-        ),
-        matrixCoeffsMultiplyFunctor<scalar, scalar,
-        negateUnaryOperatorFunctor<scalar, scalar>>
-        (
-            psi,
-            lower(),
-            lduAddr().lowerAddr(),
-            negateUnaryOperatorFunctor<scalar,scalar>()
-        )
-    );
     #else
     for (label cell=0; cell<nCells; cell++)
     {
@@ -580,8 +630,6 @@ Foam::tmp<Foam::scalarField> Foam::lduMatrix::H1() const
 
     if (lowerPtr_ || upperPtr_)
     {
-        scalar* __restrict__ H1Ptr = tH1.ref().begin();
-
         const label* __restrict__ uPtr = lduAddr().upperAddr().begin();
         const label* __restrict__ lPtr = lduAddr().lowerAddr().begin();
 
@@ -589,26 +637,55 @@ Foam::tmp<Foam::scalarField> Foam::lduMatrix::H1() const
         const scalar* __restrict__ upperPtr = upper().begin();
 
         const label nFaces = upper().size();
+        const label nCells = lduAddr().size();
+
+        scalar* __restrict__ H1Ptr = tH1.ref().begin();
 
         #ifdef FOAM_OFFLOAD
-        matrixOperation
+        const labelRange cellIndices(nCells);
+
+        apply_policy
         (
-            H1Ptr,
-            tH1.ref(),
-            lduAddr(),
-            matrixCoeffsFunctor<scalar, negateUnaryOperatorFunctor<scalar,
-                scalar>>
+            static_cast<std::size_t>(nCells),
+            [
+                =,
+                ownerStartAddr = lduAddr().ownerStartAddr().cdata(),
+                losortStartAddr = lduAddr().losortStartAddr().cdata(),
+                upperAddr = lduAddr().upperAddr().cdata(),
+                lowerAddr = lduAddr().lowerAddr().cdata(),
+                upperCoeffs = upper().cdata(),
+                lowerCoeffs = lower().cdata()
+            ](auto policy)
+        {
+            std::for_each
             (
-                upper(),
-                negateUnaryOperatorFunctor<scalar, scalar>()
-            ),
-            matrixCoeffsFunctor<scalar, negateUnaryOperatorFunctor<scalar,
-                scalar>>
-            (
-                lower(),
-                negateUnaryOperatorFunctor<scalar, scalar>()
-            )
-        );
+                policy,
+                cellIndices.begin(),
+                cellIndices.end(),
+                [=](const label i)
+                {
+                    H1Ptr[i] = 0;
+
+                    // Add contributions from owner faces (upper matrix)
+                    const label oStart = ownerStartAddr[i];
+                    const label oSize = ownerStartAddr[i+1] - oStart;
+                    for (label j = 0; j < oSize; ++j)
+                    {
+                        const label facei = oStart + j;
+                        H1Ptr[upperAddr[facei]] -= upperCoeffs[facei];
+                    }
+
+                    // Add contributions from losort faces (lower matrix)
+                    const label nStart = losortStartAddr[i];
+                    const label nSize = losortStartAddr[i+1] - nStart;
+                    for (label j = 0; j < nSize; ++j)
+                    {
+                        const label facei = nStart + j;
+                        H1Ptr[lowerAddr[facei]] -= lowerCoeffs[facei];
+                    }
+                }
+            );
+        });
         #else
         for (label face=0; face<nFaces; face++)
         {

@@ -298,10 +298,10 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
                         decltype(neiOp)
                     >
                     (
-                        omega0,
-                        sortStart,
-                        sort,
-                        patchCells,
+                        omega0.data(),
+                        sortStart.cdata(),
+                        sort.cdata(),
+                        patchCells.cdata(),
                         neiFun,
                         neiOp
                     )
@@ -353,10 +353,10 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
                         decltype(neiOp)
                     >
                     (
-                        omega0,
-                        sortStart,
-                        sort,
-                        patchCells,
+                        omega0.data(),
+                        sortStart.cdata(),
+                        sort.cdata(),
+                        patchCells.cdata(),
                         neiFun,
                         neiOp
                     )
@@ -400,10 +400,10 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
                         decltype(neiOp)
                     >
                     (
-                        omega0,
-                        sortStart,
-                        sort,
-                        patchCells,
+                        omega0.data(),
+                        sortStart.cdata(),
+                        sort.cdata(),
+                        patchCells.cdata(),
                         neiFun,
                         neiOp
                     )
@@ -451,10 +451,10 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
                         decltype(neiOp)
                     >
                     (
-                        omega0,
-                        sortStart,
-                        sort,
-                        patchCells,
+                        omega0.data(),
+                        sortStart.cdata(),
+                        sort.cdata(),
+                        patchCells.cdata(),
                         neiFun,
                         neiOp
                     )
@@ -516,10 +516,10 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
                         decltype(neiOp)
                     >
                     (
-                        omega0,
-                        sortStart,
-                        sort,
-                        patchCells,
+                        omega0.data(),
+                        sortStart.cdata(),
+                        sort.cdata(),
+                        patchCells.cdata(),
                         neiFun,
                         neiOp
                     )
@@ -583,10 +583,10 @@ void Foam::omegaWallFunctionFvPatchScalarField::calculate
                 decltype(neiOp)
             >
             (
-                omega0,
-                sortStart,
-                sort,
-                patchCells,
+                omega0.data(),
+                sortStart.cdata(),
+                sort.cdata(),
+                patchCells.cdata(),
                 neiFun,
                 neiOp
             )

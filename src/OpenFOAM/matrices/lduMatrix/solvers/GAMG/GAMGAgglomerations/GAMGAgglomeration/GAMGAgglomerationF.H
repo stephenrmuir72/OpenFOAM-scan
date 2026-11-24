@@ -40,23 +40,23 @@ namespace GAMG
 template<class Type, bool nonNegative>
 struct restrictT
 {
-    Field<Type>& cf_;
+    Type* cf_;
 
-    const Field<Type>& ff_;
+    const Type* ff_;
 
-    const labelList& sort_;
-    const labelList& target_;
-    const labelList& targetStart_;
+    const label* sort_;
+    const label* target_;
+    const label* targetStart_;
 
     const Type zero_;
 
     restrictT
     (
-        Field<Type>& cf,
-        const Field<Type>& ff,
-        const labelList& sort,
-        const labelList& target,
-        const labelList& targetStart
+        Type* cf,
+        const Type* ff,
+        const label* sort,
+        const label* target,
+        const label* targetStart
     )
     :
         cf_(cf),

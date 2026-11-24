@@ -73,21 +73,21 @@ void Foam::GAMGSolver::interpolate
 
     matrixOperation
     (
-        Apsi.begin(),
+        Apsi,
         Apsi,
         m.lduAddr(),
         matrixCoeffsMultiplyFunctor<scalar, scalar, decltype(rfun)>
         (
-            psi,
-            m.upper(),
-            m.lduAddr().upperAddr(),
+            psi.cdata(),
+            m.upper().cdata(),
+            m.lduAddr().upperAddr().cdata(),
             rfun
         ),
         matrixCoeffsMultiplyFunctor<scalar, scalar, decltype(rfun)>
         (
-            psi,
-            m.lower(),
-            m.lduAddr().lowerAddr(),
+            psi.cdata(),
+            m.lower().cdata(),
+            m.lduAddr().lowerAddr().cdata(),
             rfun
         )
     );
