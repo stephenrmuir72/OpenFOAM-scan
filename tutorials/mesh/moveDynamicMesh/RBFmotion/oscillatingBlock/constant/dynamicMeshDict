@@ -1,0 +1,82 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2612                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version         2.0;
+    format          ascii;
+    class           dictionary;
+    object          motionProperties;
+}
+
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+dynamicFvMesh dynamicMotionSolverFvMesh;
+
+motionSolver  RBFMotionSolver;
+
+movingPatches ( block );
+
+staticPatches ( left right top bottom );
+
+coarseningRatio 2;
+
+includeStaticPatches    false;
+
+frozenInterpolation     false;
+
+interpolation
+{
+    RBF     WendlandC2;
+
+    focalPoint      (0 0 0);
+    innerDistance   2.5;
+    outerDistance   12.5;
+
+    polynomials     true;
+
+    WendlandC2Coeffs { radius  2.0; }
+    TPSCoeffs        { radius  5.0; }
+    invGaussCoeffs   { radius  0.1; }
+    GaussCoeffs      { radius  10; }
+    IMQBCoeffs       { radius  0.001; }
+}
+
+
+solidBodyMotionFunction multiMotion;
+
+multiMotionCoeffs
+{
+    rotation
+    {
+        solidBodyMotionFunction oscillatingRotatingMotion;
+
+        origin      (0 0 0);
+        omega       4;
+        amplitude   (0 0 10);
+    }
+    translation
+    {
+        solidBodyMotionFunction oscillatingLinearMotion;
+
+        origin      (0 0 0);
+        omega       2;
+        amplitude   (0 3 0);
+    }
+/*-- some more experimenting --
+    sliding
+    {
+        solidBodyMotionFunction oscillatingLinearMotion;
+
+        origin      (-2.5 0 0);
+        omega       3;
+        amplitude   (1 0 0);
+    }
+ -- */
+}
+
+// ************************************************************************* //
