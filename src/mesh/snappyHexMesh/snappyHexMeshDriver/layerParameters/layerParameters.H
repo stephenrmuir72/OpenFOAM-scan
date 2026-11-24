@@ -120,6 +120,9 @@ private:
             //- Minimum total thickness
             scalarField minThickness_;
 
+            //- Maximum first layer thickness relative to local cell size
+            scalarField maxFirstLayerAspect_;
+
 
         const scalar featureAngle_;
 
@@ -268,6 +271,14 @@ public:
             const scalarField& minThickness() const
             {
                 return minThickness_;
+            }
+
+            //- Upper limit on the first layer thickness, always relative to
+            //  the undistorted size of the cell outside the layer and applied
+            //  per point. Default GREAT (no limit).
+            const scalarField& maxFirstLayerAspect() const
+            {
+                return maxFirstLayerAspect_;
             }
 
 
