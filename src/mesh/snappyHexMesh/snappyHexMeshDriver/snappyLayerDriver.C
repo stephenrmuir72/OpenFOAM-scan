@@ -1423,6 +1423,7 @@ void Foam::snappyLayerDriver::calculateLayerThickness
     scalarField finalLayerThickness(pp.nPoints(), GREAT);
     scalarField totalThickness(pp.nPoints(), GREAT);
     scalarField expRatio(pp.nPoints(), GREAT);
+    scalarField maxFirstLayerAspect(pp.nPoints(), GREAT);
 
     minThickness.setSize(pp.nPoints());
     minThickness = GREAT;
@@ -1466,6 +1467,11 @@ void Foam::snappyLayerDriver::calculateLayerThickness
                 minThickness[ppPointi],
                 layerParams.minThickness()[patchi]
             );
+            maxFirstLayerAspect[ppPointi] = min
+            (
+                maxFirstLayerAspect[ppPointi],
+                layerParams.maxFirstLayerAspect()[patchi]
+            );
         }
     }
 
@@ -1506,6 +1512,14 @@ void Foam::snappyLayerDriver::calculateLayerThickness
         mesh,
         pp.meshPoints(),
         minThickness,
+        minEqOp<scalar>(),
+        GREAT               // null value
+    );
+    syncTools::syncPointList
+    (
+        mesh,
+        pp.meshPoints(),
+        maxFirstLayerAspect,
         minEqOp<scalar>(),
         GREAT               // null value
     );
@@ -1632,6 +1646,12 @@ void Foam::snappyLayerDriver::calculateLayerThickness
                 totalThickness[pointi] *= edgeLen[pointi];
                 minThickness[pointi] *= edgeLen[pointi];
             }
+
+            firstLayerThickness[pointi] = min
+            (
+                firstLayerThickness[pointi],
+                maxFirstLayerAspect[pointi]*edgeLen[pointi]
+            );
 
             thickness[pointi] = min
             (

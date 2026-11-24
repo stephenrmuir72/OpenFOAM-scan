@@ -361,6 +361,11 @@ Foam::layerParameters::layerParameters
         boundaryMesh.size(),
         meshRefinement::get<scalar>(dict, "minThickness", dryRun)
     ),
+    maxFirstLayerAspect_
+    (
+        boundaryMesh.size(),
+        dict.getOrDefault<scalar>("maxFirstLayerAspect", GREAT)
+    ),
     featureAngle_(meshRefinement::get<scalar>(dict, "featureAngle", dryRun)),
     mergePatchFacesAngle_
     (
@@ -669,6 +674,11 @@ Foam::layerParameters::layerParameters
                     (
                         "relativeSizes",
                         relativeSizes_[patchi]
+                    );
+                    layerDict.readIfPresent
+                    (
+                        "maxFirstLayerAspect",
+                        maxFirstLayerAspect_[patchi]
                     );
                 }
             }
