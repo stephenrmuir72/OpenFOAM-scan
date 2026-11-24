@@ -2451,6 +2451,14 @@ void Foam::distributedTriSurfaceMesh::surfaceSide
                     const auto& tri = surf[facei];
                     const label fp = tri.find(pointi);
 
+                    if (fp < 0)
+                    {
+                        // Should never happen; just to avoid compiler
+                        // warning.
+                        FatalErrorInFunction << "Point not found in triangle"
+                            << exit(FatalError);
+                    }
+
                     Pair<edge> edges
                     (
                         edge(pointi, tri.fcValue(fp)),  // edge forward
