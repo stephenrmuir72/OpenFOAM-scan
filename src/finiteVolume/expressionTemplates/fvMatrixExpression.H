@@ -290,12 +290,7 @@ public:
                 auto& bouCoeffs = m.boundaryCoeffs();
                 const label n = m.psi().boundaryField().size();
 
-#if defined(FOAM_OFFLOAD)
-                constexpr bool foam_offload = true;
-#else
-                constexpr bool foam_offload = false;
-#endif
-                if constexpr (foam_offload)
+                if constexpr (ListPolicy::offload_enabled)
                 {
                     //- Parallel via ListsRefWrap. See GeometricFieldExpression.
                     //  Flat storage: internalCoeffs()/boundaryCoeffs() are

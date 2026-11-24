@@ -167,17 +167,13 @@ public:
         typedef Field<ActualType> FieldType;
         auto& bfld = fld.boundaryFieldRef();
         const label n = bfld.size();
-#if defined(FOAM_OFFLOAD)
-        constexpr bool foam_offload = true;
-#else
-        constexpr bool foam_offload = false;
-#endif
-        if constexpr (foam_offload)
+
+        if constexpr (ListPolicy::offload_enabled)
         {
             // Wrap multiple containers into single container so there is only
             // a single kernel. Looking up individual container is fast enough.
 
-            auto do_something = [](auto& data, label& i, auto& pfld)
+            const auto kernel = [](auto& data, label& i, auto& pfld)
             {
                 if constexpr (is_pointField)
                 {
@@ -196,7 +192,7 @@ public:
             ListsRefWrap<FieldType> expr
             (
                 fld.boundaryFieldRef(),
-                do_something
+                kernel
             );
 
             std::vector<UncoupledPatchExpr> unc_patchExpr;

@@ -65,7 +65,7 @@ Foam::CSRAddressing<IntType>
 Foam::CSRAddressing<IntType>::pack_impl
 (
     const ListListType& lists,
-    bool checkOverflow
+    [[maybe_unused]] bool checkOverflow
 )
 {
     CSRAddressing<IntType> addr;
@@ -156,7 +156,7 @@ template<class Addr>
 Foam::CSRAddressing<IntType>::CSRAddressing
 (
     const IndirectListBase<label, Addr>& rowSizes,
-    bool checkOverflow
+    [[maybe_unused]] bool checkOverflow
 )
 :
     offsets_()
