@@ -652,6 +652,27 @@ bool Foam::sampledMeshedSurface::update()
     {
         // Extend a bit
         bb.grow(0.5*bb.span());
+
+        #if defined(WM_SP) || defined(WM_SPDP)
+        // Pad a flat axis so 8 octree splits stay representable.
+        const scalar coord = max
+        (
+            cmptMax(cmptMag(bb.min())),
+            cmptMax(cmptMag(bb.max()))
+        );
+        const scalar minSpan = 2.5e-4*max(coord, scalar(1));
+        vector span = bb.span();
+        for (direction cmpt = 0; cmpt < vector::nComponents; ++cmpt)
+        {
+            if (span[cmpt] < minSpan)
+            {
+                const scalar pad = 0.5*(minSpan - span[cmpt]);
+                bb.min()[cmpt] -= pad;
+                bb.max()[cmpt] += pad;
+            }
+        }
+        #endif
+
         bb.inflate(1e-6);
     }
     else
