@@ -7,6 +7,7 @@
 -------------------------------------------------------------------------------
     Copyright (C) 2013-2016 OpenFOAM Foundation
     Copyright (C) 2019 OpenCFD Ltd.
+    Copyright (C) 2026 OpenFOAM Contributors
 -------------------------------------------------------------------------------
 License
     This file is part of OpenFOAM.
@@ -34,6 +35,18 @@ Description
     An extrapolation-algorithm, based on the linearly implicit Euler method
     with step size control and order selection.
 
+    With the optional switch \c sparse (on by default), the linear systems
+    \c (1/dx)I-J are factorised by a sparse LU on the sparsity pattern of
+    the Jacobian (seulexSparseLU) whenever the symbolic factorisation needs
+    fewer than half the multiply-adds of the dense LU, falling back to the
+    dense LU with partial pivoting if a pivot is too small.
+
+    With the optional switch \c autonomous (off by default), for ODE systems
+    whose derivatives do not depend on the time argument (such as chemistry),
+    the initial right-hand side \c f(y0) of a step is evaluated once and
+    shared across extrapolation columns, and the right-hand side evaluated by
+    the divergence test is reused for the next substep.
+
     Reference:
     \verbatim
         Hairer, E., Nørsett, S. P., & Wanner, G. (1996).
@@ -53,6 +66,8 @@ SourceFiles
 #include "ODESolver.H"
 #include "scalarMatrices.H"
 #include "labelField.H"
+#include "boolList.H"
+#include "seulexSparseLU.H"
 
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
@@ -78,6 +93,13 @@ class seulex
                 stepFactor1_, stepFactor2_, stepFactor3_,
                 stepFactor4_, stepFactor5_,
                 kFactor1_, kFactor2_;
+
+        //- Allow sparse LU factorisation when the pattern is sparse (default: true)
+        const bool useSparse_;
+
+        //- The derivatives do not depend on the time argument: right-hand
+        //  sides at the same state are shared (switch autonomous, default: false)
+        const bool autonomous_;
 
         // Evaluated constants
 
@@ -106,8 +128,39 @@ class seulex
             // Fields used in "seul" function
             mutable scalarField dy_, yTemp_, dydx_;
 
+            //- f(y0) of the current step attempt (autonomous systems)
+            mutable scalarField f0_;
+
+        // Sparse linear algebra
+
+            //- Possible non-zeros of the Jacobian, n x n row-major
+            mutable boolList pattern_;
+
+            //- Ordering and symbolic factorisation for pattern_
+            mutable seulexSparseLU slu_;
+
+            //- The sparse factorisation is cheaper for this pattern
+            mutable bool sparse_;
+
+            //- The current factorisation is the dense one
+            mutable bool denseNow_;
+
+            //- Pattern rebuilds; past a limit (the system keeps changing
+            //  size, as with TDAC) the solver stays dense
+            mutable label nBuild_;
+
 
     // Private Member Functions
+
+        //- Add the Jacobian's non-zeros to the pattern; rebuild the
+        //  symbolic factorisation when it grew
+        void updatePattern(const scalar x, const scalarField& y) const;
+
+        //- Factorise (1/dx) I - J
+        void factorise(const scalar dx) const;
+
+        //- Solve with the current factorisation
+        void linSolve(scalarField& b) const;
 
         //- Computes the j-th line of the extrapolation table
         bool seul
@@ -120,7 +173,7 @@ class seulex
             const scalarField& scale
         ) const;
 
-        //- Polynomial extrpolation
+        //- Polynomial extrapolation
         void extrapolate
         (
             const label k,
