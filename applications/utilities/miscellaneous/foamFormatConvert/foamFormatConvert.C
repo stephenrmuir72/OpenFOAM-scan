@@ -518,6 +518,8 @@ int main(int argc, char *argv[])
 
                     doLocalCode(labelFieldIOField);
                     doLocalCode(vectorFieldIOField);
+                    doLocalCode(labelFieldCompactIOField);
+                    doLocalCode(vectorFieldCompactIOField);
 
                     #undef doLocalCode
 
