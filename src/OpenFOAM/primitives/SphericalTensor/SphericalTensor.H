@@ -116,7 +116,7 @@ public:
         );
 
         //- Construct given the component
-        inline constexpr explicit SphericalTensor(const Cmpt& tii);
+        inline Foam_VectorSpace_constexpr explicit SphericalTensor(const Cmpt& tii);
 
         //- Construct from Istream
         inline explicit SphericalTensor(Istream& is);

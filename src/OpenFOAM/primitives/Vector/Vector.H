@@ -121,7 +121,7 @@ public:
         inline constexpr Vector(const VectorSpace<Vector<Cmpt2>, Cmpt2, 3>& vs);
 
         //- Construct from three components
-        inline constexpr Vector
+        inline Foam_VectorSpace_constexpr Vector
         (
             const Cmpt& vx,
             const Cmpt& vy,

@@ -48,16 +48,24 @@ inline constexpr Foam::Vector<Cmpt>::Vector
 
 
 template<class Cmpt>
-inline constexpr Foam::Vector<Cmpt>::Vector
+inline Foam_VectorSpace_constexpr Foam::Vector<Cmpt>::Vector
 (
     const Cmpt& vx,
     const Cmpt& vy,
     const Cmpt& vz
 )
+#ifdef Foam_VectorSpace_brokenDirectConstructor
+{
+    this->x() = vx;
+    this->y() = vy;
+    this->z() = vz;
+}
+#else
 :
     // aggregate initialization
     Vector::vsType(Foam::direct_construct_t{}, vx, vy, vz)
 {}
+#endif
 
 
 template<class Cmpt>

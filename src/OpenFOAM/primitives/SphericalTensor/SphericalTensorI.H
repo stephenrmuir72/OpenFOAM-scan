@@ -50,11 +50,17 @@ inline Foam::SphericalTensor<Cmpt>::SphericalTensor
 
 
 template<class Cmpt>
-inline constexpr Foam::SphericalTensor<Cmpt>::SphericalTensor(const Cmpt& stii)
+inline Foam_VectorSpace_constexpr Foam::SphericalTensor<Cmpt>::SphericalTensor(const Cmpt& stii)
+#ifdef Foam_VectorSpace_brokenDirectConstructor
+{
+    this->v_[II] = stii;
+}
+#else
 :
     // aggregate initialization
     SphericalTensor::vsType(Foam::direct_construct_t{}, stii)
 {}
+#endif
 
 
 template<class Cmpt>
